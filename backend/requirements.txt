@@ -1,0 +1,47 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# Data / ORM
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+pgvector==0.3.6
+
+# Config / validation
+pydantic==2.10.4
+pydantic-settings==2.7.0
+email-validator==2.2.0
+
+# Security
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+pyjwt==2.10.1
+pyotp==2.9.0
+
+# Cache / scheduling
+redis==5.2.1
+apscheduler==3.11.0
+
+# LLM
+anthropic==0.42.0
+
+# Market data (real feed) — Stooq via pandas-datareader-free HTTP; we use plain httpx.
+httpx==0.28.1
+
+# Numerics for the planning/risk + rebalancing engine
+numpy==2.2.1
+
+# Logging
+structlog==24.4.0
+
+# Local embeddings for RAG (CPU, no external API). Optional at runtime — guarded import.
+fastembed==0.5.1
+
+# PDF generation (I1 — wealth summary PDF)
+fpdf2==2.8.2
+
+# Tests
+pytest==8.3.4
+pytest-asyncio==0.25.0

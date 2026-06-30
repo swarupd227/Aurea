@@ -1,0 +1,12 @@
+{
+  "name": "aurera-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "node record-demo.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}
