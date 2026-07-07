@@ -54,6 +54,8 @@ async def bootstrap() -> None:
         # Wave F: MFA columns on app_user
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(64)"))
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
+        # Ensure server-side default exists even if column was created without one by create_all()
+        await conn.execute(text("ALTER TABLE app_user ALTER COLUMN mfa_enabled SET DEFAULT FALSE"))
         # Wave G: Surveillance flag resolution + escalation
         await conn.execute(text("ALTER TABLE surveillance_flag ADD COLUMN IF NOT EXISTS resolution_note TEXT"))
         await conn.execute(text("ALTER TABLE surveillance_flag ADD COLUMN IF NOT EXISTS resolved_by VARCHAR(200)"))
