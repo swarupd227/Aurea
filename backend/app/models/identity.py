@@ -30,7 +30,7 @@ class User(Base):
 
     # TOTP-based MFA (set up via /api/auth/mfa/* endpoints)
     mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class UserInviteToken(Base):
