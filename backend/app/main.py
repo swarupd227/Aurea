@@ -36,8 +36,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # local self-contained demo
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,  # JWT bearer tokens don't need CORS credentials
     allow_methods=["*"],
     allow_headers=["*"],
 )
