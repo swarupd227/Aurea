@@ -113,9 +113,9 @@ async def bootstrap() -> None:
                 from app.core.security import hash_password as _hp
                 await conn.execute(text(
                     "INSERT INTO app_user "
-                    "(id, firm_id, email, full_name, hashed_password, role, is_active, created_at, updated_at) "
+                    "(id, firm_id, email, full_name, hashed_password, role, is_active, mfa_enabled, created_at, updated_at) "
                     "VALUES (gen_random_uuid(), :fid, 'superadmin@aurea.platform', "
-                    "'Platform Superadmin', :hp, 'superadmin', true, now(), now())"
+                    "'Platform Superadmin', :hp, 'superadmin', true, false, now(), now())"
                 ), {"fid": firm_row[0], "hp": _hp("aurea-super")})
 
     log.info("schema_bootstrapped", tables=len(Base.metadata.tables))
