@@ -1,0 +1,139 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Aurea — CI/CD: Build + Deploy to Azure Container Apps
+#
+# Triggered on every push to `main` (i.e. every merged PR).
+# Also manually triggerable via Actions → "Run workflow".
+#
+# Prerequisites (run infra/azure-setup.sh once first):
+#   GitHub Secrets  → AZURE_CREDENTIALS, ANTHROPIC_API_KEY
+#   GitHub Variables → AZURE_RG, ACR_NAME
+# ──────────────────────────────────────────────────────────────────────────────
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AZURE_RG:     ${{ vars.AZURE_RG }}
+  ACR_NAME:     ${{ vars.ACR_NAME }}
+  BACKEND_APP:  aurea-backend
+  WORKER_APP:   aurea-worker
+  FRONTEND_APP: aurea-frontend
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    # Prevents concurrent deploys from stepping on each other
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Azure login ───────────────────────────────────────────────────────────
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # ── Get backend FQDN (stable — doesn't change between deploys) ────────────
+      # We need this before building the frontend so the URL can be baked in.
+      - name: Resolve backend URL
+        run: |
+          FQDN=$(az containerapp show \
+            --name "$BACKEND_APP" \
+            --resource-group "$AZURE_RG" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "BACKEND_URL=https://${FQDN}" >> "$GITHUB_ENV"
+
+      # ── Login to ACR ──────────────────────────────────────────────────────────
+      - name: Login to ACR
+        run: az acr login --name "$ACR_NAME"
+
+      # ── Build & push backend image ────────────────────────────────────────────
+      - name: Build & push backend
+        run: |
+          SHA_TAG="${ACR_NAME}.azurecr.io/aurea-backend:${{ github.sha }}"
+          LATEST_TAG="${ACR_NAME}.azurecr.io/aurea-backend:latest"
+          docker build -t "$SHA_TAG" -t "$LATEST_TAG" ./backend
+          docker push "$SHA_TAG"
+          docker push "$LATEST_TAG"
+          echo "BACKEND_IMAGE=$SHA_TAG" >> "$GITHUB_ENV"
+
+      # ── Build & push frontend image ───────────────────────────────────────────
+      # NEXT_PUBLIC_API_BASE_URL is a Next.js build-time arg — baked into the bundle.
+      - name: Build & push frontend
+        run: |
+          SHA_TAG="${ACR_NAME}.azurecr.io/aurea-frontend:${{ github.sha }}"
+          LATEST_TAG="${ACR_NAME}.azurecr.io/aurea-frontend:latest"
+          docker build \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="${BACKEND_URL}" \
+            -t "$SHA_TAG" \
+            -t "$LATEST_TAG" \
+            ./frontend
+          docker push "$SHA_TAG"
+          docker push "$LATEST_TAG"
+          echo "FRONTEND_IMAGE=$SHA_TAG" >> "$GITHUB_ENV"
+
+      # ── Update ANTHROPIC_API_KEY secret in Container Apps ─────────────────────
+      # Stored as a Container Apps secret (encrypted at rest, not visible in env listing).
+      - name: Sync Anthropic key secret
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          for APP in "$BACKEND_APP" "$WORKER_APP"; do
+            az containerapp secret set \
+              --name "$APP" \
+              --resource-group "$AZURE_RG" \
+              --secrets "anthropic-key=${ANTHROPIC_API_KEY}" \
+              -o none
+          done
+
+      # ── Deploy backend ────────────────────────────────────────────────────────
+      - name: Deploy backend
+        run: |
+          az containerapp update \
+            --name "$BACKEND_APP" \
+            --resource-group "$AZURE_RG" \
+            --image "$BACKEND_IMAGE" \
+            -o none
+
+      # ── Deploy worker (same image, command set at creation time) ──────────────
+      - name: Deploy worker
+        run: |
+          az containerapp update \
+            --name "$WORKER_APP" \
+            --resource-group "$AZURE_RG" \
+            --image "$BACKEND_IMAGE" \
+            -o none
+
+      # ── Deploy frontend ───────────────────────────────────────────────────────
+      - name: Deploy frontend
+        run: |
+          az containerapp update \
+            --name "$FRONTEND_APP" \
+            --resource-group "$AZURE_RG" \
+            --image "$FRONTEND_IMAGE" \
+            -o none
+
+      # ── Summary ───────────────────────────────────────────────────────────────
+      - name: Deployment summary
+        run: |
+          FRONTEND_FQDN=$(az containerapp show \
+            --name "$FRONTEND_APP" \
+            --resource-group "$AZURE_RG" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  ✅  Aurea deployed — commit ${{ github.sha }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  Frontend : https://${FRONTEND_FQDN}"
+          echo "  Backend  : ${BACKEND_URL}"
+          echo "  Images   : backend@${{ github.sha }}, frontend@${{ github.sha }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
