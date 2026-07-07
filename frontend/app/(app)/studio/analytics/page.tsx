@@ -15,7 +15,7 @@ export default function Analytics() {
   const { data: adoptionData, loading: adoptionLoading } = useApi<any>("/api/analytics/adoption");
   const { data: scorecardData, loading: scorecardLoading } = useApi<any>("/api/analytics/scorecards");
   const [tab, setTab] = useState("overview");
-  if (loading || !data) return <Spinner label="Loading analytics…" />;
+  if (loading || !data || !data.headline || !data.client_intelligence || !data.portfolio || !data.advice || !data.practice || !data.risk_data) return <Spinner label="Loading analytics…" />;
   const h = data.headline;
   const ci = data.client_intelligence, pf = data.portfolio, ad = data.advice, pr = data.practice, rd = data.risk_data;
   const TABS = [
