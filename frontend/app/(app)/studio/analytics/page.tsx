@@ -396,7 +396,7 @@ export default function Analytics() {
                       <div className="font-medium text-ink">{s.adviser_name}</div>
                       <div className="text-[11px] text-ink-muted">{s.adviser_email}</div>
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-ink">{money(s.aum, 0)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-ink">{money(s.aum)}</td>
                     <td className="px-4 py-3 text-right text-ink-soft">{s.household_count}</td>
                     <td className="px-4 py-3 text-right">
                       <span className={s.recs_approved_90d > 0 ? "text-positive font-medium" : "text-ink-muted"}>{s.recs_approved_90d}</span>
