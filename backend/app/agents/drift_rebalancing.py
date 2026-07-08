@@ -176,6 +176,7 @@ class DriftRebalancingAgent(BaseAgent):
             "data_confidence": round(data_confidence, 3),
             "cgt_budget": sensed.get("cgt_budget"),
             "guardrail_breaches": result.guardrail_breaches,
+            "limitations": result.limitations,
             "price_source": "Conduit market-data feed (latest close)",
             "n_positions": len(positions),
         }

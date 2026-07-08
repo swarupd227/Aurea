@@ -69,6 +69,7 @@ class RebalanceResult:
     turnover: float
     turnover_pct: float
     guardrail_breaches: list[str]
+    limitations: list[str]  # informational — not compliance breaches (e.g. no instrument to buy)
     max_drift: float
 
 
@@ -136,6 +137,7 @@ def optimise(
     orders: list[Order] = []
     realised_gain = harvested = 0.0
     breaches: list[str] = []
+    limitations: list[str] = []
 
     if needs:
         # 1. Sell over-weight classes.
@@ -180,7 +182,7 @@ def optimise(
             candidates = [p for p in positions if p.asset_class == cls and not p.excluded]
             target_pos = candidates[0] if candidates else (model_instruments or {}).get(cls)
             if target_pos is None or target_pos.price <= 0:
-                breaches.append(f"No eligible instrument to buy for under-weight class '{cls}'.")
+                limitations.append(f"No instrument available to buy for under-weight class '{cls}' — adviser to select manually.")
                 continue
             qty = buy_value / target_pos.price
             orders.append(Order(
@@ -210,5 +212,6 @@ def optimise(
         turnover=round(turnover, 2),
         turnover_pct=round(turnover / total_value, 4) if total_value else 0.0,
         guardrail_breaches=breaches,
+        limitations=limitations,
         max_drift=round(max_drift, 4),
     )
