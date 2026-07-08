@@ -98,7 +98,7 @@ export default function LoginPage() {
           <div className="relative">
             <div className="flex items-center gap-3">
               <Mark />
-              <span className="text-2xl font-semibold tracking-tight">Aurera</span>
+              <span className="text-2xl font-semibold tracking-tight">Aurea</span>
             </div>
           </div>
           <div className="relative max-w-md">
@@ -107,7 +107,7 @@ export default function LoginPage() {
             <p className="mt-4 text-navy-200 text-lg">Your account is protected with TOTP-based MFA.</p>
           </div>
           <div className="relative text-navy-200/70 text-xs flex gap-4">
-            {["Aurera Core", "Atlas", "Studio", "Canvas", "Provenance", "Conduit"].map((c) => (
+            {["Aurea Core", "Atlas", "Studio", "Canvas", "Provenance", "Conduit"].map((c) => (
               <span key={c}>{c}</span>
             ))}
           </div>
@@ -165,7 +165,7 @@ export default function LoginPage() {
         <div className="relative">
           <div className="flex items-center gap-3">
             <Mark />
-            <span className="text-2xl font-semibold tracking-tight">Aurera</span>
+            <span className="text-2xl font-semibold tracking-tight">Aurea</span>
           </div>
         </div>
         <div className="relative max-w-md">
@@ -178,7 +178,7 @@ export default function LoginPage() {
           </p>
         </div>
         <div className="relative text-navy-200/70 text-xs flex gap-4">
-          {["Aurera Core", "Atlas", "Studio", "Canvas", "Provenance", "Conduit"].map((c) => (
+          {["Aurea Core", "Atlas", "Studio", "Canvas", "Provenance", "Conduit"].map((c) => (
             <span key={c}>{c}</span>
           ))}
         </div>
@@ -188,7 +188,7 @@ export default function LoginPage() {
       <div className="flex items-center justify-center p-8 bg-paper">
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-2 mb-8 text-navy-800">
-            <Mark dark /> <span className="text-xl font-semibold">Aurera</span>
+            <Mark dark /> <span className="text-xl font-semibold">Aurea</span>
           </div>
           <h2 className="text-2xl font-semibold text-ink">Sign in</h2>
           <p className="text-sm text-ink-muted mt-1">{subtitle}</p>

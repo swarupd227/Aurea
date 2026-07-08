@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Aurera — Wealth Intelligence Platform",
+  title: "Aurea — Wealth Intelligence Platform",
   description: "Governed, agentic wealth management. Truly personal advice, at scale.",
 };
 

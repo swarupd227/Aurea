@@ -167,7 +167,7 @@ export default function Analytics() {
         <div className="grid lg:grid-cols-3 gap-4">
           <Card>
             <CardTitle>Opportunity & risk detection</CardTitle>
-            {Object.entries(ad.opportunities.by_kind).map(([k, n]: any) => (
+            {Object.entries(ad.opportunities?.by_kind || {}).map(([k, n]: any) => (
               <Metric key={k} k={titleCase(k)} v={n} />
             ))}
             <div className="text-xs text-ink-muted mt-1">{ad.opportunities.total} signals across the book</div>
@@ -218,7 +218,7 @@ export default function Analytics() {
           <Card className="lg:col-span-2">
             <CardTitle>Fee & margin by segment</CardTitle>
             <Table head={["Segment", "Revenue", "Effective rate", "Margin"]}
-              rows={Object.entries(pr.fee_margin.by_segment).map(([s, v]: any) => [titleCase(s), money(v.revenue), pct(v.effective_rate), pct(v.margin, 0)])} />
+              rows={Object.entries(pr.fee_margin?.by_segment || {}).map(([s, v]: any) => [titleCase(s), money(v.revenue), pct(v.effective_rate), pct(v.margin, 0)])} />
             <div className="text-xs text-ink-muted mt-2">Estimated fee leakage {money(pr.fee_margin.fee_leakage_estimate)}</div>
           </Card>
           <Card>

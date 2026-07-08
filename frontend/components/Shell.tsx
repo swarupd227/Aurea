@@ -259,7 +259,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         <div className="px-5 py-5 flex items-center gap-2.5 border-b border-white/5">
           <Mark accent={branding.accent} />
           <div>
-            <div className="text-white font-semibold leading-none">Aurera</div>
+            <div className="text-white font-semibold leading-none">Aurea</div>
             <div className="text-[10px] uppercase tracking-wider text-navy-200/70 mt-1">
               Wealth Intelligence Platform
             </div>
