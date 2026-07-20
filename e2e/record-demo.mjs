@@ -1,5 +1,5 @@
 /**
- * Aurea — Captioned Demo Video v9
+ * Astra for Wealth — Captioned Demo Video v10
  *
  *  ✔ Branded intro slide (about:blank overlay, ARTIZENT + Aurea)
  *  ✔ Animated closing slide (about:blank, staggered reveal, ARTIZENT tagline)
@@ -60,12 +60,12 @@ async function applyCaption(page, { brand, brandColor, text, bg, textColor, bord
 }
 
 const caption = (page, text) => applyCaption(page, {
-  brand: "AUREA", brandColor: "#c8a35e", text,
+  brand: "ASTRA", brandColor: "#c8a35e", text,
   bg: "linear-gradient(to top, rgba(13,26,37,0.97), rgba(13,26,37,0.88))",
   textColor: "#f0f0f0", border: "2px solid #c8a35e",
 });
 const diffCaption = (page, text) => applyCaption(page, {
-  brand: "★  AUREA", brandColor: "#f5c842", text: "  " + text,
+  brand: "★  ASTRA", brandColor: "#f5c842", text: "  " + text,
   bg: "linear-gradient(to top, rgba(31,18,2,0.98), rgba(31,18,2,0.90))",
   textColor: "#fff8ed", border: "2px solid #f5c842",
 });
@@ -141,7 +141,7 @@ async function showIntroSlide(page, logoUri, aureaMark) {
 
       <!-- Aurea wordmark -->
       <div class="az" style="--dl:0.45s;font:700 60px/1 sans-serif;color:#fff;letter-spacing:-1px;margin-bottom:14px;opacity:0">
-        Aurea
+        Astra for Wealth
       </div>
 
       <!-- Tagline -->
@@ -179,7 +179,7 @@ async function showClosingSlide(page, logoUri, aureaMark) {
       <!-- Aurea section -->
       <div class="si" style="--dl:0.1s;margin-bottom:14px;opacity:0">${aureaMark}</div>
       <div class="fu" style="--dl:0.3s;font:700 38px/1 sans-serif;color:#fff;letter-spacing:-0.5px;margin-bottom:10px;opacity:0">
-        Aurea
+        Astra for Wealth
       </div>
       <div class="fu" style="--dl:0.5s;font:300 12px/1 sans-serif;color:#c8a35e;letter-spacing:3px;text-transform:uppercase;opacity:0">
         Governed AI for Wealth Management
@@ -233,7 +233,7 @@ async function main() {
   const sect = (t, ms) => step(t, (c) => sectionCaption(page, c), ms);
 
   console.log("\n═══════════════════════════════════════════════════════");
-  console.log("  Aurea Demo Recording  (v9)");
+  console.log("  Astra for Wealth — Demo Recording  (v10)");
   console.log("═══════════════════════════════════════════════════════\n");
 
   // ── INTRO SLIDE ────────────────────────────────────────────────────────────
@@ -392,7 +392,7 @@ async function main() {
   await norm("The compliance officer lands on Provenance — every decision and audit trail", 3500);
 
   // ── PART 2: DIFFERENTIATORS ───────────────────────────────────────────────
-  await sect("— What makes Aurea different —", 3000);
+  await sect("— What makes Astra for Wealth different —", 3000);
   console.log("\n  PART 2 — Differentiators\n");
 
   // D1 — Governed AI Workforce
@@ -474,7 +474,7 @@ async function main() {
     await tryClick(page, ['button:has-text("Branding")', '[role="tab"]:has-text("Branding")']);
     await sleep(700);
   });
-  await diff("The client Canvas carries the adviser's name and colours — not Aurea's", 3500, async () => {
+  await diff("The client Canvas carries the adviser's name and colours — not Astra's", 3500, async () => {
     await scroll(page, 300);
     await sleep(900);
   });

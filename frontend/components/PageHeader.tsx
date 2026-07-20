@@ -13,7 +13,7 @@ export default function PageHeader({
   back?: ReactNode;
 }) {
   useEffect(() => {
-    document.title = `${title} — Aurea`;
+    document.title = `${title} — Astra for Wealth`;
   }, [title]);
 
   return (
