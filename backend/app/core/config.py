@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     # ── Identity ──────────────────────────────────────────────────────────────
-    app_name: str = "Aurea"
+    app_name: str = "Astra for Wealth"
     app_env: str = "local"  # AUREA_ENV
     log_level: str = "INFO"  # AUREA_LOG_LEVEL
 

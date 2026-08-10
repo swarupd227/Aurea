@@ -126,7 +126,7 @@ async def mfa_setup(user: User = Depends(get_current_user), db: AsyncSession = D
     user.mfa_secret = secret
     await db.flush()
     totp = pyotp.TOTP(secret)
-    uri = totp.provisioning_uri(name=user.email, issuer_name="Aurea")
+    uri = totp.provisioning_uri(name=user.email, issuer_name="Astra for Wealth")
     return {"secret": secret, "otpauth_uri": uri}
 
 

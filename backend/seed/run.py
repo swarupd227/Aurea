@@ -51,11 +51,11 @@ async def seed() -> None:
             return
 
         firm = Firm(
-            slug="demo", name="Aurera", legal_name="Aurera",
+            slug="demo", name="Astra for Wealth", legal_name="Astra for Wealth",
             jurisdiction="NZ", regulator="FMA", base_currency="NZD",
             branding={
-                "primary": "#163a52", "accent": "#c8a35e", "logo_text": "Aurera",
-                "tagline": "Truly personal advice, at scale.",
+                "primary": "#163a52", "accent": "#c8a35e", "logo_text": "Astra for Wealth",
+                "tagline": "Governed AI for Wealth Management",
             },
             settings={
                 "ai_usage_policy": "AI outputs are assistive; a named adviser decides. "
@@ -70,7 +70,7 @@ async def seed() -> None:
         # ── Users (internal personas + a Canvas client) ──────────────────────
         adviser = User(firm_id=firm.id, email="sophie.adviser@aurea.demo", full_name="Sophie Tran",
                        hashed_password=PW, role=UserRole.ADVISER, title="Senior Adviser")
-        admin = User(firm_id=firm.id, email="admin@aurea.demo", full_name="Aurea Administrator",
+        admin = User(firm_id=firm.id, email="admin@aurea.demo", full_name="Platform Admin",
                      hashed_password=PW, role=UserRole.ADMIN, title="Platform Admin")
         compliance = User(firm_id=firm.id, email="compliance@aurea.demo", full_name="David Okafor",
                           hashed_password=PW, role=UserRole.COMPLIANCE, title="Head of Compliance")

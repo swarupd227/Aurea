@@ -27,8 +27,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Aurea — Wealth Intelligence Platform",
-    description="Governed, agentic wealth management. Aurea Core · Agents · Atlas · Studio · "
+    title="Astra for Wealth — Wealth Intelligence Platform",
+    description="Governed, agentic wealth management. Astra Core · Agents · Atlas · Studio · "
                 "Canvas · Provenance · Conduit.",
     version="1.0.0",
     lifespan=lifespan,
@@ -94,8 +94,8 @@ async def health():
 @app.get("/", tags=["meta"])
 async def root():
     return {
-        "platform": "Aurea — The Wealth Intelligence Platform",
-        "components": ["Aurea Core", "Aurea Agents", "Atlas", "Aurea Studio",
-                       "Aurea Canvas", "Provenance", "Conduit"],
+        "platform": "Astra for Wealth — The Wealth Intelligence Platform",
+        "components": ["Astra Core", "Astra Agents", "Atlas", "Studio",
+                       "Canvas", "Provenance", "Conduit"],
         "docs": "/docs",
     }

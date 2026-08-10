@@ -2254,7 +2254,7 @@ function BrandingTab() {
           <div className="space-y-4">
             <div>
               <label className="label">Logo / firm name displayed</label>
-              <input className="input" value={preview.logo_text || ""} onChange={(e) => set("logo_text", e.target.value)} placeholder="e.g. Aurea Wealth" />
+              <input className="input" value={preview.logo_text || ""} onChange={(e) => set("logo_text", e.target.value)} placeholder="e.g. Astra for Wealth" />
             </div>
             <div>
               <label className="label">Tagline</label>
