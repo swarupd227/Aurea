@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[aurea] backend starting (role=${AUREA_ROLE:-api})"
+ROLE="${AUREA_ROLE:-api}"
+echo "[aurea] starting (role=${ROLE})"
+
+if [ "${ROLE}" = "worker" ]; then
+  echo "[aurea] launching atlas worker..."
+  exec python -m app.atlas.worker
+fi
 
 if [ "${AUREA_RUN_MIGRATIONS:-false}" = "true" ]; then
   echo "[aurea] running database migrations..."
