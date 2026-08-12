@@ -101,4 +101,15 @@ CATALOGUE: dict[str, dict] = {
                 "Produces a per-household tax intelligence memo ranked by saving potential.",
         "checkpoint": "Adviser reviews memo before any restructure or client conversation; no external effect.",
     },
+    AgentKey.REGULATORY_COUNTDOWN: {
+        "name": "Regulatory Countdown", "stage": "Protect & govern",
+        "default_tier": AutonomyTier.TIER_1, "subject": "household",
+        "senses": "Household jurisdiction, estate values, retirement account balances, pension pot values, "
+                  "and proximity to critical regulatory deadlines (US estate tax sunset Jan 2026, "
+                  "UK IHT pension inclusion April 2027).",
+        "acts": "Surfaces time-critical adviser alerts ranked by urgency and dollar impact. "
+                "Proposes specific planning actions (SLATs, GRATs, pension drawdown, whole-of-life in trust) "
+                "before regulatory deadlines make planning impossible or more costly.",
+        "checkpoint": "Adviser reviews alerts and initiates client conversation; no external effect.",
+    },
 }

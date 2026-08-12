@@ -7,7 +7,7 @@ import {
   Sparkles, Settings, LogOut, PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare,
   MessageSquare, Gauge, BarChart3, Workflow, PiggyBank, Scale, Wand2, KeyRound, Eye, EyeOff, Bell,
   AlertTriangle, CheckCircle2, Building2, Shield, Copy, Check, History, UserCircle, Landmark, Target,
-  Receipt, Brain,
+  Receipt, Brain, Timer,
 } from "lucide-react";
 import { clearSession, getToken, getUser } from "@/lib/api";
 import RoleSwitcher from "./RoleSwitcher";
@@ -51,6 +51,7 @@ const STAFF_NAV: NavGroup[] = [
       { href: "/studio/estate", label: "Estate & succession", icon: Landmark, roles: [A, P, PT] },
       { href: "/studio/tax", label: "Tax intelligence", icon: Receipt, roles: [A, P, PT] },
       { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT] },
+      { href: "/studio/regulatory-countdown", label: "Regulatory countdown", icon: Timer, roles: [A, P, PT] },
       { href: "/studio/agent-history", label: "Agent history", icon: History, roles: [A, PT, C, B] },
     ],
   },

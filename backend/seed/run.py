@@ -415,6 +415,39 @@ EXTRA_HOUSEHOLDS = [
                  {"name": "Ingrid Andersen", "dob": "1972-10-08"}],
      "holdings": [("MSFT", 600, 280, 800), ("AAPL", 400, 170, 700), ("AGG", 300, 101, 600)],
      "goals": [{"name": "Retirement", "kind": "retirement", "target": 3500000, "years": 14, "share": 0.8}]},
+    # ── US jurisdiction: estate tax sunset exposure ───────────────────────────
+    {"name": "The Morrison Family", "segment": "private_wealth", "model": "balanced", "mandate": "advisory",
+     "custodian": "Schwab", "cash": 120000,
+     "values": {"jurisdiction": "US", "themes": ["growth", "ESG"]},
+     "persons": [
+         {"name": "Robert Morrison", "dob": "1959-03-15", "held_away": 1800000, "life_stage": "pre-retirement",
+          "tax": {"annual_income": 850000, "marginal_rate": 0.37, "filing_status": "married_joint",
+                  "ira_value": 3200000, "roth_value": 680000},
+          "properties": [{"address": "742 Nob Hill Blvd, San Francisco CA",
+                          "acquired_on": "2008-06-01", "value": 4500000, "type": "primary_residence"}]},
+         {"name": "Patricia Morrison", "dob": "1962-07-22",
+          "tax": {"annual_income": 180000, "marginal_rate": 0.32}},
+     ],
+     "holdings": [("AAPL", 2000, 140, 1800), ("MSFT", 1500, 250, 1600), ("AGG", 2000, 100, 1400),
+                  ("VNQ", 1000, 80, 1200), ("PPEF1", 2000, 100, 1500)],
+     "goals": [{"name": "Retirement", "kind": "retirement", "target": 8000000, "years": 8, "share": 0.8},
+               {"name": "Family legacy", "kind": "legacy", "target": 3000000, "years": 20, "share": 0.2}]},
+    # ── UK jurisdiction: IHT pension inclusion exposure ───────────────────────
+    {"name": "The Hartley Family", "segment": "private_wealth", "model": "balanced", "mandate": "advisory",
+     "custodian": "HSBC", "cash": 85000,
+     "values": {"jurisdiction": "UK"},
+     "persons": [
+         {"name": "James Hartley", "dob": "1958-09-12", "life_stage": "pre-retirement",
+          "tax": {"annual_income": 320000, "marginal_rate": 0.45,
+                  "pension_pot": 2200000, "isa_value": 240000, "lpa_status": "none"}},
+         {"name": "Catherine Hartley", "dob": "1961-04-05",
+          "tax": {"annual_income": 95000, "marginal_rate": 0.40,
+                  "pension_pot": 850000, "isa_value": 110000, "lpa_status": "none"}},
+     ],
+     "holdings": [("AAPL", 1200, 160, 1600), ("MSFT", 800, 290, 1500),
+                  ("AGG", 1500, 100, 1400), ("VNQ", 600, 88, 1300)],
+     "goals": [{"name": "Retirement", "kind": "retirement", "target": 5000000, "years": 10, "share": 0.8},
+               {"name": "IHT-efficient legacy", "kind": "legacy", "target": 2000000, "years": 25, "share": 0.2}]},
 ]
 
 
@@ -433,6 +466,10 @@ async def _extra_household(s, firm, adviser, instruments, balanced, growth, spec
             profile["held_away"] = pd["held_away"]
         if pd.get("life_stage"):
             profile["life_stage"] = pd["life_stage"]
+        if pd.get("tax"):
+            profile["tax"] = pd["tax"]
+        if pd.get("properties"):
+            profile["properties"] = pd["properties"]
         p = Person(firm_id=firm.id, household_id=hh.id, full_name=pd["name"],
                    preferred_name=pd["name"].split()[0],
                    date_of_birth=date.fromisoformat(pd["dob"]) if pd.get("dob") else None,

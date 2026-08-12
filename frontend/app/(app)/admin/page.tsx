@@ -102,7 +102,15 @@ function FirmTab() {
         <div className="space-y-3">
           <div><label className="label">Name</label><input className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Jurisdiction</label><input className="input" value={f.jurisdiction} onChange={(e) => set({ jurisdiction: e.target.value })} /></div>
+            <div>
+              <label className="label">Jurisdiction</label>
+              <select className="input" value={f.jurisdiction} onChange={(e) => set({ jurisdiction: e.target.value })}>
+                <option value="NZ">🇳🇿 NZ — New Zealand (FMA)</option>
+                <option value="US">🇺🇸 US — United States (SEC / FINRA)</option>
+                <option value="UK">🇬🇧 UK — United Kingdom (FCA)</option>
+                <option value="MULTI">🌐 Multi-jurisdiction</option>
+              </select>
+            </div>
             <div><label className="label">Regulator</label><input className="input" value={f.regulator || ""} onChange={(e) => set({ regulator: e.target.value })} /></div>
           </div>
           <div><label className="label">AI usage policy</label>

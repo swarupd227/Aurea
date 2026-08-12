@@ -14,6 +14,7 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
     from app.agents.estate_succession import EstateSucessionAgent
     from app.agents.meeting_companion import MeetingCompanionAgent
     from app.agents.behavioural_finance import BehaviouralFinanceAgent
+    from app.agents.regulatory_countdown import RegulatoryCountdownAgent
     from app.agents.tax_intelligence import TaxIntelligenceAgent
     from app.agents.meeting_prep import MeetingPrepAgent
     from app.agents.next_best_action import NextBestActionAgent
@@ -33,6 +34,7 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
         EstateSucessionAgent(),
         TaxIntelligenceAgent(),
         BehaviouralFinanceAgent(),
+        RegulatoryCountdownAgent(),
     ]
     return {a.key: a for a in agents}
 

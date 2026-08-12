@@ -105,6 +105,7 @@ class AgentKey(StrEnum):
     ESTATE_SUCCESSION = "estate_succession"
     TAX_INTELLIGENCE = "tax_intelligence"
     BEHAVIOURAL_FINANCE = "behavioural_finance"
+    REGULATORY_COUNTDOWN = "regulatory_countdown"
 
 
 class ActivityKind(StrEnum):

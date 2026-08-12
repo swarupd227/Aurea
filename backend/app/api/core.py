@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
-from app.aurea_core import behavioural, goal_tradeoff, planning, retirement, tax_intelligence
+from app.aurea_core import behavioural, goal_tradeoff, planning, regulatory_countdown, retirement, tax_intelligence
 from app.aurea_core.graph import household_brain, list_households
 from app.core.db import get_db
 from app.core.security import get_current_user, staff_user
@@ -256,6 +256,26 @@ async def household_tax_intel(
     if not result:
         raise HTTPException(status_code=404, detail="Household not found")
     return result
+
+
+@router.get("/households/{household_id}/regulatory-countdown")
+async def household_regulatory_countdown(
+    household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """Jurisdiction-aware regulatory deadline analysis: US estate tax sunset, UK IHT pension inclusion."""
+    result = await regulatory_countdown.for_household(db, household_id, firm.jurisdiction or "NZ")
+    if not result:
+        raise HTTPException(status_code=404, detail="Household not found")
+    return result
+
+
+@router.get("/regulatory-countdown/firm")
+async def firm_regulatory_countdown(
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """Firm-wide regulatory countdown — all US and UK households with active countdown analyses."""
+    results = await regulatory_countdown.for_firm(db, firm.id, firm.jurisdiction or "NZ")
+    return {"results": results, "total": len(results)}
 
 
 @router.post("/portfolio-whatif")
