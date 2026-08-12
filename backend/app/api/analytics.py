@@ -61,6 +61,13 @@ async def get_maturity():
     return {"maturity": overview.MATURITY, "layers": overview.LAYER_META}
 
 
+@router.get("/tax-book")
+async def get_tax_book(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """Book-level tax intelligence: aggregated loss-harvest, PIE, KiwiSaver, and bright-line across all households."""
+    from app.aurea_core import tax_intelligence
+    return await tax_intelligence.for_firm(db, firm.id)
+
+
 @router.get("/scorecards")
 async def get_scorecards(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     """Per-adviser scorecard: AUM, household count, recommendation throughput, meetings held."""

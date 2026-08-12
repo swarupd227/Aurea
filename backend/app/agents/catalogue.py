@@ -70,4 +70,35 @@ CATALOGUE: dict[str, dict] = {
                 "writes to the decision ledger.",
         "checkpoint": "Flags route to compliance; can pause an agent's autonomy automatically.",
     },
+    AgentKey.ESTATE_SUCCESSION: {
+        "name": "Estate & Succession Planning", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_1, "subject": "household",
+        "senses": "Full family wealth picture: trust structures, heir readiness, private-asset concentration, "
+                  "legacy goals, and NZ Trusts Act 2019 governance obligations.",
+        "acts": "Identifies succession gaps, scores trust governance completeness, flags heir mandate gaps, "
+                "and produces an estate health memo for the next adviser–client conversation.",
+        "checkpoint": "Adviser reviews gaps and memo before raising in client meeting; no external effect.",
+    },
+    AgentKey.BEHAVIOURAL_FINANCE: {
+        "name": "Behavioural Finance", "stage": "Advise & engage",
+        "default_tier": AutonomyTier.TIER_1, "subject": "household",
+        "senses": "Recommendation decision history (approve / modify / dismiss patterns), meeting transcripts, "
+                  "and client messages for recency bias, anchoring, loss-aversion, and status quo signals. "
+                  "Also monitors portfolio drawdown against the stress-playbook threshold.",
+        "acts": "Builds a cognitive bias profile per client, detects behavioural signals in text, "
+                "drafts a personalised stress-playbook message when drawdown exceeds threshold, "
+                "and surfaces adviser coaching framing tailored to the dominant bias.",
+        "checkpoint": "Adviser reviews behavioural memo and coaching advice before raising in client meeting; "
+                      "stress message requires adviser approval before sending.",
+    },
+    AgentKey.TAX_INTELLIGENCE: {
+        "name": "Tax Intelligence", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_1, "subject": "household",
+        "senses": "All mandates, TaxLots, current prices, and client tax profiles (marginal rate, PIR, "
+                  "KiwiSaver rate, property acquisition dates) across the full book.",
+        "acts": "Scans for loss-harvesting opportunities, PIE fund mismatches, KiwiSaver contribution gaps, "
+                "bright-line property thresholds, and suboptimal withdrawal sequencing. "
+                "Produces a per-household tax intelligence memo ranked by saving potential.",
+        "checkpoint": "Adviser reviews memo before any restructure or client conversation; no external effect.",
+    },
 }

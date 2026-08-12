@@ -101,14 +101,15 @@ async def household_brain(session: AsyncSession, household_id: uuid.UUID) -> dic
         "mandates": [
             {"id": str(m.id), "name": m.name, "mandate_type": m.mandate_type,
              "suitability": m.suitability, "constraints": m.constraints,
-             "model_portfolio_id": str(m.model_portfolio_id) if m.model_portfolio_id else None}
+             "model_portfolio_id": str(m.model_portfolio_id) if m.model_portfolio_id else None,
+             "person_id": str(m.person_id) if m.person_id else None}
             for m in mandates
         ],
         "accounts": account_views,
         "goals": [
             {"id": str(g.id), "name": g.name, "kind": g.kind,
              "target_amount": float(g.target_amount), "target_date": g.target_date.isoformat() if g.target_date else None,
-             "assumptions": g.assumptions}
+             "assumptions": g.assumptions, "priority": g.priority}
             for g in goals
         ],
         "relationships": related_edges,

@@ -158,12 +158,32 @@ async def seed() -> None:
                      email="wei.chen@aurea.demo", date_of_birth=date(1962, 4, 12),
                      segment=ClientSegment.PRIVATE_WEALTH,
                      kyc={"id_verified": True, "aml_screened": True, "status": "verified"},
-                     profile={"risk_profile": "balanced", "life_stage": "pre-retirement",
-                              "held_away": 620000})
+                     profile={
+                         "risk_profile": "balanced", "life_stage": "pre-retirement",
+                         "held_away": 620000,
+                         "tax": {
+                             "marginal_rate": 0.33, "pir": 0.28,
+                             "kiwisaver_rate": 0.03, "annual_income": 280000,
+                         },
+                         "properties": [
+                             # Approaching 2-year bright-line (safe ~Nov 2026)
+                             {"address": "12 Harbour View Tce, Auckland",
+                              "acquired_on": "2024-11-15", "value": 1850000},
+                             # Approaching 10-year bright-line (safe Jan 2027)
+                             {"address": "47 Lakeside Dr, Queenstown",
+                              "acquired_on": "2017-01-20", "value": 1200000},
+                         ],
+                     })
         mei = Person(firm_id=firm.id, household_id=chen.id, full_name="Mei Chen", preferred_name="Mei",
                      date_of_birth=date(1965, 9, 3), segment=ClientSegment.PRIVATE_WEALTH,
                      kyc={"id_verified": True, "aml_screened": True, "status": "verified"},
-                     profile={"risk_profile": "balanced"})
+                     profile={
+                         "risk_profile": "balanced",
+                         "tax": {
+                             "marginal_rate": 0.175, "pir": 0.175,
+                             "kiwisaver_rate": 0.03, "annual_income": 120000,
+                         },
+                     })
         lucas = Person(firm_id=firm.id, household_id=chen.id, full_name="Lucas Chen", preferred_name="Lucas",
                        date_of_birth=date(1995, 1, 20), segment=ClientSegment.NEXT_GEN, is_next_gen=True,
                        kyc={"id_verified": False, "aml_screened": False, "status": "pending"},
@@ -195,7 +215,8 @@ async def seed() -> None:
         # Advisory growth mandate for the couple.
         couple_mandate = Mandate(firm_id=firm.id, person_id=wei.id, name="Wei & Mei — Growth",
                                  mandate_type=MandateType.ADVISORY,
-                                 suitability={"risk_profile": "growth"}, constraints={"cgt_budget": 10000},
+                                 suitability={"risk_profile": "growth"},
+                                 constraints={"cgt_budget": 10000, "account_type": "direct"},
                                  model_portfolio_id=growth.id)
         s.add_all([trust_mandate, couple_mandate])
         await s.flush()

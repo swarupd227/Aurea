@@ -6,7 +6,8 @@ import {
   LayoutDashboard, Users, ClipboardCheck, Bot, MessageSquareText, ShieldCheck,
   Sparkles, Settings, LogOut, PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare,
   MessageSquare, Gauge, BarChart3, Workflow, PiggyBank, Scale, Wand2, KeyRound, Eye, EyeOff, Bell,
-  AlertTriangle, CheckCircle2, Building2, Shield, Copy, Check, History, UserCircle,
+  AlertTriangle, CheckCircle2, Building2, Shield, Copy, Check, History, UserCircle, Landmark, Target,
+  Receipt, Brain,
 } from "lucide-react";
 import { clearSession, getToken, getUser } from "@/lib/api";
 import RoleSwitcher from "./RoleSwitcher";
@@ -47,6 +48,9 @@ const STAFF_NAV: NavGroup[] = [
       { href: "/studio/reports", label: "Reports", icon: FileText, roles: [A, P, R] },
       { href: "/studio/messages", label: "Messages", icon: MessageSquare, roles: [A, P] },
       { href: "/studio/family", label: "Family aggregate", icon: UserCircle, roles: [A, P, PT] },
+      { href: "/studio/estate", label: "Estate & succession", icon: Landmark, roles: [A, P, PT] },
+      { href: "/studio/tax", label: "Tax intelligence", icon: Receipt, roles: [A, P, PT] },
+      { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT] },
       { href: "/studio/agent-history", label: "Agent history", icon: History, roles: [A, PT, C, B] },
     ],
   },
@@ -59,6 +63,7 @@ const STAFF_NAV: NavGroup[] = [
     items: [
       { href: "/canvas", label: "Client view — Canvas", icon: Sparkles, roles: [A, P, B] },
       { href: "/canvas/retirement", label: "Client view — Retirement", icon: PiggyBank, roles: [A, P, B] },
+      { href: "/canvas/goals", label: "Client view — Goals", icon: Target, roles: [A, P, B] },
     ],
   },
   {
@@ -249,6 +254,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     ? [{ title: "Experience", items: [
         { href: "/canvas", label: "My wealth", icon: Sparkles },
         { href: "/canvas/retirement", label: "My retirement", icon: PiggyBank },
+        { href: "/canvas/goals", label: "My goals", icon: Target },
       ] }]
     : navForRole(user.role);
 

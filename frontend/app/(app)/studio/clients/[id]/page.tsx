@@ -18,6 +18,8 @@ const HOUSEHOLD_AGENTS = [
   { key: "research_reporting", label: "Research note" },
   { key: "next_best_action", label: "Next-best-action" },
   { key: "client_care", label: "Client care" },
+  { key: "estate_succession", label: "Estate & succession" },
+  { key: "behavioural_finance", label: "Behavioural finance" },
 ];
 
 export default function ClientDetail() {

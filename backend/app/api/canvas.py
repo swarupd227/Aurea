@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.api.deps import current_firm
-from app.aurea_core import planning, retirement
+from app.aurea_core import goal_tradeoff, planning, retirement
 from app.aurea_core.graph import household_brain
 from app.core.db import get_db, utcnow
 from app.core.security import get_current_user
@@ -217,6 +217,27 @@ async def canvas_retirement(
     plan = await retirement.for_household(db, hid, overrides=overrides)
     if not plan:
         raise HTTPException(status_code=404, detail="No plan available")
+    return plan
+
+
+@router.post("/goals")
+async def canvas_goals(
+    body: dict | None = None,
+    household_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user), firm: Firm = Depends(current_firm),
+    db: AsyncSession = Depends(get_db),
+):
+    """Multi-goal trade-off view for the client canvas.  Accepts same body as the staff endpoint."""
+    hid = await _resolve_household(db, user, household_id)
+    body = body or {}
+    plan = await goal_tradeoff.for_household(
+        db, hid,
+        priority_overrides=body.get("priorities"),
+        goal_overrides=body.get("goal_overrides"),
+        annual_income=body.get("annual_income"),
+    )
+    if not plan:
+        raise HTTPException(status_code=404, detail="No goals plan available")
     return plan
 
 

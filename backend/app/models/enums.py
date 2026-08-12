@@ -102,6 +102,9 @@ class AgentKey(StrEnum):
     NEXT_BEST_ACTION = "next_best_action"
     CLIENT_CARE = "client_care"
     CONDUCT_SURVEILLANCE = "conduct_surveillance"
+    ESTATE_SUCCESSION = "estate_succession"
+    TAX_INTELLIGENCE = "tax_intelligence"
+    BEHAVIOURAL_FINANCE = "behavioural_finance"
 
 
 class ActivityKind(StrEnum):

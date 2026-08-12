@@ -11,7 +11,10 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
     from app.agents.client_care import ClientCareAgent
     from app.agents.conduct_surveillance import ConductSurveillanceAgent
     from app.agents.drift_rebalancing import DriftRebalancingAgent
+    from app.agents.estate_succession import EstateSucessionAgent
     from app.agents.meeting_companion import MeetingCompanionAgent
+    from app.agents.behavioural_finance import BehaviouralFinanceAgent
+    from app.agents.tax_intelligence import TaxIntelligenceAgent
     from app.agents.meeting_prep import MeetingPrepAgent
     from app.agents.next_best_action import NextBestActionAgent
     from app.agents.onboarding import OnboardingAgent
@@ -27,6 +30,9 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
         NextBestActionAgent(),
         ClientCareAgent(),
         ConductSurveillanceAgent(),
+        EstateSucessionAgent(),
+        TaxIntelligenceAgent(),
+        BehaviouralFinanceAgent(),
     ]
     return {a.key: a for a in agents}
 

@@ -180,7 +180,11 @@ async def book_scan(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     """Run a monitoring agent across the whole book (firm subject) and surface new items."""
-    key = AgentKey.CLIENT_CARE if agent == "client_care" else AgentKey.NEXT_BEST_ACTION
+    key = (
+        AgentKey.CLIENT_CARE if agent == "client_care"
+        else AgentKey.ESTATE_SUCCESSION if agent == "estate_succession"
+        else AgentKey.NEXT_BEST_ACTION
+    )
     try:
         run = await run_agent(db, firm=firm, agent_key=key,
                               subject=Subject("firm", firm.id, firm.name), trigger="book_scan")
