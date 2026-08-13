@@ -77,7 +77,8 @@ async def _drift_summary(session: AsyncSession, firm_id: uuid.UUID) -> dict:
         if needs:
             breached += 1
         rows.append({"mandate": m.name, "max_drift": round(max_drift, 4),
-                     "drift_band": float(model.drift_band), "needs_rebalance": needs})
+                     "drift_band": float(model.drift_band), "needs_rebalance": needs,
+                     "benchmark_symbol": getattr(model, "benchmark_symbol", None)})
     return {"mandates_monitored": len(rows), "mandates_breached": breached,
             "by_mandate": sorted(rows, key=lambda r: -r["max_drift"])}
 
@@ -155,11 +156,32 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
     goals = await goal_projections_all(brains)
     on_track = sum(1 for g in goals if g["on_track"])
 
+    # Benchmark alpha: look up any mandate's benchmark in price_window for comparison.
+    mandates_with_bm = (
+        await session.execute(
+            select(Mandate).where(Mandate.firm_id == firm_id, Mandate.model_portfolio_id.isnot(None))
+        )
+    ).scalars().all()
+    benchmark_return: float | None = None
+    benchmark_symbol_used: str | None = None
+    for mb in mandates_with_bm:
+        mp = await session.get(ModelPortfolio, mb.model_portfolio_id)
+        bm_sym = getattr(mp, "benchmark_symbol", None) if mp else None
+        if bm_sym and bm_sym in price_window:
+            win = price_window[bm_sym]
+            if win["start"] and win["end"] and win["start"] > 0:
+                benchmark_return = round((win["end"] - win["start"]) / win["start"], 4)
+                benchmark_symbol_used = bm_sym
+                break
+    alpha = round(total_return - benchmark_return, 4) if benchmark_return is not None else None
+
     return {
         "performance": {"total_return": total_return, "period": period or "current holdings",
                         "market_value": round(total_mv, 2), "start_value": round(start_mv, 2),
                         "cost_basis": round(total_cost, 2), "unrealised_gain": round(total_mv - total_cost, 2),
-                        "attribution": attribution},
+                        "attribution": attribution,
+                        "benchmark_symbol": benchmark_symbol_used,
+                        "benchmark_return": benchmark_return, "alpha": alpha},
         "risk": {**risk, "stress_test": stress, "allocation": allocation},
         "drift": await _drift_summary(session, firm_id),
         "tax": {"harvestable_losses": round(harvestable, 2), "unrealised_gains": round(unrealised_gains, 2),

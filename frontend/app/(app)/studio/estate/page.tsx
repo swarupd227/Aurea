@@ -157,6 +157,26 @@ function HouseholdEstateCard({ household }: { household: any }) {
             </div>
           )}
 
+          {/* Step-up in basis (US households) */}
+          {data.step_up_basis && (
+            <div className="rounded-xl border border-gold-200 bg-gold-soft/20 p-4">
+              <h4 className="text-sm font-semibold text-ink mb-1 flex items-center gap-1.5">
+                <TrendingUp className="h-4 w-4 text-gold-600" /> IRC §1014 Step-up in basis
+              </h4>
+              <div className="flex items-center gap-6 mt-2 flex-wrap">
+                <div>
+                  <div className="text-xs text-ink-muted">Unrealised gain</div>
+                  <div className="text-base font-semibold text-ink">{money(data.step_up_basis.unrealised_gain)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-ink-muted">Step-up benefit at death</div>
+                  <div className="text-base font-semibold text-positive">{money(data.step_up_basis.step_up_benefit)}</div>
+                </div>
+              </div>
+              <p className="text-xs text-ink-muted mt-2">{data.step_up_basis.note}</p>
+            </div>
+          )}
+
           {/* Succession gaps */}
           {succession_gaps?.length > 0 && (
             <div>
@@ -294,6 +314,16 @@ export default function EstatePage() {
         title="Estate & Succession"
         sub="Trust governance, wealth concentration, heir readiness, and jurisdiction-aware compliance — across the book."
       />
+
+      {/* Great Wealth Transfer context */}
+      <div className="mb-5 rounded-xl border border-gold-200 bg-gold-soft/30 px-4 py-3 flex items-start gap-3">
+        <div className="h-5 w-5 shrink-0 mt-0.5 rounded-full bg-gold-400/30 flex items-center justify-center text-gold-700 text-xs font-bold">$</div>
+        <p className="text-sm text-ink-soft leading-relaxed">
+          <span className="font-semibold text-ink">The greatest intergenerational wealth transfer in history is underway.</span>{" "}
+          An estimated $84 trillion will pass from baby boomers to millennials and Gen X over the next two decades.
+          Heir readiness, trust governance, and proactive estate structuring have never been more consequential.
+        </p>
+      </div>
 
       {/* Summary tiles */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

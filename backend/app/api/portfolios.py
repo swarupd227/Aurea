@@ -29,6 +29,7 @@ class ModelPortfolioIn(BaseModel):
     name: str
     description: str | None = None
     drift_band: float = 0.05
+    benchmark_symbol: str | None = None
 
 
 class TargetWeightIn(BaseModel):
@@ -42,6 +43,7 @@ def _mp_dict(mp: ModelPortfolio, targets: list[TargetAllocation] | None = None) 
         "name": mp.name,
         "description": mp.description,
         "drift_band": float(mp.drift_band),
+        "benchmark_symbol": getattr(mp, "benchmark_symbol", None),
         "targets": [
             {"asset_class": t.asset_class, "target_weight": float(t.target_weight)}
             for t in (targets or [])
@@ -85,7 +87,7 @@ async def create_model_portfolio(
 ):
     mp = ModelPortfolio(
         firm_id=firm.id, name=body.name, description=body.description,
-        drift_band=body.drift_band,
+        drift_band=body.drift_band, benchmark_symbol=body.benchmark_symbol,
     )
     db.add(mp)
     await db.flush()
@@ -121,6 +123,8 @@ async def update_model_portfolio(
     if body.description is not None:
         mp.description = body.description
     mp.drift_band = body.drift_band
+    if body.benchmark_symbol is not None:
+        mp.benchmark_symbol = body.benchmark_symbol
     await db.flush()
     return {"ok": True}
 

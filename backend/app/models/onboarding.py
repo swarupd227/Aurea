@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import JSON, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -19,8 +19,10 @@ class OnboardingCase(Base):
 
     firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
     prospect_name: Mapped[str] = mapped_column(String(200))
-    is_entity: Mapped[bool] = mapped_column(default=False)  # individual vs trust/foundation
+    is_entity: Mapped[bool] = mapped_column(default=False)
     entity_type: Mapped[str | None] = mapped_column(String(24))
+    # L200: structured registration type (Individual, IRA, Trust, LLC, etc.)
+    registration_type: Mapped[str | None] = mapped_column(String(32))
     segment: Mapped[ClientSegment] = mapped_column(String(32), default=ClientSegment.PRIVATE_WEALTH)
     status: Mapped[OnboardingStatus] = mapped_column(String(16), default=OnboardingStatus.INTAKE, index=True)
 
@@ -28,6 +30,8 @@ class OnboardingCase(Base):
     intake: Mapped[dict] = mapped_column(JSON, default=dict)
     # AML/CFT screening summary (set during sense()).
     screening: Mapped[dict] = mapped_column(JSON, default=dict)
+    # L200: per-party screening disposition log [{party, result, score, disposition_note, screened_at}]
+    screening_log: Mapped[list] = mapped_column(JSON, default=list)
     # Agent proposal: suitability + recommended mandate set-up.
     proposal: Mapped[dict] = mapped_column(JSON, default=dict)
     # Exceptions requiring a human decision.
@@ -35,9 +39,26 @@ class OnboardingCase(Base):
     # References to materialised graph nodes once approved.
     materialized: Mapped[dict] = mapped_column(JSON, default=dict)
     sla_days: Mapped[int] = mapped_column(Integer, default=30)
+    # NIGO: Not In Good Order
+    nigo_flag: Mapped[bool] = mapped_column(Boolean, default=False)
+    nigo_reason: Mapped[str | None] = mapped_column(Text)
+    # L200: structured NIGO root-cause taxonomy
+    nigo_root_cause: Mapped[str | None] = mapped_column(String(32))
+    # L200: AML customer risk rating (low/medium/high)
+    aml_risk_tier: Mapped[str | None] = mapped_column(String(16))
+    aml_risk_score: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    # L200: CDD vs EDD depth (none/cdd/edd_pending/edd_complete)
+    edd_status: Mapped[str | None] = mapped_column(String(16))
+    # L200: DOL PTE 2020-02 rollover rationale status (pending/generated/reviewed)
+    pte_status: Mapped[str | None] = mapped_column(String(16))
+    # L200: pre-submission readiness score 0–100 from NIGO Prevention agent
+    readiness_score: Mapped[int | None] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text)
 
     documents: Mapped[list["OnboardingDocument"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan"
+    )
+    beneficial_owners: Mapped[list["BeneficialOwner"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
 
@@ -59,6 +80,26 @@ class OnboardingDocument(Base):
     verified: Mapped[bool] = mapped_column(default=False)
 
     case: Mapped["OnboardingCase"] = relationship(back_populates="documents")
+
+
+class BeneficialOwner(Base):
+    """CDD Rule (31 CFR 1010.230) — 25%+ owners + control person for entity accounts."""
+    __tablename__ = "beneficial_owner"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("onboarding_case.id", ondelete="CASCADE"), index=True
+    )
+    legal_name: Mapped[str] = mapped_column(String(200))
+    dob: Mapped[str | None] = mapped_column(String(16))       # ISO date YYYY-MM-DD
+    address: Mapped[str | None] = mapped_column(Text)
+    id_number: Mapped[str | None] = mapped_column(String(64)) # passport / SSN (encrypted in prod)
+    ownership_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    is_control_person: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_stale: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    case: Mapped["OnboardingCase"] = relationship(back_populates="beneficial_owners")
 
 
 class BookIntegrationBatch(Base):

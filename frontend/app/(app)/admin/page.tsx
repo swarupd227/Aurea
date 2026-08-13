@@ -479,7 +479,7 @@ const ASSET_CLASSES = ["equity", "fixed_income", "alternatives", "cash", "proper
 function ModelPortfoliosTab() {
   const { data, loading, refetch } = useApi<any[]>("/api/admin/model-portfolios");
   const [creating, setCreating] = useState(false);
-  const [newForm, setNewForm] = useState({ name: "", description: "", drift_band: "5" });
+  const [newForm, setNewForm] = useState({ name: "", description: "", drift_band: "5", benchmark_symbol: "" });
   const [editing, setEditing] = useState<any | null>(null);
   const [weights, setWeights] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -487,8 +487,8 @@ function ModelPortfoliosTab() {
   async function create() {
     setBusy(true);
     try {
-      await api("/api/admin/model-portfolios", { body: { name: newForm.name, description: newForm.description, drift_band: Number(newForm.drift_band) / 100 } });
-      setNewForm({ name: "", description: "", drift_band: "5" }); setCreating(false); refetch();
+      await api("/api/admin/model-portfolios", { body: { name: newForm.name, description: newForm.description, drift_band: Number(newForm.drift_band) / 100, benchmark_symbol: newForm.benchmark_symbol || null } });
+      setNewForm({ name: "", description: "", drift_band: "5", benchmark_symbol: "" }); setCreating(false); refetch();
     } finally { setBusy(false); }
   }
 
@@ -526,6 +526,7 @@ function ModelPortfoliosTab() {
             <div><label className="label">Name</label><input className="input" value={newForm.name} onChange={(e) => setNewForm({ ...newForm, name: e.target.value })} placeholder="e.g. Conservative Growth" /></div>
             <div><label className="label">Description</label><input className="input" value={newForm.description} onChange={(e) => setNewForm({ ...newForm, description: e.target.value })} placeholder="Optional" /></div>
             <div><label className="label">Drift band %</label><input className="input w-32" type="number" value={newForm.drift_band} onChange={(e) => setNewForm({ ...newForm, drift_band: e.target.value })} /></div>
+            <div><label className="label">Benchmark symbol <span className="font-normal text-ink-muted">(optional, e.g. SPY, ^NZSX50G)</span></label><input className="input w-48" value={newForm.benchmark_symbol} onChange={(e) => setNewForm({ ...newForm, benchmark_symbol: e.target.value })} placeholder="e.g. SPY" /></div>
             <div className="flex gap-2">
               <button className="btn-primary" disabled={busy || !newForm.name.trim()} onClick={create}>{busy ? "Creating…" : "Create"}</button>
               <button className="btn-ghost" onClick={() => setCreating(false)}>Cancel</button>
@@ -544,7 +545,7 @@ function ModelPortfoliosTab() {
                 <div>
                   <div className="font-medium text-ink">{mp.name}</div>
                   {mp.description && <div className="text-xs text-ink-muted mt-0.5">{mp.description}</div>}
-                  <div className="text-xs text-ink-muted mt-0.5">Drift band: {(mp.drift_band * 100).toFixed(1)}%</div>
+                  <div className="text-xs text-ink-muted mt-0.5">Drift band: {(mp.drift_band * 100).toFixed(1)}%{mp.benchmark_symbol ? ` · Benchmark: ${mp.benchmark_symbol}` : ""}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button className="btn-outline text-xs py-0.5 px-2" onClick={() => { setEditing(mp.id); const w: Record<string, string> = {}; (mp.targets || []).forEach((t: any) => { w[t.asset_class] = String(Math.round(t.target_weight * 100)); }); setWeights(w); }}>

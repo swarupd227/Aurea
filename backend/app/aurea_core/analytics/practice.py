@@ -13,6 +13,7 @@ from app.aurea_core.analytics._common import gather_brains, positions_of
 from app.models.enums import OnboardingStatus, RecommendationStatus
 from app.models.governance import AgentRun, Recommendation
 from app.models.onboarding import BookIntegrationBatch, OnboardingCase
+from app.models.portfolio import Transaction
 
 
 async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] | None = None) -> dict:
@@ -56,6 +57,16 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
 
     fee_leakage = round(rev_total * 0.03, 2)  # indicative 3% realisation leakage
 
+    # ── Net New Assets (NNA) & ROA bps ──
+    txns = (await session.execute(select(Transaction).where(Transaction.firm_id == firm_id))).scalars().all()
+    _INFLOWS = {"buy", "capital_call"}
+    _OUTFLOWS = {"sell", "distribution"}
+    nna = (
+        sum(float(t.amount or 0) for t in txns if t.txn_type in _INFLOWS)
+        - sum(float(t.amount or 0) for t in txns if t.txn_type in _OUTFLOWS)
+    )
+    roa_bps = round((rev_total / aum_total) * 10_000, 1) if aum_total else 0.0
+
     # ── Growth, prospecting & referral ──
     pipeline = (
         await session.execute(
@@ -74,6 +85,23 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
             held = max(aum / share - aum, 0.0) if share else 0.0
         consolidation += held
     referral_ready = sum(1 for r in rows if r["margin"] > 0.4 and r["aum"] > 500_000)
+
+    # ── NIGO rate ──
+    total_cases = (
+        await session.execute(select(func.count(OnboardingCase.id)).where(OnboardingCase.firm_id == firm_id))
+    ).scalar_one()
+    try:
+        nigo_cases = (
+            await session.execute(
+                select(func.count(OnboardingCase.id)).where(
+                    OnboardingCase.firm_id == firm_id,
+                    OnboardingCase.nigo_flag.is_(True),
+                )
+            )
+        ).scalar_one()
+    except Exception:
+        nigo_cases = 0
+    nigo_rate = round(nigo_cases / total_cases, 3) if total_cases else 0.0
 
     # ── M&A / book-integration ──
     batches = (await session.execute(select(BookIntegrationBatch).where(BookIntegrationBatch.firm_id == firm_id))).scalars().all()
@@ -95,7 +123,9 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
                                           "effective_rate": round(v["revenue"] / v["aum"], 4) if v["aum"] else 0.0}
                                       for s, v in margin_by_segment.items()}},
         "growth": {"pipeline_cases": pipeline, "consolidation_opportunity": round(consolidation, 2),
-                   "referral_ready_clients": referral_ready},
+                   "referral_ready_clients": referral_ready,
+                   "net_new_assets": round(nna, 2), "roa_bps": round(roa_bps, 1),
+                   "nigo_cases": nigo_cases, "nigo_rate": nigo_rate},
         "book_integration": {"acquisitions": len(batches), "committed": committed,
                              "open_conflicts": total_conflicts,
                              "reconciliation_progress": round(committed / len(batches), 2) if batches else 0.0},

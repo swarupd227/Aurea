@@ -80,6 +80,41 @@ async def bootstrap() -> None:
         # Wave I: Holding alerts on SurveillanceFlag
         await conn.execute(text("ALTER TABLE surveillance_flag ADD COLUMN IF NOT EXISTS kind VARCHAR(32)"))
         await conn.execute(text("ALTER TABLE surveillance_flag ADD COLUMN IF NOT EXISTS attributes JSONB NOT NULL DEFAULT '{}'::jsonb"))
+        # Wave J: L100 additions — benchmark per model, NIGO tracking
+        await conn.execute(text("ALTER TABLE model_portfolio ADD COLUMN IF NOT EXISTS benchmark_symbol VARCHAR(32)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS nigo_flag BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS nigo_reason TEXT"))
+        # Wave K: L200 additions — registration type, AML risk rating, EDD/PTE status, BO table
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS registration_type VARCHAR(32)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS nigo_root_cause VARCHAR(32)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS aml_risk_tier VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS aml_risk_score NUMERIC(5,2)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS edd_status VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS pte_status VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS readiness_score INTEGER"))
+        await conn.execute(text(
+            "ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS screening_log JSONB NOT NULL DEFAULT '[]'::jsonb"
+        ))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS beneficial_owner (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                firm_id UUID NOT NULL REFERENCES firm(id) ON DELETE CASCADE,
+                case_id UUID NOT NULL REFERENCES onboarding_case(id) ON DELETE CASCADE,
+                legal_name VARCHAR(200) NOT NULL,
+                dob VARCHAR(16),
+                address TEXT,
+                id_number VARCHAR(64),
+                ownership_pct NUMERIC(5,2),
+                is_control_person BOOLEAN NOT NULL DEFAULT FALSE,
+                is_stale BOOLEAN NOT NULL DEFAULT FALSE,
+                notes TEXT,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now()
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_beneficial_owner_case_id ON beneficial_owner(case_id)"
+        ))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

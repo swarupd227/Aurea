@@ -2,7 +2,7 @@
 import { ReactNode, useState } from "react";
 import {
   TrendingUp, Users, Wallet, ShieldCheck, Activity, Layers, AlertTriangle, Target,
-  PiggyBank, GitMerge, Database, BarChart3, Zap, Clock, CheckCircle2, XCircle,
+  PiggyBank, GitMerge, Database, BarChart3, Zap, Clock, CheckCircle2, XCircle, ClipboardList,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, Spinner, SeverityBadge } from "@/components/ui";
@@ -14,6 +14,7 @@ export default function Analytics() {
   const { data, loading } = useApi<any>("/api/analytics/overview");
   const { data: adoptionData, loading: adoptionLoading } = useApi<any>("/api/analytics/adoption");
   const { data: scorecardData, loading: scorecardLoading } = useApi<any>("/api/analytics/scorecards");
+  const { data: obData, loading: obLoading } = useApi<any>("/api/analytics/onboarding");
   const [tab, setTab] = useState("overview");
   if (loading || !data || !data.headline || !data.client_intelligence || !data.portfolio || !data.advice || !data.practice || !data.risk_data) return <Spinner label="Loading analytics…" />;
   const h = data.headline;
@@ -27,6 +28,7 @@ export default function Analytics() {
     { id: "risk", label: "Risk & data" },
     { id: "adoption", label: "Adoption & ROI" },
     { id: "scorecards", label: "Adviser Scorecards" },
+    { id: "onboarding", label: "Onboarding ops" },
   ];
 
   return (
@@ -122,10 +124,19 @@ export default function Analytics() {
       <Layer active={tab === "portfolio"} n="2.2" title="Portfolio & investment analytics" q="Is this the right advice?" icon={BarChart3}>
         <div className="grid lg:grid-cols-3 gap-4">
           <Card>
-            <CardTitle>Performance & attribution{pf.performance.period ? ` · ${pf.performance.period}` : ""}</CardTitle>
-            <Metric k="Total return" v={pct(pf.performance.total_return)} accent={pf.performance.total_return >= 0 ? "positive" : "critical"} />
+            <CardTitle>Performance & attribution (TWR){pf.performance.period ? ` · ${pf.performance.period}` : ""}</CardTitle>
+            <Metric k="Total return (TWR)" v={pct(pf.performance.total_return)} accent={pf.performance.total_return >= 0 ? "positive" : "critical"} />
+            {pf.performance.benchmark_symbol && (
+              <Metric k={`Benchmark (${pf.performance.benchmark_symbol})`} v={pf.performance.benchmark_return != null ? pct(pf.performance.benchmark_return) : "—"} />
+            )}
+            {pf.performance.alpha != null && (
+              <Metric k="Alpha vs benchmark" v={pct(pf.performance.alpha)} accent={pf.performance.alpha >= 0 ? "positive" : "critical"} />
+            )}
             <Metric k="Unrealised gain" v={money(pf.performance.unrealised_gain)} />
             <div className="mt-2"><BarList items={pf.performance.attribution.map((a: any) => ({ label: titleCase(a.asset_class), value: Math.max(a.contribution, 0), right: pct(a.contribution) }))} /></div>
+            <div className="mt-3 text-[10px] text-ink-faint border-t border-navy-50 pt-2">
+              TWR = Time-Weighted Return — measures strategy performance independent of cash-flow timing. MWR (client dollar experience) shown in Canvas.
+            </div>
           </Card>
           <Card>
             <CardTitle>Whole-portfolio risk</CardTitle>
@@ -205,6 +216,10 @@ export default function Analytics() {
           <Card>
             <CardTitle>Cost-to-serve & profitability</CardTitle>
             <Metric k="Fee revenue" v={money(pr.cost_to_serve.revenue)} />
+            <Metric k="Revenue yield (ROA)"
+              v={pr.capacity.firm_aum > 0
+                ? `${Math.round((pr.cost_to_serve.revenue / pr.capacity.firm_aum) * 10000)} bps`
+                : "—"} />
             <Metric k="Cost to serve" v={money(pr.cost_to_serve.cost)} />
             <Metric k="Profit" v={money(pr.cost_to_serve.profit)} accent="positive" />
             <Metric k="Firm margin" v={pct(pr.cost_to_serve.firm_margin, 0)} />
@@ -212,14 +227,21 @@ export default function Analytics() {
           <Card>
             <CardTitle>Growth & referral</CardTitle>
             <Metric k="Onboarding pipeline" v={pr.growth.pipeline_cases} />
+            <Metric k="Net New Assets (NNA)" v={money(pr.growth.net_new_assets ?? 0)} accent={pr.growth.net_new_assets > 0 ? "positive" : undefined} />
             <Metric k="Consolidation opportunity" v={money(pr.growth.consolidation_opportunity)} />
             <Metric k="Referral-ready clients" v={pr.growth.referral_ready_clients} />
+            <Metric k="NIGO rate" v={pr.growth.nigo_rate != null ? `${Math.round((pr.growth.nigo_rate ?? 0) * 100)}%` : "—"} />
           </Card>
           <Card className="lg:col-span-2">
             <CardTitle>Fee & margin by segment</CardTitle>
-            <Table head={["Segment", "Revenue", "Effective rate", "Margin"]}
-              rows={Object.entries(pr.fee_margin?.by_segment || {}).map(([s, v]: any) => [titleCase(s), money(v.revenue), pct(v.effective_rate), pct(v.margin, 0)])} />
-            <div className="text-xs text-ink-muted mt-2">Estimated fee leakage {money(pr.fee_margin.fee_leakage_estimate)}</div>
+            <Table head={["Segment", "Revenue", "Rate (bps)", "Margin"]}
+              rows={Object.entries(pr.fee_margin?.by_segment || {}).map(([s, v]: any) => [
+                titleCase(s),
+                money(v.revenue),
+                `${Math.round(v.effective_rate * 10000)} bps`,
+                pct(v.margin, 0),
+              ])} />
+            <div className="text-xs text-ink-muted mt-2">Estimated fee leakage {money(pr.fee_margin.fee_leakage_estimate)} · ROA = revenue ÷ AUM in basis points</div>
           </Card>
           <Card>
             <CardTitle>M&A / book integration</CardTitle>
@@ -407,6 +429,137 @@ export default function Analytics() {
               </tbody>
             </table>
           </Card>
+        )}
+      </Layer>
+
+      {/* F5 Onboarding operating metrics */}
+      <Layer active={tab === "onboarding"} n="F5" title="Onboarding operating metrics" q="How efficiently are we converting prospects to clients?" icon={ClipboardList}>
+        {obLoading || !obData ? (
+          <Spinner label="Loading onboarding metrics…" />
+        ) : (
+          <div className="space-y-4">
+            {/* KPI row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Kpi icon={ClipboardList} label="Total cases"       value={obData.total_cases} />
+              <Kpi icon={CheckCircle2}  label="First-pass yield"  value={`${Math.round(obData.first_pass_yield * 100)}%`} accent="positive" />
+              <Kpi icon={AlertTriangle} label="NIGO cases"        value={obData.nigo.total} accent={obData.nigo.total > 0 ? "critical" : undefined} />
+              <Kpi icon={Clock}         label="EDD backlog"       value={obData.edd_backlog.pending_count} accent={obData.edd_backlog.pending_count > 0 ? "critical" : undefined} />
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-4">
+              {/* Funnel */}
+              <Card>
+                <CardTitle>Pipeline funnel</CardTitle>
+                {["intake", "screening", "review", "approved", "rejected"].map((s) => (
+                  obData.funnel[s] != null ? (
+                    <div key={s} className="flex items-center gap-2 py-0.5">
+                      <div className="text-xs w-20 text-ink-muted capitalize">{s}</div>
+                      <div className="flex-1 h-2 rounded-full bg-navy-100 overflow-hidden">
+                        <div className="h-full bg-navy-600 rounded-full" style={{ width: `${Math.min(((obData.funnel[s] || 0) / Math.max(obData.total_cases, 1)) * 100, 100)}%` }} />
+                      </div>
+                      <div className="text-xs text-ink-soft w-6 text-right tabular-nums">{obData.funnel[s]}</div>
+                    </div>
+                  ) : null
+                ))}
+              </Card>
+
+              {/* Cycle time */}
+              <Card>
+                <CardTitle>Cycle time (approved cases)</CardTitle>
+                <div className="flex gap-4 mb-3">
+                  <div className="text-center">
+                    <div className="text-xl font-semibold text-ink tabular-nums">{obData.cycle_time.overall_p50_days}d</div>
+                    <div className="text-[11px] text-ink-muted">P50</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xl font-semibold text-ink tabular-nums">{obData.cycle_time.overall_p90_days}d</div>
+                    <div className="text-[11px] text-ink-muted">P90</div>
+                  </div>
+                </div>
+                {obData.cycle_time.by_registration_type.length > 0 ? (
+                  <Table
+                    head={["Type", "Count", "P50", "P90"]}
+                    rows={obData.cycle_time.by_registration_type.map((r: any) => [
+                      r.registration_type.replace(/_/g, " "), r.count, `${r.p50_days}d`, `${r.p90_days}d`,
+                    ])}
+                  />
+                ) : (
+                  <div className="text-sm text-ink-muted py-2 text-center">No approved cases yet.</div>
+                )}
+              </Card>
+
+              {/* NIGO root-cause */}
+              <Card>
+                <CardTitle>NIGO root-cause breakdown</CardTitle>
+                {Object.keys(obData.nigo.by_root_cause).length === 0 ? (
+                  <div className="text-sm text-ink-muted py-2 text-center">No NIGO flags recorded.</div>
+                ) : (
+                  <BarList items={Object.entries(obData.nigo.by_root_cause).map(([k, v]: any) => ({
+                    label: k.replace(/_/g, " "),
+                    value: v,
+                    right: String(v),
+                  }))} />
+                )}
+                <div className="mt-3 text-[11px] text-ink-muted border-t border-navy-50 pt-2">
+                  NIGO rate {Math.round(obData.nigo.rate * 100)}% · first-pass yield {Math.round(obData.first_pass_yield * 100)}%
+                </div>
+              </Card>
+
+              {/* Abandonment */}
+              <Card>
+                <CardTitle>Abandonment / stall</CardTitle>
+                <div className="flex gap-4 mb-2">
+                  <div>
+                    <div className="text-lg font-semibold text-caution tabular-nums">{obData.abandonment.stalled_amber_3d}</div>
+                    <div className="text-[11px] text-ink-muted">Stalled 3–7d</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold text-critical tabular-nums">{obData.abandonment.stalled_red_7d}</div>
+                    <div className="text-[11px] text-ink-muted">Stalled 7d+</div>
+                  </div>
+                </div>
+                {Object.keys(obData.abandonment.by_status).length > 0 && (
+                  <BarList items={Object.entries(obData.abandonment.by_status).map(([k, v]: any) => ({
+                    label: k.replace(/_/g, " "),
+                    value: v,
+                    right: String(v),
+                  }))} />
+                )}
+              </Card>
+
+              {/* AML risk tier + EDD backlog */}
+              <Card>
+                <CardTitle>AML risk tier distribution</CardTitle>
+                {["low", "medium", "high"].map((t) => (
+                  obData.aml_by_tier[t] != null ? (
+                    <div key={t} className="flex items-center gap-2 py-0.5">
+                      <span className={`text-xs font-medium w-14 capitalize ${t === "high" ? "text-critical" : t === "medium" ? "text-caution" : "text-positive"}`}>{t}</span>
+                      <div className="flex-1 h-2 rounded-full bg-navy-100 overflow-hidden">
+                        <div className={`h-full rounded-full ${t === "high" ? "bg-critical" : t === "medium" ? "bg-caution" : "bg-positive"}`}
+                          style={{ width: `${(obData.aml_by_tier[t] / Math.max(obData.total_cases, 1)) * 100}%` }} />
+                      </div>
+                      <div className="text-xs text-ink-soft w-6 text-right tabular-nums">{obData.aml_by_tier[t]}</div>
+                    </div>
+                  ) : null
+                ))}
+                <div className="mt-3 text-[11px] text-ink-muted border-t border-navy-50 pt-2">
+                  EDD backlog: <span className={obData.edd_backlog.pending_count > 0 ? "text-critical font-medium" : "text-positive"}>{obData.edd_backlog.pending_count} case{obData.edd_backlog.pending_count !== 1 ? "s" : ""} pending EDD</span>
+                </div>
+              </Card>
+
+              {/* Readiness */}
+              <Card>
+                <CardTitle>Avg readiness score</CardTitle>
+                <div className="text-3xl font-semibold text-ink tabular-nums">
+                  {obData.avg_readiness_score != null ? obData.avg_readiness_score : "—"}
+                </div>
+                <div className="text-xs text-ink-muted mt-1">out of 100 · lower = more gaps</div>
+                <div className="mt-3 text-[11px] text-ink-muted">
+                  Scores assigned by the NIGO Prevention agent based on missing documents and critical checklist items.
+                </div>
+              </Card>
+            </div>
+          </div>
         )}
       </Layer>
 

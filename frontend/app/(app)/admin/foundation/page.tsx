@@ -114,6 +114,9 @@ export default function Foundation() {
         </div>
       </Card>
 
+      {/* Capital Market Assumptions */}
+      <CmaPanel />
+
       {/* Per-agent overrides */}
       <PerAgentOverrides firmPolicy={data.policy} />
 
@@ -238,6 +241,90 @@ function OvSel({ label, v, on }: any) {
         <option value="">Inherit</option><option value="true">On</option><option value="false">Off</option>
       </select>
     </div>
+  );
+}
+
+const CMA_CLASSES = ["equity", "fixed_income", "cash", "alternatives", "property", "commodity", "multi_asset"] as const;
+const CMA_LABELS: Record<string, string> = {
+  equity: "Equity", fixed_income: "Fixed income", cash: "Cash",
+  alternatives: "Alternatives", property: "Property", commodity: "Commodity", multi_asset: "Multi-asset",
+};
+
+function CmaPanel() {
+  const { data, loading, refetch } = useApi<any>("/api/admin/foundation/cmas");
+  const [draft, setDraft] = useState<Record<string, [string, string]>>({});
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (data?.effective && Object.keys(draft).length === 0) {
+      const init: Record<string, [string, string]> = {};
+      for (const cls of CMA_CLASSES) {
+        const [r, v] = data.effective[cls] || [0, 0];
+        init[cls] = [String(Math.round(r * 1000) / 10), String(Math.round(v * 1000) / 10)];
+      }
+      setDraft(init);
+    }
+  }, [data]);
+
+  async function save() {
+    setSaving(true);
+    const cmas: Record<string, number[]> = {};
+    for (const cls of CMA_CLASSES) {
+      const [r, v] = draft[cls] || ["0", "0"];
+      cmas[cls] = [Number(r) / 100, Number(v) / 100];
+    }
+    try {
+      await api("/api/admin/foundation/cmas", { method: "PUT", body: { cmas } });
+      setSaved(true); setTimeout(() => setSaved(false), 1500); refetch();
+    } finally { setSaving(false); }
+  }
+
+  if (loading || !data) return null;
+
+  return (
+    <Card className="mb-6">
+      <div className="flex items-center justify-between mb-1">
+        <div className="font-semibold text-ink flex items-center gap-2"><BarChart3 size={17} /> Capital Market Assumptions (CMAs)</div>
+        <button className="btn-outline text-xs py-0.5 px-3" onClick={save} disabled={saving}>
+          <Save size={13} /> {saving ? "Saving…" : saved ? "Saved" : "Save CMAs"}
+        </button>
+      </div>
+      <p className="text-xs text-ink-muted mb-4">Firm-level return and volatility assumptions used by the planning & projection engine. Enter as percentages (e.g. 7.5 for 7.5%). Defaults shown if no overrides.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-navy-100">
+              <th className="text-left py-1.5 pr-4 text-ink-muted font-medium">Asset class</th>
+              <th className="text-left py-1.5 pr-4 text-ink-muted font-medium">Expected return %</th>
+              <th className="text-left py-1.5 text-ink-muted font-medium">Volatility %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {CMA_CLASSES.map((cls) => {
+              const [r, v] = draft[cls] || ["", ""];
+              const isOverridden = data.overrides?.[cls] != null;
+              return (
+                <tr key={cls} className="border-b border-navy-50 last:border-0">
+                  <td className="py-1.5 pr-4 text-ink font-medium">
+                    {CMA_LABELS[cls]}
+                    {isOverridden && <span className="ml-2 chip bg-gold-100 text-gold-700 text-[10px]">overridden</span>}
+                  </td>
+                  <td className="py-1.5 pr-4">
+                    <input type="number" step="0.1" className="input w-24 text-sm" value={r}
+                      onChange={(e) => setDraft({ ...draft, [cls]: [e.target.value, v] })} />
+                  </td>
+                  <td className="py-1.5">
+                    <input type="number" step="0.1" className="input w-24 text-sm" value={v}
+                      onChange={(e) => setDraft({ ...draft, [cls]: [r, e.target.value] })} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 

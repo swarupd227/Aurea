@@ -1,12 +1,27 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { UserPlus, ShieldCheck, ShieldAlert, ChevronRight, FileText } from "lucide-react";
+import { UserPlus, ShieldCheck, ShieldAlert, ChevronRight, FileText, AlertTriangle } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, Spinner, Segment } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { titleCase } from "@/lib/format";
+
+const REGISTRATION_LABELS: Record<string, string> = {
+  individual: "Individual", joint_jtwros: "Joint JTWROS", joint_tic: "Joint TIC",
+  traditional_ira: "Traditional IRA", roth_ira: "Roth IRA",
+  employer_rollover: "Employer Rollover", trust: "Trust",
+  entity_llc: "LLC", entity_corp: "Corp", entity_partnership: "Partnership",
+  custodial_utma: "Custodial UTMA", custodial_ugma: "Custodial UGMA",
+  estate_inherited: "Estate/Inherited",
+};
+
+const AML_TIER_STYLE: Record<string, string> = {
+  low: "bg-positive/10 text-positive",
+  medium: "bg-caution/10 text-caution",
+  high: "bg-critical/10 text-critical",
+};
 
 const STATUS_FLOW = ["intake", "screening", "review", "approved"];
 const STATUS_STYLE: Record<string, string> = {
@@ -59,10 +74,18 @@ export default function OnboardingPipeline() {
                       </div>
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                         <Segment>{c.segment}</Segment>
-                        {c.is_entity && <span className="chip bg-navy-50 text-ink-muted">{titleCase(c.entity_type || "entity")}</span>}
+                        {c.registration_type ? (
+                          <span className="chip bg-navy-50 text-ink-muted">{REGISTRATION_LABELS[c.registration_type] || titleCase(c.registration_type)}</span>
+                        ) : c.is_entity ? (
+                          <span className="chip bg-navy-50 text-ink-muted">{titleCase(c.entity_type || "entity")}</span>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                         {amlChip(c.screening?.status)}
+                        {c.aml_risk_tier && (
+                          <span className={`chip ${AML_TIER_STYLE[c.aml_risk_tier] || "bg-navy-50 text-ink-muted"}`}>AML {c.aml_risk_tier}</span>
+                        )}
+                        {c.nigo_flag && <span className="chip bg-caution/10 text-caution flex items-center gap-1"><AlertTriangle size={10} /> NIGO</span>}
                         {c.exceptions?.length > 0 && (
                           <span className="chip bg-caution/10 text-caution">{c.exceptions.length} exception</span>
                         )}
@@ -80,12 +103,30 @@ export default function OnboardingPipeline() {
   );
 }
 
+const REGISTRATION_OPTIONS = [
+  { value: "individual", label: "Individual" },
+  { value: "joint_jtwros", label: "Joint — JTWROS" },
+  { value: "joint_tic", label: "Joint — Tenants in Common" },
+  { value: "traditional_ira", label: "Traditional IRA" },
+  { value: "roth_ira", label: "Roth IRA" },
+  { value: "employer_rollover", label: "Employer Rollover (401k/403b)" },
+  { value: "trust", label: "Trust" },
+  { value: "entity_llc", label: "Entity — LLC" },
+  { value: "entity_corp", label: "Entity — Corporation" },
+  { value: "entity_partnership", label: "Entity — Partnership" },
+  { value: "custodial_utma", label: "Custodial — UTMA" },
+  { value: "custodial_ugma", label: "Custodial — UGMA" },
+  { value: "estate_inherited", label: "Estate / Inherited" },
+];
+
 function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({
-    prospect_name: "", is_entity: false, entity_type: "trust", segment: "private_wealth",
+    prospect_name: "", registration_type: "individual", segment: "private_wealth",
     risk_profile: "balanced", mandate_preference: "advisory", source_of_wealth: "",
   });
   const [busy, setBusy] = useState(false);
+
+  const isRollover = ["employer_rollover", "traditional_ira", "roth_ira"].includes(form.registration_type);
 
   async function create() {
     if (!form.prospect_name) return;
@@ -93,8 +134,9 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
     try {
       await api("/api/onboarding/cases", {
         body: {
-          prospect_name: form.prospect_name, is_entity: form.is_entity,
-          entity_type: form.is_entity ? form.entity_type : null, segment: form.segment,
+          prospect_name: form.prospect_name,
+          registration_type: form.registration_type,
+          segment: form.segment,
           intake: {
             risk_profile: form.risk_profile, mandate_preference: form.mandate_preference,
             source_of_wealth: form.source_of_wealth, objectives: ["growth"],
@@ -117,10 +159,9 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
             <input className="input" value={form.prospect_name} onChange={(e) => setForm({ ...form, prospect_name: e.target.value })} placeholder="e.g. Daniel Okonkwo or Sokolov Family Trust" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Type</label>
-              <select className="input" value={form.is_entity ? "entity" : "individual"} onChange={(e) => setForm({ ...form, is_entity: e.target.value === "entity" })}>
-                <option value="individual">Individual</option>
-                <option value="entity">Entity / Trust</option>
+            <div><label className="label">Registration type</label>
+              <select className="input" value={form.registration_type} onChange={(e) => setForm({ ...form, registration_type: e.target.value })}>
+                {REGISTRATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div><label className="label">Segment</label>
@@ -146,9 +187,14 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
               </select>
             </div>
           </div>
-          <div><label className="label">Source of wealth</label>
+          <div><label className="label">Source of wealth{isRollover ? " (required for PTE 2020-02)" : ""}</label>
             <input className="input" value={form.source_of_wealth} onChange={(e) => setForm({ ...form, source_of_wealth: e.target.value })} placeholder="e.g. Business sale proceeds" />
           </div>
+          {isRollover && (
+            <div className="rounded-lg bg-caution/8 border border-caution/20 px-3 py-2 text-xs text-caution">
+              Rollover account — DOL PTE 2020-02 rationale memo will be required. Run the Rollover PTE Documenter agent after creation.
+            </div>
+          )}
           <div className="text-xs text-ink-muted flex items-center gap-1"><FileText size={12} /> Add identity documents on the next screen, then run the agent.</div>
         </div>
         <div className="flex justify-end gap-2 mt-5">

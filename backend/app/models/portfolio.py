@@ -124,6 +124,8 @@ class ModelPortfolio(Base):
     description: Mapped[str | None] = mapped_column(String(500))
     # Rebalancing tolerance band (drift threshold) as a fraction, e.g. 0.05 = 5%.
     drift_band: Mapped[float] = mapped_column(Numeric(5, 4), default=0.05)
+    # Benchmark instrument symbol for alpha computation (e.g. "SPY", "^NZSX50G").
+    benchmark_symbol: Mapped[str | None] = mapped_column(String(32))
 
     targets: Mapped[list["TargetAllocation"]] = relationship(
         back_populates="model", cascade="all, delete-orphan"

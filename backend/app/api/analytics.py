@@ -56,6 +56,111 @@ async def get_adoption(firm: Firm = Depends(current_firm), db: AsyncSession = De
     return await adoption.compute(db, firm.id)
 
 
+@router.get("/onboarding")
+async def get_onboarding_metrics(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """F5 — Operating metrics dashboard for the onboarding pipeline."""
+    from sqlalchemy import case as sa_case, cast, Float, Integer, literal_column
+    from app.models.onboarding import OnboardingCase
+    from app.core.db import utcnow
+    from datetime import timedelta
+    import statistics
+
+    cases = (await db.execute(
+        select(OnboardingCase).where(OnboardingCase.firm_id == firm.id)
+    )).scalars().all()
+
+    total = len(cases)
+    now = utcnow()
+
+    # Funnel by status
+    funnel: dict[str, int] = {}
+    for c in cases:
+        funnel[c.status] = funnel.get(c.status, 0) + 1
+
+    # Cycle time (days from created_at to updated_at) for approved cases
+    approved = [c for c in cases if c.status == "approved" and c.created_at and c.updated_at]
+    cycle_by_reg: dict[str, list[float]] = {}
+    for c in approved:
+        days = (c.updated_at - c.created_at).total_seconds() / 86400
+        key = c.registration_type or "unspecified"
+        cycle_by_reg.setdefault(key, []).append(days)
+
+    def _pctile(vals: list[float], p: int) -> float:
+        if not vals:
+            return 0.0
+        s = sorted(vals)
+        idx = max(0, min(len(s) - 1, int(len(s) * p / 100)))
+        return round(s[idx], 1)
+
+    cycle_times = [
+        {"registration_type": rt, "count": len(vals),
+         "p50_days": _pctile(vals, 50), "p90_days": _pctile(vals, 90)}
+        for rt, vals in sorted(cycle_by_reg.items())
+    ]
+    all_days = [d for vals in cycle_by_reg.values() for d in vals]
+    overall_p50 = _pctile(all_days, 50)
+    overall_p90 = _pctile(all_days, 90)
+
+    # First-pass yield (no NIGO flag)
+    nigo_count = sum(1 for c in cases if getattr(c, "nigo_flag", False))
+    first_pass_yield = round((total - nigo_count) / total, 3) if total else 0.0
+
+    # NIGO root-cause breakdown
+    nigo_causes: dict[str, int] = {}
+    for c in cases:
+        rc = getattr(c, "nigo_root_cause", None)
+        if rc:
+            nigo_causes[rc] = nigo_causes.get(rc, 0) + 1
+
+    # Abandonment: cases stalled > 3 days (not terminal)
+    terminal = {"approved", "rejected"}
+    amber_threshold = now - timedelta(days=3)
+    red_threshold = now - timedelta(days=7)
+    stalled_amber = [c for c in cases if c.status not in terminal and c.updated_at and c.updated_at < amber_threshold and c.updated_at >= red_threshold]
+    stalled_red = [c for c in cases if c.status not in terminal and c.updated_at and c.updated_at < red_threshold]
+    abandonment_by_status: dict[str, int] = {}
+    for c in stalled_red + stalled_amber:
+        abandonment_by_status[c.status] = abandonment_by_status.get(c.status, 0) + 1
+
+    # EDD / AML backlog
+    edd_pending = [c for c in cases if getattr(c, "edd_status", None) == "edd_pending"]
+    aml_by_tier: dict[str, int] = {}
+    for c in cases:
+        tier = getattr(c, "aml_risk_tier", None)
+        if tier:
+            aml_by_tier[tier] = aml_by_tier.get(tier, 0) + 1
+
+    # Avg readiness score
+    scored = [c for c in cases if getattr(c, "readiness_score", None) is not None]
+    avg_readiness = round(sum(c.readiness_score for c in scored) / len(scored), 1) if scored else None
+
+    return {
+        "total_cases": total,
+        "funnel": funnel,
+        "cycle_time": {
+            "overall_p50_days": overall_p50,
+            "overall_p90_days": overall_p90,
+            "by_registration_type": cycle_times,
+        },
+        "first_pass_yield": first_pass_yield,
+        "nigo": {
+            "total": nigo_count,
+            "rate": round(nigo_count / total, 3) if total else 0.0,
+            "by_root_cause": nigo_causes,
+        },
+        "abandonment": {
+            "stalled_amber_3d": len(stalled_amber),
+            "stalled_red_7d": len(stalled_red),
+            "by_status": abandonment_by_status,
+        },
+        "edd_backlog": {
+            "pending_count": len(edd_pending),
+        },
+        "aml_by_tier": aml_by_tier,
+        "avg_readiness_score": avg_readiness,
+    }
+
+
 @router.get("/maturity")
 async def get_maturity():
     return {"maturity": overview.MATURITY, "layers": overview.LAYER_META}

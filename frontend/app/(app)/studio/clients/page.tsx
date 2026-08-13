@@ -94,7 +94,15 @@ export default function Clients() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-ink">{h.name}</div>
-                <div className="mt-1"><Segment>{h.segment}</Segment></div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <Segment>{h.segment}</Segment>
+                  {h.total_value >= 5_000_000 && (
+                    <span className="chip bg-gold-soft/50 text-gold-dark text-[10px] font-semibold px-2 py-0.5">Qualified Purchaser</span>
+                  )}
+                  {h.total_value >= 1_000_000 && h.total_value < 5_000_000 && (
+                    <span className="chip bg-navy-50 text-navy-700 text-[10px] font-semibold px-2 py-0.5">Accredited Investor</span>
+                  )}
+                </div>
               </div>
               <div className="text-right shrink-0">
                 <div className="text-lg font-semibold text-ink tabular-nums">{money(h.total_value)}</div>

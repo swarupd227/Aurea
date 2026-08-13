@@ -20,7 +20,31 @@ const HOUSEHOLD_AGENTS = [
   { key: "client_care", label: "Client care" },
   { key: "estate_succession", label: "Estate & succession" },
   { key: "behavioural_finance", label: "Behavioural finance" },
+  { key: "ips_drafting", label: "Draft IPS" },
+  { key: "glide_path", label: "Glide path" },
+  { key: "asset_location", label: "Asset location" },
+  { key: "wallet_share_scout", label: "Wallet share" },
 ];
+
+function WalletShareTile({ persons, totalValue }: { persons: any[]; totalValue: number }) {
+  const heldAway = persons.reduce((s: number, p: any) => s + ((p.profile?.held_away) || 0), 0);
+  const total = totalValue + heldAway;
+  const share = total > 0 ? totalValue / total : 1;
+  const sharePct = Math.round(share * 100);
+  const isQP = totalValue >= 5_000_000;
+  const isAI = totalValue >= 1_000_000;
+  return (
+    <div className="card p-4">
+      <div className="tile-label mb-1">Wallet share</div>
+      <div className="text-xl font-semibold text-ink mt-1">{sharePct}%</div>
+      {heldAway > 0
+        ? <div className="text-[11px] text-ink-muted mt-0.5">{money(heldAway)} held away</div>
+        : <div className="text-[11px] text-ink-muted mt-0.5">No held-away recorded</div>}
+      {isQP && <div className="mt-1 text-[10px] font-semibold text-gold-dark bg-gold-soft/50 rounded px-1.5 py-0.5 w-fit">Qualified Purchaser</div>}
+      {isAI && !isQP && <div className="mt-1 text-[10px] font-semibold text-navy-700 bg-navy-50 rounded px-1.5 py-0.5 w-fit">Accredited Investor</div>}
+    </div>
+  );
+}
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
@@ -76,11 +100,12 @@ export default function ClientDetail() {
 
       {showWhatIf && <PortfolioWhatIf allocation={t.by_asset_class} />}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <StatTile label="Total portfolio" value={money(t.total_value)} accent="gold" />
         <StatTile label="Accounts" value={brain.accounts.length} />
         <StatTile label="Entities & trusts" value={brain.entities.length} />
         <StatTile label="Goals" value={brain.goals.length} />
+        <WalletShareTile persons={brain.persons} totalValue={t.total_value} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">

@@ -17,7 +17,7 @@ from app.core.security import STAFF_ROLES, get_current_user, staff_user, require
 from app.models.enums import AgentKey
 from app.models.governance import Recommendation
 from app.models.identity import User
-from app.models.onboarding import BookIntegrationBatch, OnboardingCase, OnboardingDocument
+from app.models.onboarding import BeneficialOwner, BookIntegrationBatch, OnboardingCase, OnboardingDocument
 from app.models.tenant import Firm
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"], dependencies=[Depends(staff_user)])
@@ -28,8 +28,25 @@ class CaseCreate(BaseModel):
     prospect_name: str
     is_entity: bool = False
     entity_type: str | None = None
+    registration_type: str | None = None
     segment: str = "private_wealth"
     intake: dict = {}
+
+
+class BeneficialOwnerIn(BaseModel):
+    legal_name: str
+    dob: str | None = None
+    address: str | None = None
+    id_number: str | None = None
+    ownership_pct: float | None = None
+    is_control_person: bool = False
+    notes: str | None = None
+
+
+class AMLRatingIn(BaseModel):
+    aml_risk_tier: str  # low | medium | high
+    aml_risk_score: float | None = None
+    notes: str | None = None
 
 
 class DocumentCreate(BaseModel):
@@ -51,16 +68,32 @@ def _sla_status(case: OnboardingCase) -> str:
     return "on_track"
 
 
-def _case_dict(case: OnboardingCase, docs: list[OnboardingDocument] | None = None) -> dict:
+def _case_dict(
+    case: OnboardingCase,
+    docs: list[OnboardingDocument] | None = None,
+    bos: list[BeneficialOwner] | None = None,
+) -> dict:
     sla_days = getattr(case, "sla_days", 30) or 30
     d = {
         "id": str(case.id), "prospect_name": case.prospect_name, "is_entity": case.is_entity,
-        "entity_type": case.entity_type, "segment": case.segment, "status": case.status,
-        "intake": case.intake, "screening": case.screening, "proposal": case.proposal,
+        "entity_type": case.entity_type,
+        "registration_type": getattr(case, "registration_type", None),
+        "segment": case.segment, "status": case.status,
+        "intake": case.intake, "screening": case.screening,
+        "screening_log": getattr(case, "screening_log", None) or [],
+        "proposal": case.proposal,
         "exceptions": case.exceptions, "materialized": case.materialized,
         "created_at": case.created_at.isoformat() if case.created_at else None,
         "sla_days": sla_days,
         "sla_status": _sla_status(case),
+        "nigo_flag": getattr(case, "nigo_flag", False) or False,
+        "nigo_reason": getattr(case, "nigo_reason", None),
+        "nigo_root_cause": getattr(case, "nigo_root_cause", None),
+        "readiness_score": getattr(case, "readiness_score", None),
+        "aml_risk_tier": getattr(case, "aml_risk_tier", None),
+        "aml_risk_score": float(case.aml_risk_score) if getattr(case, "aml_risk_score", None) else None,
+        "edd_status": getattr(case, "edd_status", None),
+        "pte_status": getattr(case, "pte_status", None),
     }
     if docs is not None:
         d["documents"] = [
@@ -68,6 +101,15 @@ def _case_dict(case: OnboardingCase, docs: list[OnboardingDocument] | None = Non
              "extracted": x.extracted, "field_confidence": x.field_confidence,
              "confidence": float(x.confidence or 0), "verified": x.verified, "raw_text": x.raw_text}
             for x in docs
+        ]
+    if bos is not None:
+        d["beneficial_owners"] = [
+            {
+                "id": str(b.id), "legal_name": b.legal_name, "dob": b.dob,
+                "address": b.address, "ownership_pct": float(b.ownership_pct) if b.ownership_pct else None,
+                "is_control_person": b.is_control_person, "is_stale": b.is_stale, "notes": b.notes,
+            }
+            for b in bos
         ]
     return d
 
@@ -86,13 +128,20 @@ async def create_case(
     body: CaseCreate, user: User = Depends(require_roles(*STAFF_ROLES)),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
+    # Infer is_entity from registration_type when provided.
+    is_entity = body.is_entity
+    entity_type = body.entity_type
+    if body.registration_type in ("trust", "entity_llc", "entity_corp", "entity_partnership"):
+        is_entity = True
+        entity_type = entity_type or body.registration_type.replace("entity_", "")
     case = OnboardingCase(
-        firm_id=firm.id, prospect_name=body.prospect_name, is_entity=body.is_entity,
-        entity_type=body.entity_type, segment=body.segment, intake=body.intake,
+        firm_id=firm.id, prospect_name=body.prospect_name, is_entity=is_entity,
+        entity_type=entity_type, registration_type=body.registration_type,
+        segment=body.segment, intake=body.intake,
     )
     db.add(case)
     await db.flush()
-    return _case_dict(case, [])
+    return _case_dict(case, [], [])
 
 
 @router.get("/cases/{case_id}")
@@ -103,6 +152,9 @@ async def get_case(case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: A
     docs = (
         await db.execute(select(OnboardingDocument).where(OnboardingDocument.case_id == case.id))
     ).scalars().all()
+    bos = (
+        await db.execute(select(BeneficialOwner).where(BeneficialOwner.case_id == case.id))
+    ).scalars().all()
     # Attach the latest agent recommendation for this case, if any.
     rec = (
         await db.execute(
@@ -111,9 +163,84 @@ async def get_case(case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: A
             .order_by(Recommendation.created_at.desc()).limit(1)
         )
     ).scalar_one_or_none()
-    out = _case_dict(case, docs)
+    out = _case_dict(case, docs, bos)
     out["recommendation_id"] = str(rec.id) if rec else None
     return out
+
+
+# ── Beneficial owners ─────────────────────────────────────────────────────────
+@router.get("/cases/{case_id}/beneficial-owners")
+async def list_beneficial_owners(
+    case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    case = await db.get(OnboardingCase, case_id)
+    if not case or case.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    rows = (
+        await db.execute(select(BeneficialOwner).where(BeneficialOwner.case_id == case_id))
+    ).scalars().all()
+    return [
+        {"id": str(b.id), "legal_name": b.legal_name, "dob": b.dob, "address": b.address,
+         "ownership_pct": float(b.ownership_pct) if b.ownership_pct else None,
+         "is_control_person": b.is_control_person, "is_stale": b.is_stale, "notes": b.notes}
+        for b in rows
+    ]
+
+
+@router.post("/cases/{case_id}/beneficial-owners")
+async def add_beneficial_owner(
+    case_id: uuid.UUID, body: BeneficialOwnerIn,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    case = await db.get(OnboardingCase, case_id)
+    if not case or case.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    bo = BeneficialOwner(
+        firm_id=firm.id, case_id=case_id, legal_name=body.legal_name,
+        dob=body.dob, address=body.address, id_number=body.id_number,
+        ownership_pct=body.ownership_pct, is_control_person=body.is_control_person,
+        notes=body.notes,
+    )
+    db.add(bo)
+    await db.flush()
+    return {"id": str(bo.id), "legal_name": bo.legal_name, "ownership_pct": body.ownership_pct,
+            "is_control_person": bo.is_control_person}
+
+
+@router.delete("/cases/{case_id}/beneficial-owners/{bo_id}", status_code=204)
+async def delete_beneficial_owner(
+    case_id: uuid.UUID, bo_id: uuid.UUID,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    bo = await db.get(BeneficialOwner, bo_id)
+    if not bo or bo.case_id != case_id or bo.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Beneficial owner not found")
+    await db.delete(bo)
+
+
+# ── AML risk rating ───────────────────────────────────────────────────────────
+@router.put("/cases/{case_id}/aml-risk-rating")
+async def set_aml_risk_rating(
+    case_id: uuid.UUID, body: AMLRatingIn,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Manually set or override the AML risk tier on a case (compliance officer action)."""
+    case = await db.get(OnboardingCase, case_id)
+    if not case or case.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if body.aml_risk_tier not in ("low", "medium", "high"):
+        raise HTTPException(status_code=422, detail="aml_risk_tier must be low, medium, or high")
+    case.aml_risk_tier = body.aml_risk_tier
+    if body.aml_risk_score is not None:
+        case.aml_risk_score = body.aml_risk_score
+    # Set EDD status based on tier.
+    if body.aml_risk_tier in ("medium", "high") and not getattr(case, "edd_status", None):
+        case.edd_status = "edd_pending"
+    await db.flush()
+    return {"aml_risk_tier": case.aml_risk_tier, "edd_status": getattr(case, "edd_status", None)}
 
 
 @router.post("/cases/{case_id}/documents")

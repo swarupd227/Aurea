@@ -142,6 +142,38 @@ async def set_foundation(body: FoundationIn, user: User = Depends(require_roles(
     return pol
 
 
+class CmaIn(BaseModel):
+    cmas: dict  # {"equity": [0.08, 0.17], "fixed_income": [0.04, 0.07], ...}
+
+
+@router.put("/foundation/cmas")
+async def set_cmas(body: CmaIn, user: User = Depends(require_roles(UserRole.ADMIN)),
+                   firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """Save firm-level capital-market assumption overrides (expected_return, volatility per asset class)."""
+    from app.aurea_core.planning import CMA
+    s = dict(firm.settings or {})
+    clean = {}
+    for cls, val in body.cmas.items():
+        if cls in CMA and isinstance(val, list) and len(val) == 2:
+            clean[cls] = [float(val[0]), float(val[1])]
+    s["cmas"] = clean
+    firm.settings = s
+    await db.flush()
+    return {"cmas": clean}
+
+
+@router.get("/foundation/cmas")
+async def get_cmas(user: User = AdminDep, firm: Firm = Depends(current_firm)):
+    """Current capital-market assumption overrides for this firm (defaults if none set)."""
+    from app.aurea_core.planning import CMA, effective_cma
+    firm_cmas = effective_cma(firm.settings)
+    return {
+        "defaults": {k: list(v) for k, v in CMA.items()},
+        "overrides": (firm.settings or {}).get("cmas") or {},
+        "effective": {k: list(v) for k, v in firm_cmas.items()},
+    }
+
+
 @router.get("/compliance")
 async def get_compliance(user: User = AdminDep, firm: Firm = Depends(current_firm)):
     """The active regulatory framework + per-firm rule config (enable/disable, severity)."""

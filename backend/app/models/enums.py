@@ -106,6 +106,18 @@ class AgentKey(StrEnum):
     TAX_INTELLIGENCE = "tax_intelligence"
     BEHAVIOURAL_FINANCE = "behavioural_finance"
     REGULATORY_COUNTDOWN = "regulatory_countdown"
+    # L100 additions
+    IPS_DRAFTING = "ips_drafting"
+    ASSET_LOCATION = "asset_location"
+    WALLET_SHARE_SCOUT = "wallet_share_scout"
+    GLIDE_PATH = "glide_path"
+    REVERSE_CHURNING = "reverse_churning"
+    # L200 additions
+    ADVERSE_MEDIA_PEP = "adverse_media_pep"
+    EDD_SOW_NARRATOR = "edd_sow_narrator"
+    ROLLOVER_PTE_DOCUMENTER = "rollover_pte_documenter"
+    NIGO_PREVENTION = "nigo_prevention"
+    ABANDONMENT_RECOVERY = "abandonment_recovery"
 
 
 class ActivityKind(StrEnum):
@@ -183,6 +195,49 @@ class ConnectorStatus(StrEnum):
 
 
 # ── Acquire & onboard ─────────────────────────────────────────────────────────
+class RegistrationType(StrEnum):
+    """Account registration type — drives document matrix and beneficiary/BO requirements."""
+    INDIVIDUAL = "individual"
+    JOINT_JTWROS = "joint_jtwros"       # Joint Tenants with Right of Survivorship
+    JOINT_TIC = "joint_tic"             # Tenants in Common
+    TRADITIONAL_IRA = "traditional_ira"
+    ROTH_IRA = "roth_ira"
+    EMPLOYER_ROLLOVER = "employer_rollover"
+    TRUST = "trust"
+    ENTITY_LLC = "entity_llc"
+    ENTITY_CORP = "entity_corp"
+    ENTITY_PARTNERSHIP = "entity_partnership"
+    CUSTODIAL_UTMA = "custodial_utma"
+    CUSTODIAL_UGMA = "custodial_ugma"
+    ESTATE_INHERITED = "estate_inherited"
+
+
+class NIGORootCause(StrEnum):
+    """Structured root-cause taxonomy for NIGO (Not In Good Order) rejections."""
+    MISSING_SIGNATURE = "missing_signature"
+    TITLE_MISMATCH = "title_mismatch"
+    STALE_FORM = "stale_form"
+    WRONG_TENANCY = "wrong_tenancy"
+    MISSING_BENEFICIARY = "missing_beneficiary"
+    MISSING_ID = "missing_id"
+    BENEFICIAL_OWNER_INCOMPLETE = "beneficial_owner_incomplete"
+
+
+class AMLRiskTier(StrEnum):
+    """Customer AML risk rating — drives CDD/EDD depth and review cadence."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class EDDStatus(StrEnum):
+    """CDD vs EDD depth indicator on an onboarding case."""
+    NONE = "none"
+    CDD = "cdd"
+    EDD_PENDING = "edd_pending"
+    EDD_COMPLETE = "edd_complete"
+
+
 class OnboardingStatus(StrEnum):
     INTAKE = "intake"  # prospect captured, documents pending
     SCREENING = "screening"  # docs extracted, AML run

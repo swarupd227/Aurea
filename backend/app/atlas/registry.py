@@ -20,6 +20,18 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
     from app.agents.next_best_action import NextBestActionAgent
     from app.agents.onboarding import OnboardingAgent
     from app.agents.research_reporting import ResearchReportingAgent
+    # L100 additions
+    from app.agents.ips_drafting import IPSDraftingAgent
+    from app.agents.asset_location import AssetLocationAgent
+    from app.agents.wallet_share_scout import WalletShareScoutAgent
+    from app.agents.glide_path import GlidePathAgent
+    from app.agents.reverse_churning import ReverseChurningAgent
+    # L200 additions
+    from app.agents.adverse_media_pep import AdverseMediaPEPScreenerAgent
+    from app.agents.edd_sow_narrator import EDDSOWNarratorAgent
+    from app.agents.rollover_pte_documenter import RolloverPTEDocumenterAgent
+    from app.agents.nigo_prevention import NIGOPreventionAgent
+    from app.agents.abandonment_recovery import AbandonmentRecoveryAgent
 
     agents: list[BaseAgent] = [
         OnboardingAgent(),
@@ -35,6 +47,18 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
         TaxIntelligenceAgent(),
         BehaviouralFinanceAgent(),
         RegulatoryCountdownAgent(),
+        # L100 additions
+        IPSDraftingAgent(),
+        AssetLocationAgent(),
+        WalletShareScoutAgent(),
+        GlidePathAgent(),
+        ReverseChurningAgent(),
+        # L200 additions
+        AdverseMediaPEPScreenerAgent(),
+        EDDSOWNarratorAgent(),
+        RolloverPTEDocumenterAgent(),
+        NIGOPreventionAgent(),
+        AbandonmentRecoveryAgent(),
     ]
     return {a.key: a for a in agents}
 

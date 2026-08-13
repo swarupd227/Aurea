@@ -92,6 +92,8 @@ class DriftRebalancingAgent(BaseAgent):
         cgt_budget = ov["cgt_budget"] if ov.get("cgt_budget") is not None else (mandate.constraints or {}).get("cgt_budget")
         if cgt_budget is None:  # firm-wide default guardrail when the mandate sets none
             cgt_budget = pol.get("default_cgt_budget")
+        # Risk capacity (financial) from suitability — used in think() to apply an equity floor.
+        capacity_for_loss = (mandate.suitability or {}).get("capacity_for_loss", "medium")
         return {
             "applicable": True,
             "mandate": {"id": str(mandate.id), "name": mandate.name, "type": mandate.mandate_type},
@@ -101,6 +103,7 @@ class DriftRebalancingAgent(BaseAgent):
             "positions": positions,
             "cash": cash,
             "revision_note": ov.get("note"),
+            "capacity_for_loss": capacity_for_loss,
         }
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
@@ -133,6 +136,17 @@ class DriftRebalancingAgent(BaseAgent):
         )
         if not result.needs_rebalance:
             return []
+
+        # Risk capacity guardrail (F1): flag if proposed equity exceeds capacity floor.
+        _CAPACITY_EQUITY_MAX = {"low": 0.40, "medium": 0.70, "high": 1.0}
+        capacity = (sensed.get("capacity_for_loss") or "medium").lower()
+        equity_max = _CAPACITY_EQUITY_MAX.get(capacity, 0.70)
+        proposed_equity = result.target_weights.get("equity", 0.0)
+        if proposed_equity > equity_max:
+            result.guardrail_breaches.append(
+                f"Proposed equity ({proposed_equity:.0%}) exceeds risk capacity limit ({equity_max:.0%}) "
+                f"for capacity_for_loss='{capacity}'"
+            )
 
         # Data confidence across positions.
         confs = [p["confidence"] for p in sensed["positions"]] or [1.0]

@@ -9,7 +9,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-# Long-run capital-market assumptions by asset class (annual). Deterministic, documented.
+# Long-run capital-market assumptions by asset class (annual): (expected_return, volatility).
+# Firms can override these via Firm.settings["cmas"] — see effective_cma().
 CMA = {
     "equity": (0.075, 0.16),
     "fixed_income": (0.035, 0.06),
@@ -19,6 +20,23 @@ CMA = {
     "commodity": (0.04, 0.18),
     "multi_asset": (0.06, 0.10),
 }
+
+
+def effective_cma(firm_settings: dict | None = None) -> dict:
+    """Return CMA dict, merging firm-level overrides from settings["cmas"].
+
+    Each key in settings["cmas"] can be a list/tuple of [return, volatility].
+    Unknown or malformed entries are ignored so defaults always win as fallback.
+    """
+    out = dict(CMA)
+    overrides = (firm_settings or {}).get("cmas") or {}
+    for cls, val in overrides.items():
+        if isinstance(val, (list, tuple)) and len(val) == 2:
+            try:
+                out[cls] = (float(val[0]), float(val[1]))
+            except (TypeError, ValueError):
+                pass
+    return out
 
 # Named stress scenarios: per-asset-class shock (instantaneous return).
 STRESS_SCENARIOS = {
@@ -45,22 +63,23 @@ class GoalProjection:
     shortfall: float
 
 
-def _blended_assumptions(allocation: dict[str, float]) -> tuple[float, float]:
+def _blended_assumptions(allocation: dict[str, float], cma: dict | None = None) -> tuple[float, float]:
     """Expected return & volatility for an allocation (weights by asset class)."""
+    _cma = cma or CMA
     total = sum(allocation.values()) or 1.0
     mu = sigma_var = 0.0
     weights = {}
     for cls, val in allocation.items():
         w = val / total
         weights[cls] = w
-        mu += w * CMA.get(cls, CMA["multi_asset"])[0]
+        mu += w * _cma.get(cls, _cma.get("multi_asset", CMA["multi_asset"]))[0]
     # Simple correlation-aware variance: assume 0.4 pairwise correlation across risk assets.
     classes = list(weights)
     cov = 0.0
     for i, ci in enumerate(classes):
-        si = CMA.get(ci, CMA["multi_asset"])[1]
+        si = _cma.get(ci, _cma.get("multi_asset", CMA["multi_asset"]))[1]
         for j, cj in enumerate(classes):
-            sj = CMA.get(cj, CMA["multi_asset"])[1]
+            sj = _cma.get(cj, _cma.get("multi_asset", CMA["multi_asset"]))[1]
             corr = 1.0 if i == j else 0.4
             cov += weights[ci] * weights[cj] * si * sj * corr
     return mu, float(np.sqrt(max(cov, 1e-9)))
@@ -76,9 +95,10 @@ def project_goal(
     target_amount: float,
     sims: int = 2000,
     seed: int = 7,
+    cma: dict | None = None,
 ) -> GoalProjection:
     """Monte-Carlo projection of a goal funded by a portfolio (handles decumulation)."""
-    mu, sigma = _blended_assumptions(allocation)
+    mu, sigma = _blended_assumptions(allocation, cma=cma)
     rng = np.random.default_rng(seed)
     years = max(1, int(years))
     paths = np.full(sims, float(current_value))
@@ -102,9 +122,9 @@ def project_goal(
     )
 
 
-def portfolio_risk(allocation: dict[str, float], total_value: float) -> dict:
+def portfolio_risk(allocation: dict[str, float], total_value: float, cma: dict | None = None) -> dict:
     """Whole-portfolio risk analytics: expected return, volatility, parametric VaR."""
-    mu, sigma = _blended_assumptions(allocation)
+    mu, sigma = _blended_assumptions(allocation, cma=cma)
     # 1-year 95% parametric VaR.
     var95 = total_value * (1.645 * sigma - mu)
     return {

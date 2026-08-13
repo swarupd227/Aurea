@@ -112,4 +112,56 @@ CATALOGUE: dict[str, dict] = {
                 "before regulatory deadlines make planning impossible or more costly.",
         "checkpoint": "Adviser reviews alerts and initiates client conversation; no external effect.",
     },
+    AgentKey.IPS_DRAFTING: {
+        "name": "IPS Drafter", "stage": "Advise & engage",
+        "default_tier": AutonomyTier.TIER_2, "subject": "household",
+        "senses": "Full client brain — goals, mandate constraints, suitability questionnaire, "
+                  "risk profile, tax situation, legal entities, and unique preferences.",
+        "acts": "Generates a formal Investment Policy Statement (IPS) using the RRTTLLU framework: "
+                "Return objective, Risk tolerance & capacity, Time horizon, Tax situation, "
+                "Liquidity needs, Legal constraints, Unique preferences. "
+                "Includes target allocation, benchmark, and rebalancing policy.",
+        "checkpoint": "Adviser reviews and edits the draft IPS before delivery to the client. "
+                      "The IPS is an advisory-relationship document — human authorship is required.",
+    },
+    AgentKey.ASSET_LOCATION: {
+        "name": "Asset Location Optimizer", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_2, "subject": "household",
+        "senses": "All holdings across all accounts (taxable, IRA/RRSP, Roth, trust, ISA) "
+                  "with asset class, account type, and tax lot information.",
+        "acts": "Identifies tax-inefficient asset placement — e.g. income-heavy bonds in taxable accounts, "
+                "growth equities in tax-deferred accounts. Produces a repositioning proposal that minimises "
+                "tax drag without generating unnecessary capital-gains events.",
+        "checkpoint": "Adviser approves before any repositioning is communicated to the portfolio team or OMS.",
+    },
+    AgentKey.WALLET_SHARE_SCOUT: {
+        "name": "Wallet Share Scout", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_1, "subject": "household",
+        "senses": "Held-away asset data per person, managed AUM, household life stage, "
+                  "goals, and estate situation.",
+        "acts": "Surfaces consolidation opportunities ranked by held-away magnitude. "
+                "Generates personalised talking-point memos calibrated to each household's "
+                "life stage, goals, and estate situation — not generic boilerplate.",
+        "checkpoint": "Adviser uses talking points at the next review meeting; no external action.",
+    },
+    AgentKey.GLIDE_PATH: {
+        "name": "Glide Path Advisor", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_2, "subject": "household",
+        "senses": "Household retirement goals (target date, target amount, current probability), "
+                  "current equity allocation, and behavioural risk profile.",
+        "acts": "For households within 7 years of a major goal, models the recommended "
+                "equity step-down schedule per year. Flags households that are over-risked for "
+                "their timeline and generates a de-risking rebalancing proposal.",
+        "checkpoint": "Adviser reviews and approves the proposed allocation shift before acting.",
+    },
+    AgentKey.REVERSE_CHURNING: {
+        "name": "Reverse Churning Detector", "stage": "Protect & govern",
+        "default_tier": AutonomyTier.TIER_2, "subject": "firm",
+        "senses": "All households on AUM-based fee mandates and their advisory activity history "
+                  "(meeting dates, recommendation dates, task dates).",
+        "acts": "Flags clients on ongoing advisory fees with no documented advisory activity "
+                "in 12+ months. Generates a surveillance flag (conduct risk) and drafts a "
+                "suggested check-in agenda for each flagged household.",
+        "checkpoint": "Compliance reviews flags; adviser initiates re-engagement.",
+    },
 }

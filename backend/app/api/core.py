@@ -199,6 +199,48 @@ async def household_estate(
     ))
     risk_level = "high" if risk_score >= 50 else ("moderate" if risk_score >= 20 else "low")
 
+    # Step-up in basis quantification (US households — §1014 IRC)
+    step_up_basis = None
+    if hh_jurisdiction == "US":
+        from app.models.graph import Account, Mandate
+        from app.models.portfolio import Holding
+        # Collect all accounts under this household's mandates
+        persons = brain.get("persons", [])
+        entities = brain.get("entities", [])
+        person_ids = [uuid.UUID(p["id"]) for p in persons if p.get("id")]
+        entity_ids = [uuid.UUID(e["id"]) for e in entities if e.get("id")]
+        clauses = []
+        from sqlalchemy import or_ as _or
+        if person_ids:
+            clauses.append(Mandate.person_id.in_(person_ids))
+        if entity_ids:
+            clauses.append(Mandate.entity_id.in_(entity_ids))
+        total_unrealised = 0.0
+        if clauses:
+            mandate_ids = (
+                await db.execute(select(Mandate.id).where(Mandate.household_id == household_id))
+            ).scalars().all()
+            if mandate_ids:
+                account_ids = (
+                    await db.execute(select(Account.id).where(Account.mandate_id.in_(mandate_ids)))
+                ).scalars().all()
+                if account_ids:
+                    holdings = (
+                        await db.execute(select(Holding).where(Holding.account_id.in_(account_ids)))
+                    ).scalars().all()
+                    total_unrealised = sum(
+                        float(h.market_value or 0) - float(h.cost_basis or 0)
+                        for h in holdings
+                    )
+        step_up_basis = {
+            "unrealised_gain": round(total_unrealised, 2),
+            "step_up_benefit": round(max(total_unrealised, 0), 2),
+            "note": (
+                "Under IRC §1014, heirs inherit assets at date-of-death market value. "
+                "Unrealised gains are permanently extinguished — a significant estate-planning lever."
+            ) if total_unrealised > 0 else "No unrealised gains identified.",
+        }
+
     return {
         "household_id": str(household_id),
         "household_name": brain["household"]["name"],
@@ -213,6 +255,7 @@ async def household_estate(
             "gaps_count": len(gaps),
             "high_severity_count": high_count,
         },
+        "step_up_basis": step_up_basis,
         "generated_at": date.today().isoformat(),
     }
 
