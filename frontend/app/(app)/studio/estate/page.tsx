@@ -292,7 +292,7 @@ export default function EstatePage() {
     <div>
       <PageHeader
         title="Estate & Succession"
-        sub="Trust governance, wealth concentration, heir readiness, and NZ Trusts Act 2019 compliance — across the book."
+        sub="Trust governance, wealth concentration, heir readiness, and jurisdiction-aware compliance — across the book."
       />
 
       {/* Summary tiles */}
@@ -309,8 +309,8 @@ export default function EstatePage() {
         </div>
         <div className="card p-4">
           <div className="tile-label">Regulatory context</div>
-          <div className="text-sm font-semibold text-ink mt-1">NZ Trusts Act 2019</div>
-          <div className="text-xs text-ink-muted mt-1">§23 review obligations</div>
+          <div className="text-sm font-semibold text-ink mt-1">NZ · US · UK</div>
+          <div className="text-xs text-ink-muted mt-1">Per-household jurisdiction</div>
         </div>
         <div className="card p-4">
           <div className="tile-label">Estate memo</div>

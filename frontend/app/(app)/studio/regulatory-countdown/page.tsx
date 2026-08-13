@@ -28,12 +28,21 @@ interface Action {
   priority: number; action: string; detail: string; estimated_benefit: string;
 }
 
+interface BPRFigures {
+  estimated_qualifying_assets: number; cap: number; cap_exposure: number;
+  estimated_additional_iht: number; affected: boolean;
+}
+
+interface FCAFigures {
+  total_portfolio_value: number; client_count: number;
+}
+
 interface Analysis {
-  type: "us_estate_tax_sunset" | "uk_iht_pension_inclusion";
+  type: "us_estate_tax_sunset" | "uk_iht_pension_inclusion" | "uk_bpr_apr_cap" | "uk_fca_targeted_support";
   title: string; subtitle: string; deadline: string;
   days_remaining: number; urgency: "critical" | "high" | "medium";
-  summary: string; figures: USFigures | UKFigures; actions: Action[];
-  currency: string; regulation: string;
+  summary: string; figures: USFigures | UKFigures | BPRFigures | FCAFigures; actions: Action[];
+  currency: string; regulation: string; legislative_note?: string;
 }
 
 interface HouseholdResult {
@@ -325,6 +334,81 @@ function UKAnalysisPanel({ analysis }: { analysis: Analysis }) {
   );
 }
 
+function GenericAnalysisPanel({ analysis }: { analysis: Analysis }) {
+  const urgency = URGENCY_CONFIG[analysis.urgency] || URGENCY_CONFIG.medium;
+  const [openActions, setOpenActions] = useState<Set<number>>(new Set([0]));
+  const toggle = (i: number) =>
+    setOpenActions(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
+
+  // BPR-specific figures
+  const bpr = analysis.type === "uk_bpr_apr_cap" ? analysis.figures as BPRFigures : null;
+  // FCA-specific figures
+  const fca = analysis.type === "uk_fca_targeted_support" ? analysis.figures as FCAFigures : null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-4 p-4 bg-surface rounded-xl border border-border">
+        {analysis.days_remaining > 0
+          ? <CountdownRing days={analysis.days_remaining} deadline={analysis.deadline} />
+          : (
+            <div className="flex flex-col items-center gap-1 w-[88px] flex-shrink-0">
+              <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <AlertTriangle size={28} className="text-red-600 dark:text-red-400" />
+              </div>
+              <span className="text-xs text-ink-muted">In force</span>
+            </div>
+          )
+        }
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="font-semibold text-ink">{analysis.title}</h3>
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${urgency.cls}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${urgency.dotCls}`} />
+              {urgency.label}
+            </span>
+          </div>
+          <p className="text-xs text-ink-muted mb-2">{analysis.subtitle}</p>
+          <p className="text-sm text-ink-secondary">{analysis.summary}</p>
+          <p className="text-[11px] text-ink-faint mt-2">{analysis.regulation}</p>
+          {analysis.legislative_note && (
+            <div className="flex items-start gap-1.5 mt-2 p-2 rounded bg-blue-50 dark:bg-blue-900/20">
+              <Info size={11} className="text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-blue-700 dark:text-blue-300">{analysis.legislative_note}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {bpr && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <SummaryCard label="Qualifying assets (est.)" value={fmt(bpr.estimated_qualifying_assets, "GBP")} sub="alternatives proxy" />
+          <SummaryCard label="Cap per individual" value="£1M" sub="from April 2027" />
+          <SummaryCard label="Exposure above cap" value={bpr.cap_exposure > 0 ? fmt(bpr.cap_exposure, "GBP") : "None"} sub={bpr.cap_exposure > 0 ? "at reduced 50% relief" : "within cap"} />
+          <SummaryCard label="Est. additional IHT" value={bpr.estimated_additional_iht > 0 ? fmt(bpr.estimated_additional_iht, "GBP") : "None"} sub={bpr.estimated_additional_iht > 0 ? "at 20% effective rate" : "no incremental IHT"} />
+        </div>
+      )}
+
+      {fca && (
+        <div className="grid grid-cols-2 gap-3">
+          <SummaryCard label="Household portfolio" value={fmt(fca.total_portfolio_value, "GBP")} sub="in scope for targeted support" />
+          <SummaryCard label="Client count" value={String(fca.client_count)} sub="potential targeted support clients" />
+        </div>
+      )}
+
+      {analysis.actions.length > 0 && (
+        <div className="bg-surface rounded-xl border border-border p-4">
+          <h4 className="text-sm font-semibold text-ink mb-3">Recommended planning actions</h4>
+          <div className="space-y-2">
+            {analysis.actions.map((a, i) => (
+              <ActionItem key={i} action={a} open={openActions.has(i)} onToggle={() => toggle(i)} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NoCountdownPanel({ result }: { result: HouseholdResult }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -377,8 +461,6 @@ export default function RegulatoryCountdownPage() {
     jur === "US" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
     jur === "UK" ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" :
     "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
-
-  const activeAnalysis = result?.analyses?.[0] ?? null;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
@@ -435,15 +517,23 @@ export default function RegulatoryCountdownPage() {
 
       {!loading && !error && result && (
         <>
-          {activeAnalysis?.type === "us_estate_tax_sunset" && (
-            <USAnalysisPanel analysis={activeAnalysis} />
-          )}
-          {activeAnalysis?.type === "uk_iht_pension_inclusion" && (
-            <UKAnalysisPanel analysis={activeAnalysis} />
-          )}
-          {!activeAnalysis && (
-            <NoCountdownPanel result={result} />
-          )}
+          {result.analyses && result.analyses.length > 0
+            ? (
+              <div className="space-y-8">
+                {result.analyses.map((analysis, i) => (
+                  <div key={i}>
+                    {i > 0 && <div className="border-t border-border" />}
+                    {analysis.type === "us_estate_tax_sunset" && <USAnalysisPanel analysis={analysis} />}
+                    {analysis.type === "uk_iht_pension_inclusion" && <UKAnalysisPanel analysis={analysis} />}
+                    {(analysis.type === "uk_bpr_apr_cap" || analysis.type === "uk_fca_targeted_support") && (
+                      <GenericAnalysisPanel analysis={analysis} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+            : <NoCountdownPanel result={result} />
+          }
         </>
       )}
 

@@ -113,6 +113,10 @@ async def household_estate(
         for e in entity_rows
     ]
 
+    # Resolve jurisdiction once — household value overrides firm default
+    hh_values = brain.get("household", {}).get("values") or {}
+    hh_jurisdiction = hh_values.get("jurisdiction") or firm.jurisdiction or "NZ"
+
     totals = brain.get("totals", {})
     total_value = totals.get("total_value", 0) or 0
     by_class = totals.get("by_asset_class", {})
@@ -145,10 +149,11 @@ async def household_estate(
             "established": gov.get("established"),
             "review_date": gov.get("review_date"),
             "jurisdiction": ent["jurisdiction"],
-            "compliance_note": (
-                "NZ Trusts Act 2019 §23 requires trustees to actively administer and review periodically."
-                if ent["jurisdiction"] == "NZ" else None
-            ),
+            "compliance_note": {
+                "NZ": "NZ Trusts Act 2019 §23 requires trustees to actively administer and review periodically.",
+                "UK": "UK Trustee Act 2000 imposes an active investment duty. Trust must be registered with HMRC TRS.",
+                "US": "Confirm pour-over will and beneficiary designations. Review step-up in basis and state law compliance.",
+            }.get(ent["jurisdiction"] or hh_jurisdiction),
         })
 
     # Heir readiness
@@ -186,8 +191,8 @@ async def household_estate(
             "suggested_actions": actions,
         })
 
-    # Succession gaps
-    gaps = _succession_gaps(brain, entities_gov)
+    # Succession gaps — jurisdiction-aware
+    gaps = _succession_gaps(brain, entities_gov, jurisdiction=hh_jurisdiction)
     high_count = sum(1 for g in gaps if g.get("severity") == "high")
     risk_score = min(100, high_count * 30 + sum(
         10 if g["severity"] == "medium" else 5 for g in gaps if g["severity"] != "high"
@@ -251,8 +256,8 @@ async def household_behavioural(
 async def household_tax_intel(
     household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    """Cross-book tax intelligence: loss-harvest, PIE, KiwiSaver, bright-line, withdrawal sequencing."""
-    result = await tax_intelligence.for_household(db, household_id)
+    """Tax intelligence: jurisdiction-dispatched modules (NZ / US / UK)."""
+    result = await tax_intelligence.for_household(db, household_id, firm.jurisdiction or "NZ")
     if not result:
         raise HTTPException(status_code=404, detail="Household not found")
     return result

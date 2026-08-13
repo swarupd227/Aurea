@@ -1,8 +1,13 @@
 """Regulatory Countdown — jurisdiction-aware deadline intelligence.
 
-Two modules:
-  1. US: Federal Estate Tax Exemption Sunset (Jan 1, 2026) — exemption halves unless Congress acts.
-  2. UK: IHT Pension Pot Inclusion (April 6, 2027) — unused pension pots enter the IHT estate.
+US modules:
+  1. Federal Estate Tax (post-sunset reality) — exemption halved to ~$7M/person from Jan 2026.
+  2. Reg BI / DOL Fiduciary ongoing compliance — annual best-interest evidence review.
+
+UK modules:
+  1. IHT Pension Pot Inclusion (April 6, 2027) — unused pension pots enter the IHT estate.
+  2. BPR/APR Cap (April 6, 2027) — business/agricultural property relief capped at £1M.
+  3. FCA Targeted Support (expected 2027) — new regulated category between guidance and advice.
 """
 from __future__ import annotations
 
@@ -14,11 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.aurea_core.graph import household_brain, list_households
 
 # ── US constants ──────────────────────────────────────────────────────────────
-_US_EXEMPTION_CURRENT = 13_610_000      # per-person indexed exemption (2024)
-_US_EXEMPTION_POST_SUNSET = 7_000_000   # approx 2026 value (reverting to 2018 $5M base, indexed)
+# TCJA exemption sunset occurred Jan 1, 2026 — exemption reverted to indexed ~$7M/person
+_US_EXEMPTION_CURRENT = 13_610_000      # TCJA high exemption (expired Jan 1, 2026 — historical baseline)
+_US_EXEMPTION_POST_SUNSET = 7_000_000   # approx 2026 indexed value (now in force)
 _US_ESTATE_TAX_RATE = 0.40
-_US_GIFT_EXCLUSION = 18_000             # per-donor-per-recipient annual exclusion (2024)
-_US_SUNSET_DATE = date(2026, 1, 1)
+_US_GIFT_EXCLUSION = 19_000             # per-donor-per-recipient annual exclusion (2025)
+_US_SUNSET_DATE = date(2026, 1, 1)      # already past — exemption IS reduced
 
 # ── UK constants ──────────────────────────────────────────────────────────────
 _UK_NRB = 325_000                        # nil-rate band per person
@@ -26,6 +32,9 @@ _UK_RNRB = 175_000                       # residence nil-rate band per person (i
 _UK_IHT_RATE = 0.40
 _UK_PENSION_DEADLINE = date(2027, 4, 6)  # start of 2027/28 UK tax year
 _UK_RNRB_TAPER_THRESHOLD = 2_000_000    # RNRB tapers £1 per £2 above this
+_UK_BPR_APR_DATE = date(2027, 4, 6)     # BPR/APR cap takes effect (Budget 2024)
+_UK_BPR_CAP = 1_000_000                 # BPR/APR exemption cap — above this, 50% relief only
+_UK_TARGETED_SUPPORT_DATE = date(2027, 1, 1)   # FCA Targeted Support expected legislation
 
 
 def _days_until(deadline: date) -> int:
@@ -77,71 +86,88 @@ def _estimate_us_estate(brain: dict) -> dict:
 
 def _us_estate_sunset(brain: dict) -> dict:
     figures = _estimate_us_estate(brain)
-    days = _days_until(_US_SUNSET_DATE)
     persons = brain.get("persons", [])
     adult_count = len([p for p in persons if not p.get("is_next_gen")])
 
-    urgency = "critical" if days < 200 else ("high" if days < 400 else "medium")
+    # Sunset occurred Jan 1, 2026 — always in the past from today
+    urgency = "critical"  # exemption IS reduced — planning is urgent now
 
     actions = []
     if figures["affected"]:
         actions.append({
             "priority": 1,
-            "action": "Annual gift exclusion — act before Dec 31",
+            "action": "Annual gift exclusion — maximise each year",
             "detail": (
-                f"Each donor can give ${_US_GIFT_EXCLUSION:,}/year per recipient tax-free. "
-                "Fund irrevocable trusts or direct gifts to children, grandchildren, charities before year-end."
+                f"Each donor can give ${_US_GIFT_EXCLUSION:,}/year per recipient tax-free (2025). "
+                "Fund irrevocable trusts or direct gifts to children, grandchildren, and charities. "
+                "With gift-splitting, a married couple effectively gives $38,000/recipient/year."
             ),
-            "estimated_benefit": f"${_US_GIFT_EXCLUSION * adult_count * 4:,}/year reduction in taxable estate.",
+            "estimated_benefit": f"${_US_GIFT_EXCLUSION * adult_count * 4:,}+/year reduction in taxable estate.",
         })
         actions.append({
             "priority": 2,
             "action": "Spousal Lifetime Access Trust (SLAT)",
             "detail": (
-                "Fund a SLAT now while the high exemption applies. Assets inside the trust are excluded "
-                "from the estate yet the spouse retains beneficial access."
+                "A SLAT allows one spouse to transfer assets irrevocably out of the estate "
+                "while the other spouse retains indirect access through the trustee. "
+                "Established now under the reduced exemption — assets inside the trust are frozen out of future estate growth."
             ),
-            "estimated_benefit": f"Up to ${_US_EXEMPTION_CURRENT/1e6:.1f}M sheltered if executed before Jan 1 2026.",
+            "estimated_benefit": f"Up to ${_US_EXEMPTION_POST_SUNSET/1e6:.0f}M per person sheltered per donor.",
         })
         actions.append({
             "priority": 3,
             "action": "Grantor Retained Annuity Trust (GRAT)",
             "detail": (
                 "Transfer appreciating assets into a short-term GRAT. Appreciation above the §7520 "
-                "hurdle rate passes to heirs estate-tax-free."
+                "hurdle rate (currently ~5%) passes to heirs completely estate-tax-free. "
+                "Works best with assets likely to appreciate significantly (private equity, concentrated positions)."
             ),
-            "estimated_benefit": "Appreciation beyond hurdle rate exits estate with no gift tax.",
+            "estimated_benefit": "Appreciation above the hurdle rate exits the estate with zero estate or gift tax.",
+        })
+        actions.append({
+            "priority": 4,
+            "action": "Charitable strategies — DAF, CRT, CLT",
+            "detail": (
+                "Donor-Advised Funds (DAFs): immediate charitable deduction, assets leave the estate at once. "
+                "Charitable Remainder Trusts (CRT): income stream to donor/heir, remainder to charity estate-tax-free. "
+                "Charitable Lead Trusts (CLT): income to charity first, remainder to heirs at reduced gift-tax value."
+            ),
+            "estimated_benefit": "Removes appreciated assets from estate while generating income or charitable deduction.",
         })
         if figures["retirement_accounts"] > 0:
             actions.append({
-                "priority": 4,
-                "action": "Roth conversion strategy",
+                "priority": 5,
+                "action": "Roth conversion — reduce IRA estate exposure",
                 "detail": (
-                    "Traditional IRA/401(k) balances are included in the gross estate and subject to "
-                    "RMDs. Roth conversions reduce taxable IRA balances, avoid future RMDs, and pass "
-                    "income-tax-free to heirs."
+                    "Traditional IRA/401(k) balances inflate the taxable estate AND require RMDs. "
+                    "Roth conversions: pay income tax now (at potentially lower rates), eliminate future RMDs, "
+                    "and leave Roth assets income-tax-free to heirs."
                 ),
-                "estimated_benefit": f"${figures['retirement_accounts']:,.0f} retirement account estate exposure addressable.",
+                "estimated_benefit": f"${figures['retirement_accounts']:,.0f} IRA/401(k) estate exposure addressable.",
             })
 
     return {
         "type": "us_estate_tax_sunset",
-        "title": "US Estate Tax Exemption Sunset",
-        "subtitle": "Federal exemption halves on Jan 1, 2026",
+        "title": "US Estate Tax — Reduced Exemption in Force",
+        "subtitle": f"TCJA sunset effective Jan 2026 — exemption now ~${_US_EXEMPTION_POST_SUNSET/1e6:.0f}M/person",
         "deadline": _US_SUNSET_DATE.isoformat(),
-        "days_remaining": days,
+        "days_remaining": 0,
         "urgency": urgency,
         "summary": (
-            f"The TCJA estate tax exemption (${ _US_EXEMPTION_CURRENT/1e6:.1f}M/person) sunsets on "
-            f"Jan 1 2026 unless Congress acts, reverting to ~${_US_EXEMPTION_POST_SUNSET/1e6:.0f}M. "
-            f"This household's estimated gross estate of ${figures['gross_estate']/1e6:.1f}M "
-            + ("exceeds the post-sunset threshold — immediate planning is required."
-               if figures["affected"] else "falls within the post-sunset threshold — monitor legislation.")
+            f"The TCJA estate tax exemption sunset occurred on Jan 1, 2026. "
+            f"The federal exemption has reverted to approximately ${_US_EXEMPTION_POST_SUNSET/1e6:.0f}M/person "
+            f"(down from $13.61M). This household's estimated gross estate of ${figures['gross_estate']/1e6:.1f}M "
+            + ("exceeds the reduced threshold — estate planning actions are needed now."
+               if figures["affected"] else f"remains below the ${_US_EXEMPTION_POST_SUNSET/1e6:.0f}M threshold — continue monitoring estate growth.")
         ),
         "figures": figures,
         "actions": actions,
         "currency": "USD",
-        "regulation": "Tax Cuts and Jobs Act 2017 — §2010 sunset clause",
+        "regulation": "Tax Cuts and Jobs Act 2017 — §2010 sunset; post-sunset rules effective Jan 1, 2026",
+        "legislative_note": (
+            "Congressional action to restore the higher exemption remains possible but uncertain. "
+            "Planning under the current reduced exemption is the prudent approach."
+        ),
     }
 
 
@@ -277,6 +303,171 @@ def _uk_iht_pension(brain: dict) -> dict:
     }
 
 
+# ── UK BPR/APR Cap ───────────────────────────────────────────────────────────
+
+def _uk_bpr_apr_cap(brain: dict) -> dict:
+    """Business Property Relief / Agricultural Property Relief cap from April 2027 (Budget 2024)."""
+    days = _days_until(_UK_BPR_APR_DATE)
+    urgency = "critical" if days < 300 else ("high" if days < 500 else "medium")
+
+    persons = brain.get("persons", [])
+    totals = brain.get("totals", {})
+    by_class = totals.get("by_asset_class", {})
+
+    # Alternatives as proxy for private business / agricultural assets
+    alternatives = by_class.get("alternatives", 0) or 0
+    portfolio = totals.get("total_value", 0) or 0
+
+    # Estimate BPR/APR-qualifying assets (alternatives as a rough proxy)
+    est_qualifying = alternatives
+    cap_exposure = max(0, est_qualifying - _UK_BPR_CAP)
+    iht_additional = cap_exposure * 0.20  # 50% relief → 20% effective IHT on excess
+
+    actions = []
+    if est_qualifying > _UK_BPR_CAP:
+        actions.append({
+            "priority": 1,
+            "action": "Review BPR/APR eligibility and cap exposure",
+            "detail": (
+                f"From April 2027, BPR/APR is capped at £{_UK_BPR_CAP:,}. "
+                f"Qualifying assets above this threshold receive only 50% relief (effective IHT rate: 20%). "
+                "Identify all business and agricultural assets; quantify exposure above the cap; "
+                "consider restructuring to maximise per-person caps (each individual has their own £1M allowance)."
+            ),
+            "estimated_benefit": f"~£{iht_additional:,.0f} additional IHT avoidable with proactive restructuring.",
+        })
+        actions.append({
+            "priority": 2,
+            "action": "Lifetime gifts of qualifying assets before April 2027",
+            "detail": (
+                "Gifts of BPR/APR-qualifying assets made before April 2027 may still benefit from full (100%) relief. "
+                "Outright gifts to family members or into a discretionary trust could lock in the pre-cap treatment "
+                "if the donor survives 2 years (for BPR) or 7 years (PET)."
+            ),
+            "estimated_benefit": "Could shelter qualifying assets under current unlimited BPR/APR before the cap takes effect.",
+        })
+        actions.append({
+            "priority": 3,
+            "action": "Whole-of-life insurance to cover residual IHT",
+            "detail": (
+                "A whole-of-life policy written in a discretionary trust can fund the residual IHT liability "
+                "arising from assets above the £1M cap, preserving the business or farm intact for successors."
+            ),
+            "estimated_benefit": f"Covers projected £{iht_additional:,.0f} IHT without forcing an asset sale.",
+        })
+    else:
+        actions.append({
+            "priority": 1,
+            "action": "Confirm BPR/APR-qualifying asset inventory",
+            "detail": (
+                f"With an estimated £{est_qualifying:,.0f} in alternatives/business assets, "
+                f"the £{_UK_BPR_CAP:,} cap is not breached. "
+                "However, confirm which assets qualify for BPR (2-year minimum holding, actively traded or private business) "
+                "vs APR (agricultural land, minimum 2 years owner-occupied or 7 years tenanted). "
+                "Ensure the necessary holding periods are met before April 2027."
+            ),
+            "estimated_benefit": "Maintains full BPR/APR on qualifying assets — no additional IHT exposure.",
+        })
+
+    return {
+        "type": "uk_bpr_apr_cap",
+        "title": "UK BPR/APR Reform — £1M Relief Cap",
+        "subtitle": "Business & agricultural property relief capped at £1M from April 2027",
+        "deadline": _UK_BPR_APR_DATE.isoformat(),
+        "days_remaining": days,
+        "urgency": urgency,
+        "summary": (
+            f"From 6 April 2027 (Budget 2024), Business Property Relief and Agricultural Property Relief "
+            f"are capped at £{_UK_BPR_CAP:,} per individual. Assets above this threshold receive only 50% relief "
+            f"(effective 20% IHT). "
+            + (f"This household has approximately £{est_qualifying:,.0f} in business/alternative assets — "
+               f"£{cap_exposure:,.0f} is above the cap, creating an estimated £{iht_additional:,.0f} additional IHT exposure."
+               if est_qualifying > _UK_BPR_CAP else
+               f"Current business/alternative assets (£{est_qualifying:,.0f}) appear within the £{_UK_BPR_CAP:,} cap.")
+        ),
+        "figures": {
+            "estimated_qualifying_assets": round(est_qualifying, 2),
+            "cap": _UK_BPR_CAP,
+            "cap_exposure": round(cap_exposure, 2),
+            "estimated_additional_iht": round(iht_additional, 2),
+            "affected": est_qualifying > _UK_BPR_CAP,
+        },
+        "actions": actions,
+        "currency": "GBP",
+        "regulation": "Autumn Budget 2024 — BPR/APR cap effective April 6, 2027",
+    }
+
+
+# ── UK FCA Targeted Support ───────────────────────────────────────────────────
+
+def _uk_fca_targeted_support(brain: dict) -> dict:
+    """FCA Targeted Support — new regulatory category between guidance and regulated advice."""
+    days = _days_until(_UK_TARGETED_SUPPORT_DATE)
+    urgency = "medium" if days > 400 else "high"
+
+    totals = brain.get("totals", {})
+    total_value = totals.get("total_value", 0) or 0
+    persons = brain.get("persons", [])
+
+    actions = [
+        {
+            "priority": 1,
+            "action": "Map current service offering to the new Targeted Support tier",
+            "detail": (
+                "The FCA Targeted Support regime (expected 2026/27) will create a new category "
+                "between generic guidance (unregulated) and full regulated advice. "
+                "Firms will be able to offer more tailored, client-specific guidance "
+                "without the full suitability assessment burden — but within defined parameters. "
+                "Map which of your current conversations qualify and which services can be repositioned."
+            ),
+            "estimated_benefit": "Expands addressable market to mass-affluent clients previously underserved by full advice costs.",
+        },
+        {
+            "priority": 2,
+            "action": "Prepare data infrastructure for evidencing Targeted Support decisions",
+            "detail": (
+                "Targeted Support will likely require firms to evidence which standardised scenarios "
+                "were used and why they were appropriate for each client. "
+                "Ensure your CRM and advice systems can capture and export this trail at scale. "
+                "Platforms that cannot evidence compliance will be unable to use the new category."
+            ),
+            "estimated_benefit": "Operational readiness reduces compliance risk and time-to-market when legislation lands.",
+        },
+        {
+            "priority": 3,
+            "action": "Monitor FCA consultation and draft rules",
+            "detail": (
+                "The FCA published CP23/24 (Consumer Investments) and the Advice Guidance Boundary Review. "
+                "A further consultation on detailed Targeted Support rules is expected in 2026. "
+                "Assign responsibility for tracking developments and updating your advice framework accordingly."
+            ),
+            "estimated_benefit": "First-mover advantage when the regime goes live.",
+        },
+    ]
+
+    return {
+        "type": "uk_fca_targeted_support",
+        "title": "FCA Targeted Support — New Advice Category",
+        "subtitle": "Regulatory framework expected 2026/27 — prepare now",
+        "deadline": _UK_TARGETED_SUPPORT_DATE.isoformat(),
+        "days_remaining": days,
+        "urgency": urgency,
+        "summary": (
+            "The FCA Advice Guidance Boundary Review is expected to introduce a new 'Targeted Support' category, "
+            "allowing firms to offer more tailored, client-specific guidance without a full regulated advice process. "
+            "This is a significant commercial and compliance opportunity — firms that adapt early will gain "
+            "access to underserved mass-affluent clients while managing regulatory risk proactively."
+        ),
+        "figures": {
+            "total_portfolio_value": total_value,
+            "client_count": len(persons),
+        },
+        "actions": actions,
+        "currency": "GBP",
+        "regulation": "FCA Advice Guidance Boundary Review (2023–2026) — CP23/24 and forthcoming consultation",
+    }
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 async def for_household(
@@ -299,6 +490,8 @@ async def for_household(
         result["analyses"].append(_us_estate_sunset(brain))
     elif jurisdiction == "UK":
         result["analyses"].append(_uk_iht_pension(brain))
+        result["analyses"].append(_uk_bpr_apr_cap(brain))
+        result["analyses"].append(_uk_fca_targeted_support(brain))
     else:
         result["message"] = (
             f"No critical upcoming regulatory deadlines are currently tracked for {jurisdiction} jurisdiction. "

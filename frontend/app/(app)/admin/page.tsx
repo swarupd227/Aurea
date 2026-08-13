@@ -136,6 +136,13 @@ export default function Admin() {
   );
 }
 
+const JURISDICTION_DEFAULTS: Record<string, { regulator: string; base_currency: string; compliance_regime: string; flag: string }> = {
+  NZ:    { regulator: "FMA",       base_currency: "NZD", compliance_regime: "NZ-FMA",    flag: "🇳🇿" },
+  US:    { regulator: "SEC/FINRA", base_currency: "USD", compliance_regime: "US-SEC",    flag: "🇺🇸" },
+  UK:    { regulator: "FCA",       base_currency: "GBP", compliance_regime: "UK-FCA",    flag: "🇬🇧" },
+  MULTI: { regulator: "",          base_currency: "USD", compliance_regime: "(per client)", flag: "🌐" },
+};
+
 function FirmTab() {
   const { data, loading, refetch } = useApi<any>("/api/admin/firm");
   const [form, setForm] = useState<any>(null);
@@ -143,10 +150,21 @@ function FirmTab() {
   if (loading || !data) return <Spinner />;
   const f = form || {
     name: data.name, jurisdiction: data.jurisdiction, regulator: data.regulator,
+    base_currency: data.base_currency || "NZD",
     branding: { ...data.branding }, settings: { ...data.settings },
   };
   const set = (patch: any) => setForm({ ...f, ...patch });
   const setBrand = (patch: any) => setForm({ ...f, branding: { ...f.branding, ...patch } });
+
+  function changeJurisdiction(jur: string) {
+    const defaults = JURISDICTION_DEFAULTS[jur] || JURISDICTION_DEFAULTS.NZ;
+    setForm({
+      ...f,
+      jurisdiction: jur,
+      regulator: defaults.regulator,
+      base_currency: defaults.base_currency,
+    });
+  }
 
   async function save() {
     await api("/api/admin/firm", { method: "PATCH", body: f });
@@ -155,24 +173,50 @@ function FirmTab() {
     refetch();
   }
 
+  const jurInfo = JURISDICTION_DEFAULTS[f.jurisdiction] || JURISDICTION_DEFAULTS.NZ;
+
   return (
     <div className="grid md:grid-cols-2 gap-5 max-w-4xl">
       <Card>
         <div className="font-semibold text-ink mb-3">Firm</div>
         <div className="space-y-3">
           <div><label className="label">Name</label><input className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} /></div>
+
+          <div>
+            <label className="label">Jurisdiction</label>
+            <select className="input" value={f.jurisdiction} onChange={(e) => changeJurisdiction(e.target.value)}>
+              <option value="NZ">🇳🇿 NZ — New Zealand (FMA)</option>
+              <option value="US">🇺🇸 US — United States (SEC / FINRA)</option>
+              <option value="UK">🇬🇧 UK — United Kingdom (FCA)</option>
+              <option value="MULTI">🌐 Multi-jurisdiction</option>
+            </select>
+          </div>
+
+          {/* Jurisdiction cascade preview */}
+          <div className="bg-surface-subtle border border-border rounded-lg px-3 py-2.5 text-xs space-y-1">
+            <div className="flex items-center gap-1.5 text-ink-faint font-medium uppercase tracking-wide text-[10px] mb-1">
+              {jurInfo.flag} Auto-configured for this jurisdiction
+            </div>
+            <div className="flex gap-4 flex-wrap">
+              <span className="text-ink-muted">Regulator: <strong className="text-ink">{f.regulator || "—"}</strong></span>
+              <span className="text-ink-muted">Currency: <strong className="text-ink">{f.base_currency}</strong></span>
+              <span className="text-ink-muted">Compliance regime: <strong className="text-ink">{jurInfo.compliance_regime}</strong></span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Jurisdiction</label>
-              <select className="input" value={f.jurisdiction} onChange={(e) => set({ jurisdiction: e.target.value })}>
-                <option value="NZ">🇳🇿 NZ — New Zealand (FMA)</option>
-                <option value="US">🇺🇸 US — United States (SEC / FINRA)</option>
-                <option value="UK">🇬🇧 UK — United Kingdom (FCA)</option>
-                <option value="MULTI">🌐 Multi-jurisdiction</option>
+            <div><label className="label">Regulator</label><input className="input" value={f.regulator || ""} onChange={(e) => set({ regulator: e.target.value })} /></div>
+            <div><label className="label">Base currency</label>
+              <select className="input" value={f.base_currency} onChange={(e) => set({ base_currency: e.target.value })}>
+                <option value="NZD">NZD — New Zealand Dollar</option>
+                <option value="USD">USD — US Dollar</option>
+                <option value="GBP">GBP — British Pound</option>
+                <option value="AUD">AUD — Australian Dollar</option>
+                <option value="EUR">EUR — Euro</option>
               </select>
             </div>
-            <div><label className="label">Regulator</label><input className="input" value={f.regulator || ""} onChange={(e) => set({ regulator: e.target.value })} /></div>
           </div>
+
           <div><label className="label">AI usage policy</label>
             <textarea className="input" rows={3} value={f.settings?.ai_usage_policy || ""} onChange={(e) => setForm({ ...f, settings: { ...f.settings, ai_usage_policy: e.target.value } })} />
           </div>
@@ -191,7 +235,7 @@ function FirmTab() {
       </Card>
       <div className="md:col-span-2 flex items-center gap-3">
         <button className="btn-primary" onClick={save}><Save size={16} /> Save changes</button>
-        {saved && <span className="text-sm text-positive">Saved · refresh to see branding update.</span>}
+        {saved && <span className="text-sm text-positive">Saved · compliance regime and currency updated.</span>}
       </div>
     </div>
   );
