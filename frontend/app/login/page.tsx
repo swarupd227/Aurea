@@ -36,7 +36,7 @@ export default function LoginPage() {
         return;
       }
       if (result.user) {
-        router.push(roleLanding(result.user.role));
+        window.location.href = roleLanding(result.user.role);
       }
     } catch (err: any) {
       setError(err.message || "Login failed");
@@ -54,7 +54,7 @@ export default function LoginPage() {
         body: { mfa_token: mfaToken, code: mfaCode.trim() },
       });
       setSession(data.access_token, data.user);
-      router.push(roleLanding(data.user.role));
+      window.location.href = roleLanding(data.user.role);
     } catch (err: any) {
       setError(err.message || "Verification failed");
     } finally {
@@ -78,7 +78,7 @@ export default function LoginPage() {
         return;
       }
       if (result.user) {
-        router.push(roleLanding(result.user.role));
+        window.location.href = roleLanding(result.user.role);
       }
     } catch (err: any) {
       setError(err.message || "Login failed");
