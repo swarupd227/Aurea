@@ -118,6 +118,9 @@ class AgentKey(StrEnum):
     ROLLOVER_PTE_DOCUMENTER = "rollover_pte_documenter"
     NIGO_PREVENTION = "nigo_prevention"
     ABANDONMENT_RECOVERY = "abandonment_recovery"
+    # Phase 3 mock integrations
+    CIP_IDENTITY_VERIFIER = "cip_identity_verifier"
+    CUSTODIAN_ACCOUNT_OPENER = "custodian_account_opener"
 
 
 class ActivityKind(StrEnum):

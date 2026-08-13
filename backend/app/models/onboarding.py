@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, Numeric, String, Text
+import datetime
+
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -54,11 +56,24 @@ class OnboardingCase(Base):
     # L200: pre-submission readiness score 0–100 from NIGO Prevention agent
     readiness_score: Mapped[int | None] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Phase 3: CIP identity verification (via pluggable IdentityAdapter)
+    cip_status: Mapped[str | None] = mapped_column(String(16))       # verified|review|failed
+    cip_score: Mapped[float | None] = mapped_column(Numeric(4, 2))
+    cip_flags: Mapped[list] = mapped_column(JSON, default=list)
+    cip_reference_id: Mapped[str | None] = mapped_column(String(64)) # provider audit ref
+    # Phase 3: Custodian single-keying (via pluggable CustodianAdapter)
+    custodian_name: Mapped[str | None] = mapped_column(String(32))
+    custodian_account_id: Mapped[str | None] = mapped_column(String(64))
+    custodian_push_status: Mapped[str | None] = mapped_column(String(16))
+    custodian_push_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
     documents: Mapped[list["OnboardingDocument"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
     beneficial_owners: Mapped[list["BeneficialOwner"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan"
+    )
+    transfers: Mapped[list["TransferRequest"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
 
@@ -100,6 +115,34 @@ class BeneficialOwner(Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     case: Mapped["OnboardingCase"] = relationship(back_populates="beneficial_owners")
+
+
+class TransferRequest(Base):
+    """F4 — ACAT / wire / ACH transfer tracking.
+
+    Tracks a funds or securities transfer associated with an onboarding case.
+    Status advances through a canonical state machine; real status updates come
+    via provider webhooks or polling (mocked via advance_status endpoint).
+    """
+    __tablename__ = "transfer_request"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("onboarding_case.id", ondelete="CASCADE"), index=True
+    )
+    transfer_type: Mapped[str] = mapped_column(String(16))    # acat | wire | ach
+    direction: Mapped[str] = mapped_column(String(8))         # in | out
+    amount: Mapped[float | None] = mapped_column(Numeric(18, 2))
+    asset_description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="initiated", index=True)
+    provider: Mapped[str | None] = mapped_column(String(32))  # which adapter was used
+    provider_ref: Mapped[str | None] = mapped_column(String(128))  # provider reference id
+    custodian: Mapped[str | None] = mapped_column(String(32))
+    notes: Mapped[str | None] = mapped_column(Text)
+    initiated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    case: Mapped["OnboardingCase"] = relationship(back_populates="transfers")
 
 
 class BookIntegrationBatch(Base):

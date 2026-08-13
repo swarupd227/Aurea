@@ -17,7 +17,7 @@ from app.core.security import STAFF_ROLES, get_current_user, staff_user, require
 from app.models.enums import AgentKey
 from app.models.governance import Recommendation
 from app.models.identity import User
-from app.models.onboarding import BeneficialOwner, BookIntegrationBatch, OnboardingCase, OnboardingDocument
+from app.models.onboarding import BeneficialOwner, BookIntegrationBatch, OnboardingCase, OnboardingDocument, TransferRequest
 from app.models.tenant import Firm
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"], dependencies=[Depends(staff_user)])
@@ -46,6 +46,15 @@ class BeneficialOwnerIn(BaseModel):
 class AMLRatingIn(BaseModel):
     aml_risk_tier: str  # low | medium | high
     aml_risk_score: float | None = None
+    notes: str | None = None
+
+
+class TransferCreate(BaseModel):
+    transfer_type: str           # acat | wire | ach
+    direction: str               # in | out
+    amount: float | None = None
+    asset_description: str | None = None
+    custodian: str | None = None
     notes: str | None = None
 
 
@@ -94,6 +103,14 @@ def _case_dict(
         "aml_risk_score": float(case.aml_risk_score) if getattr(case, "aml_risk_score", None) else None,
         "edd_status": getattr(case, "edd_status", None),
         "pte_status": getattr(case, "pte_status", None),
+        "cip_status": getattr(case, "cip_status", None),
+        "cip_score": float(case.cip_score) if getattr(case, "cip_score", None) else None,
+        "cip_flags": getattr(case, "cip_flags", None) or [],
+        "cip_reference_id": getattr(case, "cip_reference_id", None),
+        "custodian_name": getattr(case, "custodian_name", None),
+        "custodian_account_id": getattr(case, "custodian_account_id", None),
+        "custodian_push_status": getattr(case, "custodian_push_status", None),
+        "custodian_push_at": case.custodian_push_at.isoformat() if getattr(case, "custodian_push_at", None) else None,
     }
     if docs is not None:
         d["documents"] = [
@@ -241,6 +258,141 @@ async def set_aml_risk_rating(
         case.edd_status = "edd_pending"
     await db.flush()
     return {"aml_risk_tier": case.aml_risk_tier, "edd_status": getattr(case, "edd_status", None)}
+
+
+@router.post("/cases/{case_id}/run-cip")
+async def run_cip(
+    case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """A2 — Trigger CIP identity verification via the configured IdentityAdapter."""
+    case = await db.get(OnboardingCase, case_id)
+    if not case or case.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    try:
+        run = await run_agent(db, firm=firm, agent_key=AgentKey.CIP_IDENTITY_VERIFIER,
+                              subject=Subject("onboarding_case", case.id, case.prospect_name),
+                              trigger="manual")
+    except AgentPausedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    recs = (await db.execute(select(Recommendation).where(Recommendation.run_id == run.id))).scalars().all()
+    return {"run_id": str(run.id), "status": run.status,
+            "recommendations": [{"id": str(r.id)} for r in recs]}
+
+
+@router.post("/cases/{case_id}/push-to-custodian")
+async def push_to_custodian(
+    case_id: uuid.UUID, user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """F6 — Push approved case to custodian account-opening API (single-keying)."""
+    case = await db.get(OnboardingCase, case_id)
+    if not case or case.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    try:
+        run = await run_agent(db, firm=firm, agent_key=AgentKey.CUSTODIAN_ACCOUNT_OPENER,
+                              subject=Subject("onboarding_case", case.id, case.prospect_name),
+                              trigger="manual")
+    except AgentPausedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    recs = (await db.execute(select(Recommendation).where(Recommendation.run_id == run.id))).scalars().all()
+    return {"run_id": str(run.id), "status": run.status,
+            "recommendations": [{"id": str(r.id)} for r in recs]}
+
+
+# ── Transfers ─────────────────────────────────────────────────────────────────
+@router.get("/cases/{case_id}/transfers")
+async def list_transfers(
+    case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    case = await db.get(OnboardingCase, case_id)
+    if not case or case.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    rows = (await db.execute(
+        select(TransferRequest).where(TransferRequest.case_id == case_id)
+        .order_by(TransferRequest.created_at.desc())
+    )).scalars().all()
+    return [_transfer_dict(t) for t in rows]
+
+
+@router.post("/cases/{case_id}/transfers")
+async def create_transfer(
+    case_id: uuid.UUID, body: TransferCreate,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """F4 — Submit a new transfer request (ACAT / wire / ACH) via the TransferAdapter."""
+    case = await db.get(OnboardingCase, case_id)
+    if not case or case.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if body.transfer_type not in ("acat", "wire", "ach"):
+        raise HTTPException(status_code=422, detail="transfer_type must be acat, wire, or ach")
+    if body.direction not in ("in", "out"):
+        raise HTTPException(status_code=422, detail="direction must be in or out")
+
+    from app.aurea_core.integrations import transfer as transfer_integration
+    from app.core.db import utcnow
+    adapter = transfer_integration.get_adapter()
+    result = adapter.submit(
+        transfer_type=body.transfer_type,
+        direction=body.direction,
+        amount=body.amount,
+        asset_description=body.asset_description or "",
+        custodian=body.custodian,
+        case_reference=str(case_id),
+    )
+    t = TransferRequest(
+        firm_id=firm.id, case_id=case_id,
+        transfer_type=body.transfer_type, direction=body.direction,
+        amount=body.amount, asset_description=body.asset_description,
+        status=result.status, provider=adapter.provider_name,
+        provider_ref=result.reference_id,
+        custodian=result.custodian or body.custodian,
+        notes=body.notes, initiated_at=utcnow(),
+    )
+    db.add(t)
+    await db.flush()
+    return _transfer_dict(t)
+
+
+@router.put("/cases/{case_id}/transfers/{transfer_id}/advance")
+async def advance_transfer(
+    case_id: uuid.UUID, transfer_id: uuid.UUID,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """Advance a transfer to the next status (mock only — real: comes via webhook)."""
+    t = await db.get(TransferRequest, transfer_id)
+    if not t or t.case_id != case_id or t.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    from app.aurea_core.integrations import transfer as transfer_integration
+    from app.aurea_core.integrations.transfer.base import TRANSFER_STATUSES, TERMINAL_STATUSES
+    from app.core.db import utcnow
+    adapter = transfer_integration.get_adapter(t.provider)
+    try:
+        result = adapter.advance(t.provider_ref or "")
+        t.status = result.status
+    except NotImplementedError:
+        # Real adapter — just cycle status locally for demo
+        if t.status not in TERMINAL_STATUSES:
+            idx = TRANSFER_STATUSES.index(t.status) if t.status in TRANSFER_STATUSES else 0
+            t.status = TRANSFER_STATUSES[min(idx + 1, len(TRANSFER_STATUSES) - 1)]
+    if t.status == "settled":
+        t.settled_at = utcnow()
+    await db.flush()
+    return _transfer_dict(t)
+
+
+def _transfer_dict(t: TransferRequest) -> dict:
+    return {
+        "id": str(t.id), "transfer_type": t.transfer_type, "direction": t.direction,
+        "amount": float(t.amount) if t.amount else None,
+        "asset_description": t.asset_description,
+        "status": t.status, "provider": t.provider, "provider_ref": t.provider_ref,
+        "custodian": t.custodian, "notes": t.notes,
+        "initiated_at": t.initiated_at.isoformat() if t.initiated_at else None,
+        "settled_at": t.settled_at.isoformat() if t.settled_at else None,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+    }
 
 
 @router.post("/cases/{case_id}/documents")

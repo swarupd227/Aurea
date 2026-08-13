@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { FileText, ShieldCheck, ShieldAlert, Play, Check, X, Plus, ArrowRight, CheckCircle2, Users, AlertTriangle, Activity, ClipboardList } from "lucide-react";
+import { FileText, ShieldCheck, ShieldAlert, Play, Check, X, Plus, ArrowRight, CheckCircle2, Users, AlertTriangle, Activity, ClipboardList, Fingerprint, Building2, ArrowDownUp, ChevronRight } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, Spinner, Segment, ConfidenceBar, SeverityBadge } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
@@ -46,6 +46,16 @@ export default function OnboardingCase() {
 
   if (loading || !c) return <Spinner />;
 
+  async function runCip() {
+    setBusy("cip"); setErr(null);
+    try { await api(`/api/onboarding/cases/${id}/run-cip`, { body: {} }); await refetch(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
+  async function pushToCustodian() {
+    setBusy("custodian"); setErr(null);
+    try { await api(`/api/onboarding/cases/${id}/push-to-custodian`, { body: {} }); await refetch(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
   async function addDoc(doc_type: string) {
     setBusy("doc");
     try { await api(`/api/onboarding/cases/${id}/documents`, { body: { doc_type } }); await refetch(); }
@@ -221,10 +231,19 @@ export default function OnboardingCase() {
 
           {/* Beneficial owners (entity accounts) */}
           <BeneficialOwners caseId={id} registrationType={c.registration_type} status={c.status} />
+
+          {/* Transfer tracking */}
+          <TransfersPanel caseId={id} />
         </div>
 
         {/* Right column */}
         <div className="space-y-5">
+          {/* CIP identity verification */}
+          <CipCard cip={c} onRun={runCip} busy={busy === "cip"} />
+
+          {/* Custodian single-keying */}
+          <CustodianCard c={c} onPush={pushToCustodian} busy={busy === "custodian"} />
+
           {/* AML risk tier */}
           {c.aml_risk_tier && (
             <Card className={`border ${AML_TIER_STYLE[c.aml_risk_tier] || ""}`}>
@@ -451,6 +470,223 @@ function DisclosureTracker({ caseId, status }: { caseId: string; status: string 
       {deliveredCount > 0 && (
         <div className="mt-2 text-[11px] text-positive flex items-center gap-1">
           <CheckCircle2 size={11} /> {deliveredCount} disclosure{deliveredCount !== 1 ? "s" : ""} delivered
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const CIP_STATUS_STYLE: Record<string, string> = {
+  verified: "bg-positive/10 text-positive border-positive/20",
+  review:   "bg-caution/10 text-caution border-caution/20",
+  failed:   "bg-critical/10 text-critical border-critical/20",
+};
+
+function CipCard({ cip, onRun, busy }: { cip: any; onRun: () => void; busy: boolean }) {
+  const status = cip.cip_status;
+  return (
+    <Card className={status ? `border ${CIP_STATUS_STYLE[status] || ""}` : ""}>
+      <div className="font-semibold text-ink mb-2 flex items-center gap-2">
+        <Fingerprint size={16} /> CIP identity verification
+        {/* env indicator so it's obvious this is a mock */}
+        <span className="text-[10px] text-ink-faint font-normal ml-auto">mock_socure</span>
+      </div>
+      {status ? (
+        <>
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`chip font-semibold uppercase tracking-wide ${CIP_STATUS_STYLE[status] || ""}`}>
+              {status}
+            </span>
+            {cip.cip_score != null && (
+              <span className="text-xs text-ink-muted">Score {Math.round(cip.cip_score * 100)}%</span>
+            )}
+          </div>
+          {cip.cip_flags?.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {cip.cip_flags.map((f: string) => (
+                <span key={f} className="chip bg-navy-50 text-ink-muted text-[10px]">{f.replace(/_/g, " ")}</span>
+              ))}
+            </div>
+          )}
+          {cip.cip_reference_id && (
+            <div className="text-[10px] text-ink-faint font-mono">Ref: {cip.cip_reference_id}</div>
+          )}
+          {status !== "verified" && (
+            <button className="btn-outline text-xs mt-2 w-full" disabled={busy} onClick={onRun}>
+              <Fingerprint size={12} /> {busy ? "Verifying…" : "Re-run CIP check"}
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="text-sm text-ink-muted mb-3">Identity not yet verified. Run the CIP check to validate name, DOB, and ID number against the provider.</div>
+          <button className="btn-outline text-xs w-full" disabled={busy} onClick={onRun}>
+            <Fingerprint size={12} /> {busy ? "Verifying…" : "Run CIP check"}
+          </button>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function CustodianCard({ c, onPush, busy }: { c: any; onPush: () => void; busy: boolean }) {
+  const hasCustodian = !!c.custodian_account_id;
+  const canPush = c.status === "approved" && !hasCustodian;
+  if (!hasCustodian && c.status !== "approved") return null;
+  return (
+    <Card className={hasCustodian ? "border-positive/20" : ""}>
+      <div className="font-semibold text-ink mb-2 flex items-center gap-2">
+        <Building2 size={16} /> Custodian account
+        <span className="text-[10px] text-ink-faint font-normal ml-auto">mock_schwab</span>
+      </div>
+      {hasCustodian ? (
+        <>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="chip bg-positive/10 text-positive">{c.custodian_push_status || "active"}</span>
+            <span className="text-xs text-ink-muted capitalize">{c.custodian_name}</span>
+          </div>
+          <div className="font-mono text-sm text-ink font-semibold">{c.custodian_account_id}</div>
+          {c.custodian_push_at && (
+            <div className="text-[10px] text-ink-faint mt-1">Pushed {new Date(c.custodian_push_at).toLocaleDateString()}</div>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="text-sm text-ink-muted mb-3">
+            Account approved — single-key to custodian to open the account and receive an account number.
+            {c.cip_status !== "verified" && (
+              <span className="text-caution"> CIP must be verified first.</span>
+            )}
+          </div>
+          <button className="btn-gold text-xs w-full" disabled={busy || c.cip_status !== "verified"} onClick={onPush}>
+            <Building2 size={12} /> {busy ? "Pushing…" : "Push to custodian"}
+          </button>
+        </>
+      )}
+    </Card>
+  );
+}
+
+const TRANSFER_STATUS_STYLE: Record<string, string> = {
+  initiated:      "bg-navy-50 text-ink-muted",
+  pending_review: "bg-caution/10 text-caution",
+  in_transit:     "bg-gold-soft/40 text-gold-dark",
+  settled:        "bg-positive/10 text-positive",
+  failed:         "bg-critical/10 text-critical",
+};
+const TRANSFER_STATUS_ORDER = ["initiated", "pending_review", "in_transit", "settled"];
+
+function TransfersPanel({ caseId }: { caseId: string }) {
+  const { data: transfers, refetch } = useApi<any[]>(`/api/onboarding/cases/${caseId}/transfers`, [caseId]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ transfer_type: "acat", direction: "in", amount: "", asset_description: "", custodian: "" });
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy("add");
+    try {
+      await api(`/api/onboarding/cases/${caseId}/transfers`, {
+        body: { ...form, amount: form.amount ? parseFloat(form.amount) : null },
+      });
+      setShowForm(false);
+      setForm({ transfer_type: "acat", direction: "in", amount: "", asset_description: "", custodian: "" });
+      refetch();
+    } finally { setBusy(null); }
+  }
+
+  async function advance(transferId: string) {
+    setBusy(transferId);
+    try { await api(`/api/onboarding/cases/${caseId}/transfers/${transferId}/advance`, { method: "PUT", body: {} }); refetch(); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <Card>
+      <div className="font-semibold text-ink mb-3 flex items-center gap-2">
+        <ArrowDownUp size={16} className="text-navy-400" /> Transfer tracking
+        <span className="text-[10px] text-ink-faint font-normal">(ACAT / wire / ACH)</span>
+        <button className="btn-outline text-xs ml-auto" onClick={() => setShowForm(!showForm)}>
+          <Plus size={12} /> Add
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="rounded-xl border border-navy-100 p-3 mb-3 space-y-2 bg-navy-25">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label text-[10px]">Type</label>
+              <select className="input text-xs" value={form.transfer_type} onChange={(e) => setForm({ ...form, transfer_type: e.target.value })}>
+                <option value="acat">ACAT (securities)</option>
+                <option value="wire">Wire transfer</option>
+                <option value="ach">ACH</option>
+              </select>
+            </div>
+            <div>
+              <label className="label text-[10px]">Direction</label>
+              <select className="input text-xs" value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}>
+                <option value="in">In (incoming)</option>
+                <option value="out">Out (outgoing)</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label text-[10px]">Amount ($)</label>
+              <input className="input text-xs" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="500000" />
+            </div>
+            <div>
+              <label className="label text-[10px]">Custodian</label>
+              <input className="input text-xs" value={form.custodian} onChange={(e) => setForm({ ...form, custodian: e.target.value })} placeholder="schwab" />
+            </div>
+          </div>
+          <div>
+            <label className="label text-[10px]">Asset / description</label>
+            <input className="input text-xs" value={form.asset_description} onChange={(e) => setForm({ ...form, asset_description: e.target.value })} placeholder="e.g. AAPL shares, mixed mutual fund portfolio" />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button className="btn-ghost text-xs" onClick={() => setShowForm(false)}>Cancel</button>
+            <button className="btn-primary text-xs" disabled={busy === "add"} onClick={submit}>{busy === "add" ? "Submitting…" : "Submit transfer"}</button>
+          </div>
+        </div>
+      )}
+
+      {(transfers?.length ?? 0) === 0 && !showForm ? (
+        <div className="text-sm text-ink-muted">No transfers yet. Add an ACAT, wire, or ACH transfer to track status.</div>
+      ) : (
+        <div className="space-y-3">
+          {(transfers || []).map((t: any) => {
+            const idx = TRANSFER_STATUS_ORDER.indexOf(t.status);
+            return (
+              <div key={t.id} className="rounded-xl border border-navy-100 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-ink uppercase tracking-wide">{t.transfer_type}</span>
+                    <span className="text-xs text-ink-muted">{t.direction === "in" ? "↓ in" : "↑ out"}</span>
+                    {t.amount != null && <span className="text-xs text-ink-soft">{money(t.amount)}</span>}
+                  </div>
+                  <span className={`chip text-[10px] ${TRANSFER_STATUS_STYLE[t.status] || "bg-navy-50 text-ink-muted"}`}>{t.status.replace(/_/g, " ")}</span>
+                </div>
+                {t.asset_description && <div className="text-xs text-ink-muted mb-2">{t.asset_description}</div>}
+                {/* Status timeline */}
+                <div className="flex items-center gap-1 mb-2">
+                  {TRANSFER_STATUS_ORDER.map((s, i) => (
+                    <div key={s} className="flex items-center gap-1">
+                      <div className={`h-1.5 w-6 rounded-full ${i <= idx ? "bg-navy-600" : "bg-navy-100"}`} />
+                      {i < TRANSFER_STATUS_ORDER.length - 1 && <div className="h-px w-2 bg-navy-100" />}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] text-ink-faint font-mono">{t.provider_ref}</div>
+                  {t.status !== "settled" && t.status !== "failed" && (
+                    <button className="text-[10px] text-navy-400 hover:text-navy-700 flex items-center gap-0.5" disabled={busy === t.id} onClick={() => advance(t.id)}>
+                      {busy === t.id ? "…" : <><ChevronRight size={11} /> Advance status</>}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </Card>

@@ -115,6 +115,43 @@ async def bootstrap() -> None:
         await conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_beneficial_owner_case_id ON beneficial_owner(case_id)"
         ))
+        # Wave L: Phase 3 mock integrations — CIP, custodian, transfer tracking
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS cip_status VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS cip_score NUMERIC(4,2)"))
+        await conn.execute(text(
+            "ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS cip_flags JSONB NOT NULL DEFAULT '[]'::jsonb"
+        ))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS cip_reference_id VARCHAR(64)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS custodian_name VARCHAR(32)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS custodian_account_id VARCHAR(64)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS custodian_push_status VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS custodian_push_at TIMESTAMPTZ"))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS transfer_request (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                firm_id UUID NOT NULL REFERENCES firm(id) ON DELETE CASCADE,
+                case_id UUID NOT NULL REFERENCES onboarding_case(id) ON DELETE CASCADE,
+                transfer_type VARCHAR(16) NOT NULL,
+                direction VARCHAR(8) NOT NULL,
+                amount NUMERIC(18,2),
+                asset_description TEXT,
+                status VARCHAR(24) NOT NULL DEFAULT 'initiated',
+                provider VARCHAR(32),
+                provider_ref VARCHAR(128),
+                custodian VARCHAR(32),
+                notes TEXT,
+                initiated_at TIMESTAMPTZ,
+                settled_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now()
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_transfer_request_case_id ON transfer_request(case_id)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_transfer_request_status ON transfer_request(status)"
+        ))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

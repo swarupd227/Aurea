@@ -161,6 +161,51 @@ async def get_onboarding_metrics(firm: Firm = Depends(current_firm), db: AsyncSe
     }
 
 
+@router.get("/pte-tracker")
+async def get_pte_tracker(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """U7 — PTE 2020-02 status tracker: all rollover cases with rationale memo status."""
+    from app.models.onboarding import OnboardingCase
+    _ROLLOVER_TYPES = {"employer_rollover", "traditional_ira", "roth_ira"}
+    cases = (await db.execute(
+        select(OnboardingCase).where(
+            OnboardingCase.firm_id == firm.id,
+            OnboardingCase.registration_type.in_(list(_ROLLOVER_TYPES)),
+        ).order_by(OnboardingCase.created_at.desc())
+    )).scalars().all()
+
+    rows = []
+    for c in cases:
+        proposal = c.proposal or {}
+        rows.append({
+            "case_id": str(c.id),
+            "prospect_name": c.prospect_name,
+            "registration_type": getattr(c, "registration_type", None),
+            "status": c.status,
+            "pte_status": getattr(c, "pte_status", None),
+            "has_memo": bool(proposal.get("pte_2020_02_memo")),
+            "has_fee_comparison": bool(proposal.get("pte_fee_comparison")),
+            "cip_status": getattr(c, "cip_status", None),
+            "aml_risk_tier": getattr(c, "aml_risk_tier", None),
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+        })
+
+    total = len(rows)
+    memo_generated = sum(1 for r in rows if r["has_memo"])
+    missing_memo = total - memo_generated
+    by_pte_status: dict[str, int] = {}
+    for r in rows:
+        k = r["pte_status"] or "pending"
+        by_pte_status[k] = by_pte_status.get(k, 0) + 1
+
+    return {
+        "total_rollover_cases": total,
+        "memo_generated": memo_generated,
+        "missing_memo": missing_memo,
+        "by_pte_status": by_pte_status,
+        "cases": rows,
+    }
+
+
 @router.get("/maturity")
 async def get_maturity():
     return {"maturity": overview.MATURITY, "layers": overview.LAYER_META}

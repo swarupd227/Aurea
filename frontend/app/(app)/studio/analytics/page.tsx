@@ -15,6 +15,7 @@ export default function Analytics() {
   const { data: adoptionData, loading: adoptionLoading } = useApi<any>("/api/analytics/adoption");
   const { data: scorecardData, loading: scorecardLoading } = useApi<any>("/api/analytics/scorecards");
   const { data: obData, loading: obLoading } = useApi<any>("/api/analytics/onboarding");
+  const { data: pteData, loading: pteLoading } = useApi<any>("/api/analytics/pte-tracker");
   const [tab, setTab] = useState("overview");
   if (loading || !data || !data.headline || !data.client_intelligence || !data.portfolio || !data.advice || !data.practice || !data.risk_data) return <Spinner label="Loading analytics…" />;
   const h = data.headline;
@@ -29,6 +30,7 @@ export default function Analytics() {
     { id: "adoption", label: "Adoption & ROI" },
     { id: "scorecards", label: "Adviser Scorecards" },
     { id: "onboarding", label: "Onboarding ops" },
+    { id: "pte", label: "PTE 2020-02" },
   ];
 
   return (
@@ -559,6 +561,70 @@ export default function Analytics() {
                 </div>
               </Card>
             </div>
+          </div>
+        )}
+      </Layer>
+
+      {/* U7 PTE 2020-02 tracker */}
+      <Layer active={tab === "pte"} n="U7" title="DOL PTE 2020-02 status tracker" q="Which rollover cases have their best-interest rationale memo?" icon={ClipboardList}>
+        {pteLoading || !pteData ? (
+          <Spinner label="Loading PTE tracker…" />
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Kpi icon={ClipboardList} label="Rollover cases"   value={pteData.total_rollover_cases} />
+              <Kpi icon={CheckCircle2}  label="Memo generated"  value={pteData.memo_generated} accent="positive" />
+              <Kpi icon={AlertTriangle} label="Missing memo"    value={pteData.missing_memo} accent={pteData.missing_memo > 0 ? "critical" : undefined} />
+              <Kpi icon={Activity}      label="Pending review"  value={pteData.by_pte_status?.["pending"] || 0} />
+            </div>
+            <Card className="overflow-x-auto p-0">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-navy-100 bg-surface text-left text-xs text-ink-muted uppercase tracking-wide">
+                    <th className="px-4 py-3">Prospect</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">Case status</th>
+                    <th className="px-4 py-3">PTE status</th>
+                    <th className="px-4 py-3">Memo</th>
+                    <th className="px-4 py-3">CIP</th>
+                    <th className="px-4 py-3">AML tier</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pteData.cases?.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-6 text-center text-ink-muted text-sm">No rollover cases yet.</td></tr>
+                  ) : (
+                    pteData.cases?.map((r: any) => (
+                      <tr key={r.case_id} className="border-b border-navy-50 last:border-0 hover:bg-navy-50/40">
+                        <td className="px-4 py-3 font-medium text-ink">{r.prospect_name}</td>
+                        <td className="px-4 py-3 text-ink-soft">{titleCase((r.registration_type || "").replace(/_/g, " "))}</td>
+                        <td className="px-4 py-3"><span className="chip bg-navy-50 text-ink-muted">{r.status}</span></td>
+                        <td className="px-4 py-3">
+                          <span className={`chip ${r.pte_status === "generated" ? "bg-positive/10 text-positive" : r.pte_status === "reviewed" ? "bg-navy-50 text-positive" : "bg-caution/10 text-caution"}`}>
+                            {r.pte_status || "pending"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {r.has_memo
+                            ? <span className="flex items-center gap-1 text-positive text-xs"><CheckCircle2 size={12} /> Yes</span>
+                            : <span className="flex items-center gap-1 text-caution text-xs"><AlertTriangle size={12} /> No</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          {r.cip_status
+                            ? <span className={`chip text-[10px] ${r.cip_status === "verified" ? "bg-positive/10 text-positive" : r.cip_status === "review" ? "bg-caution/10 text-caution" : "bg-critical/10 text-critical"}`}>{r.cip_status}</span>
+                            : <span className="text-ink-faint text-xs">—</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          {r.aml_risk_tier
+                            ? <span className={`chip text-[10px] ${r.aml_risk_tier === "high" ? "bg-critical/10 text-critical" : r.aml_risk_tier === "medium" ? "bg-caution/10 text-caution" : "bg-positive/10 text-positive"}`}>{r.aml_risk_tier}</span>
+                            : <span className="text-ink-faint text-xs">—</span>}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </Card>
           </div>
         )}
       </Layer>
