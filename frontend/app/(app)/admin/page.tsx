@@ -68,7 +68,7 @@ export default function Admin() {
   const activeGroup = NAV_GROUPS.find((g) => g.items.some((i) => i.id === tab));
 
   return (
-    <div className="flex gap-0 -mx-6 min-h-[calc(100vh-4rem)]">
+    <div className="flex gap-0 -mx-8 min-h-[calc(100vh-4rem)] overflow-x-hidden">
       {/* ── Sidebar nav ── */}
       <nav className="w-52 shrink-0 border-r border-border bg-surface-subtle py-4 px-3 space-y-5">
         <div className="px-2 mb-2">
@@ -260,10 +260,10 @@ function AgentsTab() {
 
   if (loading) return <Spinner />;
   return (
-    <div className="space-y-2 max-w-5xl">
+    <div className="space-y-2">
       {data?.map((a) => (
         <Card key={a.agent_key} className="space-y-2">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-2">
             <div className="flex-1">
               <div className="font-medium text-ink">{a.name}</div>
               <div className="text-xs text-ink-muted">{a.stage}{a.paused_reason ? ` · ${a.paused_reason}` : ""}</div>
@@ -291,7 +291,7 @@ function AgentsTab() {
             </button>
           </div>
           {/* Cron scheduler row */}
-          <div className="flex items-center gap-3 pt-1 border-t border-navy-50">
+          <div className="flex items-center flex-wrap gap-x-3 gap-y-1 pt-1 border-t border-navy-50">
             <Clock size={13} className="text-ink-muted shrink-0" />
             <span className="text-xs text-ink-muted">Cron schedule:</span>
             {cronEdit[a.agent_key] !== undefined ? (
@@ -1334,16 +1334,18 @@ function SegmentsTab() {
                       ? <span className="text-xs text-positive font-medium">Active</span>
                       : <span className="text-xs text-ink-muted">Inactive</span>}
                   </td>
-                  <td className="px-4 py-3 text-right flex items-center justify-end gap-1.5">
-                    <button className="btn-outline py-1 px-2 text-xs" onClick={() => setEditing({ ...s })}>Edit</button>
-                    {s.is_active && (
-                      <InlineConfirmButton
-                        label="Deactivate"
-                        confirmLabel="Deactivate segment?"
-                        onConfirm={async () => { await api(`/api/admin/segments/${s.id}`, { method: "DELETE" }); refetch(); }}
-                        className="py-1 px-2 text-xs btn-outline text-red-600"
-                      />
-                    )}
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button className="btn-outline py-1 px-2 text-xs" onClick={() => setEditing({ ...s })}>Edit</button>
+                      {s.is_active && (
+                        <InlineConfirmButton
+                          label="Deactivate"
+                          confirmLabel="Deactivate segment?"
+                          onConfirm={async () => { await api(`/api/admin/segments/${s.id}`, { method: "DELETE" }); refetch(); }}
+                          className="py-1 px-2 text-xs btn-outline text-red-600"
+                        />
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -2039,7 +2041,7 @@ function DataQualityTab() {
   return (
     <div className="space-y-5">
       {/* Summary KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: "Total households", value: summary.total, cls: "text-ink" },
           { label: "Healthy", value: summary.green, cls: "text-emerald-600" },
