@@ -610,7 +610,7 @@ def _us_roth_conversion(brain: dict) -> dict:
         for threshold, rate in brackets:
             if income < threshold:
                 current_rate = rate
-                room_in_bracket = threshold - income
+                room_in_bracket = 0 if threshold == float("inf") else threshold - income
                 break
             prev_threshold = threshold
 
@@ -1091,7 +1091,7 @@ async def for_household(
     if not brain:
         return None
 
-    jurisdiction = brain["household"]["values"].get("jurisdiction") or firm_jurisdiction
+    jurisdiction = (brain["household"]["values"] or {}).get("jurisdiction") or firm_jurisdiction
     lots = await _load_lots(session, brain)
 
     if jurisdiction == "US":
