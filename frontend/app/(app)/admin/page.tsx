@@ -7,71 +7,131 @@ import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { titleCase } from "@/lib/format";
 
-const TABS = [
-  { id: "firm", label: "Firm & branding", icon: Building },
-  { id: "users", label: "Users & access", icon: Users },
-  { id: "clients", label: "Clients", icon: UserSquare2 },
-  { id: "assignments", label: "Assignments", icon: Link2 },
-  { id: "segments", label: "Segments", icon: Layers },
-  { id: "mandates", label: "Mandates", icon: FileText },
-  { id: "model-portfolios", label: "Model Portfolios", icon: Target },
-  { id: "connectors", label: "Connectors", icon: PlugZap },
-  { id: "compliance", label: "Compliance", icon: ShieldAlert },
-  { id: "rule-impact", label: "Rule Impact", icon: Search },
-  { id: "branding", label: "Branding", icon: Paintbrush },
-  { id: "data-quality", label: "Data Quality", icon: Database },
-  { id: "schedules", label: "Schedules", icon: Clock },
-  { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "audit", label: "Audit trail", icon: ClipboardList },
-  { id: "usage", label: "AI Usage", icon: BarChart2 },
-  { id: "agents", label: "Agents & autonomy", icon: Bot },
-  { id: "research", label: "Firm research", icon: BookOpen },
-  { id: "models", label: "Models", icon: Cpu },
+const NAV_GROUPS = [
+  {
+    label: "Firm",
+    items: [
+      { id: "firm",     label: "Firm & branding", icon: Building },
+      { id: "branding", label: "Branding",         icon: Paintbrush },
+    ],
+  },
+  {
+    label: "People & access",
+    items: [
+      { id: "users",       label: "Users",       icon: Users },
+      { id: "clients",     label: "Clients",     icon: UserSquare2 },
+      { id: "assignments", label: "Assignments", icon: Link2 },
+    ],
+  },
+  {
+    label: "Product config",
+    items: [
+      { id: "segments",         label: "Segments",         icon: Layers },
+      { id: "mandates",         label: "Mandates",         icon: FileText },
+      { id: "model-portfolios", label: "Model portfolios", icon: Target },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { id: "connectors",   label: "Connectors",   icon: PlugZap },
+      { id: "schedules",    label: "Schedules",    icon: Clock },
+      { id: "notifications",label: "Notifications",icon: Bell },
+      { id: "data-quality", label: "Data quality", icon: Database },
+    ],
+  },
+  {
+    label: "Compliance",
+    items: [
+      { id: "compliance",  label: "Compliance",  icon: ShieldAlert },
+      { id: "rule-impact", label: "Rule impact",  icon: Search },
+      { id: "audit",       label: "Audit trail", icon: ClipboardList },
+    ],
+  },
+  {
+    label: "Intelligence",
+    items: [
+      { id: "agents",   label: "Agents & autonomy", icon: Bot },
+      { id: "research", label: "Firm research",     icon: BookOpen },
+      { id: "models",   label: "Models",            icon: Cpu },
+      { id: "usage",    label: "AI usage",          icon: BarChart2 },
+    ],
+  },
 ];
+
+const TAB_TITLES: Record<string, string> = Object.fromEntries(
+  NAV_GROUPS.flatMap((g) => g.items.map((i) => [i.id, i.label]))
+);
 
 export default function Admin() {
   const [tab, setTab] = useState("firm");
+  const activeGroup = NAV_GROUPS.find((g) => g.items.some((i) => i.id === tab));
+
   return (
-    <div>
-      <PageHeader
-        title="Configuration"
-        sub="Firm details, branding, agent autonomy, models and research."
-      />
-      <div className="flex gap-1 mb-6 border-b border-navy-100">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition ${
-                tab === t.id ? "border-navy-800 text-navy-800" : "border-transparent text-ink-muted hover:text-ink"
-              }`}
-            >
-              <Icon size={16} /> {t.label}
-            </button>
-          );
-        })}
+    <div className="flex gap-0 -mx-6 min-h-[calc(100vh-4rem)]">
+      {/* ── Sidebar nav ── */}
+      <nav className="w-52 shrink-0 border-r border-border bg-surface-subtle py-4 px-3 space-y-5">
+        <div className="px-2 mb-2">
+          <p className="text-[11px] font-semibold tracking-widest text-ink-faint uppercase">Configuration</p>
+        </div>
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label}>
+            <p className="px-2 mb-1 text-[10px] font-semibold tracking-wider text-ink-faint uppercase">
+              {group.label}
+            </p>
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const active = tab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setTab(item.id)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors text-left ${
+                      active
+                        ? "bg-navy-800 text-white font-medium"
+                        : "text-ink-muted hover:bg-surface-hover hover:text-ink"
+                    }`}
+                  >
+                    <Icon size={14} className="shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      {/* ── Content pane ── */}
+      <div className="flex-1 min-w-0 px-8 py-6">
+        <div className="mb-6">
+          <p className="text-[11px] font-medium text-ink-faint uppercase tracking-wider mb-0.5">
+            {activeGroup?.label}
+          </p>
+          <h1 className="text-xl font-bold text-ink">{TAB_TITLES[tab]}</h1>
+        </div>
+
+        {tab === "firm"             && <FirmTab />}
+        {tab === "users"            && <UsersTab />}
+        {tab === "clients"          && <ClientsTab />}
+        {tab === "assignments"      && <AssignmentsTab />}
+        {tab === "segments"         && <SegmentsTab />}
+        {tab === "mandates"         && <MandatesTab />}
+        {tab === "model-portfolios" && <ModelPortfoliosTab />}
+        {tab === "connectors"       && <ConnectorsTab />}
+        {tab === "compliance"       && <ComplianceTab />}
+        {tab === "rule-impact"      && <RuleImpactTab />}
+        {tab === "branding"         && <BrandingTab />}
+        {tab === "data-quality"     && <DataQualityTab />}
+        {tab === "schedules"        && <SchedulesTab />}
+        {tab === "notifications"    && <NotificationsTab />}
+        {tab === "audit"            && <AuditTab />}
+        {tab === "usage"            && <UsageTab />}
+        {tab === "agents"           && <AgentsTab />}
+        {tab === "research"         && <ResearchTab />}
+        {tab === "models"           && <ModelsTab />}
       </div>
-      {tab === "firm" && <FirmTab />}
-      {tab === "users" && <UsersTab />}
-      {tab === "clients" && <ClientsTab />}
-      {tab === "assignments" && <AssignmentsTab />}
-      {tab === "segments" && <SegmentsTab />}
-      {tab === "mandates" && <MandatesTab />}
-      {tab === "model-portfolios" && <ModelPortfoliosTab />}
-      {tab === "connectors" && <ConnectorsTab />}
-      {tab === "compliance" && <ComplianceTab />}
-      {tab === "rule-impact" && <RuleImpactTab />}
-      {tab === "branding" && <BrandingTab />}
-      {tab === "data-quality" && <DataQualityTab />}
-      {tab === "schedules" && <SchedulesTab />}
-      {tab === "notifications" && <NotificationsTab />}
-      {tab === "audit" && <AuditTab />}
-      {tab === "usage" && <UsageTab />}
-      {tab === "agents" && <AgentsTab />}
-      {tab === "research" && <ResearchTab />}
-      {tab === "models" && <ModelsTab />}
     </div>
   );
 }

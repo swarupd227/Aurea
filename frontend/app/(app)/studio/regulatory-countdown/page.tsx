@@ -350,8 +350,9 @@ export default function RegulatoryCountdownPage() {
 
   useEffect(() => {
     api("/api/core/households").then((d) => {
-      setHouseholds(d.households || []);
-      if (d.households?.length) setSelectedId(d.households[0].id);
+      const list = Array.isArray(d) ? d : (d.households || []);
+      setHouseholds(list);
+      if (list.length) setSelectedId(list[0].id);
     });
   }, []);
 
