@@ -11,7 +11,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Public env baked at build time for client bundles; overridable at runtime via env too.
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8010
+ARG NEXT_PUBLIC_API_BASE_URL=https://aurea-backend.jollyhill-438f02ba.australiaeast.azurecontainerapps.io
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 RUN npm run build
 
