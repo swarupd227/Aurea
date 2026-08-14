@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Save, Power, Pause, Play, Plus, BookOpen, Bot, Building, Cpu, Users, Copy, Check, UserPlus, KeyRound, UserX, UserCheck, X, ChevronDown, ClipboardList, UserSquare2, PlugZap, RefreshCw, AlertCircle, CheckCircle2, CircleDot, Wifi, WifiOff, BarChart2, ShieldAlert, FileText, ChevronRight, Pencil, Database, Clock, Layers, Link2, Tag, Trash2, Bell, Target, SendHorizonal, Eye, Paintbrush, Search } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import { Card, Spinner, TierBadge, InlineConfirmButton, Empty } from "@/components/ui";
+import { Card, Spinner, TierBadge, InlineConfirmButton, Empty, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { titleCase } from "@/lib/format";
@@ -596,13 +596,16 @@ function ModelPortfoliosTab() {
 }
 
 function ModelsTab() {
-  const { data, loading, refetch } = useApi<any>("/api/admin/firm");
+  const { data, loading, error, refetch } = useApi<any>("/api/admin/firm");
   const [form, setForm] = useState<any>(null);
   const [saved, setSaved] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [keyBusy, setKeyBusy] = useState<string | null>(null);
   const [test, setTest] = useState<any>(null);
   if (loading) return <Spinner />;
+  // `useApi` returns data:null with loading:false on failure — without this guard the
+  // `data.llm` below throws and white-screens the whole /admin route.
+  if (error || !data) return <ErrorState what="model settings" message={error} onRetry={refetch} />;
   const llm = data.llm || {};
   const cfg = form || { ...(data.model_config || {}) };
   const tasks = [

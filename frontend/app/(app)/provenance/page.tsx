@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { ShieldCheck, Link2, CheckCircle2, AlertTriangle, Activity, TrendingDown, Download, ArrowUpRight } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import { Card, Spinner, SeverityBadge, Empty, TierBadge } from "@/components/ui";
+import { Card, Spinner, SeverityBadge, Empty, TierBadge, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { formatDateFull, timeAgo, titleCase } from "@/lib/format";
@@ -16,7 +16,8 @@ const GRADE_STYLE: Record<string, string> = {
 
 export default function Provenance() {
   const { data: ledger, loading, refetch: refetchLedger } = useApi<any[]>("/api/provenance/ledger");
-  const { data: flags, refetch: refetchFlags } = useApi<any[]>("/api/provenance/surveillance");
+  const { data: flags, loading: flagsLoading, error: flagsError, refetch: refetchFlags } =
+    useApi<any[]>("/api/provenance/surveillance");
   const { data: evals, refetch: refetchEvals } = useApi<any[]>("/api/provenance/evaluations");
   const { data: changes, refetch: refetchChanges } = useApi<any[]>("/api/provenance/autonomy-changes");
   const { data: dq } = useApi<any>("/api/analytics/risk-data");
@@ -307,7 +308,19 @@ export default function Provenance() {
 
         <div>
           <div className="text-sm font-semibold text-ink mb-3">Conduct surveillance</div>
-          {!flags?.length ? (
+          {/* An all-clear is a compliance assertion. Only ever render it from a response
+              that actually arrived — never while loading, and never on failure. */}
+          {flagsLoading ? (
+            <Card><Spinner label="Checking surveillance flags…" /></Card>
+          ) : flagsError ? (
+            <Card>
+              <ErrorState
+                what="surveillance flags"
+                message={`${flagsError} — this is not an all-clear. Re-check before relying on it.`}
+                onRetry={refetchFlags}
+              />
+            </Card>
+          ) : !flags?.length ? (
             <Card>
               <div className="flex items-center gap-2 text-sm text-positive">
                 <CheckCircle2 size={16} /> No open flags.

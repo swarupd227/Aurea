@@ -1,6 +1,12 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  // Opt out of the default `media` strategy. Three pages (tax, behavioural,
+  // regulatory-countdown) carry ~249 stray `dark:` utilities that would otherwise
+  // activate from the OS preference and render their text unreadably (1.03:1 contrast
+  // on headings). Nothing adds a `dark` class, so those utilities stay inert until
+  // real dark mode is built across every page.
+  darkMode: "class",
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",

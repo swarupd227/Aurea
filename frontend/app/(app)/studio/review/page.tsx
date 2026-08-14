@@ -2,13 +2,13 @@
 import { useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import RecommendationCard from "@/components/RecommendationCard";
-import { SkeletonList, Empty } from "@/components/ui";
+import { SkeletonList, Empty, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { titleCase } from "@/lib/format";
 
 export default function ReviewQueue() {
   const [status, setStatus] = useState("open");
-  const { data, loading, refetch } = useApi<any[]>(`/api/studio/feed?status=${status}`, [status]);
+  const { data, loading, error, refetch } = useApi<any[]>(`/api/studio/feed?status=${status}`, [status]);
 
   return (
     <div>
@@ -31,6 +31,10 @@ export default function ReviewQueue() {
       />
       {loading ? (
         <SkeletonList count={3} />
+      ) : error ? (
+        <div className="card p-8">
+          <ErrorState what="recommendations" message={error} onRetry={refetch} />
+        </div>
       ) : !data?.length ? (
         <div className="card p-8"><Empty>No recommendations to show.</Empty></div>
       ) : (

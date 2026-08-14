@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, ChevronUp, Search } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import { Segment, SkeletonList, Empty } from "@/components/ui";
+import { Segment, SkeletonList, Empty, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { money } from "@/lib/format";
 
@@ -21,7 +21,7 @@ type SortKey = "name" | "value" | "segment";
 type SortDir = "asc" | "desc";
 
 export default function Clients() {
-  const { data, loading } = useApi<any[]>("/api/core/households");
+  const { data, loading, error, refetch } = useApi<any[]>("/api/core/households");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -81,6 +81,10 @@ export default function Clients() {
 
       {loading ? (
         <SkeletonList count={6} />
+      ) : error ? (
+        <div className="card p-8">
+          <ErrorState what="your clients" message={error} onRetry={refetch} />
+        </div>
       ) : !rows.length ? (
         <div className="card p-8">
           <Empty>{search ? `No clients matching "${search}".` : "No clients."}</Empty>

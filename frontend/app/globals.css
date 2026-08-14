@@ -19,7 +19,9 @@ html, body {
   }
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium
-           transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+           transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed
+           outline-none focus-visible:ring-2 focus-visible:ring-navy-600/40 focus-visible:ring-offset-2
+           focus-visible:ring-offset-paper;
   }
   .btn-primary {
     @apply btn bg-navy-800 text-white hover:bg-navy-700 shadow-sm;

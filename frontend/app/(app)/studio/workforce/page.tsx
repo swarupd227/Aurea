@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Bot, Eye, Activity, ChevronDown, ChevronUp, Play, RefreshCw } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import { Card, SkeletonCard, TierBadge } from "@/components/ui";
+import { Card, SkeletonCard, TierBadge, Empty, ErrorState } from "@/components/ui";
 import ActivityRail from "@/components/ActivityRail";
 import { useAgentRunner } from "@/components/AgentConsole";
 import { useApi } from "@/lib/hooks";
@@ -22,7 +22,7 @@ const LADDER = [
 ];
 
 export default function Workforce() {
-  const { data, loading } = useApi<any[]>("/api/atlas/workforce");
+  const { data, loading, error, refetch } = useApi<any[]>("/api/atlas/workforce");
   const [open, setOpen] = useState<string | null>(null);
   const runner = useAgentRunner();
 
@@ -52,9 +52,20 @@ export default function Workforce() {
             <div className="grid sm:grid-cols-2 gap-3">
               {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} rows={3} />)}
             </div>
+          ) : error ? (
+            <Card><ErrorState what="your workforce" message={error} onRetry={refetch} /></Card>
+          ) : !data?.length ? (
+            <Card>
+              <Empty>
+                No agents configured yet.{" "}
+                <Link href="/admin" className="text-navy-600 underline hover:text-navy-800">
+                  Set up your workforce →
+                </Link>
+              </Empty>
+            </Card>
           ) : (
             <div className="grid sm:grid-cols-2 gap-3">
-              {data?.map((a) => {
+              {data.map((a) => {
                 const st = STATUS[a.status] || STATUS["on-duty"];
                 const isOpen = open === a.agent_key;
                 const isHouseholdScope = a.subject === "household";

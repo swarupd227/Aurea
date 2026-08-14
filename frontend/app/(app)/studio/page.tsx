@@ -22,6 +22,7 @@ export default function Cockpit() {
   const [showScan, setShowScan] = useState(false);
   const [delegateText, setDelegateText] = useState("");
   const [delegating, setDelegating] = useState(false);
+  const [delegateError, setDelegateError] = useState<string | null>(null);
 
   const top = (feed || []).slice(0, 6);
   const autonomous = (activity || []).filter((a) => a.autonomous).slice(0, 5);
@@ -50,11 +51,14 @@ export default function Cockpit() {
   async function delegate(text: string) {
     if (!text.trim()) return;
     setDelegating(true);
+    setDelegateError(null);
     try {
       const r = await api("/api/atlas/delegate", { body: { text } });
       runner.run({ agentKey: r.agent_key, subjectType: r.subject_type, subjectId: r.subject_id,
                    label: `Delegated · ${r.interpreted}` });
       setDelegateText("");
+    } catch (e: any) {
+      setDelegateError(e?.message || "Couldn't route that request. Please try again.");
     } finally {
       setDelegating(false);
     }
@@ -83,13 +87,19 @@ export default function Cockpit() {
           <Wand2 size={16} className="text-gold" /> Delegate to your workforce
         </div>
         <form onSubmit={(e) => { e.preventDefault(); delegate(delegateText); }} className="flex gap-2">
-          <input className="input" placeholder="e.g. Rebalance any client that has drifted…"
+          <input className="input" aria-label="Delegate a task to your workforce"
+            placeholder="e.g. Rebalance any client that has drifted…"
             value={delegateText} onChange={(e) => setDelegateText(e.target.value)} />
           <button className="btn-primary" disabled={delegating}><Send size={16} /> {delegating ? "Routing…" : "Delegate"}</button>
         </form>
+        {delegateError && (
+          <p className="text-sm text-critical bg-critical/5 rounded-lg px-3 py-2 mt-2" role="alert">
+            {delegateError}
+          </p>
+        )}
         <div className="flex flex-wrap gap-2 mt-2">
           {suggestions.map((s) => (
-            <button key={s} onClick={() => delegate(s)} className="chip bg-navy-50 text-navy-700 hover:bg-navy-100 border border-navy-100">{s}</button>
+            <button key={s} onClick={() => delegate(s)} disabled={delegating} className="chip bg-navy-50 text-navy-700 hover:bg-navy-100 border border-navy-100 disabled:opacity-50">{s}</button>
           ))}
         </div>
       </div>

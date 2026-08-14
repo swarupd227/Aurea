@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode } from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronRight, RotateCw } from "lucide-react";
 import { titleCase } from "@/lib/format";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -102,6 +102,69 @@ export function Empty({ children, icon }: { children: ReactNode; icon?: ReactNod
       {children}
     </div>
   );
+}
+
+/**
+ * Failure state for a request that did not complete.
+ *
+ * Use this instead of falling through to <Empty>. An empty state asserts "there is
+ * nothing here", which is a factual claim about the user's data — never render it for
+ * a request whose outcome is unknown.
+ */
+export function ErrorState({
+  message,
+  onRetry,
+  what = "this",
+}: {
+  message?: string | null;
+  onRetry?: () => void;
+  what?: string;
+}) {
+  return (
+    <div className="text-center text-sm py-10" role="alert">
+      <div className="flex justify-center mb-3 text-caution">
+        <AlertTriangle size={22} aria-hidden="true" />
+      </div>
+      <div className="text-ink font-medium">Couldn&rsquo;t load {what}</div>
+      {message && <div className="text-ink-muted text-xs mt-1.5 max-w-sm mx-auto">{message}</div>}
+      {onRetry && (
+        <button className="btn-outline text-sm mt-4" onClick={onRetry}>
+          <RotateCw size={14} aria-hidden="true" /> Try again
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Standard loading → error → empty → content ordering for an async region.
+ *
+ * The error branch is evaluated *before* the empty branch on purpose: a failed fetch
+ * must never be presented as "you have no clients / no tasks / no open flags".
+ */
+export function AsyncBoundary({
+  loading,
+  error,
+  onRetry,
+  what,
+  isEmpty,
+  empty,
+  skeleton,
+  children,
+}: {
+  loading: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  what?: string;
+  isEmpty?: boolean;
+  empty?: ReactNode;
+  skeleton?: ReactNode;
+  children: ReactNode;
+}) {
+  if (loading) return <>{skeleton ?? <Spinner />}</>;
+  if (error) return <ErrorState message={error} onRetry={onRetry} what={what} />;
+  if (isEmpty) return <>{empty ?? <Empty>Nothing here yet.</Empty>}</>;
+  return <>{children}</>;
 }
 
 export function ConfidenceBar({ value }: { value: number }) {
