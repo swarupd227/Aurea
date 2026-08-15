@@ -22,8 +22,34 @@ from app.models.enums import (
 )
 from app.models.graph import Account, Household, LegalEntity, Mandate, Person, RelationshipEdge
 from app.models.identity import User
-from app.models.onboarding import OnboardingCase, OnboardingDocument
+from app.models.onboarding import (
+    DisclosureDelivery, OnboardingCase, OnboardingDocument, OnboardingParty,
+)
 from app.models.portfolio import ModelPortfolio
+
+
+async def _activation_gates(session, firm, case) -> dict:
+    """Evaluate the activation gates for a case.
+
+    Imported lazily and assembled here rather than reusing the API helper, so the agent
+    does not depend on the API layer — but it calls the same aurea_core evaluators, so the
+    UI and the enforcement can never disagree about what is blocking.
+    """
+    from app.aurea_core import disclosures, gates as gates_core, parties as parties_core
+
+    party_rows = list((await session.execute(
+        select(OnboardingParty).where(OnboardingParty.case_id == case.id)
+    )).scalars().all())
+    disc_rows = list((await session.execute(
+        select(DisclosureDelivery).where(DisclosureDelivery.case_id == case.id)
+    )).scalars().all())
+    return gates_core.evaluate(
+        case,
+        party_status=parties_core.completeness_for(case.registration_type, party_rows),
+        disclosure_status=disclosures.status_for(
+            firm.jurisdiction, case.registration_type, disc_rows
+        ),
+    )
 
 RISK_TO_MODEL = {"conservative": "Balanced", "balanced": "Balanced", "growth": "Growth", "aggressive": "Growth"}
 
@@ -199,6 +225,24 @@ class OnboardingAgent(BaseAgent):
             return {"executed": False, "note": "Case not found."}
         if case.status == OnboardingStatus.APPROVED:
             return {"executed": True, "note": "Already materialised.", **case.materialized}
+
+        # Activation gates, enforced here rather than only in the UI.
+        #
+        # L200 §5 phrases its controls as gates "before account activation" — a disabled
+        # button is a hint, not a control. Approving a case whose disclosures were never
+        # delivered, whose parties were never screened, or whose identity was never
+        # verified is exactly the exam finding those controls exist to prevent.
+        gate_result = await _activation_gates(s, ctx.firm, case)
+        if gate_result["blocks_activation"]:
+            blocking = [g for g in gate_result["gates"] if g["blocks"]]
+            return {
+                "executed": False,
+                "blocked_by": [g["key"] for g in blocking],
+                "note": (
+                    "Activation blocked by "
+                    + "; ".join(f"{g['label']} — {g['detail']}" for g in blocking)
+                ),
+            }
 
         payload = recommendation.modified_payload or recommendation.payload or {}
         proposal = payload.get("proposal", case.proposal or {})

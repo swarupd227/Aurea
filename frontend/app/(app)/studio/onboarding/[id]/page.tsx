@@ -405,20 +405,113 @@ export default function OnboardingCase() {
           {/* Disclosure delivery */}
           <DisclosureTracker caseId={id} status={c.status} />
 
-          {/* Decision */}
-          {canDecide && (
-            <Card>
-              <div className="font-semibold text-ink mb-1">Compliance decision</div>
-              <p className="text-xs text-ink-muted mb-3">Tier 2 — sign off to materialise the client, or escalate / dismiss.</p>
-              <div className="flex flex-col gap-2">
-                <button className="btn-gold" disabled={!!busy} onClick={() => decide("approve")}><Check size={15} /> Approve & materialise</button>
-                <button className="btn-outline" disabled={!!busy} onClick={() => decide("dismiss", "Escalated / not proceeding")}><X size={15} /> Dismiss</button>
-              </div>
-            </Card>
-          )}
+          {/* Activation gates + decision */}
+          <ActivationGates
+            caseId={id}
+            canDecide={!!canDecide}
+            busy={busy}
+            onApprove={() => decide("approve")}
+            onDismiss={() => decide("dismiss", "Escalated / not proceeding")}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+const GATE_MARK: Record<string, { icon: any; cls: string }> = {
+  pass: { icon: CheckCircle2, cls: "text-positive" },
+  fail: { icon: AlertTriangle, cls: "text-critical" },
+  warn: { icon: AlertTriangle, cls: "text-caution" },
+  "n/a": { icon: CheckCircle2, cls: "text-ink-faint" },
+};
+
+/**
+ * What must be true before the account can be activated.
+ *
+ * The gate list is both the control and its own explanation: the same evaluation runs
+ * server-side in the agent's act(), so a disabled button here can never disagree with what
+ * the server will do. Previously "Approve & materialise" could be pressed on a case with
+ * no disclosures delivered, unscreened parties and no identity verification — because
+ * nothing checked.
+ */
+function ActivationGates({
+  caseId, canDecide, busy, onApprove, onDismiss,
+}: {
+  caseId: string;
+  canDecide: boolean;
+  busy: string | null;
+  onApprove: () => void;
+  onDismiss: () => void;
+}) {
+  const { data, loading, error, refetch } = useApi<any>(`/api/onboarding/cases/${caseId}/gates`, [caseId]);
+  const blocked = data?.blocks_activation;
+
+  return (
+    <Card className={blocked ? "border-critical/25" : "border-positive/25"}>
+      <div className="font-semibold text-ink mb-1 flex items-center gap-2 flex-wrap">
+        <ShieldCheck size={16} className={blocked ? "text-critical" : "text-positive"} />
+        Activation gates
+        {data && (
+          <span className={`chip ml-auto ${blocked ? "bg-critical/10 text-critical" : "bg-positive/10 text-positive"}`}>
+            {data.passed}/{data.total}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-ink-muted mb-3">{data?.summary || "Checking…"}</p>
+
+      {loading ? (
+        <Spinner label="Evaluating gates…" />
+      ) : error ? (
+        <ErrorState what="activation gates" message={error} onRetry={refetch} />
+      ) : (
+        <>
+          <ul className="space-y-1.5 mb-3">
+            {(data.gates || []).map((g: any) => {
+              const m = GATE_MARK[g.state] || GATE_MARK["n/a"];
+              const Icon = m.icon;
+              return (
+                <li key={g.key} className="flex items-start gap-2">
+                  <Icon size={13} className={`${m.cls} mt-0.5 shrink-0`} aria-hidden="true" />
+                  <div className="min-w-0">
+                    <div className={`text-xs ${g.state === "n/a" ? "text-ink-faint" : "text-ink"}`}>
+                      {g.label}
+                      {g.blocks && <span className="chip bg-critical/10 text-critical ml-1.5 text-[9px]">Blocks</span>}
+                    </div>
+                    <div className="text-[11px] text-ink-muted leading-snug">{g.detail}</div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {canDecide ? (
+            <div className="pt-3 border-t border-navy-100 flex flex-col gap-2">
+              <button
+                className="btn-gold"
+                disabled={!!busy || blocked}
+                title={blocked ? data.summary : undefined}
+                onClick={onApprove}
+              >
+                <Check size={15} /> Approve &amp; materialise
+              </button>
+              {blocked && (
+                <p className="text-[11px] text-critical text-center">
+                  Clear the blocking gates first — the server enforces this too.
+                </p>
+              )}
+              <button className="btn-outline" disabled={!!busy} onClick={onDismiss}>
+                <X size={15} /> Dismiss
+              </button>
+            </div>
+          ) : (
+            <div className="pt-3 border-t border-navy-100 text-[11px] text-ink-muted">
+              Run the onboarding agent to produce a recommendation for sign-off.
+            </div>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 

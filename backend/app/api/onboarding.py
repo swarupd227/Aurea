@@ -13,6 +13,7 @@ from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
 from app.aurea_core import disclosures, sample_docs
 from app.aurea_core import parties as parties_core
+from app.aurea_core import gates as gates_core
 from app.aurea_core import tracks as tracks_core
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
@@ -80,6 +81,30 @@ def _sla_status(case: OnboardingCase) -> str:
     if elapsed >= sla * 0.8:
         return "at_risk"
     return "on_track"
+
+
+async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict:
+    """Activation gates for a case. Shared by the API and the agent's act()."""
+    party_rows = await _load_parties(db, case.id)
+    disc_rows = (await db.execute(
+        select(DisclosureDelivery).where(DisclosureDelivery.case_id == case.id)
+    )).scalars().all()
+    return gates_core.evaluate(
+        case,
+        party_status=parties_core.completeness_for(case.registration_type, party_rows),
+        disclosure_status=disclosures.status_for(
+            firm.jurisdiction, case.registration_type, list(disc_rows)
+        ),
+    )
+
+
+@router.get("/cases/{case_id}/gates")
+async def list_gates(
+    case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """What must be true before this account can be activated, and what is not yet."""
+    case = await _case_or_404(db, case_id, firm)
+    return await _gates_for(db, firm, case)
 
 
 async def _tracks_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict:
