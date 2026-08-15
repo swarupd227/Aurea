@@ -288,8 +288,8 @@ export default function OnboardingCase() {
             onRun={runCaseAgent}
           />
 
-          {/* Beneficial owners (entity accounts) */}
-          <BeneficialOwners caseId={id} registrationType={c.registration_type} status={c.status} />
+          {/* Parties & completeness gate */}
+          <Parties caseId={id} status={c.status} />
 
           {/* Transfer tracking */}
           <TransfersPanel caseId={id} />
@@ -514,6 +514,185 @@ function CaseAgents({
           </div>
         ))}
       </div>
+    </Card>
+  );
+}
+
+const SCREEN_STYLE: Record<string, string> = {
+  clear: "bg-positive/10 text-positive",
+  review: "bg-caution/10 text-caution",
+  blocked: "bg-critical/10 text-critical",
+  not_screened: "bg-navy-50 text-ink-muted",
+};
+
+/**
+ * Every party on the account, and the completeness gate over them.
+ *
+ * Replaces the beneficial-owners-only panel. L200's control for the sanctions-breach
+ * failure mode is "every role on the account must have a screened identity record" — which
+ * requires every role to be modelled, not just 25%+ owners. Beneficial ownership is now a
+ * role here rather than a separate concept.
+ */
+function Parties({ caseId, status }: { caseId: string; status: string }) {
+  const { data, loading, error, refetch } = useApi<any>(`/api/onboarding/cases/${caseId}/parties`, [caseId]);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ role: "owner", legal_name: "", ownership_pct: "", is_control_person: false });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const isClosed = status === "approved" || status === "rejected";
+  const gate = data?.completeness;
+
+  async function add() {
+    if (!form.legal_name.trim()) return;
+    setBusy("add"); setErr(null);
+    try {
+      await api(`/api/onboarding/cases/${caseId}/parties`, {
+        body: {
+          role: form.role, legal_name: form.legal_name.trim(),
+          ownership_pct: form.ownership_pct ? parseFloat(form.ownership_pct) : null,
+          is_control_person: form.is_control_person,
+        },
+      });
+      setForm({ role: "owner", legal_name: "", ownership_pct: "", is_control_person: false });
+      setAdding(false);
+      await refetch();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
+
+  async function remove(partyId: string, name: string) {
+    setBusy(partyId); setErr(null);
+    try {
+      await api(`/api/onboarding/cases/${caseId}/parties/${partyId}`, { method: "DELETE" });
+      await refetch();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
+
+  return (
+    <Card className={gate?.blocks_activation ? "border-caution/30" : undefined}>
+      <div className="font-semibold text-ink mb-1 flex items-center gap-2 flex-wrap">
+        <Users size={16} className="text-navy-400" /> Parties
+        <span className="text-[10px] text-ink-muted font-normal">every role must be screened</span>
+        {gate && (
+          <span className={`chip ml-auto ${gate.blocks_activation ? "bg-caution/10 text-caution" : "bg-positive/10 text-positive"}`}>
+            {gate.screened_count}/{data.parties.length} screened
+          </span>
+        )}
+      </div>
+
+      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+
+      {loading ? (
+        <Spinner label="Loading parties…" />
+      ) : error ? (
+        <ErrorState what="parties" message={error} onRetry={refetch} />
+      ) : (
+        <>
+          <div className="space-y-2 mb-3">
+            {(data.parties || []).map((p: any) => (
+              <div key={p.id} className="rounded-lg border border-navy-100 p-2.5 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-ink flex items-center gap-1.5 flex-wrap">
+                    {p.legal_name}
+                    <span className="chip bg-navy-50 text-ink-muted text-[10px]">{p.role_label}</span>
+                    {p.is_control_person && <span className="chip bg-navy-50 text-ink-muted text-[10px]">Control</span>}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <span className={`chip text-[10px] ${SCREEN_STYLE[p.screening_status] || SCREEN_STYLE.not_screened}`}>
+                      {p.screening_status === "not_screened" ? "Not screened" : titleCase(p.screening_status)}
+                      {p.screening_hits?.length > 0 && ` · ${p.screening_hits.length} hit`}
+                    </span>
+                    {p.ownership_pct != null && (
+                      <span className="text-[10px] text-ink-muted">{p.ownership_pct}% ownership</span>
+                    )}
+                    {p.screened_at && (
+                      <span className="text-[10px] text-ink-faint">{new Date(p.screened_at).toLocaleDateString()}</span>
+                    )}
+                  </div>
+                </div>
+                {!isClosed && (
+                  <button
+                    className="text-ink-faint hover:text-critical text-xs shrink-0"
+                    aria-label={`Remove ${p.legal_name} from this case`}
+                    disabled={busy === p.id}
+                    onClick={() => remove(p.id, p.legal_name)}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+            {!data.parties?.length && <div className="text-xs text-ink-muted">No parties recorded yet.</div>}
+          </div>
+
+          {/* The gate — what still stands between this case and activation. */}
+          {gate?.blocks_activation && (
+            <div className="rounded-lg bg-caution/5 border border-caution/20 p-2.5 space-y-1.5 mb-3">
+              {gate.role_gaps.map((g: any) => (
+                <div key={g.role} className="text-xs text-caution flex gap-1.5">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  <span><strong>{g.label}</strong> required ({g.have}/{g.need}) — {g.why}</span>
+                </div>
+              ))}
+              {gate.ownership_issues.map((o: any, i: number) => (
+                <div key={i} className="text-xs text-caution flex gap-1.5">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" /><span>{o.detail}</span>
+                </div>
+              ))}
+              {gate.unscreened.length > 0 && (
+                <div className="text-xs text-caution flex gap-1.5">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  <span>
+                    {gate.unscreened.length} party(ies) not screened — run the Adverse Media &amp; PEP Screener.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isClosed && (
+            adding ? (
+              <div className="rounded-xl border border-navy-100 p-3 space-y-2 bg-navy-25">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="label text-[10px]" htmlFor="p-role">Role</label>
+                    <select id="p-role" className="input text-xs" value={form.role}
+                            onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                      {(data.roles || []).map((r: any) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label text-[10px]" htmlFor="p-name">Full legal name</label>
+                    <input id="p-name" className="input text-xs" value={form.legal_name}
+                           onChange={(e) => setForm({ ...form, legal_name: e.target.value })} />
+                  </div>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="w-24">
+                    <label className="label text-[10px]" htmlFor="p-pct">Ownership %</label>
+                    <input id="p-pct" className="input text-xs" value={form.ownership_pct}
+                           onChange={(e) => setForm({ ...form, ownership_pct: e.target.value })} placeholder="25" />
+                  </div>
+                  <label className="flex items-center gap-1.5 pb-2 text-[10px] text-ink-muted">
+                    <input type="checkbox" className="h-3 w-3" checked={form.is_control_person}
+                           onChange={(e) => setForm({ ...form, is_control_person: e.target.checked })} />
+                    Control person
+                  </label>
+                  <div className="ml-auto flex gap-2">
+                    <button className="btn-ghost text-xs" onClick={() => setAdding(false)}>Cancel</button>
+                    <button className="btn-primary text-xs" disabled={busy === "add"} onClick={add}>
+                      {busy === "add" ? "Adding…" : "Add party"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button className="btn-outline text-xs" onClick={() => setAdding(true)}>
+                <Plus size={12} /> Add party
+              </button>
+            )
+          )}
+        </>
+      )}
     </Card>
   );
 }

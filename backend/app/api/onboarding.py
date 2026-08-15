@@ -12,14 +12,15 @@ from app.api.deps import current_firm
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
 from app.aurea_core import disclosures, sample_docs
+from app.aurea_core import parties as parties_core
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
-from app.models.enums import AgentKey
+from app.models.enums import AgentKey, PartyRole
 from app.models.governance import Recommendation
 from app.models.identity import User
 from app.models.onboarding import (
     BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, OnboardingCase,
-    OnboardingDocument, TransferRequest,
+    OnboardingDocument, OnboardingParty, TransferRequest,
 )
 from app.models.tenant import Firm
 
@@ -189,20 +190,24 @@ async def get_case(case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: A
 
 
 # ── Beneficial owners ─────────────────────────────────────────────────────────
+# Kept for the existing UI, but now backed by OnboardingParty(role='beneficial_owner')
+# so there is a single party model rather than two sources of truth.
 @router.get("/cases/{case_id}/beneficial-owners")
 async def list_beneficial_owners(
     case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    case = await db.get(OnboardingCase, case_id)
-    if not case or case.firm_id != firm.id:
-        raise HTTPException(status_code=404, detail="Case not found")
-    rows = (
-        await db.execute(select(BeneficialOwner).where(BeneficialOwner.case_id == case_id))
-    ).scalars().all()
+    case = await _case_or_404(db, case_id, firm)
+    rows = (await db.execute(
+        select(OnboardingParty).where(
+            OnboardingParty.case_id == case.id,
+            OnboardingParty.role == PartyRole.BENEFICIAL_OWNER,
+        )
+    )).scalars().all()
     return [
         {"id": str(b.id), "legal_name": b.legal_name, "dob": b.dob, "address": b.address,
-         "ownership_pct": float(b.ownership_pct) if b.ownership_pct else None,
-         "is_control_person": b.is_control_person, "is_stale": b.is_stale, "notes": b.notes}
+         "ownership_pct": float(b.ownership_pct) if b.ownership_pct is not None else None,
+         "is_control_person": b.is_control_person, "is_stale": b.is_stale, "notes": b.notes,
+         "screening_status": b.screening_status or "not_screened"}
         for b in rows
     ]
 
@@ -213,19 +218,20 @@ async def add_beneficial_owner(
     user: User = Depends(require_roles(*STAFF_ROLES)),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    case = await db.get(OnboardingCase, case_id)
-    if not case or case.firm_id != firm.id:
-        raise HTTPException(status_code=404, detail="Case not found")
-    bo = BeneficialOwner(
-        firm_id=firm.id, case_id=case_id, legal_name=body.legal_name,
-        dob=body.dob, address=body.address, id_number=body.id_number,
-        ownership_pct=body.ownership_pct, is_control_person=body.is_control_person,
-        notes=body.notes,
+    case = await _case_or_404(db, case_id, firm)
+    party = OnboardingParty(
+        firm_id=firm.id, case_id=case.id, role=PartyRole.BENEFICIAL_OWNER,
+        legal_name=body.legal_name, dob=body.dob, address=body.address,
+        id_number=body.id_number, ownership_pct=body.ownership_pct,
+        is_control_person=body.is_control_person, notes=body.notes,
+        screening_status="not_screened",
     )
-    db.add(bo)
+    db.add(party)
     await db.flush()
-    return {"id": str(bo.id), "legal_name": bo.legal_name, "ownership_pct": body.ownership_pct,
-            "is_control_person": bo.is_control_person}
+    await db.commit()
+    return {"id": str(party.id), "legal_name": party.legal_name,
+            "ownership_pct": body.ownership_pct,
+            "is_control_person": party.is_control_person}
 
 
 @router.delete("/cases/{case_id}/beneficial-owners/{bo_id}", status_code=204)
@@ -234,7 +240,7 @@ async def delete_beneficial_owner(
     user: User = Depends(require_roles(*STAFF_ROLES)),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    bo = await db.get(BeneficialOwner, bo_id)
+    bo = await db.get(OnboardingParty, bo_id)
     if not bo or bo.case_id != case_id or bo.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Beneficial owner not found")
     await db.delete(bo)
@@ -300,6 +306,109 @@ async def push_to_custodian(
     recs = (await db.execute(select(Recommendation).where(Recommendation.run_id == run.id))).scalars().all()
     return {"run_id": str(run.id), "status": run.status,
             "recommendations": [{"id": str(r.id)} for r in recs]}
+
+
+# ── Parties ───────────────────────────────────────────────────────────────────
+class PartyIn(BaseModel):
+    role: str
+    legal_name: str
+    dob: str | None = None
+    address: str | None = None
+    id_number: str | None = None
+    id_type: str | None = None
+    ownership_pct: float | None = None
+    is_control_person: bool = False
+    notes: str | None = None
+
+
+def _party_dict(p: OnboardingParty) -> dict:
+    return {
+        "id": str(p.id), "role": p.role,
+        "role_label": parties_core.ROLE_LABELS.get(p.role, p.role),
+        "legal_name": p.legal_name, "dob": p.dob, "address": p.address,
+        "id_type": p.id_type,
+        # id_number is deliberately never returned.
+        "has_id_number": bool(p.id_number),
+        "ownership_pct": float(p.ownership_pct) if p.ownership_pct is not None else None,
+        "is_control_person": p.is_control_person,
+        "cip_status": p.cip_status,
+        "cip_checked_at": p.cip_checked_at.isoformat() if p.cip_checked_at else None,
+        "screening_status": p.screening_status or "not_screened",
+        "screening_hits": p.screening_hits or [],
+        "screened_at": p.screened_at.isoformat() if p.screened_at else None,
+        "disposition_note": p.disposition_note,
+        "is_stale": p.is_stale,
+        "notes": p.notes,
+    }
+
+
+async def _load_parties(db: AsyncSession, case_id: uuid.UUID) -> list[OnboardingParty]:
+    return list((await db.execute(
+        select(OnboardingParty).where(OnboardingParty.case_id == case_id)
+    )).scalars().all())
+
+
+@router.get("/cases/{case_id}/parties")
+async def list_parties(
+    case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """Every party on the case, plus the completeness and screening gate."""
+    case = await _case_or_404(db, case_id, firm)
+    rows = await _load_parties(db, case.id)
+    return {
+        "parties": [_party_dict(p) for p in rows],
+        "completeness": parties_core.completeness_for(case.registration_type, rows),
+        "roles": [
+            {"value": r, "label": parties_core.ROLE_LABELS[r]}
+            for r in parties_core.ROLE_LABELS
+        ],
+        "required_roles": [
+            {"role": r, "label": parties_core.ROLE_LABELS.get(r, r), "min": n, "why": why}
+            for r, n, why in parties_core.required_roles(case.registration_type)
+        ],
+    }
+
+
+@router.post("/cases/{case_id}/parties")
+async def add_party(
+    case_id: uuid.UUID, body: PartyIn,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    case = await _case_or_404(db, case_id, firm)
+    if body.role not in parties_core.ROLE_LABELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown role '{body.role}'. "
+                   f"Expected one of: {', '.join(sorted(parties_core.ROLE_LABELS))}.",
+        )
+    db.add(OnboardingParty(
+        firm_id=firm.id, case_id=case.id, role=body.role, legal_name=body.legal_name,
+        dob=body.dob, address=body.address, id_number=body.id_number, id_type=body.id_type,
+        ownership_pct=body.ownership_pct, is_control_person=body.is_control_person,
+        notes=body.notes, screening_status="not_screened",
+    ))
+    await db.flush()
+    rows = await _load_parties(db, case.id)
+    await db.commit()
+    return {
+        "parties": [_party_dict(p) for p in rows],
+        "completeness": parties_core.completeness_for(case.registration_type, rows),
+    }
+
+
+@router.delete("/cases/{case_id}/parties/{party_id}", status_code=204)
+async def delete_party(
+    case_id: uuid.UUID, party_id: uuid.UUID,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    await _case_or_404(db, case_id, firm)
+    row = await db.get(OnboardingParty, party_id)
+    if not row or row.case_id != case_id or row.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Party not found")
+    await db.delete(row)
+    await db.commit()
 
 
 # ── Disclosure delivery ───────────────────────────────────────────────────────

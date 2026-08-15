@@ -198,6 +198,34 @@ class ConnectorStatus(StrEnum):
 
 
 # ── Acquire & onboard ─────────────────────────────────────────────────────────
+class PartyRole(StrEnum):
+    """A role a person or entity holds on an account.
+
+    L200 §5: "every role on the account must have a screened identity record" — the
+    control for the sanctions-breach failure mode. That check is only possible if every
+    role is modelled, not just beneficial owners.
+    """
+    OWNER = "owner"
+    JOINT_OWNER = "joint_owner"
+    TRUSTEE = "trustee"
+    SETTLOR = "settlor"
+    BENEFICIARY = "beneficiary"
+    BENEFICIAL_OWNER = "beneficial_owner"   # 25%+ owner under the CDD Rule
+    CONTROL_PERSON = "control_person"
+    AUTHORISED_SIGNER = "authorised_signer"
+    POA_HOLDER = "poa_holder"
+    CUSTODIAN = "custodian"                 # UTMA/UGMA adult custodian
+    MINOR = "minor"                         # UTMA/UGMA beneficiary minor
+    EXECUTOR = "executor"                   # estate / inherited
+
+
+class PartyScreeningStatus(StrEnum):
+    NOT_SCREENED = "not_screened"
+    CLEAR = "clear"
+    REVIEW = "review"
+    BLOCKED = "blocked"
+
+
 class RegistrationType(StrEnum):
     """Account registration type — drives document matrix and beneficiary/BO requirements."""
     INDIVIDUAL = "individual"

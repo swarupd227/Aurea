@@ -15,7 +15,7 @@ from app.aurea_core.screening import screen_parties
 from app.core.db import utcnow
 from app.models.enums import AgentKey, AMLRiskTier, AutonomyTier, EDDStatus, SurveillanceSeverity
 from app.models.governance import SurveillanceFlag
-from app.models.onboarding import BeneficialOwner, OnboardingCase
+from app.models.onboarding import OnboardingCase, OnboardingParty
 
 
 class AdverseMediaPEPScreenerAgent(BaseAgent):
@@ -45,18 +45,38 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
         results = []
         for case in cases:
             intake = case.intake or {}
-            # Collect all parties: prospect + associated parties + trustees + BOs
+            # Every party of record, whatever its role — the party model is the source of
+            # truth, with intake names kept as a fallback for cases predating it.
+            party_rows = (
+                await s.execute(select(OnboardingParty).where(OnboardingParty.case_id == case.id))
+            ).scalars().all()
+
             parties = [case.prospect_name]
+            parties += [p.legal_name for p in party_rows]
             parties += list(intake.get("associated_parties", []))
             parties += list(intake.get("poa_holders", []))
-
-            bos = (
-                await s.execute(select(BeneficialOwner).where(BeneficialOwner.case_id == case.id))
-            ).scalars().all()
-            parties += [bo.legal_name for bo in bos]
             parties = sorted(set(p for p in parties if p))
 
             screening = screen_parties(parties)
+
+            # Stamp the outcome onto the party records here, in sense(), not in act().
+            #
+            # Screening is an observation, not an effect: recording "this party was
+            # screened at T and was clear" is provenance. Only the *consequences* of a hit
+            # — EDD escalation, a surveillance flag — need human approval, and those stay
+            # in act(). Stamping in act() meant a clean screening raised no recommendation,
+            # so act() never ran, so parties stayed not_screened and the completeness gate
+            # could never clear for a clean case.
+            now = utcnow()
+            by_name = {p["subject"]: p for p in screening["parties"]}
+            for party in party_rows:
+                result = by_name.get(party.legal_name)
+                if not result:
+                    continue
+                party.screening_status = result["status"]
+                party.screening_hits = result["hits"]
+                party.screened_at = now
+                party.disposition_note = "Screened by Adverse Media & PEP Screener agent."
             # Enrich each party result with PEP and adverse-media categorisation.
             has_pep = any(
                 h["category"] == "pep"
@@ -154,6 +174,7 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
             return {"executed": False, "note": "Case not found."}
 
         # Build per-party disposition log entries.
+        now = utcnow()
         log_entries = []
         for p in screening.get("parties", []):
             entry = {
@@ -161,11 +182,14 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
                 "status": p["status"],
                 "hits": p["hits"],
                 "disposition_note": "Screened by Adverse Media & PEP Screener agent.",
-                "screened_at": utcnow().isoformat(),
+                "screened_at": now.isoformat(),
                 "provider": screening.get("provider", "World-Check (mock)"),
             }
             log_entries.append(entry)
         case.screening_log = log_entries
+
+        # Party rows were already stamped during sense() — see the note there on why
+        # screening is recorded as an observation rather than an approved effect.
 
         # Escalate EDD status if PEP found.
         if payload.get("has_pep"):

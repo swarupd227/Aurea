@@ -76,6 +76,9 @@ class OnboardingCase(Base):
     disclosures: Mapped[list["DisclosureDelivery"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
+    parties: Mapped[list["OnboardingParty"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan"
+    )
     transfers: Mapped[list["TransferRequest"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
@@ -130,8 +133,60 @@ class DisclosureDelivery(Base):
     case: Mapped["OnboardingCase"] = relationship(back_populates="disclosures")
 
 
+class OnboardingParty(Base):
+    """Any person or entity holding a role on the account.
+
+    The single party model for a case. L200's control for the sanctions-breach failure
+    mode is "party-model completeness checks: every role on the account must have a
+    screened identity record" — impossible to perform when only beneficial owners are
+    modelled, which is why joint owners, trustees and POA holders were never screened.
+
+    Beneficial owners are a *role* here, not a separate table: `BeneficialOwner` rows are
+    backfilled into this model with role='beneficial_owner'.
+    """
+    __tablename__ = "onboarding_party"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("onboarding_case.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(24), index=True)
+    legal_name: Mapped[str] = mapped_column(String(200))
+
+    # Identity — the CIP data set (name, DOB, address, ID number).
+    dob: Mapped[str | None] = mapped_column(String(16))           # ISO date YYYY-MM-DD
+    address: Mapped[str | None] = mapped_column(Text)
+    id_number: Mapped[str | None] = mapped_column(String(64))     # encrypted at rest in prod
+    id_type: Mapped[str | None] = mapped_column(String(24))       # passport | licence | ssn | ein
+
+    # Ownership — only meaningful for beneficial owners under the CDD Rule.
+    ownership_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    is_control_person: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Per-party CIP outcome, so identity verification is tracked per person rather than
+    # once for the case.
+    cip_status: Mapped[str | None] = mapped_column(String(16))    # verified|review|failed
+    cip_checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Per-party screening outcome — what the completeness gate reads.
+    screening_status: Mapped[str] = mapped_column(String(16), default="not_screened", index=True)
+    screening_hits: Mapped[list] = mapped_column(JSON, default=list)
+    screened_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    disposition_note: Mapped[str | None] = mapped_column(Text)
+
+    # Set when a periodic refresh is due (risk-tier driven) or an ownership change occurs.
+    is_stale: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    case: Mapped["OnboardingCase"] = relationship(back_populates="parties")
+
+
 class BeneficialOwner(Base):
-    """CDD Rule (31 CFR 1010.230) — 25%+ owners + control person for entity accounts."""
+    """CDD Rule (31 CFR 1010.230) — 25%+ owners + control person for entity accounts.
+
+    Superseded by OnboardingParty(role='beneficial_owner'); retained so existing rows can
+    be backfilled without data loss. New writes go to OnboardingParty.
+    """
     __tablename__ = "beneficial_owner"
 
     firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
