@@ -28,7 +28,7 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
     async def sense(self, ctx: AgentContext) -> dict:
         s = ctx.session
         # When called on a specific case subject, screen that case only.
-        if ctx.subject and ctx.subject.kind == "onboarding_case":
+        if ctx.subject and ctx.subject.type == "onboarding_case":
             cases = [await s.get(OnboardingCase, ctx.subject.id)]
             cases = [c for c in cases if c and c.firm_id == ctx.firm.id]
         else:
