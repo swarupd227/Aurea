@@ -11,13 +11,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_firm
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
-from app.aurea_core import sample_docs
-from app.core.db import get_db
+from app.aurea_core import disclosures, sample_docs
+from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
 from app.models.enums import AgentKey
 from app.models.governance import Recommendation
 from app.models.identity import User
-from app.models.onboarding import BeneficialOwner, BookIntegrationBatch, OnboardingCase, OnboardingDocument, TransferRequest
+from app.models.onboarding import (
+    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, OnboardingCase,
+    OnboardingDocument, TransferRequest,
+)
 from app.models.tenant import Firm
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"], dependencies=[Depends(staff_user)])
@@ -297,6 +300,91 @@ async def push_to_custodian(
     recs = (await db.execute(select(Recommendation).where(Recommendation.run_id == run.id))).scalars().all()
     return {"run_id": str(run.id), "status": run.status,
             "recommendations": [{"id": str(r.id)} for r in recs]}
+
+
+# ── Disclosure delivery ───────────────────────────────────────────────────────
+class DisclosureIn(BaseModel):
+    doc_type: str
+    method: str = "email"                 # email | portal | in_person | post
+    evidence_ref: str | None = None
+    notes: str | None = None
+    acknowledged: bool = False
+
+
+_DELIVERY_METHODS = {"email", "portal", "in_person", "post"}
+
+
+async def _case_or_404(db: AsyncSession, case_id: uuid.UUID, firm: Firm) -> OnboardingCase:
+    case = await db.get(OnboardingCase, case_id)
+    if not case or case.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+@router.get("/cases/{case_id}/disclosures")
+async def list_disclosures(
+    case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """Required disclosures for this case, reconciled against what has been delivered."""
+    case = await _case_or_404(db, case_id, firm)
+    rows = (await db.execute(
+        select(DisclosureDelivery).where(DisclosureDelivery.case_id == case.id)
+    )).scalars().all()
+    return disclosures.status_for(firm.jurisdiction, case.registration_type, rows)
+
+
+@router.post("/cases/{case_id}/disclosures")
+async def record_disclosure(
+    case_id: uuid.UUID, body: DisclosureIn,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Record that a disclosure was delivered — the evidence a regulator asks for."""
+    case = await _case_or_404(db, case_id, firm)
+    if body.method not in _DELIVERY_METHODS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown delivery method '{body.method}'. "
+                   f"Expected one of: {', '.join(sorted(_DELIVERY_METHODS))}.",
+        )
+    if body.doc_type not in disclosures.CATALOGUE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown disclosure '{body.doc_type}'.",
+        )
+    now = utcnow()
+    db.add(DisclosureDelivery(
+        firm_id=firm.id, case_id=case.id, doc_type=body.doc_type,
+        delivered_at=now, method=body.method, evidence_ref=body.evidence_ref,
+        delivered_by=user.email, notes=body.notes,
+        acknowledged_at=now if body.acknowledged else None,
+    ))
+    await db.flush()
+    rows = (await db.execute(
+        select(DisclosureDelivery).where(DisclosureDelivery.case_id == case.id)
+    )).scalars().all()
+    await db.commit()
+    return disclosures.status_for(firm.jurisdiction, case.registration_type, rows)
+
+
+@router.delete("/cases/{case_id}/disclosures/{delivery_id}", status_code=204)
+async def delete_disclosure(
+    case_id: uuid.UUID, delivery_id: uuid.UUID,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Remove a delivery record entered in error.
+
+    Deliberately a hard delete rather than a status flag: a delivery log that contains
+    retracted entries is worse evidence than one that does not, and the decision ledger
+    already records who changed what.
+    """
+    await _case_or_404(db, case_id, firm)
+    row = await db.get(DisclosureDelivery, delivery_id)
+    if not row or row.case_id != case_id or row.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Delivery record not found")
+    await db.delete(row)
+    await db.commit()
 
 
 # Onboarding-stage agents that can be run against a single case from the case workspace.

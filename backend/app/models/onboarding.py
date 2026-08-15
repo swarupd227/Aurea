@@ -73,6 +73,9 @@ class OnboardingCase(Base):
     beneficial_owners: Mapped[list["BeneficialOwner"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
+    disclosures: Mapped[list["DisclosureDelivery"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan"
+    )
     transfers: Mapped[list["TransferRequest"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
@@ -95,6 +98,36 @@ class OnboardingDocument(Base):
     verified: Mapped[bool] = mapped_column(default=False)
 
     case: Mapped["OnboardingCase"] = relationship(back_populates="documents")
+
+
+class DisclosureDelivery(Base):
+    """Evidence that a required disclosure was delivered to the prospect.
+
+    L200 §5 names this as the control for its first failure mode — "disclosure not
+    delivered/evidenced -> exam deficiency; rescission risk", controlled by
+    "system-enforced delivery gates before account activation; delivery logs".
+
+    The point of the record is the evidence, not the tick: regulators expect to see *when*
+    a document was delivered, *how*, and *by whom*, and annual redelivery obligations run
+    from that timestamp. A boolean would not survive an exam.
+    """
+    __tablename__ = "disclosure_delivery"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("onboarding_case.id", ondelete="CASCADE"), index=True
+    )
+    doc_type: Mapped[str] = mapped_column(String(48), index=True)   # form_adv_2a, form_crs, ...
+    delivered_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    method: Mapped[str] = mapped_column(String(16))                 # email|portal|in_person|post
+    # Provider-side handle for the delivery — e-sign envelope id, message id, upload ref.
+    evidence_ref: Mapped[str | None] = mapped_column(String(128))
+    delivered_by: Mapped[str | None] = mapped_column(String(200))   # actor label
+    # Client acknowledgement, where the channel supports it (portal open, e-sign complete).
+    acknowledged_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    case: Mapped["OnboardingCase"] = relationship(back_populates="disclosures")
 
 
 class BeneficialOwner(Base):

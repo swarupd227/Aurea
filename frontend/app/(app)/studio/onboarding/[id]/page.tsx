@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { FileText, ShieldCheck, ShieldAlert, Play, Check, X, Plus, ArrowRight, CheckCircle2, Users, AlertTriangle, Activity, ClipboardList, Fingerprint, Building2, ArrowDownUp, ChevronRight } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import { Card, Spinner, Segment, ConfidenceBar, SeverityBadge } from "@/components/ui";
+import { Card, Spinner, Segment, ConfidenceBar, SeverityBadge, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { titleCase, money } from "@/lib/format";
@@ -599,43 +599,158 @@ function BeneficialOwners({ caseId, registrationType, status }: { caseId: string
   );
 }
 
-const DISCLOSURE_TYPES = [
-  { key: "form_adv", label: "Form ADV (Part 2A/2B)", regime: "US SEC" },
-  { key: "form_crs", label: "Form CRS (Client Relationship Summary)", regime: "US SEC" },
-  { key: "soa", label: "Statement of Advice (SOA)", regime: "AU/NZ" },
-  { key: "kid", label: "Key Information Document (KID)", regime: "UK/EU" },
+const DELIVERY_METHODS = [
+  { value: "email", label: "Email" },
+  { value: "portal", label: "Client portal" },
+  { value: "in_person", label: "In person" },
+  { value: "post", label: "Post" },
 ];
 
+/**
+ * Disclosure delivery — the evidence, not a tick.
+ *
+ * This previously held its state in `useState` and never called an API, so the ticks were
+ * lost on navigation. L200 §5 names this as the control for its first failure mode
+ * ("disclosure not delivered/evidenced -> exam deficiency; rescission risk"), so what a
+ * regulator needs is *when*, *how* and *by whom* — recorded per document.
+ */
 function DisclosureTracker({ caseId, status }: { caseId: string; status: string }) {
-  const [delivered, setDelivered] = useState<Record<string, boolean>>({});
+  const { data, loading, error, refetch } = useApi<any>(`/api/onboarding/cases/${caseId}/disclosures`, [caseId]);
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  const [form, setForm] = useState({ method: "email", evidence_ref: "" });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const isClosed = status === "approved" || status === "rejected";
-  const deliveredCount = Object.values(delivered).filter(Boolean).length;
+
+  async function record(docType: string) {
+    setBusy(docType); setErr(null);
+    try {
+      await api(`/api/onboarding/cases/${caseId}/disclosures`, {
+        body: { doc_type: docType, method: form.method, evidence_ref: form.evidence_ref || null },
+      });
+      setOpenFor(null);
+      setForm({ method: "email", evidence_ref: "" });
+      await refetch();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
+
+  async function undo(deliveryId: string) {
+    setBusy(deliveryId); setErr(null);
+    try {
+      await api(`/api/onboarding/cases/${caseId}/disclosures/${deliveryId}`, { method: "DELETE" });
+      await refetch();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
+
   return (
-    <Card>
+    <Card className={data?.blocks_activation ? "border-caution/30" : undefined}>
       <div className="font-semibold text-ink mb-1 flex items-center gap-2">
         <FileText size={16} className="text-navy-400" /> Disclosure delivery
+        {data && (
+          <span className={`chip ml-auto ${data.blocks_activation ? "bg-caution/10 text-caution" : "bg-positive/10 text-positive"}`}>
+            {data.delivered_count}/{data.required_count}
+          </span>
+        )}
       </div>
       <p className="text-xs text-ink-muted mb-3">
-        Track required disclosure documents delivered to the prospect at onboarding. Regulators expect evidence of delivery.
+        Delivery must be evidenced before the account is activated
+        {data?.jurisdiction ? ` — ${data.jurisdiction} requirements` : ""}.
       </p>
-      <div className="space-y-2">
-        {DISCLOSURE_TYPES.map((d) => (
-          <label key={d.key} className="flex items-center gap-2.5 cursor-pointer group">
-            <input
-              type="checkbox"
-              className="h-3.5 w-3.5 rounded accent-navy-700"
-              checked={!!delivered[d.key]}
-              disabled={isClosed}
-              onChange={(e) => setDelivered((prev) => ({ ...prev, [d.key]: e.target.checked }))}
-            />
-            <span className="text-sm text-ink-soft group-hover:text-ink transition">{d.label}</span>
-            <span className="text-[10px] text-ink-faint ml-auto">{d.regime}</span>
-          </label>
-        ))}
-      </div>
-      {deliveredCount > 0 && (
-        <div className="mt-2 text-[11px] text-positive flex items-center gap-1">
-          <CheckCircle2 size={11} /> {deliveredCount} disclosure{deliveredCount !== 1 ? "s" : ""} delivered
+
+      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+
+      {loading ? (
+        <Spinner label="Loading disclosures…" />
+      ) : error ? (
+        <ErrorState what="disclosures" message={error} onRetry={refetch} />
+      ) : (
+        <div className="space-y-1.5">
+          {(data?.items || []).map((d: any) => (
+            <div key={d.doc_type} className="rounded-lg border border-navy-100 p-2.5">
+              <div className="flex items-start gap-2">
+                {d.delivered
+                  ? <CheckCircle2 size={14} className="text-positive mt-0.5 shrink-0" aria-hidden="true" />
+                  : <AlertTriangle size={14} className="text-caution mt-0.5 shrink-0" aria-hidden="true" />}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-ink leading-snug">
+                    {d.label}
+                    {!d.required && <span className="chip bg-navy-50 text-ink-muted ml-1.5 text-[10px]">extra</span>}
+                  </div>
+                  <div className="text-[10px] text-ink-faint mt-0.5">{d.regime}</div>
+                  {d.delivered ? (
+                    <div className="text-[11px] text-ink-muted mt-1">
+                      {new Date(d.delivered_at).toLocaleDateString()} ·{" "}
+                      {DELIVERY_METHODS.find((m) => m.value === d.method)?.label || d.method}
+                      {d.delivered_by ? ` · ${d.delivered_by}` : ""}
+                      {d.evidence_ref && <div className="font-mono text-ink-faint truncate">Ref: {d.evidence_ref}</div>}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-caution mt-0.5">Not yet delivered</div>
+                  )}
+                </div>
+                {!isClosed && (
+                  d.delivered ? (
+                    <button
+                      className="text-[10px] text-ink-faint hover:text-critical shrink-0"
+                      aria-label={`Remove delivery record for ${d.label}`}
+                      disabled={busy === d.delivery_id}
+                      onClick={() => undo(d.delivery_id)}
+                    >
+                      Undo
+                    </button>
+                  ) : (
+                    <button
+                      className="btn-outline text-[10px] py-1 px-2 shrink-0"
+                      aria-label={`Record delivery of ${d.label}`}
+                      onClick={() => setOpenFor(openFor === d.doc_type ? null : d.doc_type)}
+                    >
+                      Record
+                    </button>
+                  )
+                )}
+              </div>
+
+              {openFor === d.doc_type && (
+                <div className="mt-2 pt-2 border-t border-navy-100 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="label text-[10px]" htmlFor={`m-${d.doc_type}`}>Method</label>
+                      <select
+                        id={`m-${d.doc_type}`}
+                        className="input text-xs"
+                        value={form.method}
+                        onChange={(e) => setForm({ ...form, method: e.target.value })}
+                      >
+                        {DELIVERY_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label text-[10px]" htmlFor={`r-${d.doc_type}`}>Evidence ref</label>
+                      <input
+                        id={`r-${d.doc_type}`}
+                        className="input text-xs"
+                        placeholder="envelope / message id"
+                        value={form.evidence_ref}
+                        onChange={(e) => setForm({ ...form, evidence_ref: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button className="btn-ghost text-xs" onClick={() => setOpenFor(null)}>Cancel</button>
+                    <button className="btn-primary text-xs" disabled={busy === d.doc_type} onClick={() => record(d.doc_type)}>
+                      {busy === d.doc_type ? "Recording…" : "Record delivery"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          {data?.blocks_activation && (
+            <div className="text-[11px] text-caution flex items-start gap-1.5 pt-1">
+              <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+              {data.outstanding.length} outstanding — blocks account activation.
+            </div>
+          )}
         </div>
       )}
     </Card>
