@@ -107,9 +107,9 @@ function SummaryCard({
         <Icon className="w-5 h-5" />
       </div>
       <div className="min-w-0">
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">{label}</p>
+        <p className="text-xs text-ink-muted dark:text-neutral-400 font-medium">{label}</p>
         <p className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 truncate">{value}</p>
-        {sub && <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">{sub}</p>}
+        {sub && <p className="text-xs text-ink-muted dark:text-neutral-500 mt-0.5">{sub}</p>}
       </div>
     </div>
   );
@@ -138,14 +138,14 @@ function DecisionProfilePanel({ data }: { data: DecisionProfile }) {
         ].map(({ label, value, pct, color }) => (
           <div key={label} className="bg-neutral-50 dark:bg-neutral-700/50 rounded-lg p-3 text-center">
             <div className={`text-xl font-bold ${color}`}>{value}</div>
-            <div className="text-xs text-neutral-500 dark:text-neutral-400">{label}</div>
-            <div className="text-xs text-neutral-400 dark:text-neutral-500">{(pct * 100).toFixed(0)}%</div>
+            <div className="text-xs text-ink-muted dark:text-neutral-400">{label}</div>
+            <div className="text-xs text-ink-muted dark:text-neutral-500">{(pct * 100).toFixed(0)}%</div>
           </div>
         ))}
       </div>
 
       <div className="space-y-2.5 mb-4">
-        <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2">Bias scores (from decision history)</div>
+        <div className="text-xs font-medium text-ink-muted dark:text-neutral-400 mb-2">Bias scores (from decision history)</div>
         {Object.entries(scores).map(([bias, score]) => (
           <div key={bias}>
             <div className="flex justify-between text-xs mb-1">
@@ -168,7 +168,7 @@ function DecisionProfilePanel({ data }: { data: DecisionProfile }) {
         <div className="mt-4">
           <button
             onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            className="flex items-center gap-1 text-xs text-ink-muted hover:text-neutral-700 dark:hover:text-neutral-300"
           >
             {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
             Recent decisions ({data.recent_decisions.length})
@@ -187,11 +187,11 @@ function DecisionProfilePanel({ data }: { data: DecisionProfile }) {
                   <div className="flex-1 min-w-0">
                     <div className="text-neutral-800 dark:text-neutral-200 truncate">{d.title}</div>
                     {d.decision_note && (
-                      <div className="text-neutral-400 dark:text-neutral-500 truncate">{d.decision_note}</div>
+                      <div className="text-ink-muted dark:text-neutral-500 truncate">{d.decision_note}</div>
                     )}
                   </div>
                   {d.decided_at && (
-                    <span className="text-neutral-400 shrink-0">{d.decided_at.slice(0, 10)}</span>
+                    <span className="text-ink-muted shrink-0">{d.decided_at.slice(0, 10)}</span>
                   )}
                 </div>
               ))}
@@ -207,7 +207,7 @@ function BiasSignalsPanel({ signals }: { signals: BiasSignal[] }) {
   if (signals.length === 0)
     return (
       <Panel title="Communication signals">
-        <div className="text-sm text-neutral-400 py-4 text-center">
+        <div className="text-sm text-ink-muted py-4 text-center">
           No bias signals detected in transcripts or messages.
         </div>
       </Panel>
@@ -215,7 +215,7 @@ function BiasSignalsPanel({ signals }: { signals: BiasSignal[] }) {
 
   return (
     <Panel title="Communication signals">
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+      <p className="text-xs text-ink-muted dark:text-neutral-400 mb-3">
         Detected in meeting transcripts and client messages.
       </p>
       <div className="space-y-2">
@@ -225,10 +225,10 @@ function BiasSignalsPanel({ signals }: { signals: BiasSignal[] }) {
               <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${BIAS_COLOR[s.type] || "bg-neutral-100 text-neutral-600"}`}>
                 {BIAS_LABELS[s.type] || s.type}
               </span>
-              <span className="text-xs text-neutral-400 dark:text-neutral-500">{s.source}</span>
+              <span className="text-xs text-ink-muted dark:text-neutral-500">{s.source}</span>
             </div>
             <p className="text-xs text-neutral-700 dark:text-neutral-300">{s.description}</p>
-            <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5 font-mono">
+            <p className="text-[11px] text-ink-muted dark:text-neutral-500 mt-0.5 font-mono">
               trigger: "{s.signal}"
             </p>
           </div>
@@ -250,7 +250,7 @@ function StressPanel({ stress, draft }: { stress: Stress; draft: StressDraft | n
         <span className={`text-sm font-medium ${isStressed ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
           {isStressed ? "Portfolio stressed" : "Within tolerance"}
         </span>
-        <span className="text-xs text-neutral-400 ml-auto">
+        <span className="text-xs text-ink-muted ml-auto">
           threshold: {stress.stress_threshold_pct?.toFixed(0)}%
         </span>
       </div>
@@ -266,7 +266,7 @@ function StressPanel({ stress, draft }: { stress: Stress; draft: StressDraft | n
           },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-neutral-50 dark:bg-neutral-700/50 rounded-lg p-3">
-            <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">{label}</div>
+            <div className="text-xs text-ink-muted dark:text-neutral-400 mb-1">{label}</div>
             <div className={`text-sm font-semibold ${color || "text-neutral-900 dark:text-neutral-100"}`}>{value}</div>
           </div>
         ))}
@@ -295,7 +295,7 @@ function StressPanel({ stress, draft }: { stress: Stress; draft: StressDraft | n
       )}
 
       {!draft && !isStressed && (
-        <p className="text-xs text-neutral-400 dark:text-neutral-500">
+        <p className="text-xs text-ink-muted dark:text-neutral-500">
           Stress playbook activates when drawdown exceeds {stress.stress_threshold_pct?.toFixed(0)}%.
         </p>
       )}
@@ -307,7 +307,7 @@ function CoachingPanel({ advice }: { advice: CoachingAdvice[] }) {
   if (advice.length === 0)
     return (
       <Panel title="Adviser coaching">
-        <div className="text-sm text-neutral-400 py-4 text-center">
+        <div className="text-sm text-ink-muted py-4 text-center">
           No coaching advice — no significant bias patterns detected.
         </div>
       </Panel>
@@ -315,7 +315,7 @@ function CoachingPanel({ advice }: { advice: CoachingAdvice[] }) {
 
   return (
     <Panel title="Adviser coaching">
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+      <p className="text-xs text-ink-muted dark:text-neutral-400 mb-3">
         Framing guidance for the next client conversation.
       </p>
       <div className="space-y-3">
@@ -327,7 +327,7 @@ function CoachingPanel({ advice }: { advice: CoachingAdvice[] }) {
                 {c.severity}
               </span>
               {c.score !== null && (
-                <span className="ml-auto text-xs font-mono text-neutral-400">{(c.score * 100).toFixed(0)}%</span>
+                <span className="ml-auto text-xs font-mono text-ink-muted">{(c.score * 100).toFixed(0)}%</span>
               )}
             </div>
             <div className="px-3 py-2.5 space-y-2">
@@ -341,7 +341,7 @@ function CoachingPanel({ advice }: { advice: CoachingAdvice[] }) {
                 <div className="text-[10px] font-semibold text-red-500 dark:text-red-400 uppercase tracking-wider mb-0.5">
                   What to avoid
                 </div>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">{c.avoid}</p>
+                <p className="text-xs text-ink-muted dark:text-neutral-400 leading-relaxed">{c.avoid}</p>
               </div>
             </div>
           </div>
@@ -400,7 +400,7 @@ export default function BehaviouralPage() {
           </div>
           <div>
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Behavioural finance</h1>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="text-xs text-ink-muted dark:text-neutral-400">
               Cognitive bias profiling, stress playbook, and adviser coaching
             </p>
           </div>
@@ -419,7 +419,7 @@ export default function BehaviouralPage() {
           <button
             onClick={() => load(selectedId)}
             disabled={loading}
-            className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-600 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-600 text-ink-muted hover:text-neutral-700 dark:hover:text-neutral-300"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
@@ -474,7 +474,7 @@ export default function BehaviouralPage() {
               sub="in transcripts & messages"
               color={summary.bias_signals_count > 0
                 ? "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400"
-                : "bg-neutral-100 dark:bg-neutral-700 text-neutral-500"
+                : "bg-neutral-100 dark:bg-neutral-700 text-ink-muted"
               }
             />
             <SummaryCard
@@ -507,14 +507,14 @@ export default function BehaviouralPage() {
             <CoachingPanel advice={data.coaching_advice} />
           </div>
 
-          <p className="text-xs text-neutral-400 dark:text-neutral-500 text-right">
+          <p className="text-xs text-ink-muted dark:text-neutral-500 text-right">
             Generated {data.generated_at} · Household: {data.household_name}
           </p>
         </>
       )}
 
       {!loading && !data && !error && (
-        <div className="text-center py-16 text-neutral-400 dark:text-neutral-500">
+        <div className="text-center py-16 text-ink-muted dark:text-neutral-500">
           <Brain className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="text-sm">Select a household to view its behavioural finance profile.</p>
         </div>

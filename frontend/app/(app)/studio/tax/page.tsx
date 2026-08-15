@@ -108,9 +108,9 @@ function SummaryCard({ icon: Icon, label, value, sub, color }: { icon: any; labe
         <Icon className="w-5 h-5" />
       </div>
       <div className="min-w-0">
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">{label}</p>
+        <p className="text-xs text-ink-muted dark:text-neutral-400 font-medium">{label}</p>
         <p className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 truncate">{value}</p>
-        {sub && <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">{sub}</p>}
+        {sub && <p className="text-xs text-ink-muted dark:text-neutral-500 mt-0.5">{sub}</p>}
       </div>
     </div>
   );
@@ -120,7 +120,7 @@ function SectionHeader({ icon: Icon, title, count, saving, badge }: { icon: any;
   return (
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
-        <Icon className="w-4 h-4 text-neutral-400" />
+        <Icon className="w-4 h-4 text-ink-muted" />
         <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">{title}</h3>
         {count !== undefined && (
           <span className="text-xs bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 px-2 py-0.5 rounded-full">{count}</span>
@@ -137,14 +137,14 @@ function SectionHeader({ icon: Icon, title, count, saving, badge }: { icon: any;
 function LotTable({ lots, currency, gainMode }: { lots: LotEntry[]; currency: string; gainMode?: boolean }) {
   const fmt = makeFmt(currency);
   if (!lots.length)
-    return <div className="text-sm text-neutral-400 py-4 text-center">None identified.</div>;
+    return <div className="text-sm text-ink-muted py-4 text-center">None identified.</div>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-neutral-200 dark:border-neutral-700">
             {["Mandate / Account", "Instrument", "Qty", "Cost", "Price", gainMode ? "Unrealised Gain" : "Unrealised Loss", "Held", ""].map((h, i) => (
-              <th key={i} className="text-left py-2 px-2 text-xs font-medium text-neutral-500 dark:text-neutral-400 whitespace-nowrap">{h}</th>
+              <th key={i} className="text-left py-2 px-2 text-xs font-medium text-ink-muted dark:text-neutral-400 whitespace-nowrap">{h}</th>
             ))}
           </tr>
         </thead>
@@ -156,11 +156,11 @@ function LotTable({ lots, currency, gainMode }: { lots: LotEntry[]; currency: st
               <tr key={i} className="border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-750">
                 <td className="py-2 px-2">
                   <div className="font-medium text-neutral-800 dark:text-neutral-200 text-xs">{o.mandate_name}</div>
-                  <div className="text-neutral-400 text-xs">{o.account_name}</div>
+                  <div className="text-ink-muted text-xs">{o.account_name}</div>
                 </td>
                 <td className="py-2 px-2">
                   <div className="font-mono text-xs font-medium text-neutral-800 dark:text-neutral-200">{o.symbol}</div>
-                  <div className="text-neutral-400 text-xs truncate max-w-[140px]">{o.instrument_name}</div>
+                  <div className="text-ink-muted text-xs truncate max-w-[140px]">{o.instrument_name}</div>
                 </td>
                 <td className="py-2 px-2 text-right text-neutral-700 dark:text-neutral-300 font-mono text-xs">{o.quantity.toLocaleString()}</td>
                 <td className="py-2 px-2 text-right text-neutral-700 dark:text-neutral-300 font-mono text-xs">{fmt(o.cost_per_unit)}</td>
@@ -170,7 +170,7 @@ function LotTable({ lots, currency, gainMode }: { lots: LotEntry[]; currency: st
                     {fmt(amount)}
                   </span>
                 </td>
-                <td className="py-2 px-2 text-right text-neutral-500 text-xs">{o.holding_days}d</td>
+                <td className="py-2 px-2 text-right text-ink-muted text-xs">{o.holding_days}d</td>
                 <td className="py-2 px-2">
                   {o.wash_sale_risk && <span className="text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium">Wash-sale</span>}
                 </td>
@@ -191,10 +191,10 @@ function WithdrawalPanel({ data, currency }: { data: { sequences: any[]; count: 
     3: "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800",
     4: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
   };
-  if (!data.count) return <div className="text-sm text-neutral-400 py-4 text-center">No mandates to sequence.</div>;
+  if (!data.count) return <div className="text-sm text-ink-muted py-4 text-center">No mandates to sequence.</div>;
   return (
     <div className="space-y-2">
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">{data.guidance}</p>
+      <p className="text-xs text-ink-muted dark:text-neutral-400 mb-3">{data.guidance}</p>
       {data.sequences.map((s, i) => (
         <div key={i} className={`rounded-lg border p-3 ${colors[s.withdrawal_priority] || colors[1]}`}>
           <div className="flex items-start justify-between gap-2">
@@ -241,29 +241,29 @@ function NZResultView({ data }: { data: NZResult & { total_portfolio_value: numb
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <SummaryCard icon={TrendingDown} label="Harvestable losses" value={fmt(lh.total_harvestable_loss)} sub={`${lh.count} lot(s)`} color="bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400" />
         <SummaryCard icon={Leaf} label="Est. tax saving" value={fmt(data.summary.estimated_tax_saving)} sub="loss-harvest + PIE" color="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" />
-        <SummaryCard icon={AlertTriangle} label="Bright-line alerts" value={String(bl.count)} sub={bl.count > 0 ? "Review before any sale" : "No alerts"} color={bl.count > 0 ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400" : "bg-neutral-100 dark:bg-neutral-700 text-neutral-400"} />
+        <SummaryCard icon={AlertTriangle} label="Bright-line alerts" value={String(bl.count)} sub={bl.count > 0 ? "Review before any sale" : "No alerts"} color={bl.count > 0 ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400" : "bg-neutral-100 dark:bg-neutral-700 text-ink-muted"} />
         <SummaryCard icon={Receipt} label="Total portfolio" value={fmt(data.total_portfolio_value)} sub={`${ks.count} KiwiSaver flag(s)`} color="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400" />
       </div>
       <div className="space-y-4">
         <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl p-4">
           <SectionHeader icon={TrendingDown} title="Loss-harvesting opportunities" count={lh.count} saving={lh.count > 0 ? `${fmt(lh.estimated_tax_saving_at_top_pir)} (top PIR)` : undefined} />
-          {lh.count === 0 ? <div className="text-sm text-neutral-400 py-4 text-center">No harvestable losses identified.</div> : <LotTable lots={lh.opportunities as any} currency="NZD" />}
+          {lh.count === 0 ? <div className="text-sm text-ink-muted py-4 text-center">No harvestable losses identified.</div> : <LotTable lots={lh.opportunities as any} currency="NZD" />}
         </div>
         <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl p-4">
           <SectionHeader icon={Leaf} title="PIE fund regime optimisation" count={pie.count} saving={pie.count > 0 ? `${fmt(pie.total_annual_saving)}/yr` : undefined} />
-          {pie.count === 0 ? <div className="text-sm text-neutral-400 py-4 text-center">No PIE fund mismatches identified.</div> : (
+          {pie.count === 0 ? <div className="text-sm text-ink-muted py-4 text-center">No PIE fund mismatches identified.</div> : (
             <div className="space-y-3">
               {pie.flags.map((f: any, i: number) => (
                 <div key={i} className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="font-medium text-sm">{f.person_name} — {f.mandate_name}</div>
-                      <div className="text-xs text-neutral-500 mt-1">Marginal {fmtPct(f.marginal_rate_pct)} vs PIR {fmtPct(f.pir_pct)} · Mandate {fmt(f.mandate_value)}</div>
+                      <div className="text-xs text-ink-muted mt-1">Marginal {fmtPct(f.marginal_rate_pct)} vs PIR {fmtPct(f.pir_pct)} · Mandate {fmt(f.mandate_value)}</div>
                       <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-2">{f.action}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{fmt(f.estimated_annual_saving)}</div>
-                      <div className="text-xs text-neutral-400">per year</div>
+                      <div className="text-xs text-ink-muted">per year</div>
                     </div>
                   </div>
                 </div>
@@ -273,19 +273,19 @@ function NZResultView({ data }: { data: NZResult & { total_portfolio_value: numb
         </div>
         <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl p-4">
           <SectionHeader icon={ArrowDownUp} title="KiwiSaver contribution optimisation" count={ks.count} />
-          {ks.count === 0 ? <div className="text-sm text-neutral-400 py-4 text-center">No KiwiSaver optimisation identified.</div> : (
+          {ks.count === 0 ? <div className="text-sm text-ink-muted py-4 text-center">No KiwiSaver optimisation identified.</div> : (
             <div className="space-y-3">
               {ks.recommendations.map((r: any, i: number) => (
                 <div key={i} className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="font-medium text-sm">{r.person_name}</div>
-                      <div className="text-xs text-neutral-500 mt-1">Income: {fmt(r.annual_income)} · Rate: {r.current_rate_pct}%{r.current_rate_pct !== r.recommended_rate_pct && <> → <span className="text-blue-600 font-medium">{r.recommended_rate_pct}% recommended</span></>}</div>
+                      <div className="text-xs text-ink-muted mt-1">Income: {fmt(r.annual_income)} · Rate: {r.current_rate_pct}%{r.current_rate_pct !== r.recommended_rate_pct && <> → <span className="text-blue-600 font-medium">{r.recommended_rate_pct}% recommended</span></>}</div>
                       <p className="text-xs text-blue-700 dark:text-blue-300 mt-2">{r.action}</p>
                     </div>
                     <div className="text-right space-y-1">
-                      <div><div className="text-xs text-neutral-400">Govt top-up</div><div className="font-semibold text-blue-700 dark:text-blue-300">{fmt(r.max_govt_topup)}/yr</div></div>
-                      <div><div className="text-xs text-neutral-400">Employer match</div><div className="font-semibold text-blue-700 dark:text-blue-300">{fmt(r.employer_match_annual)}/yr</div></div>
+                      <div><div className="text-xs text-ink-muted">Govt top-up</div><div className="font-semibold text-blue-700 dark:text-blue-300">{fmt(r.max_govt_topup)}/yr</div></div>
+                      <div><div className="text-xs text-ink-muted">Employer match</div><div className="font-semibold text-blue-700 dark:text-blue-300">{fmt(r.employer_match_annual)}/yr</div></div>
                     </div>
                   </div>
                 </div>
@@ -295,7 +295,7 @@ function NZResultView({ data }: { data: NZResult & { total_portfolio_value: numb
         </div>
         <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl p-4">
           <SectionHeader icon={Home} title="Bright-line property tracker" count={bl.count} />
-          {bl.count === 0 ? <div className="text-sm text-neutral-400 py-4 text-center">No bright-line alerts.</div> : (
+          {bl.count === 0 ? <div className="text-sm text-ink-muted py-4 text-center">No bright-line alerts.</div> : (
             <div className="space-y-3">
               {bl.flags.map((f: any, i: number) => (
                 <div key={i} className={`rounded-lg border p-3 ${f.status === "within_bright_line" ? "border-red-300 bg-red-50 dark:bg-red-900/20" : "border-amber-200 bg-amber-50 dark:bg-amber-900/20"}`}>
@@ -304,10 +304,10 @@ function NZResultView({ data }: { data: NZResult & { total_portfolio_value: numb
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-sm">{f.person_name}</span>
-                        <span className="text-xs text-neutral-500">{f.property_address}</span>
-                        {f.property_value && <span className="text-xs text-neutral-500">{fmt(f.property_value)}</span>}
+                        <span className="text-xs text-ink-muted">{f.property_address}</span>
+                        {f.property_value && <span className="text-xs text-ink-muted">{fmt(f.property_value)}</span>}
                       </div>
-                      <div className="flex gap-4 mt-1 text-xs text-neutral-500">
+                      <div className="flex gap-4 mt-1 text-xs text-ink-muted">
                         <span>Acquired {f.acquired_on}</span><span>{f.days_held}d held</span><span>{f.test_years}-year test</span>
                         {f.months_until_safe > 0 && <span className="font-medium text-amber-600">{f.months_until_safe.toFixed(1)} months until safe</span>}
                       </div>
@@ -345,7 +345,7 @@ function USResultView({ data }: { data: USResult & { total_portfolio_value: numb
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <SummaryCard icon={TrendingDown} label="Short-term gains" value={fmt(cgt.total_short_term_gains)} sub="Ordinary income rates" color="bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400" />
         <SummaryCard icon={TrendingUp} label="Long-term gains" value={fmt(cgt.total_long_term_gains)} sub="0–20% LTCG rates" color="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" />
-        <SummaryCard icon={Clock} label="RMD this year" value={rmd.total_rmd_this_year > 0 ? fmt(rmd.total_rmd_this_year) : "Not required"} sub={rmd.rmd_active > 0 ? `${rmd.rmd_active} person(s) aged 73+` : "All under 73"} color={rmd.rmd_active > 0 ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400" : "bg-neutral-100 dark:bg-neutral-700 text-neutral-400"} />
+        <SummaryCard icon={Clock} label="RMD this year" value={rmd.total_rmd_this_year > 0 ? fmt(rmd.total_rmd_this_year) : "Not required"} sub={rmd.rmd_active > 0 ? `${rmd.rmd_active} person(s) aged 73+` : "All under 73"} color={rmd.rmd_active > 0 ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400" : "bg-neutral-100 dark:bg-neutral-700 text-ink-muted"} />
         <SummaryCard icon={TrendingDown} label="Harvestable losses" value={fmt(cgt.total_harvestable_losses)} sub={`Est. saving: ${fmt(data.summary.estimated_tax_saving)}`} color="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400" />
       </div>
 
@@ -358,19 +358,19 @@ function USResultView({ data }: { data: USResult & { total_portfolio_value: numb
 
           {cgt.short_term_gains.length > 0 && (
             <div className="mb-4">
-              <p className="text-xs font-semibold text-neutral-500 mb-2 uppercase tracking-wide">Short-term gains (held &lt;366 days — ordinary income rates)</p>
+              <p className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">Short-term gains (held &lt;366 days — ordinary income rates)</p>
               <LotTable lots={cgt.short_term_gains} currency="USD" gainMode />
             </div>
           )}
           {cgt.long_term_gains.length > 0 && (
             <div className="mb-4">
-              <p className="text-xs font-semibold text-neutral-500 mb-2 uppercase tracking-wide">Long-term gains (held ≥366 days — 15–20% LTCG rates)</p>
+              <p className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">Long-term gains (held ≥366 days — 15–20% LTCG rates)</p>
               <LotTable lots={cgt.long_term_gains} currency="USD" gainMode />
             </div>
           )}
           {cgt.loss_lots.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-neutral-500 mb-2 uppercase tracking-wide">Harvestable losses</p>
+              <p className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">Harvestable losses</p>
               <LotTable lots={cgt.loss_lots} currency="USD" />
             </div>
           )}
@@ -384,20 +384,20 @@ function USResultView({ data }: { data: USResult & { total_portfolio_value: numb
         {/* RMD Planning */}
         <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl p-4">
           <SectionHeader icon={Clock} title="Required Minimum Distributions (RMD)" count={rmd.count} badge={rmd.rmd_active > 0 ? { text: `${rmd.rmd_active} active`, color: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300" } : undefined} />
-          {rmd.count === 0 ? <div className="text-sm text-neutral-400 py-4 text-center">No RMD alerts — all persons under age 73.</div> : (
+          {rmd.count === 0 ? <div className="text-sm text-ink-muted py-4 text-center">No RMD alerts — all persons under age 73.</div> : (
             <div className="space-y-3">
               {rmd.alerts.map((a: any, i: number) => (
                 <div key={i} className={`rounded-lg border p-3 ${a.rmd_required ? "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20" : "border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20"}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-medium text-sm">{a.person_name} <span className="text-xs text-neutral-500 font-normal">age {a.age}</span></div>
-                      <div className="text-xs text-neutral-500 mt-1">IRA: {fmt(a.ira_balance)}{a.roth_balance > 0 && ` · Roth: ${fmt(a.roth_balance)}`}</div>
+                      <div className="font-medium text-sm">{a.person_name} <span className="text-xs text-ink-muted font-normal">age {a.age}</span></div>
+                      <div className="text-xs text-ink-muted mt-1">IRA: {fmt(a.ira_balance)}{a.roth_balance > 0 && ` · Roth: ${fmt(a.roth_balance)}`}</div>
                       <p className={`text-xs mt-2 ${a.rmd_required ? "text-red-700 dark:text-red-300" : "text-amber-700 dark:text-amber-300"}`}>{a.action}</p>
                     </div>
                     {a.estimated_rmd > 0 && (
                       <div className="text-right flex-shrink-0">
                         <div className="text-lg font-bold text-red-700 dark:text-red-300">{fmt(a.estimated_rmd)}</div>
-                        <div className="text-xs text-neutral-400">required by Dec 31</div>
+                        <div className="text-xs text-ink-muted">required by Dec 31</div>
                       </div>
                     )}
                   </div>
@@ -416,18 +416,18 @@ function USResultView({ data }: { data: USResult & { total_portfolio_value: numb
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
             <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3">
-              <div className="text-neutral-500 mb-1">Per donor / per recipient</div>
+              <div className="text-ink-muted mb-1">Per donor / per recipient</div>
               <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{fmt(gift.annual_exclusion_per_donor)}</div>
               {gift.gift_splitting_available && <div className="text-emerald-600 dark:text-emerald-400 mt-0.5">Gift-splitting: {fmt(gift.effective_annual_per_recipient)}/recipient</div>}
             </div>
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-              <div className="text-neutral-500 mb-1">Max exclusion gifts this year</div>
+              <div className="text-ink-muted mb-1">Max exclusion gifts this year</div>
               <div className="text-lg font-bold text-blue-700 dark:text-blue-300">{fmt(gift.max_annual_exclusion_gifts)}</div>
               <div className="text-blue-600 dark:text-blue-400 mt-0.5">{gift.donors} donor(s)</div>
             </div>
             {gift["529_superfunding"] && (
               <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-3">
-                <div className="text-neutral-500 mb-1">529 superfunding</div>
+                <div className="text-ink-muted mb-1">529 superfunding</div>
                 <div className="text-lg font-bold text-purple-700 dark:text-purple-300">{fmt(gift["529_superfunding"].max_per_recipient)}</div>
                 <div className="text-purple-600 dark:text-purple-400 mt-0.5">per beneficiary (5-yr front-load)</div>
               </div>
@@ -437,11 +437,11 @@ function USResultView({ data }: { data: USResult & { total_portfolio_value: numb
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded p-2">
               <div className="font-medium text-neutral-700 dark:text-neutral-300">Qualified tuition payments</div>
-              <div className="text-neutral-500">{gift.qualified_exclusions?.tuition}</div>
+              <div className="text-ink-muted">{gift.qualified_exclusions?.tuition}</div>
             </div>
             <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded p-2">
               <div className="font-medium text-neutral-700 dark:text-neutral-300">Qualified medical payments</div>
-              <div className="text-neutral-500">{gift.qualified_exclusions?.medical}</div>
+              <div className="text-ink-muted">{gift.qualified_exclusions?.medical}</div>
             </div>
           </div>
         </div>
@@ -449,21 +449,21 @@ function USResultView({ data }: { data: USResult & { total_portfolio_value: numb
         {/* Roth Conversion */}
         <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl p-4">
           <SectionHeader icon={PiggyBank} title="Roth conversion opportunity" count={roth.candidates.length} badge={roth.candidates.filter((c: any) => c.attractive).length > 0 ? { text: "Opportunities identified", color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300" } : undefined} />
-          {roth.total_ira_balance > 0 && <div className="text-xs text-neutral-500 mb-3">Total IRA/401(k) balance: <strong>{fmt(roth.total_ira_balance)}</strong></div>}
-          {roth.candidates.length === 0 ? <div className="text-sm text-neutral-400 py-4 text-center">No retirement account holders identified.</div> : (
+          {roth.total_ira_balance > 0 && <div className="text-xs text-ink-muted mb-3">Total IRA/401(k) balance: <strong>{fmt(roth.total_ira_balance)}</strong></div>}
+          {roth.candidates.length === 0 ? <div className="text-sm text-ink-muted py-4 text-center">No retirement account holders identified.</div> : (
             <div className="space-y-3">
               {roth.candidates.map((c: any, i: number) => (
                 <div key={i} className={`rounded-lg border p-3 ${c.attractive ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20" : "border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900"}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
-                      <div className="font-medium text-sm">{c.person_name} <span className="text-xs text-neutral-500 font-normal">{c.marginal_rate_pct}% marginal rate</span></div>
-                      <div className="text-xs text-neutral-500 mt-1">IRA: {fmt(c.ira_balance)} · Roth: {fmt(c.roth_balance)}</div>
+                      <div className="font-medium text-sm">{c.person_name} <span className="text-xs text-ink-muted font-normal">{c.marginal_rate_pct}% marginal rate</span></div>
+                      <div className="text-xs text-ink-muted mt-1">IRA: {fmt(c.ira_balance)} · Roth: {fmt(c.roth_balance)}</div>
                       <p className={`text-xs mt-2 ${c.attractive ? "text-emerald-700 dark:text-emerald-300" : "text-neutral-600 dark:text-neutral-400"}`}>{c.action}</p>
                     </div>
                     {c.recommended_conversion > 0 && (
                       <div className="text-right flex-shrink-0">
                         <div className="text-base font-bold text-emerald-700 dark:text-emerald-300">{fmt(c.recommended_conversion)}</div>
-                        <div className="text-xs text-neutral-400">convert this year</div>
+                        <div className="text-xs text-ink-muted">convert this year</div>
                       </div>
                     )}
                   </div>
@@ -502,7 +502,7 @@ function UKResultView({ data }: { data: UKResult & { total_portfolio_value: numb
         <SummaryCard icon={TrendingDown} label="CGT exposure" value={cgt.flag ? fmt(cgt.net_taxable_gains) : "Within exempt amount"} sub={cgt.flag ? `Est. tax: ${fmt(cgt.estimated_cgt_at_higher_rate)}` : `£${cgt.annual_exempt_amount.toLocaleString()} exempt/person`} color={cgt.flag ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600" : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400"} />
         <SummaryCard icon={PiggyBank} label="Total ISA value" value={fmt(isa.total_isa_value)} sub={`£${isa.annual_allowance.toLocaleString()}/person allowance`} color="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400" />
         <SummaryCard icon={TrendingDown} label="Harvestable losses" value={fmt(cgt.total_harvestable_losses)} sub={`Offset gains before 5 April`} color="bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400" />
-        <SummaryCard icon={AlertTriangle} label="Issues flagged" value={String(data.summary.total_flags)} sub={(data.summary.cgt_flag ? "CGT " : "") + (data.summary.dividend_flag ? "Dividend" : "")} color={data.summary.total_flags > 0 ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400" : "bg-neutral-100 dark:bg-neutral-700 text-neutral-400"} />
+        <SummaryCard icon={AlertTriangle} label="Issues flagged" value={String(data.summary.total_flags)} sub={(data.summary.cgt_flag ? "CGT " : "") + (data.summary.dividend_flag ? "Dividend" : "")} color={data.summary.total_flags > 0 ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400" : "bg-neutral-100 dark:bg-neutral-700 text-ink-muted"} />
       </div>
 
       <div className="space-y-4">
@@ -512,20 +512,20 @@ function UKResultView({ data }: { data: UKResult & { total_portfolio_value: numb
           <div className="text-xs text-neutral-700 dark:text-neutral-300 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-3 mb-3">{cgt.action}</div>
           <div className="grid grid-cols-3 gap-3 text-xs mb-3">
             <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3">
-              <div className="text-neutral-500 mb-1">Unrealised gains</div>
+              <div className="text-ink-muted mb-1">Unrealised gains</div>
               <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{fmt(cgt.total_unrealised_gains)}</div>
             </div>
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
-              <div className="text-neutral-500 mb-1">Harvestable losses</div>
+              <div className="text-ink-muted mb-1">Harvestable losses</div>
               <div className="text-lg font-bold text-red-700 dark:text-red-300">{fmt(cgt.total_harvestable_losses)}</div>
             </div>
             <div className={`border rounded-lg p-3 ${cgt.flag ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800" : "bg-neutral-50 dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700"}`}>
-              <div className="text-neutral-500 mb-1">Est. CGT (higher rate)</div>
-              <div className={`text-lg font-bold ${cgt.flag ? "text-amber-700 dark:text-amber-300" : "text-neutral-400"}`}>{cgt.flag ? fmt(cgt.estimated_cgt_at_higher_rate) : "—"}</div>
+              <div className="text-ink-muted mb-1">Est. CGT (higher rate)</div>
+              <div className={`text-lg font-bold ${cgt.flag ? "text-amber-700 dark:text-amber-300" : "text-ink-muted"}`}>{cgt.flag ? fmt(cgt.estimated_cgt_at_higher_rate) : "—"}</div>
             </div>
           </div>
-          {cgt.gain_lots.length > 0 && <div className="mb-4"><p className="text-xs font-semibold text-neutral-500 mb-2 uppercase tracking-wide">Unrealised gains</p><LotTable lots={cgt.gain_lots} currency="GBP" gainMode /></div>}
-          {cgt.loss_lots.length > 0 && <div><p className="text-xs font-semibold text-neutral-500 mb-2 uppercase tracking-wide">Harvestable losses</p><LotTable lots={cgt.loss_lots} currency="GBP" /></div>}
+          {cgt.gain_lots.length > 0 && <div className="mb-4"><p className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">Unrealised gains</p><LotTable lots={cgt.gain_lots} currency="GBP" gainMode /></div>}
+          {cgt.loss_lots.length > 0 && <div><p className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">Harvestable losses</p><LotTable lots={cgt.loss_lots} currency="GBP" /></div>}
           <InfoNote text={cgt.key_changes} />
         </div>
 
@@ -538,7 +538,7 @@ function UKResultView({ data }: { data: UKResult & { total_portfolio_value: numb
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="font-medium text-sm">{p.person_name}</div>
-                    <div className="text-xs text-neutral-500 mt-0.5">ISA value: {fmt(p.isa_value)} · Annual allowance: {fmt(p.annual_allowance)}</div>
+                    <div className="text-xs text-ink-muted mt-0.5">ISA value: {fmt(p.isa_value)} · Annual allowance: {fmt(p.annual_allowance)}</div>
                     <p className="text-xs text-blue-700 dark:text-blue-300 mt-2">{p.action}</p>
                   </div>
                 </div>
@@ -548,7 +548,7 @@ function UKResultView({ data }: { data: UKResult & { total_portfolio_value: numb
           {isa.junior_isa?.available && (
             <div className="mt-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3 text-xs">
               <div className="font-medium text-purple-700 dark:text-purple-300 mb-1">Junior ISA — {fmt(isa.junior_isa.allowance)}/year per child</div>
-              <div className="text-neutral-500">Beneficiaries: {isa.junior_isa.beneficiaries.join(", ")}</div>
+              <div className="text-ink-muted">Beneficiaries: {isa.junior_isa.beneficiaries.join(", ")}</div>
             </div>
           )}
           <InfoNote text={isa.guidance} />
@@ -563,7 +563,7 @@ function UKResultView({ data }: { data: UKResult & { total_portfolio_value: numb
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
                     <div className="font-medium text-sm">{p.person_name} {p.tapered && <span className="text-xs font-normal text-red-600 dark:text-red-400 ml-1">⚠ Tapered</span>}</div>
-                    <div className="text-xs text-neutral-500 mt-0.5">Pension pot: {fmt(p.pension_pot)} · Allowance: {fmt(p.effective_allowance)}{p.tapered ? ` (standard: ${fmt(p.standard_allowance)})` : ""}</div>
+                    <div className="text-xs text-ink-muted mt-0.5">Pension pot: {fmt(p.pension_pot)} · Allowance: {fmt(p.effective_allowance)}{p.tapered ? ` (standard: ${fmt(p.standard_allowance)})` : ""}</div>
                     <p className={`text-xs mt-2 ${p.tapered ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`}>{p.action}</p>
                   </div>
                 </div>
@@ -578,7 +578,7 @@ function UKResultView({ data }: { data: UKResult & { total_portfolio_value: numb
           <SectionHeader icon={Clock} title="PET 7-year survival clock" />
           <p className="text-xs text-neutral-700 dark:text-neutral-300 mb-4">{pet.planning_note}</p>
           <div className="mb-4">
-            <p className="text-xs font-semibold text-neutral-500 mb-2 uppercase tracking-wide">IHT taper relief schedule</p>
+            <p className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">IHT taper relief schedule</p>
             <div className="flex gap-1">
               {pet.taper_schedule.map((t: any, i: number) => (
                 <div key={i} className={`flex-1 rounded text-center text-xs py-2 ${i === 0 ? "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300" : i === pet.taper_schedule.length - 1 ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" : "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"}`}>
@@ -592,12 +592,12 @@ function UKResultView({ data }: { data: UKResult & { total_portfolio_value: numb
             <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-3">
               <div className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">Annual exemption</div>
               <div className="text-lg font-bold text-emerald-600">£{pet.annual_exemption?.amount?.toLocaleString()}</div>
-              <div className="text-neutral-500">{pet.annual_exemption?.note}</div>
+              <div className="text-ink-muted">{pet.annual_exemption?.note}</div>
             </div>
             <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-3">
               <div className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">Small gift exemption</div>
               <div className="text-lg font-bold text-emerald-600">£{pet.small_gift_exemption?.amount?.toLocaleString()}</div>
-              <div className="text-neutral-500">{pet.small_gift_exemption?.note}</div>
+              <div className="text-ink-muted">{pet.small_gift_exemption?.note}</div>
             </div>
           </div>
         </div>
@@ -607,20 +607,20 @@ function UKResultView({ data }: { data: UKResult & { total_portfolio_value: numb
           <SectionHeader icon={DollarSign} title="Dividend allowance" badge={div.flag ? { text: "Allowance likely exceeded", color: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300" } : { text: "Within allowance", color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300" }} />
           <div className="grid grid-cols-3 gap-3 text-xs mb-3">
             <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-3">
-              <div className="text-neutral-500 mb-1">Annual allowance</div>
+              <div className="text-ink-muted mb-1">Annual allowance</div>
               <div className="text-lg font-bold text-neutral-700 dark:text-neutral-300">£{div.annual_allowance.toLocaleString()}</div>
-              <div className="text-neutral-400">per person</div>
+              <div className="text-ink-muted">per person</div>
             </div>
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-              <div className="text-neutral-500 mb-1">Est. annual dividends</div>
+              <div className="text-ink-muted mb-1">Est. annual dividends</div>
               <div className="text-lg font-bold text-blue-700 dark:text-blue-300">{fmt(div.estimated_annual_dividends)}</div>
-              <div className="text-neutral-400">2.5% yield estimate</div>
+              <div className="text-ink-muted">2.5% yield estimate</div>
             </div>
             {div.flag && (
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
-                <div className="text-neutral-500 mb-1">Est. tax (higher rate)</div>
+                <div className="text-ink-muted mb-1">Est. tax (higher rate)</div>
                 <div className="text-lg font-bold text-amber-700 dark:text-amber-300">{fmt(div.estimated_tax)}</div>
-                <div className="text-neutral-400">33.75% rate</div>
+                <div className="text-ink-muted">33.75% rate</div>
               </div>
             )}
           </div>
@@ -660,7 +660,7 @@ function BookView({ data }: { data: BookResult }) {
         <SummaryCard icon={Receipt} label="Households scanned" value={String(data.total_households_scanned)} sub={`as of ${data.generated_at}`} color="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400" />
         <SummaryCard icon={TrendingDown} label="NZ harvestable losses" value={fmtNZD(lh.total_harvestable_loss)} sub={`${lh.count} lot(s)`} color="bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400" />
         <SummaryCard icon={Leaf} label="NZ est. tax saving" value={fmtNZD(lh.estimated_tax_saving + pie.total_annual_saving)} sub="loss-harvest + PIE" color="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" />
-        <SummaryCard icon={AlertTriangle} label="Bright-line alerts" value={String(bl.count)} sub={bl.count > 0 ? "NZ properties" : "None"} color={bl.count > 0 ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600" : "bg-neutral-100 dark:bg-neutral-700 text-neutral-400"} />
+        <SummaryCard icon={AlertTriangle} label="Bright-line alerts" value={String(bl.count)} sub={bl.count > 0 ? "NZ properties" : "None"} color={bl.count > 0 ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600" : "bg-neutral-100 dark:bg-neutral-700 text-ink-muted"} />
       </div>
 
       {hasMulti && (
@@ -673,7 +673,7 @@ function BookView({ data }: { data: BookResult }) {
                   <div key={i} className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-3 flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-sm">{h.household_name}</div>
-                      <div className="flex gap-4 mt-1 text-xs text-neutral-500">
+                      <div className="flex gap-4 mt-1 text-xs text-ink-muted">
                         <span>Portfolio: {fmtUSD(h.total_portfolio_value)}</span>
                         {h.summary.rmd_required > 0 && <span className="text-red-600 dark:text-red-400">{h.summary.rmd_required} RMD active</span>}
                         {h.summary.roth_opportunity > 0 && <span className="text-emerald-600 dark:text-emerald-400">{h.summary.roth_opportunity} Roth opportunity</span>}
@@ -697,7 +697,7 @@ function BookView({ data }: { data: BookResult }) {
                   <div key={i} className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-3 flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-sm">{h.household_name}</div>
-                      <div className="flex gap-4 mt-1 text-xs text-neutral-500">
+                      <div className="flex gap-4 mt-1 text-xs text-ink-muted">
                         <span>Portfolio: {fmtGBP(h.total_portfolio_value)}</span>
                         {h.summary.cgt_flag && <span className="text-amber-600 dark:text-amber-400">CGT exposure</span>}
                         {h.summary.dividend_flag && <span className="text-amber-600 dark:text-amber-400">Dividend allowance exceeded</span>}
@@ -784,11 +784,11 @@ export default function TaxIntelligencePage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Receipt className="w-5 h-5 text-neutral-400" />
+            <Receipt className="w-5 h-5 text-ink-muted" />
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Tax Intelligence</h1>
             {jurisdictionBadge && <span className="text-xs bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 px-2 py-0.5 rounded-full">{jurisdictionBadge}</span>}
           </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          <p className="text-sm text-ink-muted dark:text-neutral-400">
             Jurisdiction-dispatched tax optimisation — NZ (PIE / KiwiSaver / bright-line), US (CGT / RMD / Roth), UK (CGT allowance / ISA / pension).
           </p>
         </div>
@@ -817,7 +817,7 @@ export default function TaxIntelligencePage() {
         <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-4 py-2">{error}</div>
       )}
       {loading && (
-        <div className="text-sm text-neutral-500 dark:text-neutral-400 py-8 text-center animate-pulse">
+        <div className="text-sm text-ink-muted dark:text-neutral-400 py-8 text-center animate-pulse">
           Scanning {mode === "book" ? "all mandates" : "household"} for tax opportunities…
         </div>
       )}
@@ -832,7 +832,7 @@ export default function TaxIntelligencePage() {
       })()}
 
       {!loading && !bookData && !hhData && mode === "household" && !selectedHH && (
-        <div className="text-center py-16 text-neutral-400 dark:text-neutral-500">
+        <div className="text-center py-16 text-ink-muted dark:text-neutral-500">
           <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40" />
           <p>Select a household to view tax intelligence.</p>
         </div>

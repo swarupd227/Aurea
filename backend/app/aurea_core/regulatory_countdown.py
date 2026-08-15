@@ -84,6 +84,11 @@ def _estimate_us_estate(brain: dict) -> dict:
     }
 
 
+def _exemption_label(figures: dict) -> str:
+    """Describe whose exemption the threshold represents, so the figure is unambiguous."""
+    return "combined post-sunset exemption" if figures["married"] else "post-sunset exemption"
+
+
 def _us_estate_sunset(brain: dict) -> dict:
     figures = _estimate_us_estate(brain)
     persons = brain.get("persons", [])
@@ -156,9 +161,19 @@ def _us_estate_sunset(brain: dict) -> dict:
         "summary": (
             f"The TCJA estate tax exemption sunset occurred on Jan 1, 2026. "
             f"The federal exemption has reverted to approximately ${_US_EXEMPTION_POST_SUNSET/1e6:.0f}M/person "
-            f"(down from $13.61M). This household's estimated gross estate of ${figures['gross_estate']/1e6:.1f}M "
-            + ("exceeds the reduced threshold — estate planning actions are needed now."
-               if figures["affected"] else f"remains below the ${_US_EXEMPTION_POST_SUNSET/1e6:.0f}M threshold — continue monitoring estate growth.")
+            f"(down from ${_US_EXEMPTION_CURRENT/1e6:.2f}M). This household's estimated gross estate of "
+            f"${figures['gross_estate']/1e6:.1f}M "
+            # Name the threshold actually applied in `affected` — the household-level
+            # exemption, which is doubled for a married couple. Quoting the per-person
+            # constant here produced statements like "$12.0M remains below the $7M
+            # threshold", which is arithmetically false and reads as a broken calculation.
+            + (
+                f"exceeds the {_exemption_label(figures)} of ${figures['post_sunset_exemption']/1e6:.1f}M "
+                f"— estate planning actions are needed now."
+                if figures["affected"]
+                else f"remains below the {_exemption_label(figures)} of "
+                     f"${figures['post_sunset_exemption']/1e6:.1f}M — continue monitoring estate growth."
+            )
         ),
         "figures": figures,
         "actions": actions,
