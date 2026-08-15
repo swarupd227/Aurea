@@ -13,6 +13,7 @@ from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
 from app.aurea_core import disclosures, sample_docs
 from app.aurea_core import parties as parties_core
+from app.aurea_core import tracks as tracks_core
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
 from app.models.enums import AgentKey, PartyRole
@@ -81,6 +82,33 @@ def _sla_status(case: OnboardingCase) -> str:
     return "on_track"
 
 
+async def _tracks_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict:
+    """The four parallel tracks for a case, derived from its records.
+
+    Derived rather than stored, so the tracks cannot drift from the underlying evidence
+    and existing cases are correct without a migration. See aurea_core/tracks.py.
+    """
+    party_rows = await _load_parties(db, case.id)
+    disc_rows = (await db.execute(
+        select(DisclosureDelivery).where(DisclosureDelivery.case_id == case.id)
+    )).scalars().all()
+    doc_rows = (await db.execute(
+        select(OnboardingDocument).where(OnboardingDocument.case_id == case.id)
+    )).scalars().all()
+    xfer_rows = (await db.execute(
+        select(TransferRequest).where(TransferRequest.case_id == case.id)
+    )).scalars().all()
+    return tracks_core.evaluate(
+        case,
+        party_status=parties_core.completeness_for(case.registration_type, party_rows),
+        disclosure_status=disclosures.status_for(
+            firm.jurisdiction, case.registration_type, list(disc_rows)
+        ),
+        documents=list(doc_rows),
+        transfers=list(xfer_rows),
+    )
+
+
 def _case_dict(
     case: OnboardingCase,
     docs: list[OnboardingDocument] | None = None,
@@ -141,7 +169,14 @@ async def list_cases(firm: Firm = Depends(current_firm), db: AsyncSession = Depe
         await db.execute(select(OnboardingCase).where(OnboardingCase.firm_id == firm.id)
                          .order_by(OnboardingCase.created_at.desc()))
     ).scalars().all()
-    return [_case_dict(c) for c in rows]
+    out = []
+    for c in rows:
+        d = _case_dict(c)
+        # The board needs the tracks to show what is actually blocking each case, and
+        # who owns it — a single status cannot express four parallel tracks.
+        d["tracks"] = await _tracks_for(db, firm, c)
+        out.append(d)
+    return out
 
 
 @router.post("/cases")
@@ -186,6 +221,7 @@ async def get_case(case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: A
     ).scalar_one_or_none()
     out = _case_dict(case, docs, bos)
     out["recommendation_id"] = str(rec.id) if rec else None
+    out["tracks"] = await _tracks_for(db, firm, case)
     return out
 
 

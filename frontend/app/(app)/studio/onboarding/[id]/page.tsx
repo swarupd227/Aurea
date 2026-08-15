@@ -161,6 +161,9 @@ export default function OnboardingCase() {
         </div>
       )}
 
+      {/* The four tracks — what is actually happening, in parallel. */}
+      {c.tracks?.tracks && <TrackStrip t={c.tracks} />}
+
       {/* Readiness / NIGO banner */}
       {(c.nigo_flag || c.readiness_score != null) && (
         <div className={`card p-3 mb-4 flex items-center gap-3 ${c.nigo_flag ? "border-caution/30" : "border-positive/20"}`}>
@@ -416,6 +419,59 @@ export default function OnboardingCase() {
         </div>
       </div>
     </div>
+  );
+}
+
+const TRACK_STATE_STYLE: Record<string, { bar: string; chip: string; label: string }> = {
+  complete:         { bar: "bg-positive", chip: "bg-positive/10 text-positive", label: "Complete" },
+  in_progress:      { bar: "bg-navy-600", chip: "bg-navy-50 text-navy-700", label: "In progress" },
+  blocked:          { bar: "bg-critical", chip: "bg-critical/10 text-critical", label: "Blocked" },
+  waiting_external: { bar: "bg-gold", chip: "bg-gold-soft/40 text-gold-dark", label: "Waiting" },
+  not_started:      { bar: "bg-navy-100", chip: "bg-navy-50 text-ink-muted", label: "Not started" },
+};
+
+/**
+ * The four tracks, side by side.
+ *
+ * Replaces reading a single status as if onboarding were linear. A case is normally
+ * agreement-in-progress, documents-incomplete, EDD-pending and unfunded all at once —
+ * this shows that, and names who owns the thing that is actually holding it up.
+ */
+function TrackStrip({ t }: { t: any }) {
+  return (
+    <Card className={`mb-5 ${t.blocked_tracks?.length ? "border-critical/25" : ""}`}>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <span className="text-sm font-semibold text-ink">{t.position}</span>
+        {t.owner && <span className="chip bg-navy-50 text-ink-muted">Owner: {titleCase(t.owner)}</span>}
+        {t.ready_to_activate && (
+          <span className="chip bg-positive/10 text-positive flex items-center gap-1">
+            <CheckCircle2 size={11} /> Ready to activate
+          </span>
+        )}
+        {t.next_action && (
+          <span className="text-xs text-ink-soft ml-auto">Next: {t.next_action}</span>
+        )}
+      </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {t.tracks.map((tr: any) => {
+          const st = TRACK_STATE_STYLE[tr.state] || TRACK_STATE_STYLE.not_started;
+          return (
+            <div key={tr.code}>
+              <div className={`h-1.5 rounded-full ${st.bar} mb-2`} />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-mono text-[10px] text-ink-faint">{tr.code}</span>
+                <span className="text-xs font-medium text-ink">{tr.label}</span>
+              </div>
+              <div className="mt-1">
+                <span className={`chip text-[10px] ${st.chip}`}>{st.label}</span>
+              </div>
+              <div className="text-[11px] text-ink-muted mt-1.5 leading-snug">{tr.detail}</div>
+              <div className="text-[10px] text-ink-faint mt-1">{tr.owner_label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

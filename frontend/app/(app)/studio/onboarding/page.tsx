@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { UserPlus, ShieldCheck, ShieldAlert, ChevronRight, FileText, AlertTriangle } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import { Card, Spinner, Segment } from "@/components/ui";
+import { Card, Spinner, Segment, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { titleCase } from "@/lib/format";
@@ -23,13 +23,34 @@ const AML_TIER_STYLE: Record<string, string> = {
   high: "bg-critical/10 text-critical",
 };
 
-const STATUS_FLOW = ["intake", "screening", "review", "approved"];
-const STATUS_STYLE: Record<string, string> = {
-  intake: "bg-navy-100 text-navy-700",
-  screening: "bg-gold-soft/40 text-gold-dark",
-  review: "bg-gold-soft/40 text-gold-dark",
-  approved: "bg-positive/10 text-positive",
-  rejected: "bg-navy-50 text-ink-muted",
+/**
+ * The queue is grouped by who is waiting, not by pipeline stage.
+ *
+ * L200 describes onboarding as four tracks running in parallel; a case sits in all four at
+ * once, so "which stage is it in" has no answer. What an adviser needs is "does this need
+ * me, and what next" — so the columns are owners, and each card carries its four track
+ * pips, its SLA age, and one next action.
+ */
+const OWNER_COLUMNS = [
+  { key: "adviser", label: "Needs adviser" },
+  { key: "ops", label: "Needs ops" },
+  { key: "compliance", label: "Needs compliance" },
+  { key: "external", label: "Waiting external" },
+];
+
+const TRACK_PIP: Record<string, string> = {
+  complete: "bg-positive",
+  in_progress: "bg-navy-600",
+  blocked: "bg-critical",
+  waiting_external: "bg-gold",
+  not_started: "bg-navy-100",
+};
+
+const SLA_STYLE: Record<string, string> = {
+  breached: "text-critical font-semibold",
+  at_risk: "text-caution font-medium",
+  on_track: "text-ink-muted",
+  "n/a": "text-ink-faint",
 };
 
 function amlChip(status?: string) {
@@ -40,7 +61,7 @@ function amlChip(status?: string) {
 }
 
 export default function OnboardingPipeline() {
-  const { data, loading, refetch } = useApi<any[]>("/api/onboarding/cases");
+  const { data, loading, error, refetch } = useApi<any[]>("/api/onboarding/cases");
   const [showNew, setShowNew] = useState(false);
 
   return (
@@ -55,51 +76,91 @@ export default function OnboardingPipeline() {
 
       {loading ? (
         <Spinner />
+      ) : error ? (
+        <div className="card p-8"><ErrorState what="the onboarding queue" message={error} onRetry={refetch} /></div>
       ) : (
-        <div className="grid lg:grid-cols-4 gap-4">
-          {STATUS_FLOW.map((status) => {
-            const cases = (data || []).filter((c) => c.status === status);
-            return (
-              <div key={status}>
-                <div className="flex items-center justify-between mb-2 px-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{titleCase(status)}</span>
-                  <span className="text-xs text-ink-muted">{cases.length}</span>
+        <>
+          <div className="grid lg:grid-cols-4 gap-4">
+            {OWNER_COLUMNS.map((col) => {
+              const cases = (data || []).filter(
+                (c) => c.status !== "approved" && (c.tracks?.owner || "adviser") === col.key
+              );
+              return (
+                <div key={col.key}>
+                  <div className="flex items-center justify-between mb-2 px-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{col.label}</span>
+                    <span className="text-xs text-ink-muted">{cases.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {cases.map((c) => <CaseCard key={c.id} c={c} />)}
+                    {cases.length === 0 && (
+                      <div className="text-xs text-ink-faint px-1 py-3">Nothing waiting</div>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {cases.map((c) => (
-                    <Link key={c.id} href={`/studio/onboarding/${c.id}`} className="card p-3 block hover:shadow-lift transition group">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-ink text-sm">{c.prospect_name}</span>
-                        <ChevronRight size={15} className="text-navy-300 group-hover:text-navy-600" />
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                        <Segment>{c.segment}</Segment>
-                        {c.registration_type ? (
-                          <span className="chip bg-navy-50 text-ink-muted">{REGISTRATION_LABELS[c.registration_type] || titleCase(c.registration_type)}</span>
-                        ) : c.is_entity ? (
-                          <span className="chip bg-navy-50 text-ink-muted">{titleCase(c.entity_type || "entity")}</span>
-                        ) : null}
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                        {amlChip(c.screening?.status)}
-                        {c.aml_risk_tier && (
-                          <span className={`chip ${AML_TIER_STYLE[c.aml_risk_tier] || "bg-navy-50 text-ink-muted"}`}>AML {c.aml_risk_tier}</span>
-                        )}
-                        {c.nigo_flag && <span className="chip bg-caution/10 text-caution flex items-center gap-1"><AlertTriangle size={10} /> NIGO</span>}
-                        {c.exceptions?.length > 0 && (
-                          <span className="chip bg-caution/10 text-caution">{c.exceptions.length} exception</span>
-                        )}
-                      </div>
-                    </Link>
-                  ))}
-                  {cases.length === 0 && <div className="text-xs text-ink-muted px-1 py-3">—</div>}
-                </div>
+              );
+            })}
+          </div>
+
+          {(data || []).some((c) => c.status === "approved") && (
+            <div className="mt-6">
+              <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-2 px-1">
+                Activated
               </div>
-            );
-          })}
-        </div>
+              <div className="grid lg:grid-cols-4 gap-4">
+                {(data || []).filter((c) => c.status === "approved").map((c) => <CaseCard key={c.id} c={c} />)}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+function CaseCard({ c }: { c: any }) {
+  const t = c.tracks;
+  return (
+    <Link href={`/studio/onboarding/${c.id}`} className="card p-3 block hover:shadow-lift transition group">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-ink text-sm truncate">{c.prospect_name}</span>
+        <ChevronRight size={15} className="text-navy-300 group-hover:text-navy-600 shrink-0" />
+      </div>
+
+      {/* Four track pips — the state of A/B/C/D at a glance. */}
+      {t?.tracks && (
+        <div className="flex items-center gap-1 mt-2" title={t.tracks.map((x: any) => `${x.code} ${x.label}: ${x.state.replace(/_/g, " ")}`).join("\n")}>
+          {t.tracks.map((x: any) => (
+            <span key={x.code} className={`h-1.5 flex-1 rounded-full ${TRACK_PIP[x.state] || TRACK_PIP.not_started}`} />
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+        {c.registration_type ? (
+          <span className="chip bg-navy-50 text-ink-muted">{REGISTRATION_LABELS[c.registration_type] || titleCase(c.registration_type)}</span>
+        ) : c.is_entity ? (
+          <span className="chip bg-navy-50 text-ink-muted">{titleCase(c.entity_type || "entity")}</span>
+        ) : null}
+        {c.aml_risk_tier && (
+          <span className={`chip ${AML_TIER_STYLE[c.aml_risk_tier] || "bg-navy-50 text-ink-muted"}`}>AML {c.aml_risk_tier}</span>
+        )}
+        {c.nigo_flag && <span className="chip bg-caution/10 text-caution flex items-center gap-1"><AlertTriangle size={10} /> NIGO</span>}
+      </div>
+
+      <div className="flex items-center justify-between gap-2 mt-2 text-[10px]">
+        <span className={SLA_STYLE[c.sla_status] || "text-ink-muted"}>
+          {c.sla_status === "breached" ? "SLA breached" : c.sla_status === "at_risk" ? "SLA at risk" : `SLA ${c.sla_days}d`}
+        </span>
+        {t?.ready_to_activate && <span className="chip bg-positive/10 text-positive">Ready to activate</span>}
+      </div>
+
+      {t?.next_action && (
+        <div className="text-[11px] text-ink-soft mt-2 pt-2 border-t border-navy-100 leading-snug">
+          {t.next_action}
+        </div>
+      )}
+    </Link>
   );
 }
 
