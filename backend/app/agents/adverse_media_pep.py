@@ -177,23 +177,27 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
                 SurveillanceSeverity.HIGH if screening["status"] == "blocked"
                 else SurveillanceSeverity.MEDIUM
             )
+            # SurveillanceFlag has no run/subject columns — the case is carried in
+            # `attributes`, and the finding text lives in `finding`.
             s.add(SurveillanceFlag(
                 firm_id=ctx.firm.id,
-                agent_run_id=ctx.run_id,
+                recommendation_id=recommendation.id,
+                target_agent_key=str(self.key),
                 severity=severity,
                 category="aml_screening",
                 kind="screening_hit",
-                description=(
+                finding=(
                     f"Screening hit(s) on {case.prospect_name}: "
                     f"{screening['n_hits']} match(es), status {screening['status']}."
                 ),
-                subject_type="onboarding_case",
-                subject_id=case.id,
                 resolved=False,
                 attributes={
                     "screening_status": screening["status"],
                     "n_hits": screening["n_hits"],
                     "has_pep": payload.get("has_pep", False),
+                    "subject_type": "onboarding_case",
+                    "subject_id": str(case.id),
+                    "prospect_name": case.prospect_name,
                 },
             ))
         await s.flush()
