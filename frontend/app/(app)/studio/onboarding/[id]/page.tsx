@@ -43,19 +43,41 @@ export default function OnboardingCase() {
   const { data: c, loading, refetch } = useApi<any>(`/api/onboarding/cases/${id}`, [id]);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ id: string; title: string }[]>([]);
 
   if (loading || !c) return <Spinner />;
 
-  async function runCip() {
-    setBusy("cip"); setErr(null);
-    try { await api(`/api/onboarding/cases/${id}/run-cip`, { body: {} }); await refetch(); }
-    catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  /**
+   * Run an onboarding-stage agent against this case.
+   *
+   * These agents are Tier 1/2, so they stop at a human checkpoint — `act()` does not run
+   * and the case is unchanged on return. Previously the caller refetched immediately and
+   * re-rendered identical state, so the button looked broken. We now surface the pending
+   * recommendation the run produced so there is something to approve.
+   */
+  async function runCaseAgent(slug: string) {
+    setBusy(slug); setErr(null);
+    try {
+      const res = await api<any>(`/api/onboarding/cases/${id}/run-agent/${slug}`, { body: {} });
+      const awaiting: { id: string; title: string }[] = res?.awaiting_approval || [];
+      if (awaiting.length) {
+        setPending((prev) => [...awaiting.filter((a) => !prev.some((p) => p.id === a.id)), ...prev]);
+      }
+      await refetch();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
   }
-  async function pushToCustodian() {
-    setBusy("custodian"); setErr(null);
-    try { await api(`/api/onboarding/cases/${id}/push-to-custodian`, { body: {} }); await refetch(); }
-    catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+
+  async function approvePending(recId: string) {
+    setBusy(recId); setErr(null);
+    try {
+      await api(`/api/studio/recommendations/${recId}/decide`, { body: { action: "approve" } });
+      setPending((prev) => prev.filter((p) => p.id !== recId));
+      await refetch();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
   }
+
+  const runCip = () => runCaseAgent("cip_identity_verifier");
+  const pushToCustodian = () => runCaseAgent("custodian_account_opener");
   async function addDoc(doc_type: string) {
     setBusy("doc");
     try { await api(`/api/onboarding/cases/${id}/documents`, { body: { doc_type } }); await refetch(); }
@@ -97,7 +119,37 @@ export default function OnboardingCase() {
         }
       />
 
-      {err && <div className="card p-3 mb-4 text-sm text-critical border-critical/30">{err}</div>}
+      {err && <div className="card p-3 mb-4 text-sm text-critical border-critical/30" role="alert">{err}</div>}
+
+      {/* Tier 1/2 agents stop at a checkpoint. Without this the run looks like it did nothing. */}
+      {pending.length > 0 && (
+        <div className="card p-4 mb-4 border-gold/40 bg-gold-soft/10">
+          <div className="flex items-center gap-2 mb-2">
+            <ClipboardList size={16} className="text-gold-dark" />
+            <span className="text-sm font-semibold text-ink">
+              {pending.length} agent {pending.length === 1 ? "result" : "results"} awaiting your approval
+            </span>
+          </div>
+          <p className="text-xs text-ink-muted mb-3">
+            These agents run at Tier&nbsp;2 — they propose, you decide. Nothing is written to the
+            case until you approve.
+          </p>
+          <div className="space-y-2">
+            {pending.map((p) => (
+              <div key={p.id} className="flex items-center gap-3 rounded-lg border border-navy-100 bg-surface px-3 py-2">
+                <span className="text-sm text-ink-soft flex-1 min-w-0 truncate">{p.title}</span>
+                <button
+                  className="btn-gold text-xs shrink-0"
+                  disabled={busy === p.id}
+                  onClick={() => approvePending(p.id)}
+                >
+                  <Check size={13} /> {busy === p.id ? "Applying…" : "Approve"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {c.status === "approved" && (
         <div className="card p-4 mb-5 border-positive/30 flex items-center gap-3">
@@ -229,6 +281,13 @@ export default function OnboardingCase() {
             </Card>
           )}
 
+          {/* Onboarding-stage agents */}
+          <CaseAgents
+            c={c}
+            busy={busy}
+            onRun={runCaseAgent}
+          />
+
           {/* Beneficial owners (entity accounts) */}
           <BeneficialOwners caseId={id} registrationType={c.registration_type} status={c.status} />
 
@@ -350,6 +409,101 @@ export default function OnboardingCase() {
 
 function Row({ k, v }: { k: string; v: any }) {
   return <div className="flex justify-between gap-2 py-0.5"><span className="text-ink-muted">{k}</span><span className="text-ink-soft font-medium">{v}</span></div>;
+}
+
+const ROLLOVER_TYPES = new Set(["employer_rollover", "traditional_ira", "roth_ira"]);
+
+/**
+ * The onboarding-stage agents, runnable per case.
+ *
+ * These exist in the agent registry but had no endpoint and no trigger, so the fields they
+ * populate — readiness_score, screening_log, aml_risk_tier, edd_status, pte_status — were
+ * null on every case and the panels that render them never appeared.
+ */
+function CaseAgents({
+  c, busy, onRun,
+}: {
+  c: any;
+  busy: string | null;
+  onRun: (slug: string) => void;
+}) {
+  const isClosed = c.status === "approved" || c.status === "rejected";
+
+  const agents = [
+    {
+      slug: "nigo_prevention",
+      name: "NIGO Prevention",
+      blurb: "Pre-submission check — scores readiness and itemises what would cause a reject.",
+      done: c.readiness_score != null,
+      doneLabel: c.readiness_score != null ? `Readiness ${c.readiness_score}/100` : null,
+    },
+    {
+      slug: "adverse_media_pep",
+      name: "Adverse Media & PEP Screener",
+      blurb: "Screens every party — applicant, trustees, beneficial owners — with a disposition log.",
+      done: (c.screening_log?.length ?? 0) > 0,
+      doneLabel: c.screening_log?.length ? `${c.screening_log.length} parties screened` : null,
+    },
+    {
+      slug: "edd_sow_narrator",
+      name: "EDD Source-of-Wealth Narrator",
+      blurb: "Drafts the source-of-wealth memo required for medium and high-risk customers.",
+      done: !!c.proposal?.edd_memo,
+      doneLabel: c.proposal?.edd_memo ? "Memo drafted" : null,
+      // The agent itself bails unless the tier is medium/high.
+      note: !c.aml_risk_tier ? "Needs an AML risk tier first" : null,
+    },
+    {
+      slug: "rollover_pte_documenter",
+      name: "Rollover PTE 2020-02 Documenter",
+      blurb: "Generates the DOL best-interest rationale memo for rollover registrations.",
+      done: !!c.proposal?.pte_2020_02_memo,
+      doneLabel: c.pte_status ? titleCase(c.pte_status) : null,
+      hidden: !ROLLOVER_TYPES.has(c.registration_type),
+    },
+  ].filter((a) => !a.hidden);
+
+  return (
+    <Card>
+      <div className="font-semibold text-ink mb-1 flex items-center gap-2">
+        <Activity size={16} className="text-navy-400" /> Onboarding agents
+      </div>
+      <p className="text-xs text-ink-muted mb-3">
+        Each proposes a result for your approval — nothing is written to the case until you accept it.
+      </p>
+      <div className="space-y-2">
+        {agents.map((a) => (
+          <div key={a.slug} className="rounded-xl border border-navy-100 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-ink flex items-center gap-2 flex-wrap">
+                  {a.name}
+                  {a.done && a.doneLabel && (
+                    <span className="chip bg-positive/10 text-positive">{a.doneLabel}</span>
+                  )}
+                </div>
+                <div className="text-xs text-ink-muted mt-0.5">{a.blurb}</div>
+                {a.note && (
+                  <div className="text-xs text-caution mt-1 flex items-center gap-1">
+                    <AlertTriangle size={10} /> {a.note}
+                  </div>
+                )}
+              </div>
+              <button
+                className="btn-outline text-xs shrink-0"
+                disabled={busy === a.slug || isClosed}
+                aria-label={`Run ${a.name}`}
+                onClick={() => onRun(a.slug)}
+              >
+                <Play size={12} />
+                {busy === a.slug ? "Running…" : a.done ? "Re-run" : "Run"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
 }
 
 const BO_ENTITY_TYPES = new Set(["trust", "entity_llc", "entity_corp", "entity_partnership"]);

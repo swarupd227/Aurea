@@ -19,6 +19,76 @@ CATALOGUE: dict[str, dict] = {
         "acts": "Reconciles and maps client, account and holding data into the client brain; flags conflicts.",
         "checkpoint": "Operations validates mappings before they become golden records.",
     },
+    AgentKey.NIGO_PREVENTION: {
+        "name": "NIGO Prevention", "stage": "Acquire & onboard",
+        "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",
+        "senses": "The case's registration type, its required-document matrix, extracted field "
+                  "confidence, beneficial owners, and intake completeness.",
+        "acts": "Runs the pre-submission check before a package is sent to the custodian: scores "
+                "readiness 0–100, and itemises every issue against the NIGO root-cause taxonomy "
+                "(missing ID, missing beneficiary, incomplete beneficial ownership, stale form).",
+        "checkpoint": "Adviser or operations clears each issue before submission; the agent "
+                      "prevents rejects rather than recording them after the fact.",
+    },
+    AgentKey.ADVERSE_MEDIA_PEP: {
+        "name": "Adverse Media & PEP Screener", "stage": "Acquire & onboard",
+        "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",
+        "senses": "Every party on the case — applicant, associated parties, trustees and "
+                  "beneficial owners — screened against sanctions, PEP and adverse-media lists.",
+        "acts": "Writes a per-party disposition log with match scores and rationale, and raises "
+                "EDD where a PEP or adverse-media hit is found. Designed to re-run as lists "
+                "update rather than screening once at intake.",
+        "checkpoint": "Compliance dispositions each true/false match with documented rationale.",
+    },
+    AgentKey.EDD_SOW_NARRATOR: {
+        "name": "EDD Source-of-Wealth Narrator", "stage": "Acquire & onboard",
+        "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",
+        "senses": "Intake source-of-wealth and source-of-funds statements, supporting documents, "
+                  "and the case's AML risk tier.",
+        "acts": "Drafts the structured source-of-wealth memorandum required for enhanced due "
+                "diligence on medium and high-risk customers, and lists the corroboration gaps "
+                "that still need documentary support.",
+        "checkpoint": "Compliance reviews and signs off the narrative; the agent never closes EDD itself.",
+    },
+    AgentKey.ROLLOVER_PTE_DOCUMENTER: {
+        "name": "Rollover PTE 2020-02 Documenter", "stage": "Acquire & onboard",
+        "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",
+        "senses": "Rollover-type registrations, the leaving plan's fee and investment features, "
+                  "and the proposed IRA advisory fee.",
+        "acts": "Generates the DOL PTE 2020-02 best-interest rationale memo documenting why the "
+                "rollover benefits the client, with the plan-versus-IRA fee comparison in basis "
+                "points. Missing rollover rationale is a standing DOL and SEC exam focus.",
+        "checkpoint": "Adviser reviews and adopts the rationale; it is a fiduciary representation.",
+    },
+    AgentKey.ABANDONMENT_RECOVERY: {
+        "name": "Abandonment Recovery", "stage": "Acquire & onboard",
+        "default_tier": AutonomyTier.TIER_1, "subject": "firm",
+        "senses": "Onboarding cases that have stalled — open past their SLA with no recent "
+                  "progress on documents, screening or funding.",
+        "acts": "Identifies stalled applications, attributes the stall to its blocking step, and "
+                "drafts a re-engagement approach for the owning adviser.",
+        "checkpoint": "Adviser decides whether and how to re-approach the prospect.",
+    },
+    AgentKey.CIP_IDENTITY_VERIFIER: {
+        "name": "CIP Identity Verifier", "stage": "Acquire & onboard",
+        "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",
+        "senses": "Name, date of birth, address and identity-document number for each natural "
+                  "person on the case.",
+        "acts": "Runs the Customer Identification Program check through the configured identity "
+                "provider, returning a verification decision, a confidence score, and any "
+                "mismatch flags against the provider's audit reference.",
+        "checkpoint": "Operations reviews review/failed outcomes; a passing CIP is a precondition "
+                      "for opening the custodian account.",
+    },
+    AgentKey.CUSTODIAN_ACCOUNT_OPENER: {
+        "name": "Custodian Account Opener", "stage": "Acquire & onboard",
+        "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",
+        "senses": "The approved case's registration type, party data, and verified identity record.",
+        "acts": "Single-keys the captured data to the custodian's account-opening API and records "
+                "the returned account number — so the same details are never re-entered by hand, "
+                "which is the root cause of most NIGO and cycle-time pain.",
+        "checkpoint": "Operations approves before an external account is created at the custodian.",
+    },
     AgentKey.MEETING_PREP: {
         "name": "Meeting Preparation", "stage": "Advise & engage",
         "default_tier": AutonomyTier.TIER_1, "subject": "household",

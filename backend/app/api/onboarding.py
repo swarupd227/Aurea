@@ -299,6 +299,65 @@ async def push_to_custodian(
             "recommendations": [{"id": str(r.id)} for r in recs]}
 
 
+# Onboarding-stage agents that can be run against a single case from the case workspace.
+# These were previously reachable only via the generic agent-run API, which no UI called —
+# so the fields they populate (readiness_score, screening_log, aml_risk_tier, edd_status,
+# pte_status) were null on every case and the panels that render them never appeared.
+CASE_AGENTS: dict[str, AgentKey] = {
+    "nigo_prevention": AgentKey.NIGO_PREVENTION,
+    "adverse_media_pep": AgentKey.ADVERSE_MEDIA_PEP,
+    "edd_sow_narrator": AgentKey.EDD_SOW_NARRATOR,
+    "rollover_pte_documenter": AgentKey.ROLLOVER_PTE_DOCUMENTER,
+    "cip_identity_verifier": AgentKey.CIP_IDENTITY_VERIFIER,
+    "custodian_account_opener": AgentKey.CUSTODIAN_ACCOUNT_OPENER,
+}
+
+
+@router.post("/cases/{case_id}/run-agent/{agent_slug}")
+async def run_case_agent(
+    case_id: uuid.UUID,
+    agent_slug: str,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run one onboarding-stage agent against a single case.
+
+    Allowlisted rather than accepting an arbitrary AgentKey, so this cannot be used to
+    invoke unrelated agents against an onboarding subject.
+
+    These agents are Tier 1/2, so `act()` does not run here — the agent produces a
+    recommendation that a human approves. The response returns the recommendation ids so
+    the caller can surface the pending decision instead of appearing to do nothing.
+    """
+    agent_key = CASE_AGENTS.get(agent_slug)
+    if agent_key is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown onboarding agent '{agent_slug}'. "
+                   f"Available: {', '.join(sorted(CASE_AGENTS))}.",
+        )
+    case = await db.get(OnboardingCase, case_id)
+    if not case or case.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    try:
+        run = await run_agent(
+            db, firm=firm, agent_key=agent_key,
+            subject=Subject("onboarding_case", case.id, case.prospect_name),
+            trigger="manual",
+        )
+    except AgentPausedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    recs = (await db.execute(select(Recommendation).where(Recommendation.run_id == run.id))).scalars().all()
+    return {
+        "run_id": str(run.id),
+        "status": run.status,
+        "agent_key": str(agent_key),
+        # Tier 1/2 agents stop at a checkpoint; the caller must surface these for approval.
+        "awaiting_approval": [{"id": str(r.id), "title": r.title} for r in recs],
+    }
+
+
 # ── Transfers ─────────────────────────────────────────────────────────────────
 @router.get("/cases/{case_id}/transfers")
 async def list_transfers(
