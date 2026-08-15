@@ -7,6 +7,14 @@
 #   ./scripts/deploy.sh frontend     # frontend only
 #   ./scripts/deploy.sh verify       # no deploy, just check what is live
 #
+# From a fresh Cloud Shell (clones if absent, so it is safe to paste every time):
+#
+#   [ -d ~/aurea ] || git clone https://github.com/swarupd227/Aurea.git ~/aurea
+#   cd ~/aurea && git pull && bash scripts/deploy.sh
+#
+# If the subscription is not the default one, set it first:
+#   az account set --subscription "<name-or-id>"
+#
 # Why this script exists:
 #   1. It deploys the backend AND the frontend. Deploying only ./frontend left the
 #      API stale for days — the nav entry for Regulatory Countdown shipped with the
