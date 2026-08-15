@@ -26,9 +26,12 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
         "Form CRS (client relationship summary)", "US SEC",
         "Rule 204-5 / 17a-14 — relationship summary delivered at account opening.",
     ),
+    # One document, but the regime behind it differs by jurisdiction — so the label is
+    # resolved per firm in `describe()` rather than hardcoded here. Labelling a NZ firm's
+    # privacy notice "US SEC" is worse than saying nothing.
     "privacy_notice": (
-        "Privacy notice", "US SEC",
-        "Regulation S-P initial privacy notice, including incident-response notification terms.",
+        "Privacy notice", "Privacy",
+        "Initial privacy notice setting out how client data is collected, used and shared.",
     ),
     "wrap_brochure": (
         "Wrap fee program brochure", "US SEC",
@@ -84,10 +87,25 @@ def required_for(jurisdiction: str | None, registration_type: str | None) -> lis
     return base
 
 
-def describe(doc_type: str) -> dict:
+# Documents whose governing regime depends on the firm's jurisdiction rather than the
+# document itself: regime label, and the specific instrument for the `why` text.
+_PER_JURISDICTION_REGIME: dict[str, dict[str, tuple[str, str]]] = {
+    "privacy_notice": {
+        "US": ("US SEC", "Regulation S-P, including incident-response notification terms."),
+        "UK": ("UK ICO", "UK GDPR / Data Protection Act 2018 privacy information."),
+        "NZ": ("NZ OPC", "Privacy Act 2020 — information privacy principles 3 and 11."),
+        "AU": ("AU OAIC", "Privacy Act 1988 — Australian Privacy Principle 5 notification."),
+    },
+}
+
+
+def describe(doc_type: str, jurisdiction: str | None = None) -> dict:
     label, regime, why = CATALOGUE.get(
         doc_type, (doc_type.replace("_", " ").title(), "—", "")
     )
+    override = _PER_JURISDICTION_REGIME.get(doc_type, {}).get((jurisdiction or "").upper())
+    if override:
+        regime, why = override[0], f"{why} {override[1]}"
     return {"doc_type": doc_type, "label": label, "regime": regime, "why": why}
 
 
@@ -112,7 +130,7 @@ def status_for(
         rows = by_type.get(doc_type, [])
         latest = max(rows, key=lambda r: r.delivered_at) if rows else None
         items.append({
-            **describe(doc_type),
+            **describe(doc_type, jurisdiction),
             "required": True,
             "delivered": latest is not None,
             "delivered_at": latest.delivered_at.isoformat() if latest else None,
@@ -130,7 +148,7 @@ def status_for(
             continue
         latest = max(rows, key=lambda r: r.delivered_at)
         items.append({
-            **describe(doc_type),
+            **describe(doc_type, jurisdiction),
             "required": False,
             "delivered": True,
             "delivered_at": latest.delivered_at.isoformat(),
