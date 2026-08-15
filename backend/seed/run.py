@@ -29,7 +29,9 @@ from app.models.portfolio import (
     Holding, Instrument, ModelPortfolio, Price, TargetAllocation, TaxLot,
 )
 from app.models.tenant import AgentConfig, AutonomyPolicy, Firm
-from app.models.onboarding import BookIntegrationBatch, OnboardingCase, OnboardingDocument
+from app.models.onboarding import (
+    BeneficialOwner, BookIntegrationBatch, OnboardingCase, OnboardingDocument,
+)
 from app.models.engagement import Meeting
 from app.models.client_experience import HeirJourney, Message, default_heir_steps
 from app.models.enums import HeirJourneyStatus, MessageAuthor
@@ -41,6 +43,9 @@ from app.agents.catalogue import CATALOGUE
 log = get_logger("aurea.seed")
 PW = hash_password("aurea")
 TODAY = date.today()
+# Timezone-aware "now", used to backdate seeded records so age-based UI (SLA state,
+# days-in-stage) has something to read on a freshly seeded database.
+_NOW = datetime.now(timezone.utc)
 
 
 async def seed() -> None:
@@ -561,48 +566,168 @@ async def _holding(s, firm_id, account, instrument, qty, cost, lots):
 
 
 async def _acquire_onboard(s, firm):
-    """Seed two onboarding cases (one clean individual, one trust with a PEP trustee) and an
-    un-run acquired-book batch. The agents are run on demand from Studio."""
-    # Case 1 — individual, clean AML, full documents.
-    daniel = OnboardingCase(
+    """Seed a spread of onboarding cases that exercises the L200 surface, plus an un-run
+    acquired-book batch.
+
+    The cases deliberately cover six registration types, all three AML risk tiers, entities
+    with complete and incomplete beneficial ownership, a sanctions hit, a PEP hit, an
+    adverse-media hit, and a range of ages so SLA state reads on-track / at-risk / breached.
+
+    Agent *outputs* — readiness_score, nigo_flag, screening_log — are deliberately left
+    unset so that running an agent from Studio visibly changes something. What is seeded is
+    the input side: registration type, risk tier, parties and documents.
+    """
+    # Idempotent by prospect name, so this can also top up an existing database that was
+    # seeded before these cases were added (see seed/onboarding_refresh.py).
+    existing = set((await s.execute(
+        select(OnboardingCase.prospect_name).where(OnboardingCase.firm_id == firm.id)
+    )).scalars().all())
+
+    async def _aged(case: OnboardingCase, days: int) -> OnboardingCase | None:
+        """Add a case backdated by `days`, or return None if it already exists."""
+        if case.prospect_name in existing:
+            log.info("seed_case_skip", name=case.prospect_name)
+            return None
+        case.created_at = _NOW - timedelta(days=days)
+        s.add(case)
+        await s.flush()
+        return case
+
+    # ── Case 1 — individual, low risk, complete. The clean path. ──────────────
+    daniel = await _aged(OnboardingCase(
         firm_id=firm.id, prospect_name="Daniel Okonkwo", is_entity=False,
-        segment="private_wealth",
+        registration_type="individual", segment="private_wealth",
+        aml_risk_tier="low", aml_risk_score=18.0, edd_status="cdd", sla_days=5,
         intake={"email": "daniel.okonkwo@example.com", "risk_profile": "growth",
                 "objectives": ["retirement", "education"], "time_horizon_years": 18,
                 "capacity_for_loss": "medium", "mandate_preference": "advisory",
                 "source_of_wealth": "Business sale proceeds", "cgt_budget": 12000,
-                "associated_parties": []},
-    )
-    s.add(daniel)
-    await s.flush()
-    for dt in ("passport", "drivers_licence", "proof_of_address"):
-        s.add(OnboardingDocument(firm_id=firm.id, case_id=daniel.id, doc_type=dt,
-                                 filename=f"{dt}_daniel.pdf",
-                                 raw_text=sample_docs.generate(dt, "Daniel Okonkwo")))
+                "beneficiary_name": "Amara Okonkwo", "associated_parties": []},
+    ), days=2)
+    if daniel:
+        for dt in ("passport", "drivers_licence", "proof_of_address"):
+            s.add(OnboardingDocument(firm_id=firm.id, case_id=daniel.id, doc_type=dt,
+                                     filename=f"{dt}_daniel.pdf",
+                                     raw_text=sample_docs.generate(dt, "Daniel Okonkwo")))
 
-    # Case 2 — family trust whose trustee is a PEP (triggers an AML review exception).
-    sokolov = OnboardingCase(
+    # ── Case 2 — trust with a PEP trustee. High risk, EDD, BOs complete. ──────
+    sokolov = await _aged(OnboardingCase(
         firm_id=firm.id, prospect_name="Sokolov Family Trust", is_entity=True, entity_type="trust",
-        segment="private_wealth",
+        registration_type="trust", segment="private_wealth",
+        aml_risk_tier="high", aml_risk_score=78.0, edd_status="edd_pending", sla_days=10,
         intake={"risk_profile": "balanced", "objectives": ["wealth preservation"],
                 "time_horizon_years": 25, "mandate_preference": "discretionary",
-                "source_of_wealth": "Inherited family business",
+                "source_of_wealth": "Inherited family business — third-generation manufacturing",
+                "source_of_funds": "Proceeds of 2019 sale of Sokolov Manufacturing OAO",
                 "associated_parties": ["Viktor Sokolov", "Anna Sokolov"], "cgt_budget": 15000},
-    )
-    s.add(sokolov)
-    await s.flush()
-    s.add(OnboardingDocument(
-        firm_id=firm.id, case_id=sokolov.id, doc_type="trust_deed", filename="trust_deed_sokolov.pdf",
-        raw_text=sample_docs.trust_deed("Sokolov Family Trust", settlor="Viktor Sokolov",
-                                        trustees=["Viktor Sokolov", "Anna Sokolov", "Aurera Trustees Ltd"],
-                                        beneficiaries=["Sokolov children"])))
-    s.add(OnboardingDocument(
-        firm_id=firm.id, case_id=sokolov.id, doc_type="overseas_pension",
-        filename="overseas_pension_sokolov.pdf", raw_text=sample_docs.overseas_pension()))
+    ), days=21)
+    if sokolov:
+        s.add(OnboardingDocument(
+            firm_id=firm.id, case_id=sokolov.id, doc_type="trust_deed", filename="trust_deed_sokolov.pdf",
+            raw_text=sample_docs.trust_deed("Sokolov Family Trust", settlor="Viktor Sokolov",
+                                            trustees=["Viktor Sokolov", "Anna Sokolov", "Aurera Trustees Ltd"],
+                                            beneficiaries=["Sokolov children"])))
+        s.add(OnboardingDocument(
+            firm_id=firm.id, case_id=sokolov.id, doc_type="overseas_pension",
+            filename="overseas_pension_sokolov.pdf", raw_text=sample_docs.overseas_pension()))
+        for name, pct, control in (("Viktor Sokolov", 55.0, True), ("Anna Sokolov", 45.0, False)):
+            s.add(BeneficialOwner(firm_id=firm.id, case_id=sokolov.id, legal_name=name,
+                                  ownership_pct=pct, is_control_person=control,
+                                  dob="1962-04-11" if control else "1968-09-02",
+                                  address="Geneva, Switzerland"))
 
-    # An acquired book, ready to reconcile.
-    s.add(BookIntegrationBatch(firm_id=firm.id, source_firm="Northbridge Advisory",
-                               feed=sample_feed("Northbridge Advisory")))
+    # ── Case 3 — employer rollover. Drives the PTE 2020-02 documenter. ────────
+    priya = await _aged(OnboardingCase(
+        firm_id=firm.id, prospect_name="Priya Raman", is_entity=False,
+        registration_type="employer_rollover", segment="private_wealth",
+        aml_risk_tier="low", aml_risk_score=22.0, edd_status="cdd", sla_days=5,
+        intake={"email": "priya.raman@example.com", "risk_profile": "growth",
+                "objectives": ["retirement"], "time_horizon_years": 22,
+                "mandate_preference": "advisory", "fee_bps": 80,
+                "source_of_wealth": "Employment income — 18 years at Halcyon Health",
+                "source_of_funds": "401(k) direct rollover from Halcyon Health plan",
+                "beneficiary_name": "Arjun Raman",
+                # Consumed by the PTE documenter for the plan-vs-IRA comparison.
+                "leaving_plan": {"plan_name": "Halcyon Health 401(k)",
+                                 "expense_ratio_bps": 52,
+                                 "investment_menu": "21 funds, no managed account",
+                                 "recordkeeper": "Empower"},
+                "associated_parties": []},
+    ), days=9)
+    if priya:
+        for dt in ("passport", "proof_of_address"):
+            s.add(OnboardingDocument(firm_id=firm.id, case_id=priya.id, doc_type=dt,
+                                     filename=f"{dt}_raman.pdf",
+                                     raw_text=sample_docs.generate(dt, "Priya Raman")))
+
+    # ── Case 4 — LLC, adverse-media party, BOs complete to 100%. ──────────────
+    meridian = await _aged(OnboardingCase(
+        firm_id=firm.id, prospect_name="Meridian Capital Partners LLC", is_entity=True,
+        entity_type="llc", registration_type="entity_llc", segment="institutional",
+        aml_risk_tier="medium", aml_risk_score=54.0, edd_status="edd_pending", sla_days=10,
+        intake={"risk_profile": "balanced", "objectives": ["capital preservation", "income"],
+                "time_horizon_years": 10, "mandate_preference": "discretionary",
+                "source_of_wealth": "Operating profits — commercial property advisory",
+                "associated_parties": ["Marcus Delacroix", "Helena Ostrowski"],
+                "cgt_budget": 40000},
+    ), days=12)
+    if meridian:
+        s.add(OnboardingDocument(
+            firm_id=firm.id, case_id=meridian.id, doc_type="trust_deed",
+            filename="formation_docs_meridian.pdf",
+            raw_text=sample_docs.trust_deed("Meridian Capital Partners LLC",
+                                            settlor="Marcus Delacroix",
+                                            trustees=["Marcus Delacroix", "Helena Ostrowski"],
+                                            beneficiaries=["Members per operating agreement"])))
+        for name, pct, control in (("Marcus Delacroix", 40.0, True),
+                                   ("Helena Ostrowski", 35.0, False),
+                                   ("Jonas Vermeer", 25.0, False)):
+            s.add(BeneficialOwner(firm_id=firm.id, case_id=meridian.id, legal_name=name,
+                                  ownership_pct=pct, is_control_person=control,
+                                  address="Auckland, New Zealand"))
+
+    # ── Case 5 — sanctions hit, incomplete ownership, past SLA. Worst case. ───
+    castellanos = await _aged(OnboardingCase(
+        firm_id=firm.id, prospect_name="Castellanos Holdings SA", is_entity=True,
+        entity_type="corporation", registration_type="entity_corp", segment="institutional",
+        aml_risk_tier="high", aml_risk_score=91.0, edd_status="edd_pending", sla_days=10,
+        intake={"risk_profile": "conservative", "objectives": ["capital preservation"],
+                "time_horizon_years": 8, "mandate_preference": "advisory",
+                # Left thin deliberately — the EDD narrator should flag the gap.
+                "source_of_wealth": "",
+                "associated_parties": ["Imelda Castellanos"], "cgt_budget": 0},
+    ), days=34)
+    if castellanos:
+        # One BO, no control person, ownership well short of 100 — the CDD Rule gap.
+        s.add(BeneficialOwner(firm_id=firm.id, case_id=castellanos.id,
+                              legal_name="Imelda Castellanos", ownership_pct=30.0,
+                              is_control_person=False, address="Caracas, Venezuela"))
+
+    # ── Case 6 — Roth IRA with no beneficiary designated. NIGO path. ──────────
+    whitfield = await _aged(OnboardingCase(
+        firm_id=firm.id, prospect_name="Emma Whitfield", is_entity=False,
+        registration_type="roth_ira", segment="mass_affluent",
+        aml_risk_tier="low", aml_risk_score=15.0, edd_status="cdd", sla_days=5,
+        intake={"email": "emma.whitfield@example.com", "risk_profile": "conservative",
+                "objectives": ["retirement"], "time_horizon_years": 30,
+                "mandate_preference": "advisory",
+                "source_of_wealth": "Salary — senior nurse practitioner",
+                # No beneficiary_name: the NIGO agent should raise missing_beneficiary.
+                "associated_parties": []},
+    ), days=4)
+    if whitfield:
+        # Only one of the two required identity documents — should surface as missing_id.
+        s.add(OnboardingDocument(firm_id=firm.id, case_id=whitfield.id, doc_type="passport",
+                                 filename="passport_whitfield.pdf",
+                                 raw_text=sample_docs.generate("passport", "Emma Whitfield")))
+
+    # An acquired book, ready to reconcile — also guarded so a top-up doesn't duplicate it.
+    has_batch = (await s.execute(
+        select(BookIntegrationBatch.id).where(BookIntegrationBatch.firm_id == firm.id)
+    )).first()
+    if not has_batch:
+        s.add(BookIntegrationBatch(firm_id=firm.id, source_firm="Northbridge Advisory",
+                                   feed=sample_feed("Northbridge Advisory")))
     await s.flush()
 
 

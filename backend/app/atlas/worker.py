@@ -198,6 +198,46 @@ async def _check_holding_alerts() -> None:
                 log.warning("holding_alert_check_failed", firm=firm.slug, error=str(exc))
 
 
+async def _run_daily_onboarding_agents() -> None:
+    """Daily sweep for the two onboarding agents that declare `scheduled = True`.
+
+    Both are firm-level when given a firm subject: the screener rescreens every active
+    case's parties against refreshed lists (L200 — "rescreening runs continuously against
+    list updates"), and abandonment recovery looks for applications that have stalled past
+    their SLA. Neither had a scheduler entry, so neither had ever run.
+
+    Both are Tier 1/2, so these produce recommendations for a human rather than acting.
+    """
+    daily = [AgentKey.ADVERSE_MEDIA_PEP, AgentKey.ABANDONMENT_RECOVERY]
+    async with SessionLocal() as s:
+        firms = (await s.execute(select(Firm))).scalars().all()
+        for firm in firms:
+            for agent_key in daily:
+                cfg = (
+                    await s.execute(
+                        select(AgentConfig).where(
+                            AgentConfig.firm_id == firm.id,
+                            AgentConfig.agent_key == agent_key,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if not cfg or not cfg.enabled or cfg.paused:
+                    continue
+                try:
+                    await run_agent(
+                        s, firm=firm, agent_key=agent_key,
+                        subject=Subject("firm", firm.id, firm.name),
+                        trigger="scheduled_monitor",
+                    )
+                    await s.commit()
+                except AgentPausedError:
+                    await s.rollback()
+                except Exception as exc:  # pragma: no cover
+                    await s.rollback()
+                    log.warning("daily_onboarding_agent_failed",
+                                firm=firm.slug, agent=str(agent_key), error=str(exc))
+
+
 async def main() -> None:
     configure_logging()
     log.info("worker_starting")
@@ -210,6 +250,9 @@ async def main() -> None:
     scheduler.add_job(_run_evaluation, "interval", hours=12, id="evaluation")
     scheduler.add_job(_heartbeat, "interval", seconds=40, id="heartbeat")
     scheduler.add_job(_check_holding_alerts, "interval", hours=1, id="holding_alerts")
+    # Daily at 02:30 rather than an interval, so rescreening lands at a predictable
+    # off-peak time instead of drifting with each worker restart.
+    scheduler.add_job(_run_daily_onboarding_agents, "cron", hour=2, minute=30, id="onboarding_daily")
     scheduler.start()
     log.info("worker_started", jobs=[j.id for j in scheduler.get_jobs()])
     try:
