@@ -117,10 +117,19 @@ def completeness_for(registration_type: str | None, parties: list) -> dict:
     for p in parties:
         by_role.setdefault(p.role, []).append(p)
 
+    # Under the CDD Rule the control person is usually *also* a beneficial owner, so the
+    # requirement is satisfied either by the dedicated role or by the flag on any party.
+    # Counting only the role reported a missing control person for entities that plainly
+    # had one.
+    control_people = [
+        p for p in parties
+        if p.role == PartyRole.CONTROL_PERSON or p.is_control_person
+    ]
+
     # 1. Required roles present?
     role_gaps = []
     for role, minimum, why in required_roles(registration_type):
-        have = len(by_role.get(role, []))
+        have = len(control_people) if role == PartyRole.CONTROL_PERSON else len(by_role.get(role, []))
         if have < minimum:
             role_gaps.append({
                 "role": role,
@@ -142,15 +151,16 @@ def completeness_for(registration_type: str | None, parties: list) -> dict:
     ownership_issues = []
     if (registration_type or "") in _ENTITY_TYPES:
         bos = by_role.get(PartyRole.BENEFICIAL_OWNER, [])
-        controls = by_role.get(PartyRole.CONTROL_PERSON, []) + [
-            p for p in bos if p.is_control_person
-        ]
         total = sum(float(p.ownership_pct or 0) for p in bos)
 
-        if len(controls) > 1:
+        if len(control_people) > 1:
             ownership_issues.append({
                 "code": "multiple_control_persons",
-                "detail": f"{len(controls)} control persons named — the CDD Rule expects exactly one.",
+                "detail": (
+                    f"{len(control_people)} control persons named "
+                    f"({', '.join(p.legal_name for p in control_people)}) — "
+                    "the CDD Rule expects exactly one."
+                ),
             })
         below = [p for p in bos if p.ownership_pct is not None
                  and float(p.ownership_pct) < BENEFICIAL_OWNER_THRESHOLD_PCT]
