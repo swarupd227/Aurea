@@ -329,7 +329,7 @@ export default function OnboardingCase() {
               {screening.status === "clear" ? <ShieldCheck size={17} className="text-positive" /> : <ShieldAlert size={17} className="text-caution" />}
               AML / CFT screening
             </div>
-            {screening.status ? (
+            {screening.status && (
               <>
                 <div className="text-sm mb-2">
                   Status: <span className={screening.status === "clear" ? "text-positive font-medium" : screening.status === "blocked" ? "text-critical font-medium" : "text-caution font-medium"}>{titleCase(screening.status)}</span>
@@ -351,26 +351,38 @@ export default function OnboardingCase() {
                 ) : (
                   <div className="text-sm text-positive">No watchlist hits.</div>
                 )}
-                {/* Disposition log (from Adverse Media & PEP Screener agent) */}
-                {c.screening_log?.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-navy-100">
-                    <div className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">Per-party disposition log</div>
-                    <div className="space-y-2">
-                      {c.screening_log.map((entry: any, i: number) => (
-                        <div key={i} className="rounded-lg bg-navy-25 p-2 text-xs">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium text-ink">{entry.party}</span>
-                            <span className={entry.status === "clear" ? "text-positive" : entry.status === "blocked" ? "text-critical" : "text-caution"}>{titleCase(entry.status)}</span>
-                          </div>
-                          {entry.disposition_note && <div className="text-ink-muted mt-0.5">{entry.disposition_note}</div>}
-                          {entry.screened_at && <div className="text-ink-faint mt-0.5">{new Date(entry.screened_at).toLocaleDateString()}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </>
-            ) : (
+            )}
+
+            {/* Per-party log from the PEP screener. Rendered independently of the
+                case-level `screening` blob, which only the main onboarding agent writes —
+                nesting it there hid the log whenever the screener ran on its own. */}
+            {c.screening_log?.length > 0 && (
+              <div className={screening.status ? "mt-3 pt-3 border-t border-navy-100" : ""}>
+                <div className="text-xs font-semibold text-ink-muted mb-2 uppercase tracking-wide">
+                  Per-party disposition log
+                </div>
+                <div className="space-y-2">
+                  {c.screening_log.map((entry: any, i: number) => (
+                    <div key={i} className="rounded-lg bg-navy-25 p-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-ink">{entry.party}</span>
+                        <span className={entry.status === "clear" ? "text-positive" : entry.status === "blocked" ? "text-critical" : "text-caution"}>{titleCase(entry.status)}</span>
+                      </div>
+                      {entry.hits?.length > 0 && (
+                        <div className="text-caution mt-0.5">
+                          {entry.hits.length} {entry.hits.length === 1 ? "hit" : "hits"} · {entry.hits.map((h: any) => titleCase(h.category)).join(", ")}
+                        </div>
+                      )}
+                      {entry.disposition_note && <div className="text-ink-muted mt-0.5">{entry.disposition_note}</div>}
+                      {entry.screened_at && <div className="text-ink-faint mt-0.5">{new Date(entry.screened_at).toLocaleDateString()}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!screening.status && !c.screening_log?.length && (
               <div className="text-sm text-ink-muted">Run the agent to screen the applicant and associated parties.</div>
             )}
           </Card>
