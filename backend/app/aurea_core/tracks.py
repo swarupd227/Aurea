@@ -97,6 +97,10 @@ def _track_b(case, party_status: dict, documents: list) -> dict:
             "detail": f"Missing {', '.join(d.replace('_', ' ') for d in missing_docs)}.",
             "next_action": "Collect the outstanding documents.",
         }
+    # Complete once the package is submission-ready. Opening the custodian account is the
+    # *result* of activation, not a precondition for it — treating it as one made the track
+    # unable to complete before activation, so a case with every gate satisfied still read
+    # as not ready.
     if case.custodian_account_id:
         return {
             "state": COMPLETE,
@@ -105,9 +109,9 @@ def _track_b(case, party_status: dict, documents: list) -> dict:
             "next_action": None,
         }
     return {
-        "state": IN_PROGRESS,
-        "detail": "Parties and documents complete; custodian account not yet opened.",
-        "next_action": "Open the custodian account.",
+        "state": COMPLETE,
+        "detail": "Parties and documents complete — ready to submit to the custodian.",
+        "next_action": None,
     }
 
 

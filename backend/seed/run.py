@@ -20,7 +20,8 @@ from app.core.db import SessionLocal
 from app.core.logging import configure_logging, get_logger
 from app.core.security import hash_password
 from app.models.enums import (
-    AgentKey, AssetClass, AutonomyTier, ClientSegment, EntityType, MandateType, MarketType, UserRole,
+    AgentKey, AssetClass, AutonomyTier, ClientSegment, EntityType, MandateType, MarketType,
+    PartyRole, UserRole,
 )
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person, RelationshipEdge
 from app.models.identity import User
@@ -30,13 +31,14 @@ from app.models.portfolio import (
 )
 from app.models.tenant import AgentConfig, AutonomyPolicy, Firm
 from app.models.onboarding import (
-    BeneficialOwner, BookIntegrationBatch, OnboardingCase, OnboardingDocument,
+    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, OnboardingCase,
+    OnboardingDocument, OnboardingParty, TransferRequest,
 )
 from app.models.engagement import Meeting
 from app.models.client_experience import HeirJourney, Message, default_heir_steps
 from app.models.enums import HeirJourneyStatus, MessageAuthor
 from datetime import datetime, timezone
-from app.aurea_core import sample_docs
+from app.aurea_core import disclosures, sample_docs
 from app.aurea_core.sample_book import sample_feed
 from app.agents.catalogue import CATALOGUE
 
@@ -728,6 +730,161 @@ async def _acquire_onboard(s, firm):
     if not has_batch:
         s.add(BookIntegrationBatch(firm_id=firm.id, source_firm="Northbridge Advisory",
                                    feed=sample_feed("Northbridge Advisory")))
+    await s.flush()
+    await _gate_scenarios(s, firm)
+
+
+async def _gate_scenarios(s, firm):
+    """Cases that exercise the track and gate states the original six do not reach.
+
+    The first six all block on everything at once, which is realistic for fresh intake but
+    leaves the cleared path, the isolated-blocker path and the funding states untested.
+    These four are seeded with the evidence already in place — parties screened,
+    disclosures delivered, CIP run, transfers in flight — so every track state and the
+    open gate are visible on a fresh database.
+
+    Idempotent by prospect name, like the cases above.
+    """
+    existing = set((await s.execute(
+        select(OnboardingCase.prospect_name).where(OnboardingCase.firm_id == firm.id)
+    )).scalars().all())
+
+    required_disclosures = disclosures.required_for(firm.jurisdiction, "individual")
+
+    def deliver(case, doc_types, *, method="email", days_ago=1):
+        for dt in doc_types:
+            s.add(DisclosureDelivery(
+                firm_id=firm.id, case_id=case.id, doc_type=dt,
+                delivered_at=_NOW - timedelta(days=days_ago), method=method,
+                evidence_ref=f"msg-{dt[:10]}-{case.prospect_name[:4].lower()}",
+                delivered_by="sophie.adviser@aurea.demo",
+                acknowledged_at=_NOW - timedelta(days=days_ago) if method == "portal" else None,
+            ))
+
+    def party(case, role, name, *, screened="clear", pct=None, control=False, dob=None):
+        s.add(OnboardingParty(
+            firm_id=firm.id, case_id=case.id, role=role, legal_name=name,
+            dob=dob, address="Auckland, New Zealand", ownership_pct=pct,
+            is_control_person=control, screening_status=screened, screening_hits=[],
+            screened_at=_NOW - timedelta(days=1) if screened != "not_screened" else None,
+            disposition_note=("Screened by Adverse Media & PEP Screener agent."
+                              if screened != "not_screened" else None),
+            cip_status="verified" if screened == "clear" else None,
+            cip_checked_at=_NOW - timedelta(days=1) if screened == "clear" else None,
+        ))
+
+    # ── A. Every gate satisfied — the cleared path. ───────────────────────────
+    if "The Ashworth Family" not in existing:
+        ash = OnboardingCase(
+            firm_id=firm.id, prospect_name="The Ashworth Family", is_entity=False,
+            registration_type="joint_jtwros", segment="private_wealth",
+            aml_risk_tier="low", aml_risk_score=12.0, edd_status="cdd", sla_days=5,
+            cip_status="verified", cip_score=0.97, cip_reference_id="mock_socure_9f21c",
+            status="review",
+            intake={"email": "james.ashworth@example.com", "risk_profile": "balanced",
+                    "objectives": ["retirement", "property"], "time_horizon_years": 12,
+                    "mandate_preference": "advisory",
+                    "source_of_wealth": "Professional income and inheritance",
+                    "associated_parties": ["Claire Ashworth"]},
+        )
+        ash.created_at = _NOW - timedelta(days=3)
+        s.add(ash)
+        await s.flush()
+        party(ash, PartyRole.OWNER, "James Ashworth", dob="1974-03-19")
+        party(ash, PartyRole.JOINT_OWNER, "Claire Ashworth", dob="1976-11-02")
+        deliver(ash, required_disclosures, method="portal", days_ago=2)
+        for dt in ("passport", "drivers_licence"):
+            s.add(OnboardingDocument(firm_id=firm.id, case_id=ash.id, doc_type=dt,
+                                     filename=f"{dt}_ashworth.pdf",
+                                     raw_text=sample_docs.generate(dt, "James Ashworth")))
+        log.info("seed_scenario", name=ash.prospect_name, scenario="all gates pass")
+
+    # ── B. Blocked only on disclosures — one isolated gate. ───────────────────
+    if "Nakamura Holdings Trust" not in existing:
+        nak = OnboardingCase(
+            firm_id=firm.id, prospect_name="Nakamura Holdings Trust", is_entity=True,
+            entity_type="trust", registration_type="trust", segment="institutional",
+            aml_risk_tier="medium", aml_risk_score=41.0, edd_status="edd_complete",
+            sla_days=10, cip_status="verified", cip_score=0.94,
+            cip_reference_id="mock_socure_3b77a",
+            intake={"risk_profile": "conservative", "objectives": ["capital preservation"],
+                    "time_horizon_years": 20, "mandate_preference": "discretionary",
+                    "source_of_wealth": "Sale of Nakamura Logistics KK, corroborated by "
+                                        "share purchase agreement and bank confirmation",
+                    "associated_parties": ["Kenji Nakamura", "Yuki Nakamura"]},
+        )
+        nak.created_at = _NOW - timedelta(days=6)
+        s.add(nak)
+        await s.flush()
+        party(nak, PartyRole.TRUSTEE, "Kenji Nakamura", dob="1965-07-30")
+        party(nak, PartyRole.TRUSTEE, "Yuki Nakamura", dob="1968-01-14")
+        party(nak, PartyRole.POA_HOLDER, "Aurera Trustees Ltd")
+        # One of three delivered — Track A in progress, everything else clear.
+        deliver(nak, required_disclosures[:1], days_ago=3)
+        s.add(OnboardingDocument(
+            firm_id=firm.id, case_id=nak.id, doc_type="trust_deed",
+            filename="trust_deed_nakamura.pdf",
+            raw_text=sample_docs.trust_deed("Nakamura Holdings Trust", settlor="Kenji Nakamura",
+                                            trustees=["Kenji Nakamura", "Yuki Nakamura"],
+                                            beneficiaries=["Nakamura family"])))
+        s.add(OnboardingDocument(firm_id=firm.id, case_id=nak.id, doc_type="passport",
+                                 filename="passport_nakamura.pdf",
+                                 raw_text=sample_docs.generate("passport", "Kenji Nakamura")))
+        log.info("seed_scenario", name=nak.prospect_name, scenario="blocked on disclosures only")
+
+    # ── C. Funding in flight — the waiting-external track state. ──────────────
+    if "The Brennan Family" not in existing:
+        bre = OnboardingCase(
+            firm_id=firm.id, prospect_name="The Brennan Family", is_entity=False,
+            registration_type="individual", segment="private_wealth",
+            aml_risk_tier="low", aml_risk_score=19.0, edd_status="cdd", sla_days=5,
+            cip_status="verified", cip_score=0.96, cip_reference_id="mock_socure_5d12e",
+            status="approved",
+            custodian_name="schwab", custodian_account_id="SCH-88213004",
+            custodian_push_status="active", custodian_push_at=_NOW - timedelta(days=2),
+            intake={"email": "orla.brennan@example.com", "risk_profile": "growth",
+                    "objectives": ["retirement"], "time_horizon_years": 16,
+                    "mandate_preference": "discretionary",
+                    "source_of_wealth": "Equity vest — technology sector"},
+        )
+        bre.created_at = _NOW - timedelta(days=11)
+        s.add(bre)
+        await s.flush()
+        party(bre, PartyRole.OWNER, "Orla Brennan", dob="1981-05-22")
+        party(bre, PartyRole.BENEFICIARY, "Sean Brennan", dob="2009-02-08")
+        deliver(bre, required_disclosures, days_ago=9)
+        for dt in ("passport", "drivers_licence"):
+            s.add(OnboardingDocument(firm_id=firm.id, case_id=bre.id, doc_type=dt,
+                                     filename=f"{dt}_brennan.pdf",
+                                     raw_text=sample_docs.generate(dt, "Orla Brennan")))
+        s.add(TransferRequest(
+            firm_id=firm.id, case_id=bre.id, transfer_type="acat", direction="in",
+            amount=1_240_000, asset_description="Full ACAT — mixed equity and fixed income",
+            status="in_transit", provider="mock", provider_ref="ACAT-770123",
+            custodian="schwab", initiated_at=_NOW - timedelta(days=4)))
+        log.info("seed_scenario", name=bre.prospect_name, scenario="funding in transit")
+
+    # ── D. Sanctions match — the hard compliance stop. ────────────────────────
+    if "Petrenko Private Office" not in existing:
+        pet = OnboardingCase(
+            firm_id=firm.id, prospect_name="Petrenko Private Office", is_entity=True,
+            entity_type="corporation", registration_type="entity_corp",
+            segment="institutional", aml_risk_tier="high", aml_risk_score=88.0,
+            edd_status="edd_pending", sla_days=10,
+            intake={"risk_profile": "conservative", "objectives": ["capital preservation"],
+                    "time_horizon_years": 10, "mandate_preference": "advisory",
+                    "source_of_wealth": "Stated as family office capital — not corroborated",
+                    "associated_parties": ["Olena Petrenko"]},
+        )
+        pet.created_at = _NOW - timedelta(days=17)
+        s.add(pet)
+        await s.flush()
+        # Olena Petrenko is on the synthetic watchlist as a PEP — run the screener to see it.
+        party(pet, PartyRole.BENEFICIAL_OWNER, "Olena Petrenko",
+              screened="not_screened", pct=100.0, control=True)
+        deliver(pet, required_disclosures[:2], days_ago=12)
+        log.info("seed_scenario", name=pet.prospect_name, scenario="PEP / high risk, unscreened")
+
     await s.flush()
 
 
