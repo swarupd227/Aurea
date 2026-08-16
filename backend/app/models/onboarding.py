@@ -83,6 +83,12 @@ class OnboardingCase(Base):
     fee_confirmed_by: Mapped[str | None] = mapped_column(String(200))  # checker
     fee_confirmed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # When the case was actually activated (materialised into the client brain). Every
+    # other milestone is already timestamped on its own evidence — disclosures carry
+    # delivered_at, parties screened_at, transfers settled_at — so this is the only event
+    # cycle-time metrics need that nothing else records.
+    activated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
     documents: Mapped[list["OnboardingDocument"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )

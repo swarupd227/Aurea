@@ -74,6 +74,10 @@ export default function OnboardingPipeline() {
 
       {showNew && <NewProspect onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); refetch(); }} />}
 
+      <MetricsStrip />
+
+      {/* Where the book is actually stuck — L200 §4 operating metrics. */}
+
       {loading ? (
         <Spinner />
       ) : error ? (
@@ -114,6 +118,83 @@ export default function OnboardingPipeline() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function Metric({ label, value, sub, tone }: { label: string; value: any; sub?: string; tone?: string }) {
+  return (
+    <div className="px-3.5 py-2.5">
+      <div className="text-[10px] uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className={`text-lg font-semibold tabular-nums leading-tight mt-0.5 ${tone || "text-ink"}`}>
+        {value ?? "—"}
+      </div>
+      {sub && <div className="text-[10px] text-ink-faint mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+/**
+ * L200 §4 operating metrics.
+ *
+ * Derived from the timestamps the evidence already carries — no separate metrics store, so
+ * the numbers cannot disagree with the records they describe. Percentiles are nearest-rank:
+ * on a book of this size, interpolation would invent values that never occurred.
+ */
+function MetricsStrip() {
+  const { data, loading, error } = useApi<any>("/api/onboarding/metrics");
+  if (loading || error || !data) return null;
+
+  const ct = data.cycle_time_days.intake_to_activation;
+  const fund = data.cycle_time_days.activation_to_funded;
+  const age = data.cycle_time_days.open_case_age;
+  const blockers = data.top_blockers || [];
+
+  return (
+    <div className="mb-5">
+      <div className="card overflow-hidden">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y lg:divide-y-0 divide-navy-100">
+          <Metric label="Open" value={data.counts.open}
+                  sub={`${data.counts.activated} activated`} />
+          <Metric label="Cycle time P50" value={ct.p50 != null ? `${ct.p50}d` : "—"}
+                  sub={ct.p90 != null ? `P90 ${ct.p90}d · n=${ct.n}` : "no activations yet"} />
+          <Metric label="Days to fund" value={fund.p50 != null ? `${fund.p50}d` : "—"}
+                  sub={fund.n ? `n=${fund.n}` : "none settled"} />
+          <Metric label="First-pass yield"
+                  value={data.quality.first_pass_yield_pct != null ? `${data.quality.first_pass_yield_pct}%` : "—"}
+                  sub={`${data.quality.nigo_cases} NIGO`}
+                  tone={data.quality.first_pass_yield_pct != null && data.quality.first_pass_yield_pct < 80 ? "text-caution" : undefined} />
+          <Metric label="Screened"
+                  value={data.screening.coverage_pct != null ? `${data.screening.coverage_pct}%` : "—"}
+                  sub={`${data.screening.parties_screened}/${data.screening.parties_total} parties`}
+                  tone={data.screening.coverage_pct != null && data.screening.coverage_pct < 100 ? "text-caution" : "text-positive"} />
+          <Metric label="SLA breached" value={data.sla.breached}
+                  sub={`${data.sla.at_risk} at risk · avg age ${age.p50 ?? "—"}d`}
+                  tone={data.sla.breached > 0 ? "text-critical" : "text-positive"} />
+        </div>
+
+        {(blockers.length > 0 || data.screening.edd_backlog > 0) && (
+          <div className="border-t border-navy-100 px-3.5 py-2.5 flex items-center gap-x-5 gap-y-1 flex-wrap">
+            {blockers.length > 0 && (
+              <div className="text-[11px] text-ink-muted">
+                <span className="uppercase tracking-wide text-[10px] mr-1.5">Top blockers</span>
+                {blockers.slice(0, 3).map((b: any, i: number) => (
+                  <span key={b.key} className="text-ink-soft">
+                    {i > 0 && <span className="text-ink-faint"> · </span>}
+                    {b.label} <span className="tabular-nums text-ink-muted">({b.count})</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {data.screening.edd_backlog > 0 && (
+              <div className="text-[11px] text-caution">
+                EDD backlog {data.screening.edd_backlog} · oldest{" "}
+                {data.screening.edd_backlog_age_days.p90 ?? "—"}d
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

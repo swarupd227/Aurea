@@ -137,6 +137,7 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_set_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_confirmed_by VARCHAR(200)"))
         await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_confirmed_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS activated_at TIMESTAMPTZ"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS transfer_request (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -15,6 +15,7 @@ from app.aurea_core import disclosures, sample_docs
 from app.aurea_core import parties as parties_core
 from app.aurea_core import fees as fees_core
 from app.aurea_core import gates as gates_core
+from app.aurea_core import onboarding_metrics as metrics_core
 from app.aurea_core import tracks as tracks_core
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
@@ -369,6 +370,51 @@ async def push_to_custodian(
     recs = (await db.execute(select(Recommendation).where(Recommendation.run_id == run.id))).scalars().all()
     return {"run_id": str(run.id), "status": run.status,
             "recommendations": [{"id": str(r.id)} for r in recs]}
+
+
+@router.get("/metrics")
+async def onboarding_metrics(
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """Operating metrics for the onboarding book (L200 §4).
+
+    Derived from the timestamps the evidence already carries, so the numbers cannot
+    disagree with the records they describe.
+    """
+    cases = list((await db.execute(
+        select(OnboardingCase).where(OnboardingCase.firm_id == firm.id)
+    )).scalars().all())
+    case_ids = [c.id for c in cases]
+
+    parties_by_case: dict = {}
+    disclosures_by_case: dict = {}
+    transfers_by_case: dict = {}
+    if case_ids:
+        for p in (await db.execute(
+            select(OnboardingParty).where(OnboardingParty.case_id.in_(case_ids))
+        )).scalars().all():
+            parties_by_case.setdefault(p.case_id, []).append(p)
+        for d in (await db.execute(
+            select(DisclosureDelivery).where(DisclosureDelivery.case_id.in_(case_ids))
+        )).scalars().all():
+            disclosures_by_case.setdefault(d.case_id, []).append(d)
+        for t in (await db.execute(
+            select(TransferRequest).where(TransferRequest.case_id.in_(case_ids))
+        )).scalars().all():
+            transfers_by_case.setdefault(t.case_id, []).append(t)
+
+    metrics = metrics_core.compute(
+        cases,
+        parties_by_case=parties_by_case,
+        disclosures_by_case=disclosures_by_case,
+        transfers_by_case=transfers_by_case,
+    )
+
+    # Which controls block most often across the open book.
+    open_cases = [c for c in cases if c.status not in ("approved", "rejected")]
+    gate_results = [await _gates_for(db, firm, c) for c in open_cases]
+    metrics["top_blockers"] = metrics_core.blocker_frequency(gate_results)
+    return metrics
 
 
 # ── Fee schedule ──────────────────────────────────────────────────────────────

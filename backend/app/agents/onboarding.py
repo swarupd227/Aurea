@@ -322,6 +322,8 @@ class OnboardingAgent(BaseAgent):
 
         case.status = OnboardingStatus.APPROVED
         case.materialized = created
+        # Stamped at the moment activation actually happens — the anchor for cycle time.
+        case.activated_at = utcnow()
         await s.flush()
         return {"executed": True, "note": f"{case.prospect_name} materialised into the client brain as golden records.",
                 **created}
