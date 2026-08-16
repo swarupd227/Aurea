@@ -13,6 +13,7 @@ from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
 from app.aurea_core import disclosures, sample_docs
 from app.aurea_core import parties as parties_core
+from app.aurea_core import fees as fees_core
 from app.aurea_core import gates as gates_core
 from app.aurea_core import tracks as tracks_core
 from app.core.db import get_db, utcnow
@@ -21,7 +22,7 @@ from app.models.enums import AgentKey, PartyRole
 from app.models.governance import Recommendation
 from app.models.identity import User
 from app.models.onboarding import (
-    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, OnboardingCase,
+    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, FeeSchedule, OnboardingCase,
     OnboardingDocument, OnboardingParty, TransferRequest,
 )
 from app.models.tenant import Firm
@@ -95,6 +96,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
         disclosure_status=disclosures.status_for(
             firm.jurisdiction, case.registration_type, list(disc_rows)
         ),
+        fee_status=await _fee_status(db, case),
     )
 
 
@@ -367,6 +369,123 @@ async def push_to_custodian(
     recs = (await db.execute(select(Recommendation).where(Recommendation.run_id == run.id))).scalars().all()
     return {"run_id": str(run.id), "status": run.status,
             "recommendations": [{"id": str(r.id)} for r in recs]}
+
+
+# ── Fee schedule ──────────────────────────────────────────────────────────────
+class FeeAssignIn(BaseModel):
+    fee_schedule_id: uuid.UUID
+    billing_method: str = "arrears"
+    billing_frequency: str = "quarterly"
+    householding: bool = False
+    billable_aum: float | None = None
+
+
+async def _fee_status(db: AsyncSession, case: OnboardingCase) -> dict:
+    schedule = (
+        await db.get(FeeSchedule, case.fee_schedule_id) if case.fee_schedule_id else None
+    )
+    return fees_core.status_for(case, schedule)
+
+
+@router.get("/fee-schedules")
+async def list_fee_schedules(
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """The firm's fee-schedule library — selected from, never typed per case."""
+    rows = (await db.execute(
+        select(FeeSchedule).where(FeeSchedule.firm_id == firm.id, FeeSchedule.is_active.is_(True))
+        .order_by(FeeSchedule.code)
+    )).scalars().all()
+    return [
+        {"id": str(f.id), "code": f.code, "name": f.name, "fee_type": f.fee_type,
+         "tiers": f.tiers,
+         "flat_bps": float(f.flat_bps) if f.flat_bps is not None else None,
+         "flat_fee": float(f.flat_fee) if f.flat_fee is not None else None,
+         "minimum_annual_fee": (
+             float(f.minimum_annual_fee) if f.minimum_annual_fee is not None else None
+         ),
+         "currency": f.currency, "notes": f.notes}
+        for f in rows
+    ]
+
+
+@router.get("/cases/{case_id}/fee")
+async def get_case_fee(
+    case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    case = await _case_or_404(db, case_id, firm)
+    return await _fee_status(db, case)
+
+
+@router.put("/cases/{case_id}/fee")
+async def assign_case_fee(
+    case_id: uuid.UUID, body: FeeAssignIn,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Assign the fee schedule (the 'maker' half of maker/checker).
+
+    Re-assigning always clears any existing confirmation: a fee changed after sign-off has
+    not been checked, and silently keeping the old confirmation is exactly how a mis-set
+    fee reaches the first bill.
+    """
+    case = await _case_or_404(db, case_id, firm)
+    schedule = await db.get(FeeSchedule, body.fee_schedule_id)
+    if not schedule or schedule.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Fee schedule not found")
+    if body.billing_method not in fees_core.BILLING_METHODS:
+        raise HTTPException(status_code=400, detail=f"Unknown billing method '{body.billing_method}'.")
+    if body.billing_frequency not in fees_core.BILLING_FREQUENCIES:
+        raise HTTPException(status_code=400, detail=f"Unknown billing frequency '{body.billing_frequency}'.")
+
+    case.fee_schedule_id = schedule.id
+    case.billing_method = body.billing_method
+    case.billing_frequency = body.billing_frequency
+    case.householding = body.householding
+    case.billable_aum = body.billable_aum
+    case.fee_set_by = user.email
+    case.fee_set_at = utcnow()
+    case.fee_confirmed_by = None
+    case.fee_confirmed_at = None
+    await db.flush()
+    result = await _fee_status(db, case)
+    await db.commit()
+    return result
+
+
+@router.post("/cases/{case_id}/fee/confirm")
+async def confirm_case_fee(
+    case_id: uuid.UUID,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Confirm the fee schedule (the 'checker' half).
+
+    The confirmer must be a different person from the one who set it — that separation is
+    the entire point of maker/checker, and L200 names it as the control for mis-set fees.
+    """
+    case = await _case_or_404(db, case_id, firm)
+    if not case.fee_schedule_id:
+        raise HTTPException(status_code=400, detail="No fee schedule assigned to confirm.")
+    if case.fee_set_by and case.fee_set_by.lower() == user.email.lower():
+        raise HTTPException(
+            status_code=409,
+            detail="Maker/checker — the fee schedule must be confirmed by someone other "
+                   f"than the person who set it ({case.fee_set_by}).",
+        )
+    status = await _fee_status(db, case)
+    if status["problems"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Resolve the fee validation problems before confirming: "
+                   + "; ".join(status["problems"]),
+        )
+    case.fee_confirmed_by = user.email
+    case.fee_confirmed_at = utcnow()
+    await db.flush()
+    result = await _fee_status(db, case)
+    await db.commit()
+    return result
 
 
 # ── Parties ───────────────────────────────────────────────────────────────────

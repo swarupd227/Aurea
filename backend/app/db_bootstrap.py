@@ -126,6 +126,17 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS custodian_account_id VARCHAR(64)"))
         await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS custodian_push_status VARCHAR(16)"))
         await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS custodian_push_at TIMESTAMPTZ"))
+        # L200 Track A step 2: fee schedule, billing method, householding, maker/checker.
+        # create_all() creates new tables but never adds columns to existing ones.
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_schedule_id UUID REFERENCES fee_schedule(id) ON DELETE SET NULL"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS billing_method VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS billing_frequency VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS householding BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS billable_aum NUMERIC(18,2)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_set_by VARCHAR(200)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_set_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_confirmed_by VARCHAR(200)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_confirmed_at TIMESTAMPTZ"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS transfer_request (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

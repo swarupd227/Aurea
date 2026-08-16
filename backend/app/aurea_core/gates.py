@@ -31,8 +31,13 @@ def _gate(key, label, state, detail, *, blocks=True, track=None) -> dict:
     }
 
 
-def evaluate(case, *, party_status: dict, disclosure_status: dict) -> dict:
-    """All activation gates for a case, and whether any of them blocks."""
+def evaluate(case, *, party_status: dict, disclosure_status: dict,
+             fee_status: dict | None = None) -> dict:
+    """All activation gates for a case, and whether any of them blocks.
+
+    `fee_status` is optional so callers that have not loaded the schedule still get the
+    other gates rather than an error; when omitted the fee gate is simply not evaluated.
+    """
     gates: list[dict] = []
     reg = case.registration_type or "individual"
 
@@ -47,6 +52,28 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict) -> dict:
         + (f" Outstanding: {', '.join(outstanding)}." if outstanding else ""),
         track="agreements",
     ))
+
+    # Fee schedule under maker/checker. L200 controls the "fee schedule mis-set at
+    # onboarding" failure mode with dual entry and a checker distinct from the maker; an
+    # unconfirmed fee reaching the first bill is how overbilling starts.
+    if fee_status is not None:
+        if not fee_status.get("assigned"):
+            fee_state, fee_detail = FAIL, "No fee schedule assigned."
+        elif fee_status.get("problems"):
+            fee_state, fee_detail = FAIL, "; ".join(fee_status["problems"])
+        elif not fee_status.get("confirmed"):
+            fee_state = FAIL
+            fee_detail = (
+                f"Set by {fee_status.get('set_by') or 'unknown'} — awaiting confirmation "
+                "by a second person."
+            )
+        else:
+            fee_state = PASS
+            fee_detail = (
+                f"{fee_status.get('detail')} · confirmed by {fee_status.get('confirmed_by')}."
+            )
+        gates.append(_gate("fee_schedule_confirmed", "Fee schedule confirmed",
+                           fee_state, fee_detail, track="agreements"))
 
     # ── Track B — party completeness ─────────────────────────────────────────
     role_gaps = party_status.get("role_gaps", [])

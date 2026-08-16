@@ -67,6 +67,22 @@ class OnboardingCase(Base):
     custodian_push_status: Mapped[str | None] = mapped_column(String(16))
     custodian_push_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # L200 Track A step 2 — fee schedule, billing method and householding, under
+    # maker/checker. The confirming user must differ from the one who set it, which is the
+    # dual-control L200 prescribes against mis-set fees.
+    fee_schedule_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fee_schedule.id", ondelete="SET NULL"), nullable=True
+    )
+    billing_method: Mapped[str | None] = mapped_column(String(16))     # advance | arrears
+    billing_frequency: Mapped[str | None] = mapped_column(String(16))  # monthly | quarterly | annually
+    # Aggregate related accounts to reach a lower breakpoint.
+    householding: Mapped[bool] = mapped_column(Boolean, default=False)
+    billable_aum: Mapped[float | None] = mapped_column(Numeric(18, 2))
+    fee_set_by: Mapped[str | None] = mapped_column(String(200))        # maker
+    fee_set_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    fee_confirmed_by: Mapped[str | None] = mapped_column(String(200))  # checker
+    fee_confirmed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
     documents: Mapped[list["OnboardingDocument"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
@@ -101,6 +117,31 @@ class OnboardingDocument(Base):
     verified: Mapped[bool] = mapped_column(default=False)
 
     case: Mapped["OnboardingCase"] = relationship(back_populates="documents")
+
+
+class FeeSchedule(Base):
+    """A firm's published fee schedule (L200 §2.1 Track A, step 2).
+
+    L200 controls the "fee schedule mis-set at onboarding" failure mode with a
+    "fee-schedule library with maker/checker" — so the schedule is a firm-level catalogue
+    selected from, not free text typed per case. Errors made here surface much later as
+    billing exceptions and client reimbursements.
+    """
+    __tablename__ = "fee_schedule"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    code: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    # tiered_bps | flat_bps | flat_fee
+    fee_type: Mapped[str] = mapped_column(String(16), default="tiered_bps")
+    # Tiered breakpoints: [{"min_aum": 0, "max_aum": 1000000, "bps": 100}, ...]
+    tiers: Mapped[list] = mapped_column(JSON, default=list)
+    flat_bps: Mapped[float | None] = mapped_column(Numeric(6, 2))
+    flat_fee: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    minimum_annual_fee: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    currency: Mapped[str] = mapped_column(String(8), default="NZD")
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class DisclosureDelivery(Base):

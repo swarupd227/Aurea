@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { FileText, ShieldCheck, ShieldAlert, Play, Check, X, Plus, ArrowRight, CheckCircle2, Users, AlertTriangle, Activity, ClipboardList, Fingerprint, Building2, ArrowDownUp, ChevronRight } from "lucide-react";
+import { FileText, ShieldCheck, ShieldAlert, Play, Check, X, Plus, ArrowRight, CheckCircle2, Users, AlertTriangle, Activity, ClipboardList, Fingerprint, Building2, ArrowDownUp, ChevronRight, Wallet } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, Spinner, Segment, ConfidenceBar, SeverityBadge, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
@@ -284,6 +284,9 @@ export default function OnboardingCase() {
             </Card>
           )}
 
+          {/* Fee schedule — maker/checker */}
+          <FeeSchedulePanel caseId={id} status={c.status} />
+
           {/* Onboarding-stage agents */}
           <CaseAgents
             c={c}
@@ -416,6 +419,191 @@ export default function OnboardingCase() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Fee schedule under maker/checker (L200 Track A step 2).
+ *
+ * The schedule is chosen from the firm's library rather than typed, the fee it implies is
+ * computed and shown before anyone signs off, and confirmation is a separate act by a
+ * different person. L200's failure mode here is "fee schedule mis-set at onboarding ->
+ * overbilling -> client reimbursements, enforcement".
+ */
+function FeeSchedulePanel({ caseId, status }: { caseId: string; status: string }) {
+  const { data, loading, error, refetch } = useApi<any>(`/api/onboarding/cases/${caseId}/fee`, [caseId]);
+  const { data: library } = useApi<any[]>("/api/onboarding/fee-schedules");
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ fee_schedule_id: "", billing_method: "arrears", billing_frequency: "quarterly", householding: false, billable_aum: "" });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const isClosed = status === "approved" || status === "rejected";
+
+  async function assign() {
+    if (!form.fee_schedule_id) return;
+    setBusy("assign"); setErr(null);
+    try {
+      await api(`/api/onboarding/cases/${caseId}/fee`, {
+        method: "PUT",
+        body: {
+          fee_schedule_id: form.fee_schedule_id,
+          billing_method: form.billing_method,
+          billing_frequency: form.billing_frequency,
+          householding: form.householding,
+          billable_aum: form.billable_aum ? parseFloat(form.billable_aum) : null,
+        },
+      });
+      setEditing(false);
+      await refetch();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
+
+  async function confirm() {
+    setBusy("confirm"); setErr(null);
+    try {
+      await api(`/api/onboarding/cases/${caseId}/fee/confirm`, { body: {} });
+      await refetch();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
+
+  const calc = data?.calculation;
+  return (
+    <Card className={data && !data.confirmed ? "border-caution/30" : undefined}>
+      <div className="font-semibold text-ink mb-1 flex items-center gap-2 flex-wrap">
+        <Wallet size={16} className="text-navy-400" /> Fee schedule
+        <span className="text-[10px] text-ink-muted font-normal">maker / checker</span>
+        {data && (
+          <span className={`chip ml-auto ${data.confirmed ? "bg-positive/10 text-positive" : "bg-caution/10 text-caution"}`}>
+            {data.confirmed ? "Confirmed" : data.assigned ? "Awaiting check" : "Not set"}
+          </span>
+        )}
+      </div>
+
+      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+
+      {loading ? (
+        <Spinner label="Loading fee schedule…" />
+      ) : error ? (
+        <ErrorState what="the fee schedule" message={error} onRetry={refetch} />
+      ) : (
+        <>
+          {data.assigned ? (
+            <>
+              <div className="text-sm text-ink">{data.schedule.name}</div>
+              <div className="text-[11px] text-ink-muted">
+                {titleCase(data.billing_method || "—")} · {titleCase(data.billing_frequency || "—")}
+                {data.householding ? " · householded" : ""}
+              </div>
+
+              {calc?.annual_fee != null && (
+                <div className="rounded-lg bg-navy-25 border border-navy-100 p-2.5 mt-2">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-lg font-semibold text-ink tabular-nums">
+                      {money(calc.annual_fee, calc.currency)}
+                      <span className="text-xs font-normal text-ink-muted">/yr</span>
+                    </span>
+                    <span className="text-xs text-ink-muted tabular-nums">{calc.effective_bps} bps effective</span>
+                  </div>
+                  <div className="mt-1.5 space-y-0.5">
+                    {calc.breakdown.map((b: any, i: number) => (
+                      <div key={i} className="flex justify-between text-[11px] text-ink-muted">
+                        <span>{b.band}</span>
+                        <span className="tabular-nums">{money(b.amount, calc.currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-ink-faint mt-1.5">
+                    On {money(data.billable_aum, calc.currency)} billable AUM
+                  </div>
+                </div>
+              )}
+
+              {data.problems?.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {data.problems.map((p: string, i: number) => (
+                    <div key={i} className="text-[11px] text-caution flex gap-1.5">
+                      <AlertTriangle size={11} className="mt-0.5 shrink-0" />{p}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-[10px] text-ink-faint mt-2 leading-relaxed">
+                Set by {data.set_by} {data.set_at && `on ${new Date(data.set_at).toLocaleDateString()}`}
+                {data.confirmed && (
+                  <><br />Confirmed by {data.confirmed_by} on {new Date(data.confirmed_at).toLocaleDateString()}</>
+                )}
+              </div>
+
+              {!isClosed && !data.confirmed && (
+                <button className="btn-gold text-xs w-full mt-2" disabled={busy === "confirm"} onClick={confirm}>
+                  <Check size={12} /> {busy === "confirm" ? "Confirming…" : "Confirm fee schedule"}
+                </button>
+              )}
+              {!isClosed && (
+                <button className="btn-outline text-xs w-full mt-1.5" onClick={() => setEditing(!editing)}>
+                  {data.confirmed ? "Reassign (clears confirmation)" : "Change"}
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="text-sm text-ink-muted mb-2">
+              No fee schedule assigned. Errors set here surface later as billing exceptions.
+            </div>
+          )}
+
+          {(editing || !data.assigned) && !isClosed && (
+            <div className="rounded-xl border border-navy-100 p-3 mt-2 space-y-2 bg-navy-25">
+              <div>
+                <label className="label text-[10px]" htmlFor="fee-sched">Schedule</label>
+                <select id="fee-sched" className="input text-xs" value={form.fee_schedule_id}
+                        onChange={(e) => setForm({ ...form, fee_schedule_id: e.target.value })}>
+                  <option value="">Select…</option>
+                  {(library || []).map((f) => <option key={f.id} value={f.id}>{f.code} — {f.name}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label text-[10px]" htmlFor="fee-method">Billing</label>
+                  <select id="fee-method" className="input text-xs" value={form.billing_method}
+                          onChange={(e) => setForm({ ...form, billing_method: e.target.value })}>
+                    <option value="arrears">In arrears</option>
+                    <option value="advance">In advance</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label text-[10px]" htmlFor="fee-freq">Frequency</label>
+                  <select id="fee-freq" className="input text-xs" value={form.billing_frequency}
+                          onChange={(e) => setForm({ ...form, billing_frequency: e.target.value })}>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="annually">Annually</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="label text-[10px]" htmlFor="fee-aum">Billable AUM</label>
+                  <input id="fee-aum" className="input text-xs" value={form.billable_aum}
+                         onChange={(e) => setForm({ ...form, billable_aum: e.target.value })} placeholder="1850000" />
+                </div>
+                <label className="flex items-center gap-1.5 pb-2 text-[10px] text-ink-muted whitespace-nowrap">
+                  <input type="checkbox" className="h-3 w-3" checked={form.householding}
+                         onChange={(e) => setForm({ ...form, householding: e.target.checked })} />
+                  Household
+                </label>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button className="btn-ghost text-xs" onClick={() => setEditing(false)}>Cancel</button>
+                <button className="btn-primary text-xs" disabled={busy === "assign" || !form.fee_schedule_id} onClick={assign}>
+                  {busy === "assign" ? "Saving…" : "Set fee schedule"}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 

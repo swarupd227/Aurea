@@ -31,7 +31,7 @@ from app.models.portfolio import (
 )
 from app.models.tenant import AgentConfig, AutonomyPolicy, Firm
 from app.models.onboarding import (
-    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, OnboardingCase,
+    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, FeeSchedule, OnboardingCase,
     OnboardingDocument, OnboardingParty, TransferRequest,
 )
 from app.models.engagement import Meeting
@@ -734,6 +734,49 @@ async def _acquire_onboard(s, firm):
     await _gate_scenarios(s, firm)
 
 
+async def _fee_schedules(s, firm) -> dict:
+    """The firm's fee-schedule library (L200 Track A step 2).
+
+    A library to select from rather than free text per case — L200's control against
+    mis-set fees is "fee-schedule library with maker/checker". Returns code -> schedule.
+    """
+    existing = {
+        f.code: f for f in (await s.execute(
+            select(FeeSchedule).where(FeeSchedule.firm_id == firm.id)
+        )).scalars().all()
+    }
+    specs = [
+        dict(code="PW-TIERED", name="Private Wealth — tiered",
+             fee_type="tiered_bps", minimum_annual_fee=3_000,
+             tiers=[{"min_aum": 0, "max_aum": 1_000_000, "bps": 100},
+                    {"min_aum": 1_000_000, "max_aum": 5_000_000, "bps": 75},
+                    {"min_aum": 5_000_000, "max_aum": None, "bps": 50}],
+             notes="Standard private wealth schedule. Breakpoints applied marginally."),
+        dict(code="MA-FLAT", name="Mass Affluent — flat rate",
+             fee_type="flat_bps", flat_bps=95, minimum_annual_fee=1_500,
+             notes="Single rate, no breakpoints."),
+        dict(code="INST-TIERED", name="Institutional — tiered",
+             fee_type="tiered_bps", minimum_annual_fee=25_000,
+             tiers=[{"min_aum": 0, "max_aum": 10_000_000, "bps": 45},
+                    {"min_aum": 10_000_000, "max_aum": None, "bps": 30}],
+             notes="Institutional mandates; householding applied across related entities."),
+        dict(code="FP-RETAINER", name="For Purpose — annual retainer",
+             fee_type="flat_fee", flat_fee=18_000,
+             notes="Fixed retainer for charitable and foundation clients."),
+    ]
+    out = {}
+    for spec in specs:
+        if spec["code"] in existing:
+            out[spec["code"]] = existing[spec["code"]]
+            continue
+        f = FeeSchedule(firm_id=firm.id, currency="NZD", is_active=True, **spec)
+        s.add(f)
+        await s.flush()
+        out[spec["code"]] = f
+        log.info("seed_fee_schedule", code=spec["code"])
+    return out
+
+
 async def _gate_scenarios(s, firm):
     """Cases that exercise the track and gate states the original six do not reach.
 
@@ -749,7 +792,21 @@ async def _gate_scenarios(s, firm):
         select(OnboardingCase.prospect_name).where(OnboardingCase.firm_id == firm.id)
     )).scalars().all())
 
+    schedules = await _fee_schedules(s, firm)
     required_disclosures = disclosures.required_for(firm.jurisdiction, "individual")
+
+    def set_fee(case, code, aum, *, confirmed=True):
+        """Assign a fee schedule, optionally already through maker/checker."""
+        case.fee_schedule_id = schedules[code].id
+        case.billing_method = "arrears"
+        case.billing_frequency = "quarterly"
+        case.billable_aum = aum
+        case.fee_set_by = "sophie.adviser@aurea.demo"
+        case.fee_set_at = _NOW - timedelta(days=2)
+        if confirmed:
+            # A different person confirms — the whole point of maker/checker.
+            case.fee_confirmed_by = "compliance@aurea.demo"
+            case.fee_confirmed_at = _NOW - timedelta(days=1)
 
     def deliver(case, doc_types, *, method="email", days_ago=1):
         for dt in doc_types:
@@ -792,6 +849,7 @@ async def _gate_scenarios(s, firm):
         await s.flush()
         party(ash, PartyRole.OWNER, "James Ashworth", dob="1974-03-19")
         party(ash, PartyRole.JOINT_OWNER, "Claire Ashworth", dob="1976-11-02")
+        set_fee(ash, "PW-TIERED", 1_850_000)
         deliver(ash, required_disclosures, method="portal", days_ago=2)
         for dt in ("passport", "drivers_licence"):
             s.add(OnboardingDocument(firm_id=firm.id, case_id=ash.id, doc_type=dt,
@@ -819,6 +877,8 @@ async def _gate_scenarios(s, firm):
         party(nak, PartyRole.TRUSTEE, "Kenji Nakamura", dob="1965-07-30")
         party(nak, PartyRole.TRUSTEE, "Yuki Nakamura", dob="1968-01-14")
         party(nak, PartyRole.POA_HOLDER, "Aurera Trustees Ltd")
+        # Fee set but deliberately not yet confirmed — shows the maker/checker gate.
+        set_fee(nak, "INST-TIERED", 14_200_000, confirmed=False)
         # One of three delivered — Track A in progress, everything else clear.
         deliver(nak, required_disclosures[:1], days_ago=3)
         s.add(OnboardingDocument(
@@ -852,6 +912,7 @@ async def _gate_scenarios(s, firm):
         await s.flush()
         party(bre, PartyRole.OWNER, "Orla Brennan", dob="1981-05-22")
         party(bre, PartyRole.BENEFICIARY, "Sean Brennan", dob="2009-02-08")
+        set_fee(bre, "PW-TIERED", 1_240_000)
         deliver(bre, required_disclosures, days_ago=9)
         for dt in ("passport", "drivers_licence"):
             s.add(OnboardingDocument(firm_id=firm.id, case_id=bre.id, doc_type=dt,

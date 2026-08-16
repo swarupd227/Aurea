@@ -35,7 +35,10 @@ async def _activation_gates(session, firm, case) -> dict:
     does not depend on the API layer — but it calls the same aurea_core evaluators, so the
     UI and the enforcement can never disagree about what is blocking.
     """
-    from app.aurea_core import disclosures, gates as gates_core, parties as parties_core
+    from app.aurea_core import (
+        disclosures, fees as fees_core, gates as gates_core, parties as parties_core,
+    )
+    from app.models.onboarding import FeeSchedule
 
     party_rows = list((await session.execute(
         select(OnboardingParty).where(OnboardingParty.case_id == case.id)
@@ -43,12 +46,16 @@ async def _activation_gates(session, firm, case) -> dict:
     disc_rows = list((await session.execute(
         select(DisclosureDelivery).where(DisclosureDelivery.case_id == case.id)
     )).scalars().all())
+    schedule = (
+        await session.get(FeeSchedule, case.fee_schedule_id) if case.fee_schedule_id else None
+    )
     return gates_core.evaluate(
         case,
         party_status=parties_core.completeness_for(case.registration_type, party_rows),
         disclosure_status=disclosures.status_for(
             firm.jurisdiction, case.registration_type, disc_rows
         ),
+        fee_status=fees_core.status_for(case, schedule),
     )
 
 RISK_TO_MODEL = {"conservative": "Balanced", "balanced": "Balanced", "growth": "Growth", "aggressive": "Growth"}
