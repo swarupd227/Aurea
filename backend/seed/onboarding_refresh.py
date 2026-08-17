@@ -49,6 +49,28 @@ _BACKFILL: dict[str, dict] = {
 }
 
 
+async def _backfill_activation(s, firm) -> int:
+    """Give approved cases an activation timestamp if they lack one.
+
+    Cycle time is anchored on activated_at. Cases approved before that column existed — or
+    seeded with status set directly rather than through act() — have none, so they are
+    silently excluded from every cycle-time metric. Falls back to the custodian push date
+    where available, since that is when the account actually opened.
+    """
+    rows = (await s.execute(
+        select(OnboardingCase).where(
+            OnboardingCase.firm_id == firm.id,
+            OnboardingCase.status == "approved",
+            OnboardingCase.activated_at.is_(None),
+        )
+    )).scalars().all()
+    for case in rows:
+        case.activated_at = case.custodian_push_at or case.created_at
+        log.info("backfill_activated_at", name=case.prospect_name,
+                 source="custodian_push_at" if case.custodian_push_at else "created_at")
+    return len(rows)
+
+
 async def _backfill(s, firm) -> list[str]:
     """Fill the gaps on cases that predate the richer seed. Returns names touched."""
     now = datetime.now(timezone.utc)
@@ -126,9 +148,12 @@ async def refresh() -> None:
 
         await _acquire_onboard(s, firm)
         touched = await _backfill(s, firm)
+        activated = await _backfill_activation(s, firm)
         await s.commit()
         if touched:
             print(f"\nBackfilled {len(touched)} pre-existing case(s): {', '.join(touched)}")
+        if activated:
+            print(f"Stamped activated_at on {activated} approved case(s) that lacked it.")
 
         cases = (await s.execute(
             select(OnboardingCase).where(OnboardingCase.firm_id == firm.id)

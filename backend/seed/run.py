@@ -902,6 +902,9 @@ async def _gate_scenarios(s, firm):
             status="approved",
             custodian_name="schwab", custodian_account_id="SCH-88213004",
             custodian_push_status="active", custodian_push_at=_NOW - timedelta(days=2),
+            # Approved cases must carry an activation timestamp — it is the anchor for
+            # cycle time, and status=approved without one is inconsistent.
+            activated_at=_NOW - timedelta(days=3),
             intake={"email": "orla.brennan@example.com", "risk_profile": "growth",
                     "objectives": ["retirement"], "time_horizon_years": 16,
                     "mandate_preference": "discretionary",
