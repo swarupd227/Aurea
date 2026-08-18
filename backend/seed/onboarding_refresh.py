@@ -49,6 +49,94 @@ _BACKFILL: dict[str, dict] = {
 }
 
 
+# Track A state and off-platform capture for the scenario cases. These were added after
+# the cases existed, and `_acquire_onboard` skips by prospect name — so without this the
+# new gates block the very cases seeded to demonstrate a cleared path.
+_TRACK_A: dict[str, dict] = {
+    "The Ashworth Family": {
+        "engagement_type": "discretionary_advisory", "discretion_granted": True,
+        "proxy_voting": "firm", "agreement_status": "signed",
+        "agreement_envelope_id": "env-ashworth-88213",
+        "agreement_sent_days_ago": 3, "agreement_signed_days_ago": 2,
+        "ips_days_ago": 2, "held_away": "none_declared",
+    },
+    "The Brennan Family": {
+        "engagement_type": "discretionary_advisory", "discretion_granted": True,
+        "agreement_status": "signed", "agreement_envelope_id": "env-brennan-44190",
+        "agreement_sent_days_ago": 10, "agreement_signed_days_ago": 9,
+        "ips_days_ago": 8,
+        "held_away": [("Kiwibank", "cash", 85_000, "Emergency fund — client intends to retain.")],
+    },
+    # Deliberately mid-flight: engagement set, agreement sent but unsigned.
+    "Nakamura Holdings Trust": {
+        "engagement_type": "trust_fiduciary", "agreement_status": "sent",
+        "agreement_envelope_id": "env-nakamura-71204", "agreement_sent_days_ago": 2,
+    },
+}
+
+
+async def _backfill_track_a(s, firm) -> list[str]:
+    """Apply Track A state and held-away capture to the scenario cases."""
+    from app.models.onboarding import HeldAwayAsset
+
+    now = datetime.now(timezone.utc)
+    touched: list[str] = []
+
+    for name, spec in _TRACK_A.items():
+        case = (await s.execute(
+            select(OnboardingCase).where(
+                OnboardingCase.firm_id == firm.id,
+                OnboardingCase.prospect_name == name,
+            )
+        )).scalar_one_or_none()
+        if not case:
+            continue
+
+        changed: list[str] = []
+        for field in ("engagement_type", "discretion_granted", "proxy_voting",
+                      "agreement_status", "agreement_envelope_id"):
+            if field in spec and getattr(case, field, None) in (None, ""):
+                setattr(case, field, spec[field])
+                changed.append(field)
+
+        for field, key in (("agreement_sent_at", "agreement_sent_days_ago"),
+                           ("agreement_signed_at", "agreement_signed_days_ago"),
+                           ("ips_accepted_at", "ips_days_ago")):
+            if key in spec and getattr(case, field, None) is None:
+                setattr(case, field, now - timedelta(days=spec[key]))
+                changed.append(field)
+        if "ips_days_ago" in spec and not case.ips_accepted_by:
+            case.ips_accepted_by = "sophie.adviser@aurea.demo"
+
+        ha = spec.get("held_away")
+        if ha == "none_declared" and not case.held_away_none_declared:
+            case.held_away_none_declared = True
+            case.held_away_captured_at = now - timedelta(days=3)
+            changed.append("held_away:none")
+        elif isinstance(ha, list):
+            have = {
+                a.institution for a in (await s.execute(
+                    select(HeldAwayAsset).where(HeldAwayAsset.case_id == case.id)
+                )).scalars().all()
+            }
+            for institution, acct_type, value, note in ha:
+                if institution in have:
+                    continue
+                s.add(HeldAwayAsset(
+                    firm_id=firm.id, case_id=case.id, institution=institution,
+                    account_type=acct_type, approx_value=value, currency="NZD",
+                    source="client_declared", will_transfer=False, notes=note,
+                ))
+                case.held_away_captured_at = now - timedelta(days=9)
+                changed.append(f"held_away:{institution}")
+
+        if changed:
+            touched.append(name)
+            log.info("backfill_track_a", name=name, fields=changed)
+
+    return touched
+
+
 async def _backfill_activation(s, firm) -> int:
     """Give approved cases an activation timestamp if they lack one.
 
@@ -148,10 +236,13 @@ async def refresh() -> None:
 
         await _acquire_onboard(s, firm)
         touched = await _backfill(s, firm)
+        track_a = await _backfill_track_a(s, firm)
         activated = await _backfill_activation(s, firm)
         await s.commit()
         if touched:
             print(f"\nBackfilled {len(touched)} pre-existing case(s): {', '.join(touched)}")
+        if track_a:
+            print(f"Applied Track A state to {len(track_a)} case(s): {', '.join(track_a)}")
         if activated:
             print(f"Stamped activated_at on {activated} approved case(s) that lacked it.")
 
