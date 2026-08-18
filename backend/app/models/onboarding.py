@@ -89,6 +89,32 @@ class OnboardingCase(Base):
     # cycle-time metrics need that nothing else records.
     activated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # ── L200 Track A step 1 — engagement definition ───────────────────────────
+    # Which "hat" the relationship sits under. Dual registrants must decide this per
+    # account because it drives every downstream disclosure.
+    engagement_type: Mapped[str | None] = mapped_column(String(32))
+
+    # ── L200 Track A step 3 — advisory agreement execution ────────────────────
+    agreement_status: Mapped[str | None] = mapped_column(String(16))   # draft|sent|signed|declined
+    agreement_envelope_id: Mapped[str | None] = mapped_column(String(128))
+    agreement_sent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    agreement_signed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    # Discretion grant and proxy election are captured by the agreement, not assumed.
+    discretion_granted: Mapped[bool | None] = mapped_column(Boolean)
+    proxy_voting: Mapped[str | None] = mapped_column(String(16))       # firm|client|not_elected
+
+    # ── L200 Track A step 5 — IPS acceptance ──────────────────────────────────
+    # The proposal is drafted by an agent; acceptance is a separate human act and becomes
+    # the suitability anchor for the initial implementation.
+    ips_accepted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    ips_accepted_by: Mapped[str | None] = mapped_column(String(200))
+
+    # ── L200 §5 — off-platform assets ─────────────────────────────────────────
+    # Explicitly tri-state: never asked is not the same as asked and none. Only the second
+    # satisfies the control against an incomplete advice picture.
+    held_away_captured_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    held_away_none_declared: Mapped[bool] = mapped_column(Boolean, default=False)
+
     documents: Mapped[list["OnboardingDocument"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
@@ -99,6 +125,9 @@ class OnboardingCase(Base):
         back_populates="case", cascade="all, delete-orphan"
     )
     parties: Mapped[list["OnboardingParty"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan"
+    )
+    held_away: Mapped[list["HeldAwayAsset"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
     transfers: Mapped[list["TransferRequest"]] = relationship(
@@ -267,6 +296,24 @@ class TransferRequest(Base):
     )
     transfer_type: Mapped[str] = mapped_column(String(16))    # acat | wire | ach
     direction: Mapped[str] = mapped_column(String(8))         # in | out
+
+    # ── L200 §5 — ACAT title mismatch ─────────────────────────────────────────
+    # "Pre-submission title verification against delivering-firm statement". A title
+    # mismatch is the most common ACAT reject and costs the client a full restart.
+    delivering_firm: Mapped[str | None] = mapped_column(String(120))
+    delivering_account_title: Mapped[str | None] = mapped_column(String(200))
+    title_match_status: Mapped[str] = mapped_column(String(16), default="not_checked")
+    title_match_note: Mapped[str | None] = mapped_column(Text)
+
+    # ── L200 §5 — third-party wire fraud ──────────────────────────────────────
+    # First-party vs third-party is the whole control: third-party wires need callback
+    # verification on a recorded line to the number of record.
+    is_third_party: Mapped[bool] = mapped_column(Boolean, default=False)
+    callback_verified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    callback_verified_by: Mapped[str | None] = mapped_column(String(200))
+    callback_number: Mapped[str | None] = mapped_column(String(48))
+    # Why a transfer failed — `failed` was a terminal status with no producer.
+    reject_reason: Mapped[str | None] = mapped_column(Text)
     amount: Mapped[float | None] = mapped_column(Numeric(18, 2))
     asset_description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(24), default="initiated", index=True)
@@ -278,6 +325,33 @@ class TransferRequest(Base):
     settled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
     case: Mapped["OnboardingCase"] = relationship(back_populates="transfers")
+
+
+class HeldAwayAsset(Base):
+    """Assets the client holds elsewhere (L200 §5).
+
+    Failure mode: "off-platform assets forgotten -> incomplete advice picture". Control:
+    "held-away capture via aggregation at onboarding; statement upload workflow".
+
+    Advice given without knowing what a client holds elsewhere is advice given on a partial
+    balance sheet — the concentration and asset-location decisions are simply wrong.
+    """
+    __tablename__ = "held_away_asset"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("onboarding_case.id", ondelete="CASCADE"), index=True
+    )
+    institution: Mapped[str] = mapped_column(String(120))
+    account_type: Mapped[str | None] = mapped_column(String(48))   # brokerage|pension|property|...
+    approx_value: Mapped[float | None] = mapped_column(Numeric(18, 2))
+    currency: Mapped[str] = mapped_column(String(8), default="NZD")
+    # How it came to be known: statement upload, aggregation feed, or client statement.
+    source: Mapped[str] = mapped_column(String(24), default="client_declared")
+    will_transfer: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    case: Mapped["OnboardingCase"] = relationship(back_populates="held_away")
 
 
 class BookIntegrationBatch(Base):

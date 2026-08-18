@@ -138,6 +138,28 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_confirmed_by VARCHAR(200)"))
         await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS fee_confirmed_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS activated_at TIMESTAMPTZ"))
+        # L200 Track A steps 1, 3 and 5; §5 off-platform assets.
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS engagement_type VARCHAR(32)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS agreement_status VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS agreement_envelope_id VARCHAR(128)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS agreement_sent_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS agreement_signed_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS discretion_granted BOOLEAN"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS proxy_voting VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS ips_accepted_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS ips_accepted_by VARCHAR(200)"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS held_away_captured_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE onboarding_case ADD COLUMN IF NOT EXISTS held_away_none_declared BOOLEAN NOT NULL DEFAULT FALSE"))
+        # L200 §5 transfer controls — ACAT title verification and third-party wire callback.
+        await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS delivering_firm VARCHAR(120)"))
+        await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS delivering_account_title VARCHAR(200)"))
+        await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS title_match_status VARCHAR(16) NOT NULL DEFAULT 'not_checked'"))
+        await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS title_match_note TEXT"))
+        await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS is_third_party BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS callback_verified_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS callback_verified_by VARCHAR(200)"))
+        await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS callback_number VARCHAR(48)"))
+        await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS reject_reason TEXT"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS transfer_request (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

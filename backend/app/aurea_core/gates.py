@@ -32,11 +32,13 @@ def _gate(key, label, state, detail, *, blocks=True, track=None) -> dict:
 
 
 def evaluate(case, *, party_status: dict, disclosure_status: dict,
-             fee_status: dict | None = None) -> dict:
+             fee_status: dict | None = None, held_away_count: int | None = None,
+             transfer_status: dict | None = None) -> dict:
     """All activation gates for a case, and whether any of them blocks.
 
-    `fee_status` is optional so callers that have not loaded the schedule still get the
-    other gates rather than an error; when omitted the fee gate is simply not evaluated.
+    Optional arguments degrade gracefully: a caller that has not loaded the fee schedule or
+    transfers still gets every other gate rather than an error, and the gate it could not
+    evaluate is simply absent.
     """
     gates: list[dict] = []
     reg = case.registration_type or "individual"
@@ -74,6 +76,46 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
             )
         gates.append(_gate("fee_schedule_confirmed", "Fee schedule confirmed",
                            fee_state, fee_detail, track="agreements"))
+
+    # ── Track A — engagement, agreement, IPS ─────────────────────────────────
+    gates.append(_gate(
+        "engagement_defined", "Engagement type defined",
+        PASS if case.engagement_type else FAIL,
+        (f"{case.engagement_type.replace('_', ' ').title()}." if case.engagement_type
+         else "Not set — this drives which disclosures are required."),
+        track="agreements",
+    ))
+
+    gates.append(_gate(
+        "agreement_signed", "Advisory agreement signed",
+        PASS if case.agreement_status == "signed" else FAIL,
+        (f"Signed {case.agreement_signed_at:%Y-%m-%d}."
+         if case.agreement_status == "signed" and case.agreement_signed_at
+         else f"Agreement status: {case.agreement_status or 'not started'}."),
+        track="agreements",
+    ))
+
+    gates.append(_gate(
+        "ips_accepted", "IPS accepted",
+        PASS if case.ips_accepted_at else FAIL,
+        (f"Accepted by {case.ips_accepted_by} on {case.ips_accepted_at:%Y-%m-%d}."
+         if case.ips_accepted_at
+         else "The proposal is drafted but not yet accepted — it is the suitability "
+              "anchor for the initial implementation."),
+        track="agreements",
+    ))
+
+    # ── §5 — off-platform assets ─────────────────────────────────────────────
+    # Tri-state on purpose: never asked is not the same as asked and none.
+    held_away_n = (held_away_count or 0)
+    if held_away_n:
+        ha_state, ha_detail = PASS, f"{held_away_n} held-away holding(s) captured."
+    elif case.held_away_none_declared:
+        ha_state, ha_detail = PASS, "Client declared no off-platform assets."
+    else:
+        ha_state, ha_detail = FAIL, "Not yet asked — advice on a partial balance sheet."
+    gates.append(_gate("held_away_captured", "Off-platform assets captured",
+                       ha_state, ha_detail, track="account"))
 
     # ── Track B — party completeness ─────────────────────────────────────────
     role_gaps = party_status.get("role_gaps", [])
@@ -132,6 +174,20 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
         else f"EDD status: {case.edd_status}.",
         track="financial_crime",
     ))
+
+    # ── Track D — funding controls ───────────────────────────────────────────
+    # These gate *submitting the transfer*, not activating the account: L200 is explicit
+    # that funding runs on its own clock and may settle weeks after the account opens.
+    # Surfaced here as a warning so the risk is visible without stalling activation.
+    if transfer_status is not None and transfer_status.get("n_transfers"):
+        problems = transfer_status.get("blocking", [])
+        gates.append(_gate(
+            "transfer_controls", "Transfer pre-submission checks",
+            WARN if problems else PASS,
+            "; ".join(problems) if problems
+            else f"{transfer_status['n_transfers']} transfer(s) cleared for submission.",
+            blocks=False, track="funding",
+        ))
 
     # ── Advisory — never blocks ──────────────────────────────────────────────
     gates.append(_gate(

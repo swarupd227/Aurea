@@ -31,8 +31,8 @@ from app.models.portfolio import (
 )
 from app.models.tenant import AgentConfig, AutonomyPolicy, Firm
 from app.models.onboarding import (
-    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, FeeSchedule, OnboardingCase,
-    OnboardingDocument, OnboardingParty, TransferRequest,
+    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, FeeSchedule, HeldAwayAsset,
+    OnboardingCase, OnboardingDocument, OnboardingParty, TransferRequest,
 )
 from app.models.engagement import Meeting
 from app.models.client_experience import HeirJourney, Message, default_heir_steps
@@ -849,6 +849,17 @@ async def _gate_scenarios(s, firm):
         await s.flush()
         party(ash, PartyRole.OWNER, "James Ashworth", dob="1974-03-19")
         party(ash, PartyRole.JOINT_OWNER, "Claire Ashworth", dob="1976-11-02")
+        ash.engagement_type = "discretionary_advisory"
+        ash.discretion_granted = True
+        ash.proxy_voting = "firm"
+        ash.agreement_status = "signed"
+        ash.agreement_envelope_id = "env-ashworth-88213"
+        ash.agreement_sent_at = _NOW - timedelta(days=3)
+        ash.agreement_signed_at = _NOW - timedelta(days=2)
+        ash.ips_accepted_at = _NOW - timedelta(days=2)
+        ash.ips_accepted_by = "sophie.adviser@aurea.demo"
+        ash.held_away_none_declared = True
+        ash.held_away_captured_at = _NOW - timedelta(days=3)
         set_fee(ash, "PW-TIERED", 1_850_000)
         deliver(ash, required_disclosures, method="portal", days_ago=2)
         for dt in ("passport", "drivers_licence"):
@@ -878,6 +889,10 @@ async def _gate_scenarios(s, firm):
         party(nak, PartyRole.TRUSTEE, "Yuki Nakamura", dob="1968-01-14")
         party(nak, PartyRole.POA_HOLDER, "Aurera Trustees Ltd")
         # Fee set but deliberately not yet confirmed — shows the maker/checker gate.
+        nak.engagement_type = "trust_fiduciary"
+        nak.agreement_status = "sent"
+        nak.agreement_envelope_id = "env-nakamura-71204"
+        nak.agreement_sent_at = _NOW - timedelta(days=2)
         set_fee(nak, "INST-TIERED", 14_200_000, confirmed=False)
         # One of three delivered — Track A in progress, everything else clear.
         deliver(nak, required_disclosures[:1], days_ago=3)
@@ -915,17 +930,34 @@ async def _gate_scenarios(s, firm):
         await s.flush()
         party(bre, PartyRole.OWNER, "Orla Brennan", dob="1981-05-22")
         party(bre, PartyRole.BENEFICIARY, "Sean Brennan", dob="2009-02-08")
+        bre.engagement_type = "discretionary_advisory"
+        bre.discretion_granted = True
+        bre.agreement_status = "signed"
+        bre.agreement_envelope_id = "env-brennan-44190"
+        bre.agreement_signed_at = _NOW - timedelta(days=9)
+        bre.ips_accepted_at = _NOW - timedelta(days=8)
+        bre.ips_accepted_by = "sophie.adviser@aurea.demo"
+        bre.held_away_captured_at = _NOW - timedelta(days=9)
         set_fee(bre, "PW-TIERED", 1_240_000)
         deliver(bre, required_disclosures, days_ago=9)
         for dt in ("passport", "drivers_licence"):
             s.add(OnboardingDocument(firm_id=firm.id, case_id=bre.id, doc_type=dt,
                                      filename=f"{dt}_brennan.pdf",
                                      raw_text=sample_docs.generate(dt, "Orla Brennan")))
+        s.add(HeldAwayAsset(
+            firm_id=firm.id, case_id=bre.id, institution="Kiwibank",
+            account_type="cash", approx_value=85_000, currency="NZD",
+            source="client_declared", will_transfer=False,
+            notes="Emergency fund — client intends to retain."))
         s.add(TransferRequest(
             firm_id=firm.id, case_id=bre.id, transfer_type="acat", direction="in",
             amount=1_240_000, asset_description="Full ACAT — mixed equity and fixed income",
             status="in_transit", provider="mock", provider_ref="ACAT-770123",
-            custodian="schwab", initiated_at=_NOW - timedelta(days=4)))
+            custodian="schwab", initiated_at=_NOW - timedelta(days=4),
+            delivering_firm="Jarden Securities",
+            delivering_account_title="BRENNAN ORLA M",
+            title_match_status="match",
+            title_match_note="Title matches parties of record (brennan, orla)."))
         log.info("seed_scenario", name=bre.prospect_name, scenario="funding in transit")
 
     # ── D. Sanctions match — the hard compliance stop. ────────────────────────
@@ -947,6 +979,13 @@ async def _gate_scenarios(s, firm):
         party(pet, PartyRole.BENEFICIAL_OWNER, "Olena Petrenko",
               screened="not_screened", pct=100.0, control=True)
         deliver(pet, required_disclosures[:2], days_ago=12)
+        s.add(TransferRequest(
+            firm_id=firm.id, case_id=pet.id, transfer_type="wire", direction="in",
+            amount=2_400_000, asset_description="Initial funding wire",
+            status="pending_review", provider="mock", provider_ref="WIRE-559001",
+            custodian="schwab", initiated_at=_NOW - timedelta(days=1),
+            # Third party with no callback recorded — the imposter-fraud control, unmet.
+            is_third_party=True))
         log.info("seed_scenario", name=pet.prospect_name, scenario="PEP / high risk, unscreened")
 
     await s.flush()

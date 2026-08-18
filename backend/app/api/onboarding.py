@@ -17,14 +17,15 @@ from app.aurea_core import fees as fees_core
 from app.aurea_core import gates as gates_core
 from app.aurea_core import onboarding_metrics as metrics_core
 from app.aurea_core import tracks as tracks_core
+from app.aurea_core import transfer_controls
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
 from app.models.enums import AgentKey, PartyRole
 from app.models.governance import Recommendation
 from app.models.identity import User
 from app.models.onboarding import (
-    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, FeeSchedule, OnboardingCase,
-    OnboardingDocument, OnboardingParty, TransferRequest,
+    BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, FeeSchedule, HeldAwayAsset,
+    OnboardingCase, OnboardingDocument, OnboardingParty, TransferRequest,
 )
 from app.models.tenant import Firm
 
@@ -64,6 +65,15 @@ class TransferCreate(BaseModel):
     asset_description: str | None = None
     custodian: str | None = None
     notes: str | None = None
+    # L200 §5 controls — captured at creation so the checks can run pre-submission.
+    delivering_firm: str | None = None
+    delivering_account_title: str | None = None
+    is_third_party: bool = False
+
+
+class CallbackIn(BaseModel):
+    callback_number: str
+    note: str | None = None
 
 
 class DocumentCreate(BaseModel):
@@ -91,6 +101,12 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
     disc_rows = (await db.execute(
         select(DisclosureDelivery).where(DisclosureDelivery.case_id == case.id)
     )).scalars().all()
+    held_away_n = len((await db.execute(
+        select(HeldAwayAsset.id).where(HeldAwayAsset.case_id == case.id)
+    )).scalars().all())
+    xfer_rows = list((await db.execute(
+        select(TransferRequest).where(TransferRequest.case_id == case.id)
+    )).scalars().all())
     return gates_core.evaluate(
         case,
         party_status=parties_core.completeness_for(case.registration_type, party_rows),
@@ -98,6 +114,10 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
             firm.jurisdiction, case.registration_type, list(disc_rows)
         ),
         fee_status=await _fee_status(db, case),
+        held_away_count=held_away_n,
+        transfer_status=transfer_controls.status_for(
+            xfer_rows, party_names=[p.legal_name for p in party_rows]
+        ),
     )
 
 
@@ -171,6 +191,17 @@ def _case_dict(
         "custodian_account_id": getattr(case, "custodian_account_id", None),
         "custodian_push_status": getattr(case, "custodian_push_status", None),
         "custodian_push_at": case.custodian_push_at.isoformat() if getattr(case, "custodian_push_at", None) else None,
+        # Track A — engagement, agreement, IPS acceptance.
+        "engagement_type": getattr(case, "engagement_type", None),
+        "discretion_granted": getattr(case, "discretion_granted", None),
+        "proxy_voting": getattr(case, "proxy_voting", None),
+        "agreement_status": getattr(case, "agreement_status", None),
+        "agreement_envelope_id": getattr(case, "agreement_envelope_id", None),
+        "agreement_signed_at": case.agreement_signed_at.isoformat() if getattr(case, "agreement_signed_at", None) else None,
+        "ips_accepted_at": case.ips_accepted_at.isoformat() if getattr(case, "ips_accepted_at", None) else None,
+        "ips_accepted_by": getattr(case, "ips_accepted_by", None),
+        "held_away_none_declared": getattr(case, "held_away_none_declared", False),
+        "activated_at": case.activated_at.isoformat() if getattr(case, "activated_at", None) else None,
     }
     if docs is not None:
         d["documents"] = [
@@ -415,6 +446,212 @@ async def onboarding_metrics(
     gate_results = [await _gates_for(db, firm, c) for c in open_cases]
     metrics["top_blockers"] = metrics_core.blocker_frequency(gate_results)
     return metrics
+
+
+# ── Track A: engagement, agreement, IPS acceptance ────────────────────────────
+ENGAGEMENT_TYPES = {
+    "discretionary_advisory": "Discretionary advisory",
+    "non_discretionary_advisory": "Non-discretionary advisory",
+    "brokerage": "Brokerage",
+    "financial_planning": "Financial planning only",
+    "trust_fiduciary": "Trust / fiduciary",
+}
+
+
+class EngagementIn(BaseModel):
+    engagement_type: str
+    discretion_granted: bool | None = None
+    proxy_voting: str | None = None       # firm | client | not_elected
+
+
+class AgreementIn(BaseModel):
+    action: str                           # send | sign | decline
+    envelope_id: str | None = None
+
+
+@router.get("/engagement-types")
+async def engagement_types():
+    """The relationship types an account can sit under (L200 Track A step 1)."""
+    return [{"value": k, "label": v} for k, v in ENGAGEMENT_TYPES.items()]
+
+
+@router.put("/cases/{case_id}/engagement")
+async def set_engagement(
+    case_id: uuid.UUID, body: EngagementIn,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Define the engagement. Dual registrants must decide which 'hat' each account sits
+    under, because it drives every downstream disclosure."""
+    case = await _case_or_404(db, case_id, firm)
+    if body.engagement_type not in ENGAGEMENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown engagement type. Expected one of: {', '.join(ENGAGEMENT_TYPES)}.",
+        )
+    case.engagement_type = body.engagement_type
+    if body.discretion_granted is not None:
+        case.discretion_granted = body.discretion_granted
+    if body.proxy_voting:
+        case.proxy_voting = body.proxy_voting
+    await db.commit()
+    return {"engagement_type": case.engagement_type,
+            "discretion_granted": case.discretion_granted,
+            "proxy_voting": case.proxy_voting}
+
+
+@router.post("/cases/{case_id}/agreement")
+async def advisory_agreement(
+    case_id: uuid.UUID, body: AgreementIn,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Advance the advisory agreement (L200 Track A step 3).
+
+    Models the e-signature envelope lifecycle without a provider: the envelope reference is
+    recorded so the evidence trail exists, and swapping in DocuSign or OneSpan later means
+    populating envelope_id from their API rather than reshaping the model.
+    """
+    case = await _case_or_404(db, case_id, firm)
+    now = utcnow()
+    if body.action == "send":
+        case.agreement_status = "sent"
+        case.agreement_sent_at = now
+        case.agreement_envelope_id = body.envelope_id or f"env-{case.id.hex[:12]}"
+    elif body.action == "sign":
+        if case.agreement_status not in ("sent", "signed"):
+            raise HTTPException(
+                status_code=409,
+                detail="The agreement must be sent before it can be signed.",
+            )
+        case.agreement_status = "signed"
+        case.agreement_signed_at = now
+    elif body.action == "decline":
+        case.agreement_status = "declined"
+    else:
+        raise HTTPException(status_code=400, detail="Action must be send, sign or decline.")
+    await db.commit()
+    return {"agreement_status": case.agreement_status,
+            "envelope_id": case.agreement_envelope_id,
+            "sent_at": case.agreement_sent_at.isoformat() if case.agreement_sent_at else None,
+            "signed_at": case.agreement_signed_at.isoformat() if case.agreement_signed_at else None}
+
+
+@router.post("/cases/{case_id}/ips/accept")
+async def accept_ips(
+    case_id: uuid.UUID,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Accept the IPS — the suitability anchor for the initial implementation.
+
+    Separate from the agent's proposal on purpose: drafting is automated, accepting is a
+    human act with a name attached to it.
+    """
+    case = await _case_or_404(db, case_id, firm)
+    if not (case.proposal or {}).get("mandate"):
+        raise HTTPException(
+            status_code=409,
+            detail="No IPS proposal to accept — run the onboarding agent first.",
+        )
+    case.ips_accepted_at = utcnow()
+    case.ips_accepted_by = user.email
+    await db.commit()
+    return {"ips_accepted_at": case.ips_accepted_at.isoformat(),
+            "ips_accepted_by": case.ips_accepted_by}
+
+
+# ── Held-away assets ──────────────────────────────────────────────────────────
+class HeldAwayIn(BaseModel):
+    institution: str
+    account_type: str | None = None
+    approx_value: float | None = None
+    currency: str = "NZD"
+    source: str = "client_declared"
+    will_transfer: bool = False
+    notes: str | None = None
+
+
+@router.get("/cases/{case_id}/held-away")
+async def list_held_away(
+    case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    case = await _case_or_404(db, case_id, firm)
+    rows = (await db.execute(
+        select(HeldAwayAsset).where(HeldAwayAsset.case_id == case.id)
+    )).scalars().all()
+    return {
+        "assets": [
+            {"id": str(a.id), "institution": a.institution, "account_type": a.account_type,
+             "approx_value": float(a.approx_value) if a.approx_value is not None else None,
+             "currency": a.currency, "source": a.source,
+             "will_transfer": a.will_transfer, "notes": a.notes}
+            for a in rows
+        ],
+        "total_value": sum(float(a.approx_value or 0) for a in rows),
+        "none_declared": case.held_away_none_declared,
+        "captured_at": case.held_away_captured_at.isoformat() if case.held_away_captured_at else None,
+    }
+
+
+@router.post("/cases/{case_id}/held-away")
+async def add_held_away(
+    case_id: uuid.UUID, body: HeldAwayIn,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    case = await _case_or_404(db, case_id, firm)
+    db.add(HeldAwayAsset(
+        firm_id=firm.id, case_id=case.id, institution=body.institution,
+        account_type=body.account_type, approx_value=body.approx_value,
+        currency=body.currency, source=body.source,
+        will_transfer=body.will_transfer, notes=body.notes,
+    ))
+    case.held_away_captured_at = utcnow()
+    case.held_away_none_declared = False
+    await db.commit()
+    return await list_held_away(case_id, firm, db)
+
+
+@router.post("/cases/{case_id}/held-away/declare-none")
+async def declare_no_held_away(
+    case_id: uuid.UUID,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Record that the client was asked and holds nothing elsewhere.
+
+    Distinct from never having asked — only an explicit declaration satisfies the control
+    against advising on a partial balance sheet.
+    """
+    case = await _case_or_404(db, case_id, firm)
+    existing = (await db.execute(
+        select(HeldAwayAsset.id).where(HeldAwayAsset.case_id == case.id)
+    )).scalars().all()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{len(existing)} held-away asset(s) already recorded — remove them "
+                   "before declaring none.",
+        )
+    case.held_away_none_declared = True
+    case.held_away_captured_at = utcnow()
+    await db.commit()
+    return await list_held_away(case_id, firm, db)
+
+
+@router.delete("/cases/{case_id}/held-away/{asset_id}", status_code=204)
+async def delete_held_away(
+    case_id: uuid.UUID, asset_id: uuid.UUID,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    await _case_or_404(db, case_id, firm)
+    row = await db.get(HeldAwayAsset, asset_id)
+    if not row or row.case_id != case_id or row.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Held-away asset not found")
+    await db.delete(row)
+    await db.commit()
 
 
 # ── Fee schedule ──────────────────────────────────────────────────────────────
@@ -830,9 +1067,75 @@ async def create_transfer(
         provider_ref=result.reference_id,
         custodian=result.custodian or body.custodian,
         notes=body.notes, initiated_at=utcnow(),
+        delivering_firm=body.delivering_firm,
+        delivering_account_title=body.delivering_account_title,
+        is_third_party=body.is_third_party,
     )
+
+    # Run the title check immediately on an incoming ACAT — the whole value of the control
+    # is that it happens before submission rather than after a reject comes back.
+    if body.transfer_type == "acat" and body.direction == "in":
+        party_rows = await _load_parties(db, case_id)
+        check = transfer_controls.check_title(
+            body.delivering_account_title, [p.legal_name for p in party_rows]
+        )
+        t.title_match_status = check["status"]
+        t.title_match_note = check["note"]
+
     db.add(t)
     await db.flush()
+    await db.commit()
+    return _transfer_dict(t)
+
+
+@router.post("/cases/{case_id}/transfers/{transfer_id}/verify-title")
+async def verify_transfer_title(
+    case_id: uuid.UUID, transfer_id: uuid.UUID,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Re-run the ACAT title check against the current parties of record."""
+    await _case_or_404(db, case_id, firm)
+    t = await db.get(TransferRequest, transfer_id)
+    if not t or t.case_id != case_id or t.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    party_rows = await _load_parties(db, case_id)
+    check = transfer_controls.check_title(
+        t.delivering_account_title, [p.legal_name for p in party_rows]
+    )
+    t.title_match_status = check["status"]
+    t.title_match_note = check["note"]
+    await db.commit()
+    return _transfer_dict(t)
+
+
+@router.post("/cases/{case_id}/transfers/{transfer_id}/callback")
+async def record_wire_callback(
+    case_id: uuid.UUID, transfer_id: uuid.UUID, body: CallbackIn,
+    user: User = Depends(require_roles(*STAFF_ROLES)),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """Record callback verification for a third-party transfer.
+
+    L200's control against imposter fraud is a callback on a recorded line to the number
+    of record — so what is evidenced is the number called and who called it, not merely
+    that someone ticked a box.
+    """
+    await _case_or_404(db, case_id, firm)
+    t = await db.get(TransferRequest, transfer_id)
+    if not t or t.case_id != case_id or t.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    if not t.is_third_party:
+        raise HTTPException(
+            status_code=409,
+            detail="Callback verification applies to third-party transfers only.",
+        )
+    t.callback_verified_at = utcnow()
+    t.callback_verified_by = user.email
+    t.callback_number = body.callback_number
+    if body.note:
+        t.notes = f"{t.notes + ' · ' if t.notes else ''}Callback: {body.note}"
+    await db.commit()
     return _transfer_dict(t)
 
 
@@ -874,6 +1177,16 @@ def _transfer_dict(t: TransferRequest) -> dict:
         "initiated_at": t.initiated_at.isoformat() if t.initiated_at else None,
         "settled_at": t.settled_at.isoformat() if t.settled_at else None,
         "created_at": t.created_at.isoformat() if t.created_at else None,
+        # L200 §5 pre-submission controls.
+        "delivering_firm": t.delivering_firm,
+        "delivering_account_title": t.delivering_account_title,
+        "title_match_status": t.title_match_status or "not_checked",
+        "title_match_note": t.title_match_note,
+        "is_third_party": t.is_third_party,
+        "callback_verified_at": t.callback_verified_at.isoformat() if t.callback_verified_at else None,
+        "callback_verified_by": t.callback_verified_by,
+        "callback_number": t.callback_number,
+        "reject_reason": t.reject_reason,
     }
 
 

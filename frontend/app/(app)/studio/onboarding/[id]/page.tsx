@@ -284,8 +284,14 @@ export default function OnboardingCase() {
             </Card>
           )}
 
+          {/* Track A — engagement, agreement, IPS acceptance */}
+          <TrackAPanel c={c} caseId={id} onChanged={refetch} />
+
           {/* Fee schedule — maker/checker */}
           <FeeSchedulePanel caseId={id} status={c.status} />
+
+          {/* Off-platform assets */}
+          <HeldAwayPanel caseId={id} status={c.status} />
 
           {/* Onboarding-stage agents */}
           <CaseAgents
@@ -419,6 +425,233 @@ export default function OnboardingCase() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Track A steps 1, 3 and 5 — engagement definition, advisory agreement, IPS acceptance.
+ *
+ * The engagement type decides which "hat" the account sits under, which drives every
+ * downstream disclosure. The agreement models an e-signature envelope lifecycle without a
+ * provider, so swapping in DocuSign later means populating the envelope id rather than
+ * reshaping anything. IPS acceptance is deliberately separate from the agent's proposal:
+ * drafting is automated, accepting is a human act with a name on it.
+ */
+function TrackAPanel({ c, caseId, onChanged }: { c: any; caseId: string; onChanged: () => void }) {
+  const { data: types } = useApi<any[]>("/api/onboarding/engagement-types");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [eng, setEng] = useState(c.engagement_type || "");
+  const isClosed = c.status === "approved" || c.status === "rejected";
+
+  async function call(label: string, path: string, body: any, method?: string) {
+    setBusy(label); setErr(null);
+    try { await api(path, { method, body }); await onChanged(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
+
+  const step = (done: boolean, label: string, detail: string, action?: React.ReactNode) => (
+    <div className="flex items-start gap-2 py-2 border-b border-navy-100 last:border-0">
+      {done
+        ? <CheckCircle2 size={14} className="text-positive mt-0.5 shrink-0" aria-hidden="true" />
+        : <AlertTriangle size={14} className="text-caution mt-0.5 shrink-0" aria-hidden="true" />}
+      <div className="min-w-0 flex-1">
+        <div className="text-xs text-ink">{label}</div>
+        <div className="text-[11px] text-ink-muted leading-snug">{detail}</div>
+      </div>
+      {!isClosed && action}
+    </div>
+  );
+
+  return (
+    <Card>
+      <div className="font-semibold text-ink mb-1 flex items-center gap-2">
+        <ClipboardList size={16} className="text-navy-400" /> Agreements
+        <span className="text-[10px] text-ink-muted font-normal">Track A</span>
+      </div>
+      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+
+      {step(
+        !!c.engagement_type,
+        "Engagement type",
+        c.engagement_type
+          ? `${titleCase(c.engagement_type.replace(/_/g, " "))}${c.discretion_granted ? " · discretion granted" : ""}`
+          : "Drives which disclosures are required.",
+        !c.engagement_type ? (
+          <div className="flex gap-1.5 shrink-0">
+            <select className="input text-[11px] py-1 w-40" value={eng} aria-label="Engagement type"
+                    onChange={(e) => setEng(e.target.value)}>
+              <option value="">Select…</option>
+              {(types || []).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+            <button className="btn-outline text-[10px] py-1 px-2" disabled={!eng || busy === "eng"}
+                    onClick={() => call("eng", `/api/onboarding/cases/${caseId}/engagement`,
+                                        { engagement_type: eng, discretion_granted: eng === "discretionary_advisory" }, "PUT")}>
+              Set
+            </button>
+          </div>
+        ) : undefined,
+      )}
+
+      {step(
+        c.agreement_status === "signed",
+        "Advisory agreement",
+        c.agreement_status === "signed"
+          ? `Signed${c.agreement_signed_at ? ` ${new Date(c.agreement_signed_at).toLocaleDateString()}` : ""}${c.agreement_envelope_id ? ` · ${c.agreement_envelope_id}` : ""}`
+          : `Status: ${c.agreement_status || "not started"}.`,
+        c.agreement_status !== "signed" ? (
+          <button className="btn-outline text-[10px] py-1 px-2 shrink-0" disabled={!!busy}
+                  onClick={() => call("agr", `/api/onboarding/cases/${caseId}/agreement`,
+                                      { action: c.agreement_status === "sent" ? "sign" : "send" })}>
+            {busy === "agr" ? "…" : c.agreement_status === "sent" ? "Mark signed" : "Send"}
+          </button>
+        ) : undefined,
+      )}
+
+      {step(
+        !!c.ips_accepted_at,
+        "IPS accepted",
+        c.ips_accepted_at
+          ? `Accepted by ${c.ips_accepted_by} on ${new Date(c.ips_accepted_at).toLocaleDateString()}`
+          : c.proposal?.mandate ? "Proposal drafted — awaiting acceptance." : "No proposal yet — run the onboarding agent.",
+        !c.ips_accepted_at && c.proposal?.mandate ? (
+          <button className="btn-outline text-[10px] py-1 px-2 shrink-0" disabled={!!busy}
+                  onClick={() => call("ips", `/api/onboarding/cases/${caseId}/ips/accept`, {})}>
+            {busy === "ips" ? "…" : "Accept"}
+          </button>
+        ) : undefined,
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Off-platform assets (L200 §5).
+ *
+ * Tri-state on purpose: never asked is not the same as asked and none. Advice given
+ * without knowing what a client holds elsewhere is advice on a partial balance sheet, so
+ * only an explicit declaration satisfies the control.
+ */
+function HeldAwayPanel({ caseId, status }: { caseId: string; status: string }) {
+  const { data, loading, error, refetch } = useApi<any>(`/api/onboarding/cases/${caseId}/held-away`, [caseId]);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ institution: "", account_type: "brokerage", approx_value: "", will_transfer: false });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const isClosed = status === "approved" || status === "rejected";
+  const captured = (data?.assets?.length ?? 0) > 0 || data?.none_declared;
+
+  async function add() {
+    if (!form.institution.trim()) return;
+    setBusy("add"); setErr(null);
+    try {
+      await api(`/api/onboarding/cases/${caseId}/held-away`, {
+        body: { ...form, approx_value: form.approx_value ? parseFloat(form.approx_value) : null },
+      });
+      setForm({ institution: "", account_type: "brokerage", approx_value: "", will_transfer: false });
+      setAdding(false);
+      await refetch();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  }
+
+  return (
+    <Card className={!captured ? "border-caution/30" : undefined}>
+      <div className="font-semibold text-ink mb-1 flex items-center gap-2 flex-wrap">
+        <Building2 size={16} className="text-navy-400" /> Off-platform assets
+        {data && (
+          <span className={`chip ml-auto ${captured ? "bg-positive/10 text-positive" : "bg-caution/10 text-caution"}`}>
+            {data.assets.length ? `${data.assets.length} held away` : data.none_declared ? "None declared" : "Not asked"}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-ink-muted mb-3">
+        Advice without these is advice on a partial balance sheet.
+      </p>
+      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+
+      {loading ? <Spinner label="Loading…" />
+        : error ? <ErrorState what="held-away assets" message={error} onRetry={refetch} />
+        : (
+          <>
+            {data.assets.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {data.assets.map((a: any) => (
+                  <div key={a.id} className="rounded-lg border border-navy-100 p-2 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm text-ink">{a.institution}</div>
+                      <div className="text-[11px] text-ink-muted">
+                        {titleCase(a.account_type || "—")}
+                        {a.approx_value != null && ` · ${money(a.approx_value, a.currency)}`}
+                        {a.will_transfer && " · to transfer"}
+                      </div>
+                    </div>
+                    {!isClosed && (
+                      <button className="text-ink-faint hover:text-critical text-xs shrink-0"
+                              aria-label={`Remove ${a.institution}`}
+                              onClick={async () => { await api(`/api/onboarding/cases/${caseId}/held-away/${a.id}`, { method: "DELETE" }); refetch(); }}>×</button>
+                    )}
+                  </div>
+                ))}
+                <div className="text-[11px] text-ink-muted text-right tabular-nums">
+                  Total {money(data.total_value)}
+                </div>
+              </div>
+            )}
+
+            {!isClosed && (adding ? (
+              <div className="rounded-xl border border-navy-100 p-3 space-y-2 bg-navy-25">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="label text-[10px]" htmlFor="ha-inst">Institution</label>
+                    <input id="ha-inst" className="input text-xs" value={form.institution}
+                           onChange={(e) => setForm({ ...form, institution: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="label text-[10px]" htmlFor="ha-type">Type</label>
+                    <select id="ha-type" className="input text-xs" value={form.account_type}
+                            onChange={(e) => setForm({ ...form, account_type: e.target.value })}>
+                      {["brokerage", "pension", "property", "private_equity", "cash", "other"].map((t) =>
+                        <option key={t} value={t}>{titleCase(t)}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="label text-[10px]" htmlFor="ha-val">Approx value</label>
+                    <input id="ha-val" className="input text-xs" value={form.approx_value}
+                           onChange={(e) => setForm({ ...form, approx_value: e.target.value })} />
+                  </div>
+                  <label className="flex items-center gap-1.5 pb-2 text-[10px] text-ink-muted whitespace-nowrap">
+                    <input type="checkbox" className="h-3 w-3" checked={form.will_transfer}
+                           onChange={(e) => setForm({ ...form, will_transfer: e.target.checked })} />
+                    Will transfer
+                  </label>
+                  <div className="flex gap-2">
+                    <button className="btn-ghost text-xs" onClick={() => setAdding(false)}>Cancel</button>
+                    <button className="btn-primary text-xs" disabled={busy === "add"} onClick={add}>Add</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button className="btn-outline text-xs" onClick={() => setAdding(true)}>
+                  <Plus size={12} /> Add holding
+                </button>
+                {!data.assets.length && !data.none_declared && (
+                  <button className="btn-outline text-xs" disabled={busy === "none"}
+                          onClick={async () => {
+                            setBusy("none");
+                            try { await api(`/api/onboarding/cases/${caseId}/held-away/declare-none`, { body: {} }); await refetch(); }
+                            catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+                          }}>
+                    Client holds none
+                  </button>
+                )}
+              </div>
+            ))}
+          </>
+        )}
+    </Card>
   );
 }
 
@@ -1376,7 +1609,10 @@ const TRANSFER_STATUS_ORDER = ["initiated", "pending_review", "in_transit", "set
 function TransfersPanel({ caseId }: { caseId: string }) {
   const { data: transfers, refetch } = useApi<any[]>(`/api/onboarding/cases/${caseId}/transfers`, [caseId]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ transfer_type: "acat", direction: "in", amount: "", asset_description: "", custodian: "" });
+  const [form, setForm] = useState({
+    transfer_type: "acat", direction: "in", amount: "", asset_description: "", custodian: "",
+    delivering_firm: "", delivering_account_title: "", is_third_party: false,
+  });
   const [busy, setBusy] = useState<string | null>(null);
 
   async function submit() {
@@ -1386,7 +1622,8 @@ function TransfersPanel({ caseId }: { caseId: string }) {
         body: { ...form, amount: form.amount ? parseFloat(form.amount) : null },
       });
       setShowForm(false);
-      setForm({ transfer_type: "acat", direction: "in", amount: "", asset_description: "", custodian: "" });
+      setForm({ transfer_type: "acat", direction: "in", amount: "", asset_description: "", custodian: "",
+                delivering_firm: "", delivering_account_title: "", is_third_party: false });
       refetch();
     } finally { setBusy(null); }
   }
@@ -1440,6 +1677,29 @@ function TransfersPanel({ caseId }: { caseId: string }) {
             <label className="label text-[10px]">Asset / description</label>
             <input className="input text-xs" value={form.asset_description} onChange={(e) => setForm({ ...form, asset_description: e.target.value })} placeholder="e.g. AAPL shares, mixed mutual fund portfolio" />
           </div>
+
+          {/* Pre-submission controls — captured here so the checks run before submitting. */}
+          {form.transfer_type === "acat" && form.direction === "in" && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="label text-[10px]" htmlFor="t-firm">Delivering firm</label>
+                <input id="t-firm" className="input text-xs" value={form.delivering_firm}
+                       onChange={(e) => setForm({ ...form, delivering_firm: e.target.value })}
+                       placeholder="e.g. Fidelity" />
+              </div>
+              <div>
+                <label className="label text-[10px]" htmlFor="t-title">Account title on statement</label>
+                <input id="t-title" className="input text-xs" value={form.delivering_account_title}
+                       onChange={(e) => setForm({ ...form, delivering_account_title: e.target.value })}
+                       placeholder="exactly as it reads" />
+              </div>
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-[11px] text-ink-soft">
+            <input type="checkbox" className="h-3 w-3" checked={form.is_third_party}
+                   onChange={(e) => setForm({ ...form, is_third_party: e.target.checked })} />
+            Third-party transfer (requires callback verification)
+          </label>
           <div className="flex gap-2 justify-end">
             <button className="btn-ghost text-xs" onClick={() => setShowForm(false)}>Cancel</button>
             <button className="btn-primary text-xs" disabled={busy === "add"} onClick={submit}>{busy === "add" ? "Submitting…" : "Submit transfer"}</button>
@@ -1464,6 +1724,42 @@ function TransfersPanel({ caseId }: { caseId: string }) {
                   <span className={`chip text-[10px] ${TRANSFER_STATUS_STYLE[t.status] || "bg-navy-50 text-ink-muted"}`}>{t.status.replace(/_/g, " ")}</span>
                 </div>
                 {t.asset_description && <div className="text-xs text-ink-muted mb-2">{t.asset_description}</div>}
+
+                {/* L200 §5 pre-submission controls: ACAT title, third-party callback. */}
+                {(t.transfer_type === "acat" && t.direction === "in") && (
+                  <div className={`text-[11px] rounded-lg px-2 py-1.5 mb-2 ${
+                    t.title_match_status === "match" ? "bg-positive/5 text-positive"
+                    : t.title_match_status === "mismatch" ? "bg-critical/5 text-critical"
+                    : "bg-caution/5 text-caution"}`}>
+                    <span className="font-medium">
+                      Title {t.title_match_status === "match" ? "verified"
+                        : t.title_match_status === "mismatch" ? "MISMATCH"
+                        : t.title_match_status === "review" ? "needs review" : "not checked"}
+                    </span>
+                    {t.title_match_note && <div className="mt-0.5 leading-snug">{t.title_match_note}</div>}
+                    {t.delivering_firm && <div className="text-ink-faint mt-0.5">Delivering: {t.delivering_firm}</div>}
+                  </div>
+                )}
+                {t.is_third_party && (
+                  <div className={`text-[11px] rounded-lg px-2 py-1.5 mb-2 flex items-center gap-2 ${
+                    t.callback_verified_at ? "bg-positive/5 text-positive" : "bg-critical/5 text-critical"}`}>
+                    <span className="flex-1">
+                      {t.callback_verified_at
+                        ? `Third party · callback verified ${t.callback_number ? `on ${t.callback_number} ` : ""}by ${t.callback_verified_by}`
+                        : "Third party — callback verification required before submission"}
+                    </span>
+                    {!t.callback_verified_at && (
+                      <button className="btn-outline text-[10px] py-0.5 px-2 shrink-0"
+                              onClick={async () => {
+                                const num = window.prompt("Number of record called (recorded line):");
+                                if (!num) return;
+                                await api(`/api/onboarding/cases/${caseId}/transfers/${t.id}/callback`,
+                                          { body: { callback_number: num } });
+                                refetch();
+                              }}>Record callback</button>
+                    )}
+                  </div>
+                )}
                 {/* Status timeline */}
                 <div className="flex items-center gap-1 mb-2">
                   {TRANSFER_STATUS_ORDER.map((s, i) => (
