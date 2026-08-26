@@ -137,6 +137,70 @@ async def _backfill_track_a(s, firm) -> list[str]:
     return touched
 
 
+async def _backfill_transfers(s, firm) -> list[str]:
+    """Apply the L200 §5 transfer controls to the scenario cases.
+
+    Brennan's ACAT was created before the title fields existed, and Petrenko's third-party
+    wire lives in `_gate_scenarios`, which skips a case that already exists — so on any
+    database seeded earlier the two newest controls have nothing to demonstrate.
+    """
+    from app.aurea_core import transfer_controls
+    from app.models.onboarding import OnboardingParty, TransferRequest
+
+    now = datetime.now(timezone.utc)
+    touched: list[str] = []
+
+    async def case_by_name(name):
+        return (await s.execute(
+            select(OnboardingCase).where(
+                OnboardingCase.firm_id == firm.id,
+                OnboardingCase.prospect_name == name,
+            )
+        )).scalar_one_or_none()
+
+    # Brennan — an incoming ACAT whose title verifies against the parties of record.
+    bre = await case_by_name("The Brennan Family")
+    if bre:
+        acat = (await s.execute(
+            select(TransferRequest).where(
+                TransferRequest.case_id == bre.id,
+                TransferRequest.transfer_type == "acat",
+            )
+        )).scalars().first()
+        if acat and not acat.delivering_account_title:
+            acat.delivering_firm = "Jarden Securities"
+            acat.delivering_account_title = "BRENNAN ORLA M"
+            party_names = [
+                p.legal_name for p in (await s.execute(
+                    select(OnboardingParty).where(OnboardingParty.case_id == bre.id)
+                )).scalars().all()
+            ]
+            check = transfer_controls.check_title(acat.delivering_account_title, party_names)
+            acat.title_match_status = check["status"]
+            acat.title_match_note = check["note"]
+            touched.append(f"Brennan ACAT title -> {check['status']}")
+            log.info("backfill_transfer", case=bre.prospect_name, result=check["status"])
+
+    # Petrenko — a third-party wire with no callback: the imposter-fraud control, unmet.
+    pet = await case_by_name("Petrenko Private Office")
+    if pet:
+        existing = (await s.execute(
+            select(TransferRequest.id).where(TransferRequest.case_id == pet.id)
+        )).scalars().all()
+        if not existing:
+            s.add(TransferRequest(
+                firm_id=firm.id, case_id=pet.id, transfer_type="wire", direction="in",
+                amount=2_400_000, asset_description="Initial funding wire",
+                status="pending_review", provider="mock", provider_ref="WIRE-559001",
+                custodian="schwab", initiated_at=now - timedelta(days=1),
+                is_third_party=True,
+            ))
+            touched.append("Petrenko third-party wire (no callback)")
+            log.info("backfill_transfer", case=pet.prospect_name, added="third_party_wire")
+
+    return touched
+
+
 async def _backfill_activation(s, firm) -> int:
     """Give approved cases an activation timestamp if they lack one.
 
@@ -237,12 +301,15 @@ async def refresh() -> None:
         await _acquire_onboard(s, firm)
         touched = await _backfill(s, firm)
         track_a = await _backfill_track_a(s, firm)
+        xfers = await _backfill_transfers(s, firm)
         activated = await _backfill_activation(s, firm)
         await s.commit()
         if touched:
             print(f"\nBackfilled {len(touched)} pre-existing case(s): {', '.join(touched)}")
         if track_a:
             print(f"Applied Track A state to {len(track_a)} case(s): {', '.join(track_a)}")
+        if xfers:
+            print(f"Applied transfer controls: {'; '.join(xfers)}")
         if activated:
             print(f"Stamped activated_at on {activated} approved case(s) that lacked it.")
 

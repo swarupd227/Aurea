@@ -31,9 +31,18 @@ _NOISE = {
 
 
 def _tokens(title: str) -> set[str]:
-    """Comparable name tokens — case, punctuation and entity words removed."""
+    """Comparable name tokens — case, punctuation, entity words and initials removed.
+
+    Single letters are dropped because middle initials are near-universal in delivering-firm
+    account titles ("BRENNAN ORLA M") and almost never recorded as part of a party's name.
+    Treating one as an unrecognised person sends every such title to manual review, which
+    trains people to click through the control that matters.
+    """
     cleaned = re.sub(r"[^a-z0-9\s]", " ", (title or "").lower())
-    return {t for t in cleaned.split() if t and t not in _NOISE and not t.isdigit()}
+    return {
+        t for t in cleaned.split()
+        if t and len(t) > 1 and t not in _NOISE and not t.isdigit()
+    }
 
 
 def check_title(delivering_title: str | None, party_names: list[str]) -> dict:
