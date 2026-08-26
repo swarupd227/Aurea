@@ -15,8 +15,8 @@ from app.atlas.runtime import AgentPausedError, run_agent
 from app.conduit.service import sync_market_data
 from app.core.db import SessionLocal
 from app.core.logging import configure_logging, get_logger
-from app.models.enums import AgentKey, MandateType
-from app.models.graph import Mandate
+from app.models.enums import MandateType
+from app.models.graph import Household, Mandate
 from app.models.tenant import AgentConfig, Firm
 
 log = get_logger("aurea.worker")
@@ -85,42 +85,10 @@ async def _run_evaluation() -> None:
                 log.warning("evaluation_failed", firm=firm.slug, error=str(exc))
 
 
-async def _run_drift_monitor() -> None:
-    async with SessionLocal() as s:
-        firms = (await s.execute(select(Firm))).scalars().all()
-        for firm in firms:
-            cfg = (
-                await s.execute(
-                    select(AgentConfig).where(
-                        AgentConfig.firm_id == firm.id,
-                        AgentConfig.agent_key == AgentKey.DRIFT_REBALANCING,
-                    )
-                )
-            ).scalar_one_or_none()
-            if not cfg or not cfg.enabled or cfg.paused:
-                continue
-            mandates = (
-                await s.execute(
-                    select(Mandate).where(
-                        Mandate.firm_id == firm.id,
-                        Mandate.is_active.is_(True),
-                        Mandate.model_portfolio_id.isnot(None),
-                    )
-                )
-            ).scalars().all()
-            for m in mandates:
-                try:
-                    await run_agent(
-                        s, firm=firm, agent_key=AgentKey.DRIFT_REBALANCING,
-                        subject=Subject("mandate", m.id, m.name), trigger="scheduled_monitor",
-                        mandate_type=MandateType(m.mandate_type),
-                    )
-                    await s.commit()
-                except AgentPausedError:
-                    await s.rollback()
-                except Exception as exc:  # pragma: no cover
-                    await s.rollback()
-                    log.warning("drift_monitor_failed", mandate=str(m.id), error=str(exc))
+# `_run_drift_monitor` lived here. It is gone: the generic `_run_scheduled_agent` does
+# exactly the same work — same enabled/paused checks, same active-mandate-with-a-model
+# query, same `mandate_type` argument — driven by AgentConfig rather than a hardcoded
+# 6-hour interval. Keeping both would have meant drift running twice.
 
 
 async def _check_holding_alerts() -> None:
@@ -198,44 +166,139 @@ async def _check_holding_alerts() -> None:
                 log.warning("holding_alert_check_failed", firm=firm.slug, error=str(exc))
 
 
-async def _run_daily_onboarding_agents() -> None:
-    """Daily sweep for the two onboarding agents that declare `scheduled = True`.
+# ── Config-driven agent scheduling ────────────────────────────────────────────
+#
+# Thirteen agents declare `scheduled = True`, but the worker only ever registered three
+# of them — so ten agents that are meant to run proactively only ever ran when someone
+# pressed a button, while the heartbeat announced them as "on duty, watching".
+#
+# `AgentConfig` already carries `schedule_cron` and `schedule_enabled`, and the admin API
+# already writes them. Nothing read them. Rather than hardcode a cadence table here, the
+# worker now honours that config: cadence becomes a firm-level product decision that can
+# be changed in Admin without a deploy.
 
-    Both are firm-level when given a firm subject: the screener rescreens every active
-    case's parties against refreshed lists (L200 — "rescreening runs continuously against
-    list updates"), and abandonment recovery looks for applications that have stalled past
-    their SLA. Neither had a scheduler entry, so neither had ever run.
 
-    Both are Tier 1/2, so these produce recommendations for a human rather than acting.
+async def _subjects_for(session, firm, subject_kind: str) -> list[tuple[Subject, dict]]:
+    """The subjects one scheduled run should fan out across, with any extra run kwargs.
+
+    A firm-level agent runs once; a household agent runs once per household; a mandate
+    agent once per active mandate. Getting this from the catalogue rather than per-agent
+    branching means a new agent is scheduled correctly by declaring its subject.
     """
-    daily = [AgentKey.ADVERSE_MEDIA_PEP, AgentKey.ABANDONMENT_RECOVERY]
+    if subject_kind == "firm":
+        return [(Subject("firm", firm.id, firm.name), {})]
+
+    if subject_kind == "household":
+        rows = (await session.execute(
+            select(Household).where(Household.firm_id == firm.id)
+        )).scalars().all()
+        return [(Subject("household", h.id, h.name), {}) for h in rows]
+
+    if subject_kind == "mandate":
+        rows = (await session.execute(
+            select(Mandate).where(
+                Mandate.firm_id == firm.id,
+                Mandate.is_active.is_(True),
+                Mandate.model_portfolio_id.isnot(None),
+            )
+        )).scalars().all()
+        # Drift needs the mandate type to pick its autonomy tier.
+        return [(Subject("mandate", m.id, m.name), {"mandate_type": MandateType(m.mandate_type)})
+                for m in rows]
+
+    if subject_kind == "onboarding_case":
+        # These agents scan all open cases themselves when given a firm subject, which is
+        # cheaper than one run per case and keeps their own filtering logic authoritative.
+        return [(Subject("firm", firm.id, firm.name), {})]
+
+    log.warning("scheduler_unknown_subject", subject=subject_kind)
+    return []
+
+
+async def _run_scheduled_agent(firm_id, agent_key: str) -> None:
+    """Execute one scheduled agent for one firm, fanned out over its subjects."""
+    from app.agents.catalogue import CATALOGUE
+
     async with SessionLocal() as s:
-        firms = (await s.execute(select(Firm))).scalars().all()
-        for firm in firms:
-            for agent_key in daily:
-                cfg = (
-                    await s.execute(
-                        select(AgentConfig).where(
-                            AgentConfig.firm_id == firm.id,
-                            AgentConfig.agent_key == agent_key,
-                        )
-                    )
-                ).scalar_one_or_none()
-                if not cfg or not cfg.enabled or cfg.paused:
-                    continue
-                try:
-                    await run_agent(
-                        s, firm=firm, agent_key=agent_key,
-                        subject=Subject("firm", firm.id, firm.name),
-                        trigger="scheduled_monitor",
-                    )
-                    await s.commit()
-                except AgentPausedError:
-                    await s.rollback()
-                except Exception as exc:  # pragma: no cover
-                    await s.rollback()
-                    log.warning("daily_onboarding_agent_failed",
-                                firm=firm.slug, agent=str(agent_key), error=str(exc))
+        firm = await s.get(Firm, firm_id)
+        if not firm:
+            return
+
+        cfg = (await s.execute(
+            select(AgentConfig).where(
+                AgentConfig.firm_id == firm.id,
+                AgentConfig.agent_key == agent_key,
+            )
+        )).scalar_one_or_none()
+        # Re-checked at fire time, not just at registration: a kill-switch should take
+        # effect on the next run rather than the next worker restart.
+        if not cfg or not cfg.enabled or cfg.paused or not cfg.schedule_enabled:
+            return
+
+        subject_kind = (CATALOGUE.get(agent_key) or {}).get("subject", "firm")
+        subjects = await _subjects_for(s, firm, subject_kind)
+
+        ran = failed = 0
+        for subject, extra in subjects:
+            try:
+                await run_agent(s, firm=firm, agent_key=agent_key, subject=subject,
+                                trigger="scheduled_monitor", **extra)
+                await s.commit()
+                ran += 1
+            except AgentPausedError:
+                await s.rollback()
+                return
+            except Exception as exc:  # pragma: no cover
+                await s.rollback()
+                failed += 1
+                log.warning("scheduled_agent_failed", firm=firm.slug,
+                            agent=agent_key, subject=str(subject.id), error=str(exc))
+
+        log.info("scheduled_agent_sweep", firm=firm.slug, agent=agent_key,
+                 subject_kind=subject_kind, ran=ran, failed=failed)
+
+
+async def _sync_agent_schedules(scheduler) -> None:
+    """Register a job per (firm, agent) from AgentConfig, and drop ones no longer wanted.
+
+    Re-run periodically so a cadence changed in Admin takes effect without a restart.
+    """
+    from apscheduler.triggers.cron import CronTrigger
+
+    wanted: dict[str, tuple] = {}
+    async with SessionLocal() as s:
+        rows = (await s.execute(
+            select(AgentConfig, Firm).join(Firm, Firm.id == AgentConfig.firm_id).where(
+                AgentConfig.schedule_enabled.is_(True),
+                AgentConfig.enabled.is_(True),
+                AgentConfig.paused.is_(False),
+                AgentConfig.schedule_cron.isnot(None),
+            )
+        )).all()
+        for cfg, firm in rows:
+            job_id = f"agent:{firm.slug}:{cfg.agent_key}"
+            try:
+                trigger = CronTrigger.from_crontab(cfg.schedule_cron)
+            except ValueError:
+                # An invalid expression silently never fires, which looks identical to a
+                # working schedule that has nothing to do. Say so.
+                log.warning("scheduler_invalid_cron", firm=firm.slug,
+                            agent=str(cfg.agent_key), cron=cfg.schedule_cron)
+                continue
+            wanted[job_id] = (trigger, firm.id, str(cfg.agent_key), cfg.schedule_cron)
+
+    existing = {j.id for j in scheduler.get_jobs() if j.id.startswith("agent:")}
+
+    for job_id, (trigger, firm_id, agent_key, cron) in wanted.items():
+        scheduler.add_job(_run_scheduled_agent, trigger, id=job_id, replace_existing=True,
+                          args=[firm_id, agent_key], max_instances=1, coalesce=True,
+                          misfire_grace_time=3600)
+
+    for stale in existing - set(wanted):
+        scheduler.remove_job(stale)
+
+    if wanted or existing:
+        log.info("agent_schedules_synced", active=len(wanted), removed=len(existing - set(wanted)))
 
 
 async def main() -> None:
@@ -246,14 +309,23 @@ async def main() -> None:
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(_refresh_market_data, "interval", minutes=60, id="market", next_run_time=None)
-    scheduler.add_job(_run_drift_monitor, "interval", hours=6, id="drift")
+    # Drift is no longer registered here — it is scheduled from AgentConfig like every
+    # other scheduled agent, at the same 6-hourly cadence (see agents/schedules.py). One
+    # mechanism rather than two, and its cadence is now changeable in Admin.
     scheduler.add_job(_run_evaluation, "interval", hours=12, id="evaluation")
     scheduler.add_job(_heartbeat, "interval", seconds=40, id="heartbeat")
     scheduler.add_job(_check_holding_alerts, "interval", hours=1, id="holding_alerts")
-    # Daily at 02:30 rather than an interval, so rescreening lands at a predictable
-    # off-peak time instead of drifting with each worker restart.
-    scheduler.add_job(_run_daily_onboarding_agents, "cron", hour=2, minute=30, id="onboarding_daily")
+    # Pick up cadence changes made in Admin without needing a worker restart.
+    scheduler.add_job(_sync_agent_schedules, "interval", minutes=15, id="schedule_sync",
+                      args=[scheduler])
     scheduler.start()
+
+    # Register the config-driven agent jobs before the first heartbeat, so the roster
+    # reflects what is actually scheduled rather than what merely declares itself so.
+    try:
+        await _sync_agent_schedules(scheduler)
+    except Exception as exc:  # pragma: no cover
+        log.warning("initial_schedule_sync_failed", error=str(exc))
     log.info("worker_started", jobs=[j.id for j in scheduler.get_jobs()])
     try:
         await _heartbeat()  # an immediate first pulse

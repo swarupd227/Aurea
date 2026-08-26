@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 from app.aurea_core import disclosures, sample_docs
 from app.aurea_core.sample_book import sample_feed
 from app.agents.catalogue import CATALOGUE
+from app.agents import schedules as agent_schedules
 
 log = get_logger("aurea.seed")
 PW = hash_password("aurea")
@@ -99,8 +100,12 @@ async def seed() -> None:
 
         # ── Agent configs + autonomy policies ────────────────────────────────
         for key, meta in CATALOGUE.items():
+            cron, _why = agent_schedules.DEFAULT_SCHEDULES.get(key, (None, None))
             s.add(AgentConfig(firm_id=firm.id, agent_key=key, enabled=True,
-                              default_tier=meta["default_tier"]))
+                              default_tier=meta["default_tier"],
+                              # Agents that declare scheduled=True get a starting cadence;
+                              # everything else stays on-demand.
+                              schedule_cron=cron, schedule_enabled=bool(cron)))
         # Tighter guardrails for the discretionary drift agent.
         s.add(AutonomyPolicy(
             firm_id=firm.id, agent_key=AgentKey.DRIFT_REBALANCING, mandate_type=MandateType.DISCRETIONARY,
