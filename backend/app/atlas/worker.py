@@ -287,18 +287,33 @@ async def _sync_agent_schedules(scheduler) -> None:
                 continue
             wanted[job_id] = (trigger, firm.id, str(cfg.agent_key), cfg.schedule_cron)
 
-    existing = {j.id for j in scheduler.get_jobs() if j.id.startswith("agent:")}
+    existing = {j.id: j for j in scheduler.get_jobs() if j.id.startswith("agent:")}
 
+    added = changed = removed = 0
     for job_id, (trigger, firm_id, agent_key, cron) in wanted.items():
+        current = existing.get(job_id)
+        # Re-adding an unchanged job every cycle is not free: it recomputes the next fire
+        # time, so a sync landing on a fire time can displace that run, and it buries any
+        # real change under a dozen identical "Added job" lines every 15 minutes.
+        if current is not None and str(current.trigger) == str(trigger):
+            continue
         scheduler.add_job(_run_scheduled_agent, trigger, id=job_id, replace_existing=True,
                           args=[firm_id, agent_key], max_instances=1, coalesce=True,
                           misfire_grace_time=3600)
+        if current is None:
+            added += 1
+        else:
+            changed += 1
+            log.info("scheduler_cadence_changed", job=job_id, cron=cron)
 
-    for stale in existing - set(wanted):
+    for stale in set(existing) - set(wanted):
         scheduler.remove_job(stale)
+        removed += 1
 
-    if wanted or existing:
-        log.info("agent_schedules_synced", active=len(wanted), removed=len(existing - set(wanted)))
+    # Logged every cycle even when idle: a periodic "12 active" line is how you tell a
+    # working scheduler from a dead one without waiting hours for a fire that never comes.
+    log.info("agent_schedules_synced", active=len(wanted),
+             added=added, changed=changed, removed=removed)
 
 
 async def main() -> None:
