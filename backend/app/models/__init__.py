@@ -13,5 +13,6 @@ from app.models import (  # noqa: F401
     skill,
     telemetry,
     tenant,
+    trading,
     vault,
 )

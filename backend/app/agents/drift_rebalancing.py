@@ -258,21 +258,68 @@ class DriftRebalancingAgent(BaseAgent):
         return await narrate(ctx, task="advice", system=firm_voice(ctx), prompt=prompt, fallback=fallback)
 
     async def act(self, ctx: AgentContext, recommendation) -> dict:
-        """Route the (possibly modified) order set to the mock OMS connector."""
+        """Execute the approved order set: place it, fill it, and settle it onto the book.
+
+        This used to return {"executed": True} without writing anything, so an approval
+        moved no cash, no position and no tax lot — and the next run proposed the same
+        trades again. It now creates real orders carrying this recommendation's id, routes
+        them to the firm's configured venue, and settles the fills.
+        """
+        from app.conduit import execution
+
         payload = recommendation.modified_payload or recommendation.payload or {}
-        orders = payload.get("order_set", [])
-        return {
-            "executed": True,
-            "venue": "mock-oms",
-            "orders_routed": len(orders),
-            "note": "Draft order set routed to the mock OMS for staging. No live market execution.",
-        }
+        order_set = payload.get("order_set", [])
+        if not order_set:
+            return {"executed": False, "note": "No orders in the approved set."}
+
+        result = await execution.execute_order_set(
+            ctx.session, firm=ctx.firm, order_set=order_set,
+            recommendation_id=recommendation.id,
+            mandate_id=ctx.subject.id if ctx.subject.type == "mandate" else None,
+            actor="adviser",
+        )
+        # "executed" means the book moved, not that a message was sent.
+        result["executed"] = result["orders_settled"] > 0
+        result["note"] = (
+            f"{result['orders_settled']} of {result['orders_created']} order(s) filled and "
+            f"settled via '{result['venue']}'"
+            + ("" if result["reaches_market"] else " (paper venue — real prices and real "
+                                                   "book entries, but no market was reached)")
+            + (f". {result['orders_failed']} could not be executed."
+               if result["orders_failed"] else ".")
+        )
+        return result
 
     async def rollback(self, ctx: AgentContext, recommendation) -> dict:
-        payload = recommendation.modified_payload or recommendation.payload or {}
-        n = len(payload.get("order_set", []))
-        return {"reversed": True, "orders_recalled": n,
-                "note": f"{n} staged order(s) recalled from the mock OMS before execution."}
+        """Cancel what has not executed. A filled order is offset, never reversed."""
+        from sqlalchemy import select
+
+        from app.aurea_core import orders as order_engine
+        from app.models.trading import Order
+
+        rows = (await ctx.session.execute(
+            select(Order).where(Order.recommendation_id == recommendation.id)
+        )).scalars().all()
+        if not rows:
+            return {"reversed": False, "orders_recalled": 0,
+                    "note": "No orders were ever raised for this recommendation."}
+
+        cancelled, already_filled = 0, 0
+        for order in rows:
+            outcome = await order_engine.cancel(
+                ctx.session, order, actor="adviser", note="recommendation rolled back")
+            if outcome.get("cancelled"):
+                cancelled += 1
+            elif str(order.status) == "filled":
+                already_filled += 1
+
+        note = f"{cancelled} order(s) cancelled before execution."
+        if already_filled:
+            note += (f" {already_filled} had already filled and settled — those positions "
+                     f"remain on the book and can only be offset by a further order, not "
+                     f"reversed.")
+        return {"reversed": cancelled > 0, "orders_recalled": cancelled,
+                "already_filled": already_filled, "note": note}
 
 
 def _order_dict(o) -> dict:

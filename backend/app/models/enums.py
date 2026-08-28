@@ -312,3 +312,53 @@ class HeirJourneyStatus(StrEnum):
     INVITED = "invited"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+
+
+# ── Order & trade lifecycle ───────────────────────────────────────────────────
+class OrderSide(StrEnum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+class OrderType(StrEnum):
+    MARKET = "market"
+    LIMIT = "limit"
+
+
+class TimeInForce(StrEnum):
+    DAY = "day"
+    GTC = "gtc"  # good till cancelled
+
+
+class OrderStatus(StrEnum):
+    """The states an order moves through. Transitions are enforced in aurea_core.orders —
+    an order never changes state by direct assignment.
+
+    DRAFT is the proposal an agent produced; nothing is committed to a venue until an
+    adviser approves and it is PLACED. FILLED/CANCELLED/REJECTED/EXPIRED are terminal:
+    a filled order cannot be undone, only offset by a further order."""
+
+    DRAFT = "draft"
+    STAGED = "staged"  # approved and queued, not yet at the venue
+    PLACED = "placed"  # accepted by the venue, working
+    PARTIALLY_FILLED = "partially_filled"
+    FILLED = "filled"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class SettlementStatus(StrEnum):
+    """Whether a fill has been applied to the book (holding, tax lots, transaction)."""
+
+    UNSETTLED = "unsettled"
+    SETTLED = "settled"
+    FAILED = "failed"
+
+
+class LotRelief(StrEnum):
+    """Which tax lots a sale consumes. Chosen per firm; drives realised gain."""
+
+    FIFO = "fifo"
+    HIFO = "hifo"  # highest cost first — minimises realised gain
+    LIFO = "lifo"
