@@ -35,6 +35,9 @@ class Position:
     account_id: str
     custodian: str
     lots: list[Lot] = field(default_factory=list)
+    # Can this actually be bought or sold on a venue? False for private-market holdings,
+    # which the engine must not propose as if they were listed securities.
+    tradeable: bool = True
     excluded: bool = False  # values-aligned exclusion (e.g. fails ESG screen) → divest
     protected: bool = False  # adviser asked not to sell this holding → never trim
 
@@ -178,11 +181,32 @@ def optimise(
             if cls == "cash" or drift >= -drift_band:
                 continue
             buy_value = (-drift) * total_value
-            # Prefer an existing non-excluded holding in the class; else a model instrument.
+            # Prefer an existing non-excluded holding in the class; else the instrument the
+            # model nominates for it.
             candidates = [p for p in positions if p.asset_class == cls and not p.excluded]
             target_pos = candidates[0] if candidates else (model_instruments or {}).get(cls)
-            if target_pos is None or target_pos.price <= 0:
-                limitations.append(f"No instrument available to buy for under-weight class '{cls}' — adviser to select manually.")
+            if target_pos is None:
+                limitations.append(
+                    f"The model targets {(-drift):.0%} in '{cls}' but names no instrument to "
+                    f"buy and no account holds one — adviser to select manually."
+                )
+                continue
+            if not target_pos.tradeable:
+                # A private fund is subscribed to, not bought on a venue. Saying so is the
+                # difference between an adviser knowing what to do and an order that would
+                # be rejected downstream for reasons that look like a system fault.
+                limitations.append(
+                    f"'{cls}' is {(-drift):.0%} under target. The model's instrument for it "
+                    f"({target_pos.symbol} — {target_pos.name}) is a private-market holding, "
+                    f"which is subscribed to outside the OMS rather than traded. "
+                    f"${buy_value:,.0f} to allocate — adviser to arrange."
+                )
+                continue
+            if target_pos.price <= 0:
+                limitations.append(
+                    f"No usable price for {target_pos.symbol}, so '{cls}' cannot be bought "
+                    f"— adviser to select manually."
+                )
                 continue
             qty = buy_value / target_pos.price
             orders.append(Order(

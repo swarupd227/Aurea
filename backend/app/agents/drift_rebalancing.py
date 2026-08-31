@@ -13,7 +13,9 @@ from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import knowledge
 from app.aurea_core.rebalancing import Lot, Position, optimise
 from app.aurea_core.valuation import latest_prices
-from app.models.enums import AgentKey, AutonomyTier
+import uuid
+
+from app.models.enums import AgentKey, AutonomyTier, MarketType
 from app.models.graph import Account, Mandate
 from app.models.portfolio import Holding, Instrument, ModelPortfolio, TargetAllocation, TaxLot
 
@@ -38,8 +40,21 @@ class DriftRebalancingAgent(BaseAgent):
             )
         ).scalars().all()
         target_weights: dict[str, float] = {}
+        # The instrument the model nominates per class, so a class no account yet holds can
+        # still be bought into. TargetAllocation.instrument_id has existed all along and was
+        # never populated or read, which is why an under-weight class with no existing
+        # holding produced "no instrument available" and no order.
+        model_picks: dict[str, dict] = {}
         for t in targets:
             target_weights[t.asset_class] = target_weights.get(t.asset_class, 0.0) + float(t.target_weight)
+            if t.instrument_id and t.asset_class not in model_picks:
+                inst = await s.get(Instrument, t.instrument_id)
+                if inst:
+                    model_picks[t.asset_class] = {
+                        "instrument_id": str(inst.id), "symbol": inst.symbol,
+                        "name": inst.name, "asset_class": inst.asset_class,
+                        "market_type": inst.market_type,
+                    }
 
         accounts = (
             await s.execute(select(Account).where(Account.mandate_id == mandate.id))
@@ -81,6 +96,7 @@ class DriftRebalancingAgent(BaseAgent):
                     "cost_basis": float(h.cost_basis or 0),
                     "account_id": str(acc.id), "custodian": acc.custodian or "—",
                     "excluded": excluded, "protected": bool(inst and inst.symbol in protect),
+                    "tradeable": bool(inst and inst.market_type == MarketType.PUBLIC),
                     "confidence": float(h.confidence or 1.0),
                     "lots": [{"quantity": float(lt.quantity), "cost_per_unit": float(lt.cost_per_unit)}
                              for lt in lots_by_holding.get(h.id, [])],
@@ -104,6 +120,10 @@ class DriftRebalancingAgent(BaseAgent):
             "target_weights": target_weights,
             "cgt_budget": cgt_budget,
             "positions": positions,
+            "model_picks": [
+                {**pick, "price": float(p.close) if (p := prices.get(uuid.UUID(pick["instrument_id"]))) else 0.0}
+                for pick in model_picks.values()
+            ],
             "cash": cash,
             "revision_note": ov.get("note"),
             "capacity_for_loss": capacity_for_loss,
@@ -119,12 +139,22 @@ class DriftRebalancingAgent(BaseAgent):
                 name=p["name"], asset_class=p["asset_class"], market_value=p["market_value"],
                 price=p["price"], cost_basis=p["cost_basis"], account_id=p["account_id"],
                 custodian=p["custodian"], excluded=p["excluded"], protected=p.get("protected", False),
+                tradeable=p.get("tradeable", True),
                 lots=[Lot(l["quantity"], l["cost_per_unit"]) for l in p["lots"]],
             )
             for p in sensed["positions"]
         ]
-        # One representative model instrument per class (first non-excluded position seen).
+        # One representative instrument per class to buy into. The model's own nomination
+        # wins; an existing non-excluded holding is the fallback for classes the model does
+        # not name.
         model_instruments = {}
+        for pick in sensed.get("model_picks", []):
+            model_instruments[pick["asset_class"]] = Position(
+                holding_id="", instrument_id=pick["instrument_id"], symbol=pick["symbol"],
+                name=pick["name"], asset_class=pick["asset_class"], market_value=0.0,
+                price=float(pick.get("price") or 0.0), cost_basis=0.0, account_id="",
+                custodian="", tradeable=(pick.get("market_type") == MarketType.PUBLIC),
+            )
         for p in positions:
             if not p.excluded:
                 model_instruments.setdefault(p.asset_class, p)

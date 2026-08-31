@@ -160,12 +160,29 @@ async def seed() -> None:
                                 description="Growth-tilted model.", drift_band=0.05)
         s.add_all([balanced, growth])
         await s.flush()
+        # Each class names the instrument the model buys into. Without this a class no
+        # account already holds cannot be bought at all — the rebalancer has nothing to
+        # nominate and reports "no instrument available" instead of an order.
+        model_instrument = {
+            AssetClass.EQUITY: instruments.get("MSFT"),
+            AssetClass.FIXED_INCOME: instruments.get("AGG"),
+            AssetClass.PROPERTY: instruments.get("VNQ"),
+            # Private, so the engine will name it and explain that it is subscribed to
+            # rather than traded — not silently omit the whole sleeve.
+            AssetClass.ALTERNATIVES: instruments.get("PPEF1"),
+        }
         for ac, w in [(AssetClass.EQUITY, 0.50), (AssetClass.FIXED_INCOME, 0.30),
                       (AssetClass.ALTERNATIVES, 0.10), (AssetClass.PROPERTY, 0.10)]:
-            s.add(TargetAllocation(firm_id=firm.id, model_id=balanced.id, asset_class=ac, target_weight=w))
+            pick = model_instrument.get(ac)
+            s.add(TargetAllocation(firm_id=firm.id, model_id=balanced.id, asset_class=ac,
+                                   target_weight=w,
+                                   instrument_id=pick.id if pick else None))
         for ac, w in [(AssetClass.EQUITY, 0.75), (AssetClass.FIXED_INCOME, 0.15),
                       (AssetClass.ALTERNATIVES, 0.10)]:
-            s.add(TargetAllocation(firm_id=firm.id, model_id=growth.id, asset_class=ac, target_weight=w))
+            pick = model_instrument.get(ac)
+            s.add(TargetAllocation(firm_id=firm.id, model_id=growth.id, asset_class=ac,
+                                   target_weight=w,
+                                   instrument_id=pick.id if pick else None))
         await s.flush()
 
         # ── Household 1: the Chen family (multi-entity) ──────────────────────

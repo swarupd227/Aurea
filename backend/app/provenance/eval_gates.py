@@ -59,11 +59,25 @@ def run_gates() -> dict:
     add("exclusion", "Values-excluded holding divested", "behaviour",
         any(o.symbol == "EQx" for o in r.orders if o.side == "sell"), "EQx appears in sells")
 
-    # 6. Guardrail — an under-weight class with no eligible instrument raises a breach.
+    # 6. Guardrail — an under-weight class with nothing to buy is reported, and reported as
+    #    a limitation rather than a compliance breach.
+    #
+    #    This gate previously asserted a guardrail_breach and had been failing, because the
+    #    engine has always recorded this as a limitation — see RebalanceResult, whose type
+    #    declaration names this very case as "informational — not compliance breaches (e.g.
+    #    no instrument to buy)". The gate, not the engine, was wrong.
+    #
+    #    The distinction is load-bearing, not cosmetic. guardrail_breaches feed
+    #    within_guardrails, which fails at HIGH severity, and a HIGH flag auto-pauses the
+    #    agent. Booking a missing instrument as a breach would take drift offline for every
+    #    model holding a class no account owns — the same failure mode as pausing it over a
+    #    capacity nobody had assessed. What must not happen is silence.
     pos = [_pos("EQ", "equity", 100000, 100, 50000)]
     r = optimise(positions=pos, target_weights={"equity": 0.6, "alternatives": 0.4}, cash=0, drift_band=0.05)
-    add("guardrail", "Missing instrument raises a guardrail", "guardrail",
-        len(r.guardrail_breaches) > 0, f"{len(r.guardrail_breaches)} breach(es) detected")
+    reported = any("alternatives" in l for l in r.limitations)
+    add("guardrail", "Nothing to buy is reported, as a limitation not a breach", "guardrail",
+        reported and not r.guardrail_breaches,
+        f"{len(r.limitations)} limitation(s), {len(r.guardrail_breaches)} breach(es)")
 
     # 7. Groundedness — the narrative instrument check catches a disconnected rationale and
     #    passes a grounded one. This gate validates the compliance rule itself deterministically.
