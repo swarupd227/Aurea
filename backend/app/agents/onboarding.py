@@ -137,7 +137,12 @@ class OnboardingAgent(BaseAgent):
                 "risk_profile": risk_profile,
                 "objectives": intake.get("objectives", []),
                 "time_horizon_years": intake.get("time_horizon_years"),
-                "capacity_for_loss": intake.get("capacity_for_loss", "medium"),
+                # Only carried through if intake actually captured it. Defaulting here
+                # would write an unassessed "medium" into the mandate and make it
+                # indistinguishable from a real assessment for the rest of the client's
+                # life — which is how the drift agent ended up enforcing an equity
+                # ceiling nobody had ever measured.
+                "capacity_for_loss": intake.get("capacity_for_loss"),
             },
             "mandate": {
                 "mandate_type": mandate_type.value,

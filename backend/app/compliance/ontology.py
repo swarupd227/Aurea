@@ -83,6 +83,12 @@ NZ_FMA = Framework(
              "Code Standard 6 — Suitability (reliable information)",
              "Decision confidence above the firm threshold", "suitability", "medium", ("*",),
              "confidence", "Advice must rest on sufficiently reliable, reconciled data."),
+        Rule("code.std6.suitability_inputs", "Code Std 6",
+             "Code Standard 6 — Suitability (sufficient information about the client)",
+             "Suitability inputs collected", "suitability", "low", ("*",),
+             "suitability_complete",
+             "A suitability control that cannot be applied because its input was never "
+             "collected is a gap to close, not a breach — it is reported, not enforced."),
         Rule("aml.cft.cdd", "AML/CFT Act ss11–31",
              "Anti-Money Laundering and Countering Financing of Terrorism Act 2009 — Customer due "
              "diligence, PEP & sanctions screening",
@@ -122,6 +128,10 @@ UK_FCA = Framework(
              "FCA Handbook COBS 9A — Suitability of advice",
              "Advice suitable to the client's mandate", "suitability", "high",
              ("drift_rebalancing", "next_best_action", "research_reporting"), "mandate_suitability"),
+        Rule("cobs.9a.suitability_inputs", "COBS 9A",
+             "FCA Handbook COBS 9A — obtaining the necessary information about the client",
+             "Suitability inputs collected", "suitability", "low", ("*",),
+             "suitability_complete"),
         Rule("prin.consumer_duty", "PRIN 2A",
              "FCA Principle 12 / PRIN 2A — Consumer Duty (act to deliver good outcomes, avoid foreseeable harm)",
              "No foreseeable harm — within agreed guardrails", "best_interest", "high", ("*",),
@@ -144,6 +154,11 @@ US_SEC = Framework(
              "SEC Regulation Best Interest — Securities Exchange Act Rule 15l-1",
              "Act in the retail client's best interest", "best_interest", "high", ("*",),
              "within_guardrails"),
+        Rule("us.regbi.care_information", "Reg BI",
+             "SEC Regulation Best Interest — Care Obligation; reasonable diligence as to the "
+             "retail customer's investment profile",
+             "Suitability inputs collected", "suitability", "low", ("*",),
+             "suitability_complete"),
         Rule("us.advisers_act.fiduciary", "Advisers Act s206",
              "Investment Advisers Act of 1940, s206 — fiduciary duty of care and loyalty",
              "Adviser fiduciary duty (care & loyalty)", "suitability", "high",
@@ -192,6 +207,11 @@ EU_MIFID = Framework(
     effective="2026-01-01",
     authority="European Securities and Markets Authority (ESMA)",
     rules=(
+        Rule("eu.mifid.art25_2_information", "MiFID II Art 25",
+             "Directive 2014/65/EU (MiFID II), Art 25(2) — obtaining the necessary "
+             "information on the client's financial situation and ability to bear losses",
+             "Suitability inputs collected", "suitability", "low", ("*",),
+             "suitability_complete"),
         Rule("eu.mifid.art25_suitability", "MiFID II Art 25",
              "Directive 2014/65/EU (MiFID II), Art 25(2) — Suitability assessment",
              "Suitability assessment", "suitability", "high",

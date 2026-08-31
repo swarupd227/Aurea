@@ -30,6 +30,13 @@ from app.models.portfolio import (
     Holding, Instrument, ModelPortfolio, Price, TargetAllocation, TaxLot,
 )
 from app.models.tenant import AgentConfig, AutonomyPolicy, Firm
+
+# Capacity for loss is what a client can financially absorb, distinct from the risk they
+# are willing to take. A real one comes from a suitability conversation, not a lookup —
+# these are the assessed values for the demo book, set explicitly so that no mandate is
+# left relying on a default. A growth mandate assessed as only medium capacity would
+# breach the firm's own 75% growth model on every rebalance.
+_ASSESSED_CAPACITY = {"conservative": "low", "balanced": "medium", "growth": "high"}
 from app.models.onboarding import (
     BeneficialOwner, BookIntegrationBatch, DisclosureDelivery, FeeSchedule, HeldAwayAsset,
     OnboardingCase, OnboardingDocument, OnboardingParty, TransferRequest,
@@ -222,12 +229,15 @@ async def seed() -> None:
         # Discretionary balanced mandate on the trust — the LIGHTHOUSE target (drifted).
         trust_mandate = Mandate(firm_id=firm.id, entity_id=trust.id, name="Chen Family Trust — Balanced",
                                 mandate_type=MandateType.DISCRETIONARY,
-                                suitability={"risk_profile": "balanced", "values_exclusions": ["BTI"]},
+                                suitability={"risk_profile": "balanced",
+                                             "capacity_for_loss": _ASSESSED_CAPACITY["balanced"],
+                                             "values_exclusions": ["BTI"]},
                                 constraints={"cgt_budget": 20000}, model_portfolio_id=balanced.id)
         # Advisory growth mandate for the couple.
         couple_mandate = Mandate(firm_id=firm.id, person_id=wei.id, name="Wei & Mei — Growth",
                                  mandate_type=MandateType.ADVISORY,
-                                 suitability={"risk_profile": "growth"},
+                                 suitability={"risk_profile": "growth",
+                                              "capacity_for_loss": _ASSESSED_CAPACITY["growth"]},
                                  constraints={"cgt_budget": 10000, "account_type": "direct"},
                                  model_portfolio_id=growth.id)
         s.add_all([trust_mandate, couple_mandate])
@@ -503,7 +513,9 @@ async def _extra_household(s, firm, adviser, instruments, balanced, growth, spec
     mandate = Mandate(firm_id=firm.id, person_id=owner_person_id, entity_id=owner_entity_id,
                       name=f"{spec['name']} — {model.name.split()[-1]}",
                       mandate_type=MandateType(spec["mandate"]),
-                      suitability={"risk_profile": spec["model"]},
+                      suitability={"risk_profile": spec["model"],
+                                   "capacity_for_loss": _ASSESSED_CAPACITY.get(
+                                       spec["model"], "medium")},
                       constraints={"cgt_budget": 12000}, model_portfolio_id=model.id)
     s.add(mandate)
     await s.flush()
@@ -605,6 +617,10 @@ async def _acquire_onboard(s, firm):
         firm_id=firm.id, prospect_name="Daniel Okonkwo", is_entity=False,
         registration_type="individual", segment="private_wealth",
         aml_risk_tier="low", aml_risk_score=18.0, edd_status="cdd", sla_days=5,
+        # Deliberately a willing-but-not-able case: a growth risk profile with only
+        # medium capacity to absorb loss. Left as it was — this is a real suitability
+        # tension and the guardrail should catch it, which is a different thing from
+        # breaching a ceiling derived from a capacity nobody assessed.
         intake={"email": "daniel.okonkwo@example.com", "risk_profile": "growth",
                 "objectives": ["retirement", "education"], "time_horizon_years": 18,
                 "capacity_for_loss": "medium", "mandate_preference": "advisory",
@@ -622,7 +638,7 @@ async def _acquire_onboard(s, firm):
         firm_id=firm.id, prospect_name="Sokolov Family Trust", is_entity=True, entity_type="trust",
         registration_type="trust", segment="private_wealth",
         aml_risk_tier="high", aml_risk_score=78.0, edd_status="edd_pending", sla_days=10,
-        intake={"risk_profile": "balanced", "objectives": ["wealth preservation"],
+        intake={"risk_profile": "balanced", "capacity_for_loss": "medium", "objectives": ["wealth preservation"],
                 "time_horizon_years": 25, "mandate_preference": "discretionary",
                 "source_of_wealth": "Inherited family business — third-generation manufacturing",
                 "source_of_funds": "Proceeds of 2019 sale of Sokolov Manufacturing OAO",
@@ -648,7 +664,7 @@ async def _acquire_onboard(s, firm):
         firm_id=firm.id, prospect_name="Priya Raman", is_entity=False,
         registration_type="employer_rollover", segment="private_wealth",
         aml_risk_tier="low", aml_risk_score=22.0, edd_status="cdd", sla_days=5,
-        intake={"email": "priya.raman@example.com", "risk_profile": "growth",
+        intake={"email": "priya.raman@example.com", "risk_profile": "growth", "capacity_for_loss": "high",
                 "objectives": ["retirement"], "time_horizon_years": 22,
                 "mandate_preference": "advisory", "fee_bps": 80,
                 "source_of_wealth": "Employment income — 18 years at Halcyon Health",
@@ -672,7 +688,7 @@ async def _acquire_onboard(s, firm):
         firm_id=firm.id, prospect_name="Meridian Capital Partners LLC", is_entity=True,
         entity_type="llc", registration_type="entity_llc", segment="institutional",
         aml_risk_tier="medium", aml_risk_score=54.0, edd_status="edd_pending", sla_days=10,
-        intake={"risk_profile": "balanced", "objectives": ["capital preservation", "income"],
+        intake={"risk_profile": "balanced", "capacity_for_loss": "medium", "objectives": ["capital preservation", "income"],
                 "time_horizon_years": 10, "mandate_preference": "discretionary",
                 "source_of_wealth": "Operating profits — commercial property advisory",
                 "associated_parties": ["Marcus Delacroix", "Helena Ostrowski"],
@@ -698,7 +714,7 @@ async def _acquire_onboard(s, firm):
         firm_id=firm.id, prospect_name="Castellanos Holdings SA", is_entity=True,
         entity_type="corporation", registration_type="entity_corp", segment="institutional",
         aml_risk_tier="high", aml_risk_score=91.0, edd_status="edd_pending", sla_days=10,
-        intake={"risk_profile": "conservative", "objectives": ["capital preservation"],
+        intake={"risk_profile": "conservative", "capacity_for_loss": "low", "objectives": ["capital preservation"],
                 "time_horizon_years": 8, "mandate_preference": "advisory",
                 # Left thin deliberately — the EDD narrator should flag the gap.
                 "source_of_wealth": "",
@@ -715,7 +731,7 @@ async def _acquire_onboard(s, firm):
         firm_id=firm.id, prospect_name="Emma Whitfield", is_entity=False,
         registration_type="roth_ira", segment="mass_affluent",
         aml_risk_tier="low", aml_risk_score=15.0, edd_status="cdd", sla_days=5,
-        intake={"email": "emma.whitfield@example.com", "risk_profile": "conservative",
+        intake={"email": "emma.whitfield@example.com", "risk_profile": "conservative", "capacity_for_loss": "low",
                 "objectives": ["retirement"], "time_horizon_years": 30,
                 "mandate_preference": "advisory",
                 "source_of_wealth": "Salary — senior nurse practitioner",
@@ -843,7 +859,7 @@ async def _gate_scenarios(s, firm):
             aml_risk_tier="low", aml_risk_score=12.0, edd_status="cdd", sla_days=5,
             cip_status="verified", cip_score=0.97, cip_reference_id="mock_socure_9f21c",
             status="review",
-            intake={"email": "james.ashworth@example.com", "risk_profile": "balanced",
+            intake={"email": "james.ashworth@example.com", "risk_profile": "balanced", "capacity_for_loss": "medium",
                     "objectives": ["retirement", "property"], "time_horizon_years": 12,
                     "mandate_preference": "advisory",
                     "source_of_wealth": "Professional income and inheritance",
@@ -881,7 +897,7 @@ async def _gate_scenarios(s, firm):
             aml_risk_tier="medium", aml_risk_score=41.0, edd_status="edd_complete",
             sla_days=10, cip_status="verified", cip_score=0.94,
             cip_reference_id="mock_socure_3b77a",
-            intake={"risk_profile": "conservative", "objectives": ["capital preservation"],
+            intake={"risk_profile": "conservative", "capacity_for_loss": "low", "objectives": ["capital preservation"],
                     "time_horizon_years": 20, "mandate_preference": "discretionary",
                     "source_of_wealth": "Sale of Nakamura Logistics KK, corroborated by "
                                         "share purchase agreement and bank confirmation",
@@ -925,7 +941,7 @@ async def _gate_scenarios(s, firm):
             # Approved cases must carry an activation timestamp — it is the anchor for
             # cycle time, and status=approved without one is inconsistent.
             activated_at=_NOW - timedelta(days=3),
-            intake={"email": "orla.brennan@example.com", "risk_profile": "growth",
+            intake={"email": "orla.brennan@example.com", "risk_profile": "growth", "capacity_for_loss": "high",
                     "objectives": ["retirement"], "time_horizon_years": 16,
                     "mandate_preference": "discretionary",
                     "source_of_wealth": "Equity vest — technology sector"},
@@ -972,7 +988,7 @@ async def _gate_scenarios(s, firm):
             entity_type="corporation", registration_type="entity_corp",
             segment="institutional", aml_risk_tier="high", aml_risk_score=88.0,
             edd_status="edd_pending", sla_days=10,
-            intake={"risk_profile": "conservative", "objectives": ["capital preservation"],
+            intake={"risk_profile": "conservative", "capacity_for_loss": "low", "objectives": ["capital preservation"],
                     "time_horizon_years": 10, "mandate_preference": "advisory",
                     "source_of_wealth": "Stated as family office capital — not corroborated",
                     "associated_parties": ["Olena Petrenko"]},
@@ -1011,7 +1027,9 @@ async def _for_purpose_household(s, firm, adviser, instruments, model):
     await s.flush()
     mandate = Mandate(firm_id=firm.id, entity_id=entity.id, name="Whitestone — Balanced (ESG)",
                       mandate_type=MandateType.DISCRETIONARY,
-                      suitability={"risk_profile": "balanced", "values_exclusions": ["BTI", "tobacco"]},
+                      suitability={"risk_profile": "balanced",
+                                   "capacity_for_loss": _ASSESSED_CAPACITY["balanced"],
+                                   "values_exclusions": ["BTI", "tobacco"]},
                       constraints={"cgt_budget": 0}, model_portfolio_id=model.id)
     s.add(mandate)
     await s.flush()
@@ -1041,7 +1059,9 @@ async def _simple_household(s, firm, adviser, instruments, model):
     s.add(p)
     await s.flush()
     mandate = Mandate(firm_id=firm.id, person_id=p.id, name="Patel — Growth", mandate_type=MandateType.ADVISORY,
-                      suitability={"risk_profile": "growth"}, constraints={"cgt_budget": 8000},
+                      suitability={"risk_profile": "growth",
+                                   "capacity_for_loss": _ASSESSED_CAPACITY["growth"]},
+                      constraints={"cgt_budget": 8000},
                       model_portfolio_id=model.id)
     s.add(mandate)
     await s.flush()

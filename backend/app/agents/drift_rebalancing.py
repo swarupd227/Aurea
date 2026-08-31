@@ -92,8 +92,11 @@ class DriftRebalancingAgent(BaseAgent):
         cgt_budget = ov["cgt_budget"] if ov.get("cgt_budget") is not None else (mandate.constraints or {}).get("cgt_budget")
         if cgt_budget is None:  # firm-wide default guardrail when the mandate sets none
             cgt_budget = pol.get("default_cgt_budget")
-        # Risk capacity (financial) from suitability — used in think() to apply an equity floor.
-        capacity_for_loss = (mandate.suitability or {}).get("capacity_for_loss", "medium")
+        # Risk capacity (financial ability to absorb loss) from suitability — used in
+        # think() to apply an equity ceiling. Deliberately NOT defaulted here: "nobody
+        # assessed this" and "assessed as medium" are different facts, and collapsing
+        # them let an unassessed mandate breach a ceiling it was never measured against.
+        capacity_for_loss = (mandate.suitability or {}).get("capacity_for_loss")
         return {
             "applicable": True,
             "mandate": {"id": str(mandate.id), "name": mandate.name, "type": mandate.mandate_type},
@@ -137,16 +140,39 @@ class DriftRebalancingAgent(BaseAgent):
         if not result.needs_rebalance:
             return []
 
-        # Risk capacity guardrail (F1): flag if proposed equity exceeds capacity floor.
+        # Risk capacity guardrail (F1): the proposed equity weight must sit inside what
+        # the client can financially absorb.
+        #
+        # Only when that capacity has actually been assessed. An unassessed mandate used
+        # to inherit "medium", whose 70% ceiling the firm's own 75% growth model exceeds
+        # by construction — so every growth mandate breached on every run and the
+        # kill-switch paused the agent permanently. That is a missing field, not a
+        # suitability failure, and the two need different handling: a gap gets recorded
+        # for someone to complete, a breach stops the trade.
         _CAPACITY_EQUITY_MAX = {"low": 0.40, "medium": 0.70, "high": 1.0}
-        capacity = (sensed.get("capacity_for_loss") or "medium").lower()
-        equity_max = _CAPACITY_EQUITY_MAX.get(capacity, 0.70)
+        capacity = (sensed.get("capacity_for_loss") or "").strip().lower() or None
         proposed_equity = result.target_weights.get("equity", 0.0)
-        if proposed_equity > equity_max:
-            result.guardrail_breaches.append(
-                f"Proposed equity ({proposed_equity:.0%}) exceeds risk capacity limit ({equity_max:.0%}) "
-                f"for capacity_for_loss='{capacity}'"
+        suitability_gaps: list[str] = []
+
+        if capacity is None:
+            suitability_gaps.append(
+                "Capacity for loss has not been assessed for this mandate, so the equity "
+                "ceiling cannot be checked. Complete the suitability assessment to "
+                "restore this control."
             )
+        elif capacity not in _CAPACITY_EQUITY_MAX:
+            suitability_gaps.append(
+                f"Capacity for loss is recorded as '{capacity}', which is not one of "
+                f"{', '.join(sorted(_CAPACITY_EQUITY_MAX))}. The equity ceiling cannot be "
+                f"checked until it is corrected."
+            )
+        else:
+            equity_max = _CAPACITY_EQUITY_MAX[capacity]
+            if proposed_equity > equity_max:
+                result.guardrail_breaches.append(
+                    f"Proposed equity ({proposed_equity:.0%}) exceeds risk capacity limit "
+                    f"({equity_max:.0%}) for capacity_for_loss='{capacity}'"
+                )
 
         # Data confidence across positions.
         confs = [p["confidence"] for p in sensed["positions"]] or [1.0]
@@ -190,13 +216,21 @@ class DriftRebalancingAgent(BaseAgent):
             "data_confidence": round(data_confidence, 3),
             "cgt_budget": sensed.get("cgt_budget"),
             "guardrail_breaches": result.guardrail_breaches,
+            "suitability_gaps": suitability_gaps,
+            "capacity_for_loss": capacity,
+            "proposed_equity": proposed_equity,
             "limitations": result.limitations,
             "price_source": "Conduit market-data feed (latest close)",
             "n_positions": len(positions),
         }
+        if suitability_gaps:
+            payload["suitability_gaps"] = suitability_gaps
 
         rationale = await self._rationale(ctx, sensed, result, citations)
-        confidence = round(min(data_confidence, 0.95) * (0.6 if result.guardrail_breaches else 1.0), 3)
+        # A gap is not a breach, but it does mean a control could not be applied — so it
+        # costs confidence rather than stopping the recommendation.
+        penalty = 0.6 if result.guardrail_breaches else (0.85 if suitability_gaps else 1.0)
+        confidence = round(min(data_confidence, 0.95) * penalty, 3)
 
         title = (
             f"Rebalance {sensed['mandate']['name']}: max drift "

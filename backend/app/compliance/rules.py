@@ -68,6 +68,19 @@ def within_guardrails(c: CheckContext) -> RuleResult:
     return RuleResult("pass", "No guardrail breaches.")
 
 
+def suitability_complete(c: CheckContext) -> RuleResult:
+    """Were the inputs a suitability control needs actually collected?
+
+    Deliberately LOW severity. A missing assessment is a gap to close, not a breach to
+    stop trading over — and only HIGH auto-pauses an agent. Reporting it as HIGH is what
+    left drift permanently paused over a field nobody had filled in."""
+    gaps = (c.evidence or {}).get("suitability_gaps") or []
+    if gaps:
+        return RuleResult("fail", f"{len(gaps)} suitability input(s) incomplete: {gaps[0]}",
+                          severity="low")
+    return RuleResult("pass", "Suitability inputs complete.")
+
+
 def cgt_budget(c: CheckContext) -> RuleResult:
     budget = (c.evidence or {}).get("cgt_budget")
     if budget is None:
@@ -240,6 +253,7 @@ def narrative_instrument_check(c: CheckContext) -> RuleResult:
 REGISTRY = {
     "no_overpromise": no_overpromise, "turnover": turnover, "explainable": explainable,
     "mandate_suitability": mandate_suitability, "within_guardrails": within_guardrails,
+    "suitability_complete": suitability_complete,
     "cgt_budget": cgt_budget, "grounding": grounding, "confidence": confidence,
     "aml_screening": aml_screening, "disclosure": disclosure, "records": records,
     "narrative_instrument_check": narrative_instrument_check,
