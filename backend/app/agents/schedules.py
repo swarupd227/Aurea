@@ -20,7 +20,45 @@ everything at once.
 """
 from __future__ import annotations
 
+import re
+
 from app.models.enums import AgentKey
+
+# crontab(5) numbers the week from Sunday; APScheduler numbers it from Monday, and
+# CronTrigger.from_crontab does not translate between them. A firm typing the standard
+# "0 5 * * 1" for Monday in Admin would silently get Tuesday. Names are unambiguous in
+# both, so numeric weekdays are rewritten to names before the expression is parsed.
+_CRONTAB_DOW = {"0": "sun", "1": "mon", "2": "tue", "3": "wed",
+                "4": "thu", "5": "fri", "6": "sat", "7": "sun"}
+
+
+def _dow_to_names(field: str) -> str:
+    """Rewrite a crontab day-of-week field to weekday names. Non-numeric parts pass
+    through untouched, so an expression already using names is left exactly as written."""
+    def sub(token: str) -> str:
+        return _CRONTAB_DOW.get(token, token)
+
+    parts = []
+    for item in field.split(","):
+        # Preserve any step suffix (e.g. "1-5/2") while translating the range itself.
+        base, sep, step = item.partition("/")
+        if "-" in base:
+            lo, _, hi = base.partition("-")
+            base = f"{sub(lo)}-{sub(hi)}"
+        else:
+            base = sub(base)
+        parts.append(base + sep + step)
+    return ",".join(parts)
+
+
+def normalise_cron(expr: str) -> str:
+    """Translate a standard 5-field crontab expression into one APScheduler reads the
+    same way. Only the day-of-week field can differ, so only that field is touched."""
+    fields = re.split(r"\s+", (expr or "").strip())
+    if len(fields) != 5:
+        return expr  # not a 5-field expression; let the parser report it
+    fields[4] = _dow_to_names(fields[4])
+    return " ".join(fields)
 
 # agent -> (cron, why this cadence)
 DEFAULT_SCHEDULES: dict[str, tuple[str, str]] = {
@@ -50,7 +88,7 @@ DEFAULT_SCHEDULES: dict[str, tuple[str, str]] = {
 
     # ── Weekly ───────────────────────────────────────────────────────────────
     AgentKey.NEXT_BEST_ACTION: (
-        "0 5 * * 1",
+        "0 5 * * mon",
         "Sets up the adviser's week. Daily would re-surface the same actions before anyone acted.",
     ),
 

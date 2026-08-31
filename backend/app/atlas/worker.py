@@ -6,10 +6,12 @@ proactive (spec §7 'without waiting to be asked'). Runs as its own container in
 from __future__ import annotations
 
 import asyncio
+from datetime import timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
+from app.agents import schedules as agent_schedules
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
 from app.conduit.service import sync_market_data
@@ -278,7 +280,10 @@ async def _sync_agent_schedules(scheduler) -> None:
         for cfg, firm in rows:
             job_id = f"agent:{firm.slug}:{cfg.agent_key}"
             try:
-                trigger = CronTrigger.from_crontab(cfg.schedule_cron)
+                # Standard crontab weekday numbering, not APScheduler's — see
+                # schedules.normalise_cron. Without this, "0 5 * * 1" means Tuesday.
+                trigger = CronTrigger.from_crontab(
+                    agent_schedules.normalise_cron(cfg.schedule_cron))
             except ValueError:
                 # An invalid expression silently never fires, which looks identical to a
                 # working schedule that has nothing to do. Say so.
@@ -322,7 +327,11 @@ async def main() -> None:
     # Give the API time to bootstrap schema + seed.
     await asyncio.sleep(15)
 
-    scheduler = AsyncIOScheduler()
+    # Pinned, not inherited. Without a timezone APScheduler takes the container's local
+    # one, so a base-image change could silently move every cadence by hours — and the
+    # rationale in agents/schedules.py ("before the adviser's day starts") would quietly
+    # stop being true. The container is UTC today; this makes that a decision, not luck.
+    scheduler = AsyncIOScheduler(timezone=timezone.utc)
     scheduler.add_job(_refresh_market_data, "interval", minutes=60, id="market", next_run_time=None)
     # Drift is no longer registered here — it is scheduled from AgentConfig like every
     # other scheduled agent, at the same 6-hourly cadence (see agents/schedules.py). One
