@@ -173,6 +173,22 @@ async def main() -> int:
         check("and says why", "synthetic" in synth["failed"][0]["reason"], True)
         check("a refused placement is not a break", synth["settlement_breaks"], 0)
 
+        print("\n=== 4b. Settlement refuses to overdraw the account ===")
+        # Independent of what the engine proposes: an order that costs more than the
+        # account holds must not settle. A negative custody balance is a broken book.
+        toobig = await execution.execute_order_set(
+            s, firm=firm, order_set=[{
+                "side": "buy", "symbol": "AAA", "instrument_id": str(inst.id),
+                "account_id": str(acct.id), "quantity": 100000, "est_price": 100,
+            }])
+        await s.commit()
+        check("an unaffordable buy becomes a settlement break", toobig["settlement_breaks"], 1)
+        check("and says it would overdraw",
+              "overdraw" in toobig["breaks"][0]["reason"], True)
+        await s.refresh(acct)
+        check("cash never went negative", float(acct.cash_balance) >= 0, True)
+        check("cash unchanged by the refused settlement", acct.cash_balance, 64985.00)
+
         print("\n=== 5. BUY 100 @ 100 opens a lot and spends cash ===")
         buy = await execution.execute_order_set(
             s, firm=firm, order_set=[{

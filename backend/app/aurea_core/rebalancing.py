@@ -141,6 +141,10 @@ def optimise(
     realised_gain = harvested = 0.0
     breaches: list[str] = []
     limitations: list[str] = []
+    # Declared out here, not inside `if needs`, because the shortfall report below runs
+    # unconditionally — a within-tolerance portfolio has nothing underfunded, but the name
+    # still has to exist.
+    underfunded: list[tuple[str, float, float]] = []
 
     if needs:
         # 1. Sell over-weight classes.
@@ -176,11 +180,24 @@ def optimise(
                     est_realised_gain=round(lot_gain, 2), reason=reason,
                 ))
 
-        # 2. Buy under-weight classes from proceeds + cash.
+        # 2. Buy under-weight classes from proceeds + cash — and only from those.
+        #
+        # This loop used to size each buy purely from the target weight, which is what the
+        # portfolio *wants*, not what it can *fund*. When a CGT budget caps the sells (as it
+        # is designed to), the shortfall was ignored and the order set spent money the
+        # account did not have. Settlement would then book it and leave the cash balance
+        # negative. Buys are now paid for out of a running balance.
+        fees_estimate = sum(o.est_value for o in orders if o.side == "sell") * 0.001
+        available = cash + sum(o.est_value for o in orders if o.side == "sell") - fees_estimate
+
         for cls, drift in sorted(drifts.items(), key=lambda kv: kv[1], reverse=True):
             if cls == "cash" or drift >= -drift_band:
                 continue
-            buy_value = (-drift) * total_value
+            wanted = (-drift) * total_value
+            buy_value = min(wanted, available)
+            if buy_value <= 1e-6:
+                underfunded.append((cls, wanted, 0.0))
+                continue
             # Prefer an existing non-excluded holding in the class; else the instrument the
             # model nominates for it.
             candidates = [p for p in positions if p.asset_class == cls and not p.excluded]
@@ -216,6 +233,19 @@ def optimise(
                 account_id=target_pos.account_id, custodian=target_pos.custodian,
                 reason="Top up under-weight",
             ))
+            available -= buy_value
+            if buy_value < wanted - 1e-6:
+                underfunded.append((cls, wanted, buy_value))
+
+    # Say what could not be funded. Silently buying less than the target would look like a
+    # completed rebalance that quietly left the portfolio off-model.
+    for cls, wanted, funded in underfunded:
+        shortfall = wanted - funded
+        limitations.append(
+            f"'{cls}' needs ${wanted:,.0f} to reach target but only ${funded:,.0f} could be "
+            f"funded from cash and sale proceeds — ${shortfall:,.0f} short. Raising more "
+            f"would exceed the CGT budget or the available cash."
+        )
 
     if cgt_budget is not None and realised_gain > cgt_budget + 1e-6:
         breaches.append(

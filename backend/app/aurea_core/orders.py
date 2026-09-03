@@ -191,6 +191,16 @@ async def settle(
 
     if str(order.side) == OrderSide.BUY:
         cash_delta = -(gross + fee)
+        # An account cannot pay with money it does not have. The engine sizes buys against
+        # available funds, but settlement is the last line: an order set built elsewhere, a
+        # stale price, or fills arriving in a different order than proposed can all overdraw
+        # an account, and a negative custody balance is a broken book, not a rounding issue.
+        if _d(account.cash_balance) + cash_delta < 0:
+            raise SettlementError(
+                f"Buying {qty} at {px} costs {gross + fee} but the account holds only "
+                f"{_d(account.cash_balance)} — settling would overdraw it by "
+                f"{-(_d(account.cash_balance) + cash_delta)}"
+            )
         if holding is None:
             holding = Holding(
                 firm_id=order.firm_id, account_id=order.account_id,
