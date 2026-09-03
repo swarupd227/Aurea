@@ -74,9 +74,37 @@ def main() -> int:
                      cost_basis=0.0, account_id="a1", custodian="X")},
                  cgt_budget=None)
     buys = sum(o.est_value for o in r.orders if o.side == "buy")
-    check("a fully funded buy is not trimmed", buys > 100_000, True)
-    check("and no shortfall is reported",
-          any("short" in l for l in r.limitations), False)
+    check("a well-funded buy is essentially the full target", buys > 100_000, True)
+    # Not "no shortfall": target weights sum to 1 and cash counts toward total value, so a
+    # class funded entirely from cash can never quite reach target once the fee is paid.
+    # What matters is that the gap is the fee, not a meaningful under-allocation.
+    wanted = 150_000.0
+    check("and it is trimmed by the fee alone, not materially",
+          buys >= wanted * 0.999, True)
+
+    print("\n=== buys are sized net of the fees execution will charge ===")
+    # The first funding fix reserved the sell-side fee but not the buy-side ones, so the
+    # order set over-committed by exactly the buy fees and the last buy failed to settle.
+    # Replays the real Chen numbers and walks the cash the way settlement does.
+    positions = [
+        pos("MSFT", "equity", 628_534, 394.36, 120_000),
+        pos("AGG", "fixed_income", 98_325, 98.325, 100_000),
+        pos("VNQ", "property", 29_641, 98.805, 27_000),
+    ]
+    RATE, MINIMUM, CASH = 0.001, 5.0, 30_000.0
+    r = optimise(positions=positions,
+                 target_weights={"equity": 0.50, "fixed_income": 0.30, "property": 0.10,
+                                 "alternatives": 0.10},
+                 cash=CASH, drift_band=0.05, cgt_budget=20_000,
+                 fee_rate=RATE, fee_minimum=MINIMUM)
+
+    balance = CASH
+    for o in sorted(r.orders, key=lambda o: 0 if o.side == "sell" else 1):
+        fee = max(o.est_value * RATE, MINIMUM)
+        balance += (o.est_value - fee) if o.side == "sell" else -(o.est_value + fee)
+        print(f"    {o.side:4} {o.symbol:5} {o.est_value:>12,.2f} fee {fee:>7,.2f}"
+              f" -> balance {balance:>12,.2f}")
+    check("cash never goes negative once fees are charged", balance >= -0.01, True)
 
     print("\n=== a within-tolerance portfolio takes the other path cleanly ===")
     # The shortfall report runs whether or not a rebalance was needed. Declaring its list

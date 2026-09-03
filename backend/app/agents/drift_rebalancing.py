@@ -159,6 +159,9 @@ class DriftRebalancingAgent(BaseAgent):
             if not p.excluded:
                 model_instruments.setdefault(p.asset_class, p)
 
+        # The venue's own fee model, so proposed buys are sized net of what execution will
+        # charge rather than assuming the default.
+        exec_cfg = ((ctx.firm.settings or {}).get("execution") or {})
         result = optimise(
             positions=positions,
             target_weights=sensed["target_weights"],
@@ -166,6 +169,8 @@ class DriftRebalancingAgent(BaseAgent):
             drift_band=sensed["model"]["drift_band"],
             cgt_budget=sensed.get("cgt_budget"),
             model_instruments=model_instruments,
+            fee_rate=float(exec_cfg.get("fee_bps", 10)) / 10000.0,
+            fee_minimum=float(exec_cfg.get("fee_minimum", 5)),
         )
         if not result.needs_rebalance:
             return []

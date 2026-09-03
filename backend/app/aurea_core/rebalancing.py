@@ -119,6 +119,12 @@ def optimise(
     drift_band: float = 0.05,
     cgt_budget: float | None = None,
     model_instruments: dict[str, Position] | None = None,
+    # The venue's fee model, so buys can be sized net of what execution will actually
+    # charge. Defaults match the firm default (10bps, $5 minimum); the caller passes the
+    # firm's own. Ignoring these is not a rounding error — it over-commits the account by
+    # exactly the total fees and the last buy fails to settle.
+    fee_rate: float = 0.001,
+    fee_minimum: float = 5.0,
 ) -> RebalanceResult:
     total_value = sum(p.market_value for p in positions) + cash
     if total_value <= 0:
@@ -187,14 +193,23 @@ def optimise(
         # is designed to), the shortfall was ignored and the order set spent money the
         # account did not have. Settlement would then book it and leave the cash balance
         # negative. Buys are now paid for out of a running balance.
-        fees_estimate = sum(o.est_value for o in orders if o.side == "sell") * 0.001
-        available = cash + sum(o.est_value for o in orders if o.side == "sell") - fees_estimate
+        def _fee(value: float) -> float:
+            return max(value * fee_rate, fee_minimum) if value > 0 else 0.0
+
+        # Fees are per order, not a blanket percentage of the total, because of the minimum.
+        proceeds = sum(o.est_value - _fee(o.est_value) for o in orders if o.side == "sell")
+        available = cash + proceeds
 
         for cls, drift in sorted(drifts.items(), key=lambda kv: kv[1], reverse=True):
             if cls == "cash" or drift >= -drift_band:
                 continue
             wanted = (-drift) * total_value
+            # Size the buy so the trade *and its fee* fit inside what is left.
             buy_value = min(wanted, available)
+            if buy_value + _fee(buy_value) > available:
+                buy_value = max(0.0, (available - fee_minimum)
+                                if available * fee_rate < fee_minimum
+                                else available / (1.0 + fee_rate))
             if buy_value <= 1e-6:
                 underfunded.append((cls, wanted, 0.0))
                 continue
@@ -233,7 +248,7 @@ def optimise(
                 account_id=target_pos.account_id, custodian=target_pos.custodian,
                 reason="Top up under-weight",
             ))
-            available -= buy_value
+            available -= (buy_value + _fee(buy_value))
             if buy_value < wanted - 1e-6:
                 underfunded.append((cls, wanted, buy_value))
 
