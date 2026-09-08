@@ -13,7 +13,22 @@ This is the engine behind the Drift & Tax-Managed Rebalancing lighthouse agent. 
 No live execution — the output is a draft, multi-custodian order set for adviser review."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+
+
+# Quantities are carried to four decimal places. Orders are *sized* in value but *carried*
+# as a quantity, and settlement recomputes the value back from that quantity — so rounding
+# the quantity up makes the settled cost exceed the value the order was funded against.
+# That overdrew a real account by 1.5 cents and failed an otherwise correct settlement.
+# Flooring guarantees qty * price <= the value reserved, and therefore the recomputed fee
+# cannot exceed the reserved fee either. Trading a fractionally smaller amount is always
+# safe; a fractionally larger one is not.
+_QTY_DP = 4
+
+
+def _floor_qty(qty: float) -> float:
+    return math.floor(qty * (10 ** _QTY_DP)) / (10 ** _QTY_DP)
 
 
 @dataclass
@@ -179,10 +194,15 @@ def optimise(
                     reason = "Exit values-excluded holding & trim over-weight"
                 elif lot_gain < 0:
                     reason = "Harvest loss while trimming over-weight"
+                # Value the order the way settlement will — from the quantity actually
+                # carried, not the pre-rounding figure. Otherwise the card shows one number
+                # and the book moves by another.
+                sell_qty = _floor_qty(qty)
                 orders.append(Order(
                     side="sell", symbol=pos.symbol, name=pos.name, instrument_id=pos.instrument_id,
-                    asset_class=cls, quantity=round(qty, 4), est_price=round(pos.price, 4),
-                    est_value=round(value_sold, 2), account_id=pos.account_id, custodian=pos.custodian,
+                    asset_class=cls, quantity=sell_qty, est_price=round(pos.price, 4),
+                    est_value=round(sell_qty * round(pos.price, 4), 2),
+                    account_id=pos.account_id, custodian=pos.custodian,
                     est_realised_gain=round(lot_gain, 2), reason=reason,
                 ))
 
@@ -196,8 +216,15 @@ def optimise(
         def _fee(value: float) -> float:
             return max(value * fee_rate, fee_minimum) if value > 0 else 0.0
 
+        # Settlement values an order as quantity * price, so the funding maths must use the
+        # same figure. est_value is a display estimate and can differ from it by the
+        # quantity rounding — reasoning in one while settling in the other is what left an
+        # order 1.5 cents short of settling.
+        def _gross(o: "Order") -> float:
+            return o.quantity * o.est_price
+
         # Fees are per order, not a blanket percentage of the total, because of the minimum.
-        proceeds = sum(o.est_value - _fee(o.est_value) for o in orders if o.side == "sell")
+        proceeds = sum(_gross(o) - _fee(_gross(o)) for o in orders if o.side == "sell")
         available = cash + proceeds
 
         for cls, drift in sorted(drifts.items(), key=lambda kv: kv[1], reverse=True):
@@ -240,10 +267,21 @@ def optimise(
                     f"— adviser to select manually."
                 )
                 continue
-            qty = buy_value / target_pos.price
+            # Size in quantity and then price it the way settlement will, stepping down a
+            # tick if the rounded quantity does not fit. Checking the value alone is not
+            # enough: the order carries the quantity, and that is what gets valued.
+            price = target_pos.price
+            qty = _floor_qty(buy_value / price)
+            tick = 1 / (10 ** _QTY_DP)
+            while qty > 0 and (qty * price) + _fee(qty * price) > available + 1e-9:
+                qty = _floor_qty(qty - tick)
+            if qty <= 0:
+                underfunded.append((cls, wanted, 0.0))
+                continue
+            buy_value = qty * price
             orders.append(Order(
                 side="buy", symbol=target_pos.symbol, name=target_pos.name,
-                instrument_id=target_pos.instrument_id, asset_class=cls, quantity=round(qty, 4),
+                instrument_id=target_pos.instrument_id, asset_class=cls, quantity=qty,
                 est_price=round(target_pos.price, 4), est_value=round(buy_value, 2),
                 account_id=target_pos.account_id, custodian=target_pos.custodian,
                 reason="Top up under-weight",

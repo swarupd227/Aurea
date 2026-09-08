@@ -106,6 +106,34 @@ def main() -> int:
               f" -> balance {balance:>12,.2f}")
     check("cash never goes negative once fees are charged", balance >= -0.01, True)
 
+    print("\n=== the settled cost never exceeds the value the order was funded against ===")
+    # Live failure: the AGG buy was sized against 54,435.11 of remaining cash but the
+    # quantity rounded up, so settlement recomputed the cost as 54,435.1254 and refused to
+    # overdraw by 1.5 cents. Orders are sized in value and carried as quantity; the
+    # round-trip must never grow.
+    positions = [
+        pos("MSFT", "equity", 628_534, 394.36, 120_000),
+        pos("AGG", "fixed_income", 98_325, 98.325, 100_000),
+        pos("VNQ", "property", 29_641, 98.805, 27_000),
+    ]
+    r = optimise(positions=positions,
+                 target_weights={"equity": 0.50, "fixed_income": 0.30, "property": 0.10,
+                                 "alternatives": 0.10},
+                 cash=CASH, drift_band=0.05, cgt_budget=20_000,
+                 fee_rate=RATE, fee_minimum=MINIMUM)
+    # Within a cent: est_value is rounded for display, quantity * price is what settles.
+    drifted = [o for o in r.orders
+               if abs(o.quantity * o.est_price - o.est_value) > 0.01]
+    check("every order's stated value matches what will settle", len(drifted), 0)
+
+    # And walk it the way settlement does, recomputing value from quantity throughout.
+    balance = CASH
+    for o in sorted(r.orders, key=lambda o: 0 if o.side == "sell" else 1):
+        gross = o.quantity * o.est_price          # what settlement actually charges
+        fee = max(gross * RATE, MINIMUM)
+        balance += (gross - fee) if o.side == "sell" else -(gross + fee)
+    check("settlement-recomputed walk never goes negative", balance >= -1e-9, True)
+
     print("\n=== a within-tolerance portfolio takes the other path cleanly ===")
     # The shortfall report runs whether or not a rebalance was needed. Declaring its list
     # inside the `if needs:` branch raised UnboundLocalError on exactly this path — every
