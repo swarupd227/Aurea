@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import * as api from "./api";
 
 interface ThreadSummary {
   id: string;
@@ -26,9 +27,7 @@ export default function WorkspacePage() {
     const loadThreads = async () => {
       try {
         setIsLoading(true);
-        const res = await fetch("/api/threads");
-        if (!res.ok) throw new Error("Failed to load threads");
-        const data = await res.json();
+        const data = await api.fetchThreads();
         setThreads(data.threads || []);
       } catch (err) {
         setError(
@@ -49,17 +48,10 @@ export default function WorkspacePage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/threads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          kind: selectedKind,
-          title: title.trim(),
-        }),
+      const data = await api.createThread({
+        kind: selectedKind,
+        title: title.trim(),
       });
-
-      if (!res.ok) throw new Error("Failed to create thread");
-      const data = await res.json();
 
       // Navigate to the new thread
       router.push(`/workspace/${data.id}`);
