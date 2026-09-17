@@ -101,7 +101,7 @@ export default function ClientDetail() {
       {showWhatIf && <PortfolioWhatIf allocation={t.by_asset_class} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        <StatTile label="Total portfolio" value={money(t.total_value)} accent="gold" />
+        <StatTile label="Total portfolio" value={money(t.total_value)} accent="warn" />
         <StatTile label="Accounts" value={brain.accounts.length} />
         <StatTile label="Entities & trusts" value={brain.entities.length} />
         <StatTile label="Goals" value={brain.goals.length} />

@@ -5,55 +5,212 @@
 :root {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Source Serif 4", Georgia, serif;
+
+  /* Dark mode by default — optimized for reduced eye strain and modern aesthetics */
+  --color-paper: #0f1418;
+  --color-surface: #1a1f26;
+  --color-border: #2d3139;
+  --color-border-soft: #1f252d;
+
+  --color-ink: #f0f2f5;
+  --color-ink-soft: #cbd5e1;
+  --color-ink-muted: #94a3b8;
+  --color-ink-faint: #64748b;
+
+  /* Single accent: yellow #FFDD00 for agent working, primary action, and focus */
+  --color-accent: #ffdd00;
+
+  /* Status colors optimized for dark mode */
+  --color-ok: #10b981;
+  --color-ok-bg: rgba(16, 185, 129, 0.1);
+  --color-warn: #f59e0b;
+  --color-warn-bg: rgba(245, 158, 11, 0.1);
+  --color-crit: #ef4444;
+  --color-crit-bg: rgba(239, 68, 68, 0.1);
+  --color-info: #3b82f6;
+  --color-info-bg: rgba(59, 130, 246, 0.1);
+
+  /* Shadows */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-lift: 0 12px 40px -16px rgba(0, 0, 0, 0.8);
+}
+
+/* Light mode for explicit choice or when dark is not preferred */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-paper: #f7f8fa;
+    --color-surface: #ffffff;
+    --color-border: #e3edf3;
+    --color-border-soft: #f2f6f9;
+
+    --color-ink: #0f1d29;
+    --color-ink-soft: #26384a;
+    --color-ink-muted: #5d6f80;
+    --color-ink-faint: #8b9aab;
+
+    /* Accent remains bright yellow even on light background */
+    --color-accent: #ffdd00;
+
+    /* Status colors for light mode */
+    --color-ok: #1f7a55;
+    --color-ok-bg: rgba(31, 122, 85, 0.1);
+    --color-warn: #b9852b;
+    --color-warn-bg: rgba(185, 133, 43, 0.1);
+    --color-crit: #b23b3b;
+    --color-crit-bg: rgba(178, 59, 59, 0.1);
+    --color-info: #2563eb;
+    --color-info-bg: rgba(37, 99, 235, 0.1);
+
+    --shadow-card: 0 1px 2px rgba(15, 29, 41, 0.04), 0 8px 24px -12px rgba(15, 29, 41, 0.12);
+    --shadow-lift: 0 12px 40px -16px rgba(15, 29, 41, 0.28);
+  }
+}
+
+/* Explicit light mode choice overrides OS preference */
+:root[data-theme="light"] {
+  --color-paper: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-border: #e3edf3;
+  --color-border-soft: #f2f6f9;
+
+  --color-ink: #0f1d29;
+  --color-ink-soft: #26384a;
+  --color-ink-muted: #5d6f80;
+  --color-ink-faint: #8b9aab;
+
+  --color-accent: #ffdd00;
+
+  --color-ok: #1f7a55;
+  --color-ok-bg: rgba(31, 122, 85, 0.1);
+  --color-warn: #b9852b;
+  --color-warn-bg: rgba(185, 133, 43, 0.1);
+  --color-crit: #b23b3b;
+  --color-crit-bg: rgba(178, 59, 59, 0.1);
+  --color-info: #2563eb;
+  --color-info-bg: rgba(37, 99, 235, 0.1);
+
+  --shadow-card: 0 1px 2px rgba(15, 29, 41, 0.04), 0 8px 24px -12px rgba(15, 29, 41, 0.12);
+  --shadow-lift: 0 12px 40px -16px rgba(15, 29, 41, 0.28);
 }
 
 html, body {
-  background: theme(colors.paper);
-  color: theme(colors.ink.DEFAULT);
+  background: var(--color-paper);
+  color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
 }
 
 @layer components {
   .card {
-    @apply bg-surface rounded-2xl shadow-card border border-navy-100/60;
+    @apply bg-surface rounded-2xl shadow-card border border-border;
   }
+
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium
            transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed
-           outline-none focus-visible:ring-2 focus-visible:ring-navy-600/40 focus-visible:ring-offset-2
+           outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2
            focus-visible:ring-offset-paper;
   }
+
+  /* Primary action: only use #FFDD00 for the main action button */
   .btn-primary {
-    @apply btn bg-navy-800 text-white hover:bg-navy-700 shadow-sm;
+    @apply btn bg-accent text-black hover:bg-yellow-300 font-semibold shadow-sm;
   }
-  .btn-gold {
-    @apply btn bg-gold text-ink hover:bg-gold-dark hover:text-white;
+
+  /* For non-primary actions that need visual weight, use the surface colors */
+  .btn-secondary {
+    @apply btn bg-surface text-ink border border-border hover:bg-border-soft;
   }
+
   .btn-ghost {
-    @apply btn bg-transparent text-ink-soft hover:bg-navy-50;
+    @apply btn bg-transparent text-ink-soft hover:bg-border-soft;
   }
+
   .btn-outline {
-    @apply btn border border-navy-200 bg-surface text-ink-soft hover:bg-navy-50;
+    @apply btn border border-border bg-surface text-ink-soft hover:bg-border-soft;
   }
+
+  /* Status variant buttons */
+  .btn-ok {
+    @apply btn bg-ok/15 text-ok hover:bg-ok/25 border border-ok/30;
+  }
+
+  .btn-warn {
+    @apply btn bg-warn/15 text-warn hover:bg-warn/25 border border-warn/30;
+  }
+
+  .btn-crit {
+    @apply btn bg-crit/15 text-crit hover:bg-crit/25 border border-crit/30;
+  }
+
   .input {
-    @apply w-full rounded-xl border border-navy-200 bg-surface px-3 py-2 text-sm
-           outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/15;
+    @apply w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-ink
+           outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition-colors;
   }
+
   .label {
     @apply block text-xs font-semibold uppercase tracking-wide text-ink-muted mb-1.5;
   }
+
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium;
   }
+
   .tile-label {
     @apply text-xs font-semibold uppercase tracking-wide text-ink-muted;
   }
+
+  /* Agent working state: use accent with subtle motion */
+  .agent-working {
+    @apply animate-pulse;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .agent-working {
+      @apply animate-none opacity-75;
+    }
+  }
 }
 
-/* Subtle scrollbars */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #d2dbe2; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: #b6c2cc; background-clip: content-box; }
+/* Scrollbar styling responsive to theme */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
 
-.fade-in { animation: fade 0.3s ease both; }
-@keyframes fade { from { opacity: 0; transform: translateY(4px);} to {opacity:1; transform:none;} }
+::-webkit-scrollbar-track {
+  background: var(--color-paper);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-soft);
+  background-clip: content-box;
+}
+
+/* Smooth fade in for arriving messages */
+.fade-in {
+  animation: fade 0.3s ease both;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in {
+    animation: none;
+  }
+}

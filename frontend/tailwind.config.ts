@@ -1,12 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  // Opt out of the default `media` strategy. Three pages (tax, behavioural,
-  // regulatory-countdown) carry ~249 stray `dark:` utilities that would otherwise
-  // activate from the OS preference and render their text unreadably (1.03:1 contrast
-  // on headings). Nothing adds a `dark` class, so those utilities stay inert until
-  // real dark mode is built across every page.
-  darkMode: "class",
+  darkMode: ["class", '[data-theme="dark"]'],
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -14,44 +9,58 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Institutional palette — calm, trustworthy, with a restrained gold accent.
+        // CSS custom properties are set in globals.css by theme, controlled by :root,
+        // @media (prefers-color-scheme), and [data-theme] attributes.
+        // This allows the tokens to respond to user choice, OS preference, and explicit toggles.
+        paper: "var(--color-paper)",
+        surface: "var(--color-surface)",
+        border: "var(--color-border)",
+        "border-soft": "var(--color-border-soft)",
+        accent: "var(--color-accent)",
+
+        // Text hierarchy
         ink: {
-          DEFAULT: "#0f1d29",
-          soft: "#26384a",
-          muted: "#5d6f80",
+          DEFAULT: "var(--color-ink)",
+          soft: "var(--color-ink-soft)",
+          muted: "var(--color-ink-muted)",
+          faint: "var(--color-ink-faint)",
         },
-        navy: {
-          50: "#f2f6f9",
-          100: "#e3edf3",
-          200: "#c2d6e3",
-          400: "#5d86a3",
-          600: "#2a5575",
-          700: "#1d4663",
-          800: "#163a52",
-          900: "#0f2b3d",
-        },
-        gold: {
-          DEFAULT: "#c8a35e",
-          soft: "#e3cd9d",
-          dark: "#a9853f",
-        },
-        paper: "#f7f8fa",
-        surface: "#ffffff",
-        positive: "#1f7a55",
-        caution: "#b9852b",
-        critical: "#b23b3b",
+
+        // Status semantic colors
+        ok: "var(--color-ok)",
+        "ok-bg": "var(--color-ok-bg)",
+        warn: "var(--color-warn)",
+        "warn-bg": "var(--color-warn-bg)",
+        crit: "var(--color-crit)",
+        "crit-bg": "var(--color-crit-bg)",
+        info: "var(--color-info)",
+        "info-bg": "var(--color-info-bg)",
+
+        // Legacy aliases for transition
+        positive: "var(--color-ok)",
+        caution: "var(--color-warn)",
+        critical: "var(--color-crit)",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         serif: ["var(--font-serif)", "Georgia", "serif"],
       },
       boxShadow: {
-        card: "0 1px 2px rgba(15,29,41,0.04), 0 8px 24px -12px rgba(15,29,41,0.12)",
-        lift: "0 12px 40px -16px rgba(15,29,41,0.28)",
+        card: "var(--shadow-card)",
+        lift: "var(--shadow-lift)",
       },
       borderRadius: {
         xl: "14px",
         "2xl": "20px",
+      },
+      animation: {
+        pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+      },
+      keyframes: {
+        pulse: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.5" },
+        },
       },
     },
   },

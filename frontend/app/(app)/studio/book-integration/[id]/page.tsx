@@ -58,9 +58,9 @@ export default function BatchDetail() {
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
             <StatTile label="Clients" value={stats.clients ?? "—"} />
             <StatTile label="Merges" value={stats.merges ?? "—"} />
-            <StatTile label="New clients" value={stats.new_clients ?? "—"} accent="gold" />
+            <StatTile label="New clients" value={stats.new_clients ?? "—"} accent="warn" />
             <StatTile label="Unmapped securities" value={stats.unmapped_securities ?? "—"} />
-            <StatTile label="Conflicts" value={stats.conflicts ?? "—"} accent={stats.conflicts ? "critical" : undefined} />
+            <StatTile label="Conflicts" value={stats.conflicts ?? "—"} accent={stats.conflicts ? "crit" : undefined} />
           </div>
 
           <div className="grid lg:grid-cols-2 gap-5">

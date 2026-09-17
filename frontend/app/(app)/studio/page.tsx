@@ -108,10 +108,10 @@ export default function Cockpit() {
         {/* Left — KPIs, live runs, feed */}
         <div className="lg:col-span-2 space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatTile label="Open actions" value={cap?.open_items ?? "—"} hint="Awaiting your decision" accent="gold" />
+            <StatTile label="Open actions" value={cap?.open_items ?? "—"} hint="Awaiting your decision" accent="warn" />
             <StatTile label="Decisions" value={cap?.decisions_made ?? "—"} hint="Approve / modify / dismiss" />
             <StatTile label="Agent runs" value={cap?.total_agent_runs ?? "—"} hint="Across the workforce" />
-            <StatTile label="Capacity" value={cap ? `${cap.estimated_hours_reclaimed}h` : "—"} hint="Reclaimed this period" accent="positive" />
+            <StatTile label="Capacity" value={cap ? `${cap.estimated_hours_reclaimed}h` : "—"} hint="Reclaimed this period" accent="ok" />
           </div>
 
           {/* Acted autonomously */}

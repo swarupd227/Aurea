@@ -27,10 +27,10 @@ export default function Capacity() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatTile label="Capacity reclaimed" value={`${cap.estimated_hours_reclaimed}h`} hint="Indicative time saved" accent="positive" />
+        <StatTile label="Capacity reclaimed" value={`${cap.estimated_hours_reclaimed}h`} hint="Indicative time saved" accent="ok" />
         <StatTile label="Agent runs" value={cap.total_agent_runs} hint="Across the workforce" />
         <StatTile label="Decisions made" value={cap.decisions_made} hint="Approved / modified / dismissed" />
-        <StatTile label="Open items" value={cap.open_items} hint="Awaiting a human" accent="gold" />
+        <StatTile label="Open items" value={cap.open_items} hint="Awaiting a human" accent="warn" />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">

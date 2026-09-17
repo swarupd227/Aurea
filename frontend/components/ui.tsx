@@ -31,12 +31,13 @@ export function StatTile({
   label: string;
   value: ReactNode;
   hint?: string;
-  accent?: "gold" | "positive" | "critical";
+  accent?: "ok" | "warn" | "crit" | "info";
 }) {
   const color =
-    accent === "positive" ? "text-positive"
-    : accent === "critical" ? "text-critical"
-    : accent === "gold" ? "text-gold-dark"
+    accent === "ok" ? "text-ok"
+    : accent === "crit" ? "text-crit"
+    : accent === "warn" ? "text-warn"
+    : accent === "info" ? "text-info"
     : "text-ink";
   return (
     <div className="card p-4">
@@ -48,9 +49,9 @@ export function StatTile({
 }
 
 const TIER_STYLES: Record<string, string> = {
-  tier_1: "bg-navy-100 text-navy-800",
-  tier_2: "bg-gold-soft/50 text-gold-dark",
-  tier_3: "bg-[#efe2f0] text-[#6b4b78]",
+  tier_1: "bg-info-bg text-info",
+  tier_2: "bg-accent/20 text-accent",
+  tier_3: "bg-warn-bg text-warn",
 };
 const TIER_LABELS: Record<string, string> = {
   tier_1: "Tier 1 · Assistive",
@@ -58,44 +59,44 @@ const TIER_LABELS: Record<string, string> = {
   tier_3: "Tier 3 · Bounded",
 };
 export function TierBadge({ tier }: { tier: string }) {
-  return <span className={`chip ${TIER_STYLES[tier] || "bg-navy-100 text-navy-800"}`}>{TIER_LABELS[tier] || tier}</span>;
+  return <span className={`chip ${TIER_STYLES[tier] || "bg-surface text-ink-muted"}`}>{TIER_LABELS[tier] || tier}</span>;
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  proposed: "bg-gold-soft/40 text-gold-dark",
-  awaiting_approval: "bg-gold-soft/40 text-gold-dark",
-  approved: "bg-positive/10 text-positive",
-  executed: "bg-positive/10 text-positive",
-  modified: "bg-navy-100 text-navy-700",
-  dismissed: "bg-navy-50 text-ink-muted",
-  rolled_back: "bg-navy-100 text-ink-muted",
-  completed: "bg-positive/10 text-positive",
-  failed: "bg-critical/10 text-critical",
-  paused: "bg-critical/10 text-critical",
+  proposed: "bg-info-bg text-info",
+  awaiting_approval: "bg-info-bg text-info",
+  approved: "bg-ok-bg text-ok",
+  executed: "bg-ok-bg text-ok",
+  modified: "bg-surface text-ink-muted border border-border",
+  dismissed: "bg-surface text-ink-muted border border-border",
+  rolled_back: "bg-warn-bg text-warn",
+  completed: "bg-ok-bg text-ok",
+  failed: "bg-crit-bg text-crit",
+  paused: "bg-crit-bg text-crit",
 };
 export function StatusBadge({ status }: { status: string }) {
-  return <span className={`chip ${STATUS_STYLES[status] || "bg-navy-100 text-navy-700"}`}>{titleCase(status)}</span>;
+  return <span className={`chip ${STATUS_STYLES[status] || "bg-surface text-ink-muted"}`}>{titleCase(status)}</span>;
 }
 
 const SEV_STYLES: Record<string, string> = {
-  high: "bg-critical/10 text-critical",
-  medium: "bg-caution/10 text-caution",
-  low: "bg-navy-100 text-navy-700",
-  info: "bg-navy-50 text-ink-muted",
+  high: "bg-crit-bg text-crit",
+  medium: "bg-warn-bg text-warn",
+  low: "bg-info-bg text-info",
+  info: "bg-surface text-ink-muted border border-border",
 };
 export function SeverityBadge({ severity }: { severity: string }) {
-  return <span className={`chip ${SEV_STYLES[severity] || "bg-navy-100"}`}>{titleCase(severity)}</span>;
+  return <span className={`chip ${SEV_STYLES[severity] || "bg-surface text-ink-muted"}`}>{titleCase(severity)}</span>;
 }
 
 export function Segment({ children }: { children: string }) {
-  return <span className="chip bg-navy-50 text-ink-soft">{titleCase(children)}</span>;
+  return <span className="chip bg-surface text-ink-soft border border-border">{titleCase(children)}</span>;
 }
 
 export function Spinner({ label }: { label?: string }) {
   return (
     <div className="flex items-center gap-3 text-ink-muted text-sm py-8 justify-center"
          data-testid="loading" role="status" aria-live="polite">
-      <span className="h-4 w-4 rounded-full border-2 border-navy-200 border-t-navy-700 animate-spin" />
+      <span className="h-4 w-4 rounded-full border-2 border-border border-t-accent animate-spin" />
       {label || "Loading…"}
     </div>
   );
@@ -128,7 +129,7 @@ export function ErrorState({
 }) {
   return (
     <div className="text-center text-sm py-10" role="alert">
-      <div className="flex justify-center mb-3 text-caution">
+      <div className="flex justify-center mb-3 text-crit">
         <AlertTriangle size={22} aria-hidden="true" />
       </div>
       <div className="text-ink font-medium">Couldn&rsquo;t load {what}</div>
@@ -175,10 +176,10 @@ export function AsyncBoundary({
 
 export function ConfidenceBar({ value }: { value: number }) {
   const pctVal = Math.round((value || 0) * 100);
-  const color = pctVal >= 80 ? "bg-positive" : pctVal >= 50 ? "bg-caution" : "bg-critical";
+  const color = pctVal >= 80 ? "bg-ok" : pctVal >= 50 ? "bg-warn" : "bg-crit";
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-32 rounded-full bg-navy-100 overflow-hidden">
+      <div className="h-1.5 w-32 rounded-full bg-border overflow-hidden">
         <div className={`h-full ${color}`} style={{ width: `${pctVal}%` }} />
       </div>
       <span className="text-xs text-ink-muted tabular-nums">{pctVal}%</span>
@@ -208,9 +209,9 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
 export function SkeletonCard({ rows = 3 }: { rows?: number }) {
   return (
     <div className="card p-5 space-y-3 animate-pulse">
-      <div className="h-5 w-1/3 rounded-md bg-navy-100" />
+      <div className="h-5 w-1/3 rounded-md bg-border" />
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="h-4 rounded-md bg-navy-50" style={{ width: `${85 - i * 12}%` }} />
+        <div key={i} className="h-4 rounded-md bg-border-soft" style={{ width: `${85 - i * 12}%` }} />
       ))}
     </div>
   );
