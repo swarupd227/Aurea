@@ -5,6 +5,7 @@ import uuid
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
@@ -136,6 +137,32 @@ async def create_thread(
         "subject_id": str(thread.subject_id) if thread.subject_id else None,
         "title": thread.title,
         "created_at": thread.created_at.isoformat(),
+    }
+
+
+@router.get("")
+async def list_threads(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """List all threads for the current user's firm."""
+
+    stmt = select(Thread).where(Thread.firm_id == user.firm_id).order_by(Thread.updated_at.desc())
+    result = await session.execute(stmt)
+    threads = result.scalars().all()
+
+    return {
+        "threads": [
+            {
+                "id": str(t.id),
+                "kind": t.kind.value,
+                "subject_id": str(t.subject_id) if t.subject_id else None,
+                "title": t.title,
+                "created_at": t.created_at.isoformat(),
+                "updated_at": t.updated_at.isoformat(),
+            }
+            for t in threads
+        ]
     }
 
 
