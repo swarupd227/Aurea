@@ -1,10 +1,8 @@
-/**API client for workspace endpoints — uses NEXT_PUBLIC_API_BASE to reach backend.*/
+/**API client for workspace endpoints — reaches backend.*/
 
 const getApiBase = () => {
-  if (typeof window !== 'undefined') {
-    return process.env.NEXT_PUBLIC_API_BASE || '';
-  }
-  return process.env.NEXT_PUBLIC_API_BASE || '';
+  // Hardcoded backend URL for deployed environment
+  return 'https://aurea-backend.jollyhill-438f02ba.australiaeast.azurecontainerapps.io';
 };
 
 export async function fetchThreads() {
