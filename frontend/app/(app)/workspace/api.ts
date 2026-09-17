@@ -1,14 +1,9 @@
-/**API client for workspace endpoints — reaches backend.*/
+/**Workspace API client — thin wrapper over the shared, token-aware `api()` client.*/
 
-const getApiBase = () => {
-  // Hardcoded backend URL for deployed environment
-  return 'https://aurea-backend.jollyhill-438f02ba.australiaeast.azurecontainerapps.io';
-};
+import { api } from "@/lib/api";
 
 export async function fetchThreads() {
-  const res = await fetch(`${getApiBase()}/api/threads`);
-  if (!res.ok) throw new Error("Failed to load threads");
-  return res.json();
+  return api<{ threads: any[] }>("/api/threads");
 }
 
 export async function createThread(data: {
@@ -16,46 +11,22 @@ export async function createThread(data: {
   title: string;
   subject_id?: string;
 }) {
-  const res = await fetch(`${getApiBase()}/api/threads`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error("Failed to create thread");
-  return res.json();
+  return api("/api/threads", { body: data });
 }
 
 export async function fetchThread(threadId: string) {
-  const res = await fetch(`${getApiBase()}/api/threads/${threadId}`);
-  if (!res.ok) throw new Error("Failed to load thread");
-  return res.json();
+  return api(`/api/threads/${threadId}`);
 }
 
-export async function sendMessage(
-  threadId: string,
-  text: string
-) {
-  const res = await fetch(`${getApiBase()}/api/threads/${threadId}/send`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  if (!res.ok) throw new Error("Failed to send message");
-  return res.json();
+export async function sendMessage(threadId: string, text: string) {
+  return api(`/api/threads/${threadId}/send`, { body: { text } });
 }
 
 export async function confirmPendingAction(
   pendingActionId: string,
   confirmed: boolean
 ) {
-  const res = await fetch(
-    `${getApiBase()}/api/threads/pending-actions/${pendingActionId}/confirm`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirmed }),
-    }
-  );
-  if (!res.ok) throw new Error("Failed to confirm action");
-  return res.json();
+  return api(`/api/threads/pending-actions/${pendingActionId}/confirm`, {
+    body: { confirmed },
+  });
 }
