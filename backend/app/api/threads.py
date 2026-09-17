@@ -2,18 +2,17 @@
 from __future__ import annotations
 
 import uuid
-from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
-from app.db import get_session
+from app.core.db import get_db
+from app.core.security import get_current_user
 from app.llm.gateway import Gateway, ConfirmationRequiredError, RoleForbiddenError, GatewayError
 from app.models.enums import UserRole
+from app.models.identity import User
 from app.models.thread import Thread, ThreadKind
-from app.models.user import User
 
 router = APIRouter(prefix="/api/threads", tags=["threads"])
 
@@ -23,7 +22,7 @@ async def send_message(
     thread_id: uuid.UUID,
     message: dict,
     user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Send a message to a thread and process the orchestrator response.
@@ -78,7 +77,7 @@ async def confirm_pending_action(
     pending_action_id: uuid.UUID,
     confirm: dict,
     user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Confirm or reject a pending state-changing action.
@@ -105,7 +104,7 @@ async def confirm_pending_action(
 async def create_thread(
     thread_data: dict,
     user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ) -> dict:
     """Create a new thread."""
 
@@ -170,7 +169,7 @@ async def list_threads(
 async def get_thread(
     thread_id: uuid.UUID,
     user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ) -> dict:
     """Fetch a thread with its messages."""
 
