@@ -142,7 +142,7 @@ async def create_thread(
 @router.get("")
 async def list_threads(
     user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ) -> dict:
     """List all threads for the current user's firm."""
 

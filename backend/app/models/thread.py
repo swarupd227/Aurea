@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import JSON, ForeignKey, String, Text, Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.core.db import Base
 from app.models.enums import UserRole
 
 
