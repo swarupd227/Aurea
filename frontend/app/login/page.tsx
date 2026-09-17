@@ -90,10 +90,10 @@ export default function LoginPage() {
   if (mfaToken) {
     return (
       <div className="min-h-screen grid lg:grid-cols-2">
-        <div className="hidden lg:flex flex-col justify-between bg-navy-900 text-white p-12 relative overflow-hidden">
+        <div className="hidden lg:flex flex-col justify-between text-white p-12 relative overflow-hidden" style={{ background: "#0f1418" }}>
           <div
             className="absolute inset-0 opacity-20"
-            style={{ background: "radial-gradient(700px circle at 20% 10%, #2a5575, transparent 60%), radial-gradient(600px circle at 80% 90%, #c8a35e44, transparent 55%)" }}
+            style={{ background: "radial-gradient(700px circle at 20% 10%, #2a5575, transparent 60%), radial-gradient(600px circle at 80% 90%, #ffdd0044, transparent 55%)" }}
           />
           <div className="relative">
             <div className="flex items-center gap-3">
@@ -102,11 +102,11 @@ export default function LoginPage() {
             </div>
           </div>
           <div className="relative max-w-md">
-            <ShieldCheck size={40} className="text-gold mb-4 opacity-80" />
+            <ShieldCheck size={40} className="text-white/90 mb-4 opacity-80" />
             <h1 className="font-serif text-4xl leading-tight">Two-factor authentication</h1>
-            <p className="mt-4 text-navy-200 text-lg">Your account is protected with TOTP-based MFA.</p>
+            <p className="mt-4 text-white/70 text-lg">Your account is protected with TOTP-based MFA.</p>
           </div>
-          <div className="relative text-navy-200/70 text-xs flex gap-4">
+          <div className="relative text-white/60 text-xs flex gap-4">
             {["Astra Core", "Atlas", "Studio", "Canvas", "Provenance", "Conduit"].map((c) => (
               <span key={c}>{c}</span>
             ))}
@@ -115,8 +115,8 @@ export default function LoginPage() {
 
         <div className="flex items-center justify-center p-8 bg-paper">
           <div className="w-full max-w-sm">
-            <div className="flex items-center gap-2 mb-6 text-navy-800">
-              <ShieldCheck size={22} className="text-gold" />
+            <div className="flex items-center gap-2 mb-6 text-ink">
+              <ShieldCheck size={22} className="text-ink-soft" />
               <span className="text-xl font-semibold text-ink">Verify your identity</span>
             </div>
             <p className="text-sm text-ink-muted mb-6">
@@ -157,10 +157,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* Brand panel */}
-      <div className="hidden lg:flex flex-col justify-between bg-navy-900 text-white p-12 relative overflow-hidden">
+      <div className="hidden lg:flex flex-col justify-between text-white p-12 relative overflow-hidden" style={{ background: "#0f1418" }}>
         <div
           className="absolute inset-0 opacity-20"
-          style={{ background: "radial-gradient(700px circle at 20% 10%, #2a5575, transparent 60%), radial-gradient(600px circle at 80% 90%, #c8a35e44, transparent 55%)" }}
+          style={{ background: "radial-gradient(700px circle at 20% 10%, #2a5575, transparent 60%), radial-gradient(600px circle at 80% 90%, #ffdd0044, transparent 55%)" }}
         />
         <div className="relative">
           <div className="flex items-center gap-3">
@@ -170,14 +170,14 @@ export default function LoginPage() {
         </div>
         <div className="relative max-w-md">
           <h1 className="font-serif text-4xl leading-tight">The Wealth Intelligence Platform</h1>
-          <p className="mt-4 text-navy-200 text-lg">Truly personal advice, at scale.</p>
-          <p className="mt-6 text-navy-200/80 text-sm leading-relaxed">
+          <p className="mt-4 text-white/70 text-lg">Truly personal advice, at scale.</p>
+          <p className="mt-6 text-white/60 text-sm leading-relaxed">
             A governed agentic workforce over one unified client brain — with the adviser
             unmistakably in command. Every recommendation shows its reasoning, its sources and its
             confidence, recorded to an immutable decision ledger.
           </p>
         </div>
-        <div className="relative text-navy-200/70 text-xs flex gap-4">
+        <div className="relative text-white/50 text-xs flex gap-4">
           {["Astra Core", "Atlas", "Studio", "Canvas", "Provenance", "Conduit"].map((c) => (
             <span key={c}>{c}</span>
           ))}
@@ -187,7 +187,7 @@ export default function LoginPage() {
       {/* Form */}
       <div className="flex items-center justify-center p-8 bg-paper">
         <div className="w-full max-w-sm">
-          <div className="lg:hidden flex items-center gap-2 mb-8 text-navy-800">
+          <div className="lg:hidden flex items-center gap-2 mb-8 text-ink">
             <Mark dark /> <span className="text-xl font-semibold">Astra for Wealth</span>
           </div>
           <h2 className="text-2xl font-semibold text-ink">Sign in</h2>
@@ -224,7 +224,7 @@ export default function LoginPage() {
                   data-testid={`login-persona-${d.role.toLowerCase()}`}
                   onClick={() => pickPersona(d)}
                   disabled={busy}
-                  className="text-left rounded-lg border border-navy-100 px-3 py-2 hover:border-gold/50 hover:bg-gold-soft/10 transition disabled:opacity-50"
+                  className="text-left rounded-lg border border-border px-3 py-2 hover:border-border-soft hover:bg-surface transition disabled:opacity-50"
                 >
                   <div className="text-sm font-medium text-ink">{d.role}</div>
                   <div className="text-xs text-ink-muted">{d.desc}</div>
