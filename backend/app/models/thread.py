@@ -69,12 +69,17 @@ class Thread(Base):
     is_archived: Mapped[bool] = mapped_column(default=False)
 
     # Relationships
-    messages: Mapped[list[Message]] = relationship("Message", back_populates="thread", cascade="all, delete-orphan")
+    messages: Mapped[list[ThreadMessage]] = relationship("ThreadMessage", back_populates="thread", cascade="all, delete-orphan")
     pending_actions: Mapped[list[PendingAction]] = relationship("PendingAction", back_populates="thread", cascade="all, delete-orphan")
 
 
-class Message(Base):
-    """A single message in a thread."""
+class ThreadMessage(Base):
+    """A single message in a conversation thread with Astra.
+
+    Named ThreadMessage (not Message) to avoid colliding with the existing
+    client_experience.Message class in SQLAlchemy's declarative registry —
+    two classes named Message under the same Base breaks mapper configuration
+    for every model, not just these two."""
     __tablename__ = "messages"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -103,6 +108,7 @@ class Message(Base):
     thread: Mapped[Thread] = relationship("Thread", back_populates="messages")
 
 
+
 class ToolCall(Base):
     """A tool invocation made during a message."""
     __tablename__ = "tool_calls"
@@ -126,7 +132,7 @@ class ToolCall(Base):
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Relationship back to message
-    message: Mapped[Message] = relationship("Message", back_populates="tool_calls")
+    message: Mapped[ThreadMessage] = relationship("ThreadMessage", back_populates="tool_calls")
 
 
 class PendingAction(Base):

@@ -26,7 +26,7 @@ from app.core.config import settings
 from app.core.tools import ToolChangeState, Tool, get_tool, validate_tool_call, TOOLS
 from app.models.enums import UserRole
 from app.models.thread import (
-    Thread, ThreadKind, Message, MessageRole, ToolCall, ToolCallStatus,
+    Thread, ThreadKind, ThreadMessage, MessageRole, ToolCall, ToolCallStatus,
     PendingAction, PendingActionStatus,
 )
 from app.llm.executors import ToolExecutors
@@ -94,7 +94,7 @@ class Gateway:
             raise GatewayError(f"Thread {thread_id} not found or access denied")
 
         # Store the user's message
-        user_msg = Message(
+        user_msg = ThreadMessage(
             thread_id=thread_id,
             role=MessageRole.USER,
             text=text,
@@ -107,7 +107,7 @@ class Gateway:
         astra_response = await self._call_orchestrator(thread_id)
 
         # Store Astra's message
-        astra_msg = Message(
+        astra_msg = ThreadMessage(
             thread_id=thread_id,
             role=MessageRole.ASTRA,
             text=astra_response.get("text", ""),
@@ -139,7 +139,7 @@ class Gateway:
     async def _process_tool_calls(
         self,
         thread_id: uuid.UUID,
-        message: Message,
+        message: ThreadMessage,
         tool_calls: list[dict[str, Any]],
     ) -> None:
         """Process and validate tool calls from Astra."""
@@ -303,9 +303,9 @@ Respond naturally. When you decide to call a tool, include it as a JSON object:
 You can include multiple tool calls or none at all, depending on what the conversation needs."""
 
         # Get the latest user message
-        messages_stmt = select(Message).where(
-            (Message.thread_id == thread_id) & (Message.role == MessageRole.USER)
-        ).order_by(Message.created_at.desc())
+        messages_stmt = select(ThreadMessage).where(
+            (ThreadMessage.thread_id == thread_id) & (ThreadMessage.role == MessageRole.USER)
+        ).order_by(ThreadMessage.created_at.desc())
         result = await self.session.execute(messages_stmt)
         latest_user_msg = result.scalars().first()
 
