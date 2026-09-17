@@ -26,6 +26,7 @@ from app.models.thread import (
     Thread, ThreadKind, Message, MessageRole, ToolCall, ToolCallStatus,
     PendingAction, PendingActionStatus,
 )
+from app.llm.executors import ToolExecutors
 
 
 class GatewayError(Exception):
@@ -241,26 +242,13 @@ class Gateway:
     async def _execute_tool(self, tool_key: str, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool and return its result."""
 
-        # This is a stub — actual tool execution will be implemented
-        # for each tool (read_household, execute_orders, etc.)
-        # For now, return a mock result
-
         tool = get_tool(tool_key)
         if not tool:
             raise GatewayError(f"Tool '{tool_key}' not found")
 
-        # Route to the actual tool executor
-        # (To be implemented: mapping each tool_key to its handler)
-        if tool_key == "read_household":
-            # Would call the actual household_brain function here
-            return {"message": f"Fetching household {inputs.get('household_id')}"}
-
-        elif tool_key == "execute_orders":
-            # Would call the actual trade execution here
-            return {"message": f"Executing orders on mandate {inputs.get('mandate_id')}"}
-
-        else:
-            return {"message": f"Tool '{tool_key}' executed (stub)"}
+        # Delegate to the executor layer
+        executors = ToolExecutors(self.session, self.user_id, self.role, self.firm_id)
+        return await executors.execute(tool_key, inputs)
 
     async def _call_orchestrator(self, thread_id: uuid.UUID) -> dict[str, Any]:
         """Call Astra (the LLM) to decide what tools to invoke next."""
