@@ -14,19 +14,23 @@ exactly-once execution of state-changing tools.
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, AsyncGenerator
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tools import ToolChangeState, Tool, get_tool, validate_tool_call
+from app.core.config import settings
+from app.core.tools import ToolChangeState, Tool, get_tool, validate_tool_call, TOOLS
 from app.models.enums import UserRole
 from app.models.thread import (
     Thread, ThreadKind, Message, MessageRole, ToolCall, ToolCallStatus,
     PendingAction, PendingActionStatus,
 )
 from app.llm.executors import ToolExecutors
+from app.llm.service import llm_service
 
 
 class GatewayError(Exception):
@@ -253,11 +257,132 @@ class Gateway:
     async def _call_orchestrator(self, thread_id: uuid.UUID) -> dict[str, Any]:
         """Call Astra (the LLM) to decide what tools to invoke next."""
 
-        # This is a stub — actual LLM integration comes in Phase 3
-        # For now, return a simple acknowledgment
+        # Fetch thread and build message history
+        thread = await self.session.get(Thread, thread_id)
+        if not thread:
+            return {"text": "Thread not found.", "tool_calls": [], "suggestions": []}
 
-        return {
-            "text": "I've received your message. Ready to help.",
-            "tool_calls": [],
-            "suggestions": ["View household", "Check portfolio"],
-        }
+        # Build message history for context
+        history = []
+        for msg in thread.messages[-5:]:  # Last 5 messages for context
+            role = "user" if msg.role == MessageRole.USER else "assistant"
+            history.append(f"{role}: {msg.text}")
+
+        history_text = "\n".join(history) if history else "(no prior messages)"
+
+        # Build tool catalogue for the LLM
+        tool_descriptions = self._build_tool_descriptions()
+
+        # System prompt for Astra
+        system_prompt = f"""You are Astra, the wealth intelligence orchestrator for Astra for Wealth.
+
+Your role is to help users manage their wealth through conversation. You have access to tools that can:
+- Read client data (households, portfolios, holdings)
+- Make recommendations (approve, modify, dismiss, revise)
+- Execute trades (buy/sell orders)
+- Update goals
+
+**Important:**
+- You always respond conversationally and naturally.
+- When you need to take an action, you MUST include tool calls in your response.
+- Tool calls should be formatted as JSON objects in your response.
+- Only call tools that the user's role permits.
+- Be concise and focused.
+
+**Available Tools:**
+{tool_descriptions}
+
+**Thread History:**
+{history_text}
+
+**User's Role:** {self.role.value}
+
+Respond naturally. When you decide to call a tool, include it as a JSON object:
+{{"tool_key": "tool_name", "inputs": {{...}}}}
+
+You can include multiple tool calls or none at all, depending on what the conversation needs."""
+
+        # Get the latest user message
+        messages_stmt = select(Message).where(
+            (Message.thread_id == thread_id) & (Message.role == MessageRole.USER)
+        ).order_by(Message.created_at.desc())
+        result = await self.session.execute(messages_stmt)
+        latest_user_msg = result.scalars().first()
+
+        if not latest_user_msg:
+            return {"text": "No message found.", "tool_calls": [], "suggestions": []}
+
+        prompt = latest_user_msg.text
+
+        # Call the LLM
+        try:
+            llm_result = await llm_service.generate(
+                task="advice",
+                system=system_prompt,
+                prompt=prompt,
+                max_tokens=1500,
+                temperature=0.5,
+            )
+
+            # Parse tool calls from the response
+            tool_calls = self._extract_tool_calls(llm_result.text)
+
+            return {
+                "text": self._clean_response(llm_result.text, tool_calls),
+                "tool_calls": tool_calls,
+                "suggestions": ["Continue", "Show details", "Confirm action"],
+            }
+        except Exception as e:
+            # Fallback response on LLM failure
+            return {
+                "text": f"I encountered an issue: {str(e)}. Please try again.",
+                "tool_calls": [],
+                "suggestions": ["Retry", "Cancel"],
+            }
+
+    def _build_tool_descriptions(self) -> str:
+        """Build a human-readable description of available tools."""
+        descriptions = []
+        for tool_key in sorted(TOOLS.keys()):
+            tool = TOOLS[tool_key]
+            if self.role not in tool.roles_required:
+                continue  # Skip tools this role can't use
+
+            inputs_desc = ", ".join(
+                f"{inp.name}" for inp in tool.inputs
+            )
+            descriptions.append(
+                f"- **{tool.name}** ({tool_key}): {tool.description}\n"
+                f"  Inputs: {inputs_desc or '(none)'}"
+            )
+
+        return "\n".join(descriptions)
+
+    def _extract_tool_calls(self, text: str) -> list[dict[str, Any]]:
+        """Extract JSON tool calls from LLM response."""
+        tool_calls = []
+        lines = text.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            if line.startswith("{") and "tool_key" in line:
+                try:
+                    obj = json.loads(line)
+                    if "tool_key" in obj and "inputs" in obj:
+                        tool_calls.append(obj)
+                except json.JSONDecodeError:
+                    pass  # Skip malformed JSON
+
+        return tool_calls
+
+    def _clean_response(self, text: str, tool_calls: list[dict[str, Any]]) -> str:
+        """Remove JSON tool calls from the response text."""
+        lines = []
+        for line in text.split("\n"):
+            line_strip = line.strip()
+            # Skip lines that look like tool call JSON
+            if line_strip.startswith("{") and "tool_key" in line_strip:
+                continue
+            lines.append(line)
+
+        return "\n".join(lines).strip()
