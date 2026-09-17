@@ -40,6 +40,14 @@ class AgentPausedError(Exception):
     pass
 
 
+class AlreadyDecidedError(Exception):
+    """The recommendation left PROPOSED before this decision could take it."""
+
+    def __init__(self, status: str):
+        super().__init__(f"Already {status}")
+        self.status = status
+
+
 async def run_agent(
     session: AsyncSession,
     *,
@@ -214,8 +222,22 @@ async def decide(
     note: str | None = None,
     modified_payload: dict | None = None,
 ) -> Recommendation:
-    """Record a human decision at the HITL gate, act if approved, write to the ledger."""
-    rec = recommendation
+    """Record a human decision at the HITL gate, act if approved, write to the ledger.
+
+    Exactly once. Approving a rebalancing proposal creates and settles orders, so two
+    approvals arriving together must not both execute. The row is locked and its status
+    re-read under the lock: the first decision takes it, and any concurrent one finds it no
+    longer PROPOSED and is refused. The check lives here rather than in the route so that
+    every caller — the page, and later the conversation gateway — gets it.
+    """
+    rec = (await session.execute(
+        select(Recommendation)
+        .where(Recommendation.id == recommendation.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )).scalar_one()
+    if rec.status != RecommendationStatus.PROPOSED:
+        raise AlreadyDecidedError(rec.status)
     rec.decided_by = actor_id
     rec.decided_at = utcnow()
     rec.decision_note = note
@@ -290,7 +312,13 @@ async def rollback(
     note: str | None = None,
 ) -> Recommendation:
     """Reverse an approved/modified/executed recommendation and write a ledger entry."""
-    rec = recommendation
+    # Locked for the same reason as decide(): two rollbacks must not both cancel orders.
+    rec = (await session.execute(
+        select(Recommendation)
+        .where(Recommendation.id == recommendation.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )).scalar_one()
     if rec.status not in (
         RecommendationStatus.APPROVED, RecommendationStatus.MODIFIED, RecommendationStatus.EXECUTED
     ):

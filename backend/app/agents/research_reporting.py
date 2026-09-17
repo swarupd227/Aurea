@@ -23,7 +23,7 @@ class ResearchReportingAgent(BaseAgent):
 
     async def sense(self, ctx: AgentContext) -> dict:
         hid = ctx.subject.id
-        brain = await household_brain(ctx.session, hid) if hid else None
+        brain = await household_brain(ctx.session, hid, firm_id=ctx.firm.id) if hid else None
         if not brain:
             return {"applicable": False}
         citations = await knowledge.retrieve(ctx.session, ctx.firm.id,

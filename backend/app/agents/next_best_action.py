@@ -33,7 +33,7 @@ class NextBestActionAgent(BaseAgent):
             scope = "household"
         brains = []
         for hid in ids:
-            brain = await household_brain(s, hid)
+            brain = await household_brain(s, hid, firm_id=ctx.firm.id)
             if brain:
                 brains.append(brain)
         return {"scope": scope, "brains": brains}

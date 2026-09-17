@@ -280,8 +280,10 @@ def _coaching_advice(decision_profile: dict, bias_signals: list[dict]) -> list[d
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-async def for_household(session: AsyncSession, household_id: uuid.UUID) -> dict | None:
-    brain = await household_brain(session, household_id)
+async def for_household(
+    session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID
+) -> dict | None:
+    brain = await household_brain(session, household_id, firm_id=firm_id)
     if not brain:
         return None
 
@@ -370,7 +372,7 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict:
 
     for h in households:
         hh_id = uuid.UUID(h["id"])
-        result = await for_household(session, hh_id)
+        result = await for_household(session, hh_id, firm_id=firm_id)
         if not result:
             continue
         results.append(result)

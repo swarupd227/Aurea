@@ -99,7 +99,7 @@ class IPSDraftingAgent(BaseAgent):
             ids = [h["id"] for h in await list_households(s, ctx.firm.id)]
         else:
             ids = [str(ctx.subject.id)]
-        brains = [b for hid in ids if (b := await household_brain(s, hid))]
+        brains = [b for hid in ids if (b := await household_brain(s, hid, firm_id=ctx.firm.id))]
         return {"brains": brains}
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:

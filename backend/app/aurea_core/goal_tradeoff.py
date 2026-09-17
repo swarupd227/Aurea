@@ -256,6 +256,7 @@ async def for_household(
     session,
     household_id,
     *,
+    firm_id,
     priority_overrides: dict[str, int] | None = None,   # goal_id -> new rank
     goal_overrides: dict[str, dict] | None = None,       # goal_id -> {years_delta, target_scale, extra_contribution}
     annual_income: float | None = None,
@@ -264,7 +265,7 @@ async def for_household(
     from app.aurea_core.graph import household_brain
     from app.core.db import utcnow
 
-    brain = await household_brain(session, household_id)
+    brain = await household_brain(session, household_id, firm_id=firm_id)
     if not brain:
         return None
 

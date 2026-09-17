@@ -28,8 +28,11 @@ async def households(firm: Firm = Depends(current_firm), db: AsyncSession = Depe
 async def household_detail(
     household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    brain = await household_brain(db, household_id)
-    if not brain or brain["household"]["id"] != str(household_id):
+    # Scoped to the caller's firm. The check that used to sit here compared the household's
+    # id with the id that fetched it, so it could never fail; another firm's household
+    # came back in full.
+    brain = await household_brain(db, household_id, firm_id=firm.id)
+    if not brain:
         raise HTTPException(status_code=404, detail="Household not found")
     return brain
 
@@ -39,7 +42,7 @@ async def household_planning(
     household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
     """Goals-based projections, whole-portfolio risk and stress testing for a household."""
-    brain = await household_brain(db, household_id)
+    brain = await household_brain(db, household_id, firm_id=firm.id)
     if not brain:
         raise HTTPException(status_code=404, detail="Household not found")
     total = brain["totals"]["total_value"]
@@ -84,7 +87,7 @@ async def household_retirement(
         "retirement_age": retirement_age, "longevity_age": longevity_age,
         "annual_income": annual_income, "annual_contribution": annual_contribution,
     }.items() if v is not None}
-    plan = await retirement.for_household(db, household_id, overrides=overrides)
+    plan = await retirement.for_household(db, household_id, firm_id=firm.id, overrides=overrides)
     if not plan:
         raise HTTPException(status_code=404, detail="Household not found")
     return plan
@@ -97,7 +100,7 @@ async def household_estate(
     """Estate & succession analysis — wealth breakdown, trust governance, heir readiness, succession gaps."""
     from app.agents.estate_succession import _governance_score, _succession_gaps
 
-    brain = await household_brain(db, household_id)
+    brain = await household_brain(db, household_id, firm_id=firm.id)
     if not brain:
         raise HTTPException(status_code=404, detail="Household not found")
 
@@ -275,6 +278,7 @@ async def household_goal_tradeoff(
     """
     plan = await goal_tradeoff.for_household(
         db, household_id,
+        firm_id=firm.id,
         priority_overrides=body.get("priorities"),
         goal_overrides=body.get("goal_overrides"),
         annual_income=body.get("annual_income"),
@@ -289,7 +293,7 @@ async def household_behavioural(
     household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
     """Behavioural finance profile: bias scores, stress playbook, transcript signals, adviser coaching."""
-    result = await behavioural.for_household(db, household_id)
+    result = await behavioural.for_household(db, household_id, firm_id=firm.id)
     if not result:
         raise HTTPException(status_code=404, detail="Household not found")
     return result
@@ -300,7 +304,8 @@ async def household_tax_intel(
     household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
     """Tax intelligence: jurisdiction-dispatched modules (NZ / US / UK)."""
-    result = await tax_intelligence.for_household(db, household_id, firm.jurisdiction or "NZ")
+    result = await tax_intelligence.for_household(
+        db, household_id, firm.jurisdiction or "NZ", firm_id=firm.id)
     if not result:
         raise HTTPException(status_code=404, detail="Household not found")
     return result
@@ -311,7 +316,8 @@ async def household_regulatory_countdown(
     household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
     """Jurisdiction-aware regulatory deadline analysis: US estate tax sunset, UK IHT pension inclusion."""
-    result = await regulatory_countdown.for_household(db, household_id, firm.jurisdiction or "NZ")
+    result = await regulatory_countdown.for_household(
+        db, household_id, firm.jurisdiction or "NZ", firm_id=firm.id)
     if not result:
         raise HTTPException(status_code=404, detail="Household not found")
     return result

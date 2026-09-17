@@ -13,7 +13,7 @@ async def gather_brains(session: AsyncSession, firm_id: uuid.UUID) -> list[dict]
     """Load every household's brain snapshot once (analytics read from one source)."""
     out = []
     for h in await list_households(session, firm_id):
-        brain = await household_brain(session, uuid.UUID(h["id"]))
+        brain = await household_brain(session, uuid.UUID(h["id"]), firm_id=firm_id)
         if brain:
             out.append(brain)
     return out

@@ -70,7 +70,7 @@ async def canvas_view(
     db: AsyncSession = Depends(get_db),
 ):
     hid = await _resolve_household(db, user, household_id)
-    brain = await household_brain(db, hid)
+    brain = await household_brain(db, hid, firm_id=firm.id)
     if not brain:
         raise HTTPException(status_code=404, detail="Household not found")
 
@@ -145,7 +145,7 @@ async def canvas_assistant(
         raise HTTPException(status_code=400, detail="Empty question")
     hid = await _resolve_household(db, user, household_id or (
         uuid.UUID(body["household_id"]) if body.get("household_id") else None))
-    brain = await household_brain(db, hid)
+    brain = await household_brain(db, hid, firm_id=firm.id)
     if not brain:
         raise HTTPException(status_code=404, detail="Household not found")
 
@@ -214,7 +214,7 @@ async def canvas_retirement(
     overrides = {k: v for k, v in {
         "retirement_age": retirement_age, "longevity_age": longevity_age, "annual_income": annual_income,
     }.items() if v is not None}
-    plan = await retirement.for_household(db, hid, overrides=overrides)
+    plan = await retirement.for_household(db, hid, firm_id=firm.id, overrides=overrides)
     if not plan:
         raise HTTPException(status_code=404, detail="No plan available")
     return plan
@@ -232,6 +232,7 @@ async def canvas_goals(
     body = body or {}
     plan = await goal_tradeoff.for_household(
         db, hid,
+        firm_id=firm.id,
         priority_overrides=body.get("priorities"),
         goal_overrides=body.get("goal_overrides"),
         annual_income=body.get("annual_income"),
@@ -339,7 +340,7 @@ async def heir_journey(person_id: uuid.UUID | None = None, user: User = Depends(
     j = await _get_or_create_journey(db, firm, person)
     adviser = None
     if person.household_id:
-        brain = await household_brain(db, person.household_id)
+        brain = await household_brain(db, person.household_id, firm_id=firm.id)
         if brain:
             adviser = await _adviser_for(db, firm, brain)
     done = sum(1 for s in j.steps if s.get("done"))
@@ -448,7 +449,11 @@ async def download_summary_pdf(
     from fpdf import FPDF
 
     hid = await _resolve_household(db, user, household_id)
-    brain = await household_brain(db, hid)
+    brain = await household_brain(db, hid, firm_id=firm.id)
+    if not brain:
+        # Unguarded before: a household the caller may not see now returns None, which the
+        # PDF builder would dereference into a 500 instead of an honest 404.
+        raise HTTPException(status_code=404, detail="Household not found")
     branding = firm.branding or {}
     accent = branding.get("accent", "#c8a35e")
 

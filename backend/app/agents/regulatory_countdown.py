@@ -33,7 +33,8 @@ class RegulatoryCountdownAgent(BaseAgent):
 
         analyses = []
         for hid in ids:
-            result = await regulatory_countdown.for_household(s, uuid.UUID(hid), firm_jurisdiction)
+            result = await regulatory_countdown.for_household(
+                s, uuid.UUID(hid), firm_jurisdiction, firm_id=ctx.firm.id)
             if result and result.get("analyses"):
                 analyses.append(result)
 

@@ -92,20 +92,39 @@ async def decide_recommendation(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     """The approve / modify / dismiss surface — the HITL gate (spec Table 13)."""
-    from app.atlas.runtime import decide  # local import to avoid cycle
+    from app.atlas.runtime import AlreadyDecidedError, decide  # local import to avoid cycle
 
     rec = await db.get(Recommendation, rec_id)
     if not rec or rec.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    _require_right(user, rec, body.action.value)
     if rec.status != RecommendationStatus.PROPOSED:
         raise HTTPException(status_code=409, detail=f"Already {rec.status}")
 
-    rec = await decide(
-        db, firm=firm, recommendation=rec, action=body.action,
-        actor_id=user.id, actor_label=f"{user.full_name} ({user.role})",
-        note=body.note, modified_payload=body.modified_payload,
-    )
+    try:
+        rec = await decide(
+            db, firm=firm, recommendation=rec, action=body.action,
+            actor_id=user.id, actor_label=f"{user.full_name} ({user.role})",
+            note=body.note, modified_payload=body.modified_payload,
+        )
+    except AlreadyDecidedError as exc:
+        # Lost a race with a concurrent decision — it took the proposal first.
+        raise HTTPException(status_code=409, detail=str(exc))
     return _rec_dict(rec)
+
+
+def _require_right(user: User, rec: Recommendation, decision: str) -> None:
+    """403 unless this role may take this decision on this agent's proposal.
+
+    Checked before the status so the answer to "may I" does not depend on whether someone
+    else has already acted.
+    """
+    from app.core import decision_rights
+
+    try:
+        decision_rights.check(user.role, rec.agent_key, decision)
+    except decision_rights.DecisionForbidden as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
 
 
 class ReviseIn(BaseModel):
@@ -125,6 +144,7 @@ async def revise_recommendation(
     rec = await db.get(Recommendation, rec_id)
     if not rec or rec.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    _require_right(user, rec, "revise")
     if rec.status != RecommendationStatus.PROPOSED:
         raise HTTPException(status_code=409, detail=f"Already {rec.status}")
     if rec.agent_key != AgentKey.DRIFT_REBALANCING.value or rec.subject_type != "mandate":
@@ -210,6 +230,7 @@ async def rollback_recommendation(
     rec = await db.get(Recommendation, rec_id)
     if not rec or rec.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    _require_right(user, rec, "rollback")
     try:
         rec = await do_rollback(db, firm=firm, recommendation=rec, actor_id=user.id,
                                 actor_label=f"{user.full_name} ({user.role})",
@@ -326,7 +347,7 @@ async def ask_your_book(
     snapshot_lines = []
     structured = []
     for h in households[:40]:
-        brain = await household_brain(db, uuid.UUID(h["id"]))
+        brain = await household_brain(db, uuid.UUID(h["id"]), firm_id=firm.id)
         if not brain:
             continue
         mix = brain["totals"]["by_asset_class"]

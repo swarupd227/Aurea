@@ -42,7 +42,7 @@ class ClientCareAgent(BaseAgent):
             ids = [h["id"] for h in await list_households(s, ctx.firm.id)]
         else:
             ids = [str(ctx.subject.id)]
-        brains = [b for b in [await household_brain(s, hid) for hid in ids] if b]
+        brains = [b for b in [await household_brain(s, hid, firm_id=ctx.firm.id) for hid in ids] if b]
         scenario = (ctx.config or {}).get("scenario", "covid_2020")
         return {"brains": brains, "scenario": scenario}
 

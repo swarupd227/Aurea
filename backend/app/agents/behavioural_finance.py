@@ -24,10 +24,14 @@ class BehaviouralFinanceAgent(BaseAgent):
 
     async def sense(self, ctx: AgentContext) -> dict:
         import uuid
-        households = await list_households(ctx.db, ctx.firm_id)
+        # ctx.session and ctx.firm.id — this used ctx.db and ctx.firm_id, neither of which
+        # AgentContext has, so the agent raised on its first line on every run, including
+        # every scheduled one. The scheduler logged it and moved on.
+        households = await list_households(ctx.session, ctx.firm.id)
         results = []
         for h in households:
-            result = await behavioural.for_household(ctx.db, uuid.UUID(h["id"]))
+            result = await behavioural.for_household(
+                ctx.session, uuid.UUID(h["id"]), firm_id=ctx.firm.id)
             if result:
                 results.append(result)
         return {"results": results}

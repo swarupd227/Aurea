@@ -132,7 +132,7 @@ async def stream_skill(session, firm, skill, *, subject_type: str | None = None,
         ids = [h["id"] for h in await list_households(session, firm.id)]
     brains = []
     for hid in ids:
-        b = await household_brain(session, hid)
+        b = await household_brain(session, hid, firm_id=firm.id)
         if b:
             brains.append(b)
 

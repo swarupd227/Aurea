@@ -162,11 +162,13 @@ def retirement_plan(
     }
 
 
-async def for_household(session, household_id, *, overrides: dict | None = None) -> dict | None:
+async def for_household(
+    session, household_id, *, firm_id, overrides: dict | None = None
+) -> dict | None:
     """Assemble retirement inputs from the client brain (with sensible defaults) and project."""
     from app.aurea_core.graph import household_brain  # local import avoids a cycle
 
-    brain = await household_brain(session, household_id)
+    brain = await household_brain(session, household_id, firm_id=firm_id)
     if not brain:
         return None
     overrides = overrides or {}

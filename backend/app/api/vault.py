@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_firm
 from app.core.db import get_db
 from app.core.security import get_current_user, staff_user
-from app.models.graph import Household
+from app.models.enums import UserRole
+from app.models.graph import Household, Person
 from app.models.identity import User
 from app.models.tenant import Firm
 from app.models.vault import ClientDocument
@@ -50,12 +51,22 @@ async def list_documents(
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
 ):
+    if user.role == UserRole.CLIENT:
+        # A client sees their own household's documents and nobody else's. The household
+        # used to be taken from the query string for everyone, so a client could list
+        # another client's documents in the same firm just by passing that household's id.
+        # Reported as not found rather than forbidden, so the response does not confirm
+        # that the other household exists.
+        person = await db.get(Person, user.person_id) if user.person_id else None
+        if person is None or person.household_id != household_id:
+            raise HTTPException(status_code=404, detail="Household not found")
+
     q = select(ClientDocument).where(
         ClientDocument.firm_id == firm.id,
         ClientDocument.household_id == household_id,
     )
     # Clients only see visible documents.
-    if user.role == "client":
+    if user.role == UserRole.CLIENT:
         q = q.where(ClientDocument.is_client_visible.is_(True))
     rows = (await db.execute(q.order_by(ClientDocument.created_at.desc()))).scalars().all()
     return [_doc_dict(r) for r in rows]

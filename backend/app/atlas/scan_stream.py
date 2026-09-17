@@ -28,7 +28,7 @@ async def scan_book_stream(session: AsyncSession, *, firm: Firm, agent_key: Agen
     detected = 0
     tally: dict[str, int] = {}
     for i, h in enumerate(households):
-        brain = await household_brain(session, h["id"])
+        brain = await household_brain(session, h["id"], firm_id=firm.id)
         sigs = book_signals(brain) if brain else []
         detected += len(sigs)
         for s in sigs:

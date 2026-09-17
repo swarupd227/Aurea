@@ -296,7 +296,7 @@ class EstateSucessionAgent(BaseAgent):
         entities_gov_by_hh: dict[str, list[dict]] = {}
 
         for hid in ids:
-            brain = await household_brain(s, hid)
+            brain = await household_brain(s, hid, firm_id=ctx.firm.id)
             if not brain:
                 continue
             brains.append(brain)

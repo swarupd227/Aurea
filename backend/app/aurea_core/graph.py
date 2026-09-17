@@ -12,12 +12,21 @@ from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Per
 from app.models.portfolio import Holding
 
 
-async def household_brain(session: AsyncSession, household_id: uuid.UUID) -> dict | None:
-    """The total-portfolio, multi-entity view of a household — the 'client brain' snapshot."""
+async def household_brain(
+    session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID
+) -> dict | None:
+    """The total-portfolio, multi-entity view of a household — the 'client brain' snapshot.
+
+    `firm_id` is required and keyword-only, and a household belonging to any other firm is
+    reported as not found. This used to look the household up by id alone, so anyone who
+    could name another firm's household id could read its whole client brain — through the
+    household routes, and through running any agent against it as a subject. An optional
+    argument would leave that one forgotten keyword away; the conversation gateway will
+    pass ids that came from a language model, so the omission has to be impossible.
+    """
     household = await session.get(Household, household_id)
-    if household is None:
+    if household is None or household.firm_id != firm_id:
         return None
-    firm_id = household.firm_id
 
     persons = (
         await session.execute(select(Person).where(Person.household_id == household_id))

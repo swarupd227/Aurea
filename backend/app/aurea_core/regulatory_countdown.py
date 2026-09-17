@@ -486,9 +486,10 @@ def _uk_fca_targeted_support(brain: dict) -> dict:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 async def for_household(
-    session: AsyncSession, household_id: uuid.UUID, firm_jurisdiction: str = "NZ"
+    session: AsyncSession, household_id: uuid.UUID, firm_jurisdiction: str = "NZ",
+    *, firm_id: uuid.UUID,
 ) -> dict | None:
-    brain = await household_brain(session, str(household_id))
+    brain = await household_brain(session, str(household_id), firm_id=firm_id)
     if not brain:
         return None
 
@@ -522,7 +523,7 @@ async def for_firm(
     households = await list_households(session, firm_id)
     results = []
     for hh in households:
-        r = await for_household(session, uuid.UUID(hh["id"]), firm_jurisdiction)
+        r = await for_household(session, uuid.UUID(hh["id"]), firm_jurisdiction, firm_id=firm_id)
         if r and r.get("analyses"):
             results.append(r)
     return results

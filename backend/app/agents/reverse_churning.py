@@ -52,7 +52,7 @@ class ReverseChurningAgent(BaseAgent):
 
         for hh_summary in households:
             hid = hh_summary["id"]
-            brain = await household_brain(s, hid)
+            brain = await household_brain(s, hid, firm_id=ctx.firm.id)
             if not brain:
                 continue
 

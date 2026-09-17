@@ -33,7 +33,7 @@ class MeetingPrepAgent(BaseAgent):
         meeting, household_id = await self._resolve(ctx)
         if not household_id:
             return {"applicable": False}
-        brain = await household_brain(ctx.session, household_id)
+        brain = await household_brain(ctx.session, household_id, firm_id=ctx.firm.id)
         if not brain:
             return {"applicable": False}
         citations = await knowledge.retrieve(ctx.session, ctx.firm.id, "house view outlook positioning", k=2)
