@@ -31,6 +31,7 @@ export default function RoleSwitcher() {
   return (
     <div className="relative">
       <button
+        data-testid="role-switcher"
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-navy-200/80 hover:bg-white/5 hover:text-white transition"
       >
@@ -52,6 +53,9 @@ export default function RoleSwitcher() {
                   return (
                     <button
                       key={p.email}
+                      data-testid="role-option"
+                      data-role={p.role}
+                      data-email={p.email}
                       onClick={() => pick(p)}
                       disabled={!!busy}
                       className={`w-full text-left px-2 py-1.5 rounded-lg flex items-start gap-2 hover:bg-navy-50 transition ${active ? "bg-navy-50" : ""}`}

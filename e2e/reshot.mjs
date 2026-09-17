@@ -28,7 +28,7 @@ async function main() {
   // Login
   await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
   await sleep(800);
-  await page.locator("button").filter({ hasText: "Studio cockpit" }).click({ timeout: 8000 });
+  await page.locator('[data-testid="login-persona-adviser"]').click({ timeout: 8000 });
   await page.waitForURL((u) => !u.href.includes("/login"), { timeout: 20000 });
   await sleep(3000);
 
@@ -50,14 +50,14 @@ async function main() {
   // Wait for the loading spinner to disappear
   await sleep(1000);
   try {
-    await page.waitForSelector("text=Loading analytics", { state: "detached", timeout: 15000 });
+    await page.waitForSelector('[data-testid="loading"]', { state: "detached", timeout: 15000 });
   } catch {}
   await sleep(3000);
   await shot(page, "05-analytics");
 
   // Analytics portfolio tab
   try {
-    await page.locator('button:has-text("Portfolio")').first().click({ timeout: 3000 });
+    await page.locator('[data-testid="analytics-tab-portfolio"]').click({ timeout: 3000 });
     await sleep(1500);
     await shot(page, "05b-analytics-portfolio");
   } catch { console.log("  - no Portfolio tab found"); }

@@ -31,7 +31,7 @@ async function main() {
   // Login as adviser
   await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
   await sleep(800);
-  const btn = page.locator("button").filter({ hasText: "Studio cockpit" });
+  const btn = page.locator('[data-testid="login-persona-adviser"]');
   await btn.click({ timeout: 8000 });
   await page.waitForURL((u) => !u.href.includes("/login"), { timeout: 20000 });
   await sleep(2000);
@@ -69,7 +69,7 @@ async function main() {
 
   // 6. Analytics portfolio tab
   try {
-    await page.locator('button:has-text("Portfolio")').first().click({ timeout: 3000 });
+    await page.locator('[data-testid="analytics-tab-portfolio"]').click({ timeout: 3000 });
     await sleep(800);
     await shot(page, "05b-analytics-portfolio");
   } catch {}

@@ -80,14 +80,14 @@ export default function ClientDetail() {
         sub={`${titleCase(brain.household.segment)} · data confidence ${Math.round(t.data_confidence * 100)}%`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button className="btn-gold" onClick={() => setShowWhatIf((v) => !v)}>
+            <button className="btn-gold" data-testid="client-whatif" onClick={() => setShowWhatIf((v) => !v)}>
               <SlidersHorizontal size={15} /> What-if
             </button>
-            <button className="btn-outline" disabled={busy === "meeting_prep" + id}
+            <button className="btn-outline" data-testid="client-prep-meeting" disabled={busy === "meeting_prep" + id}
               onClick={() => run("meeting_prep", "household", id, "Meeting prep")}>
               <CalendarClock size={15} /> Prep meeting
             </button>
-            <button className="btn-outline" disabled={busy === "research_reporting" + id}
+            <button className="btn-outline" data-testid="client-research-note" disabled={busy === "research_reporting" + id}
               onClick={() => run("research_reporting", "household", id, "Research note")}>
               <FileText size={15} /> Research note
             </button>
@@ -128,6 +128,7 @@ export default function ClientDetail() {
                 <div className="text-right flex flex-col items-end gap-1.5">
                   <div className="font-semibold text-ink">{money(acc.total_value)}</div>
                   <button
+                    data-testid="client-rebalance"
                     disabled={busy === "drift_rebalancing" + acc.mandate_id}
                     onClick={() => run("drift_rebalancing", "mandate", acc.mandate_id, "Drift")}
                     className="btn-outline text-xs flex items-center gap-1"

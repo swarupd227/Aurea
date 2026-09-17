@@ -42,7 +42,8 @@ export default function Analytics() {
 
       <div className="flex gap-1 mb-6 border-b border-navy-100 overflow-x-auto">
         {TABS.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)}
+          <button key={t.id} data-testid={`analytics-tab-${t.id}`} role="tab"
+            aria-selected={tab === t.id} onClick={() => setTab(t.id)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition ${
               tab === t.id ? "border-navy-800 text-navy-800" : "border-transparent text-ink-muted hover:text-ink"}`}>
             {t.label}

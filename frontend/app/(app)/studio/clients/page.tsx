@@ -92,7 +92,8 @@ export default function Clients() {
       ) : (
         <div className="grid gap-3">
           {rows.map((h) => (
-            <Link key={h.id} href={`/studio/clients/${h.id}`} className="card p-5 flex items-center gap-4 hover:shadow-lift transition group">
+            <Link key={h.id} href={`/studio/clients/${h.id}`} data-testid="client-row"
+              className="card p-5 flex items-center gap-4 hover:shadow-lift transition group">
               <div className={`h-11 w-11 rounded-xl ${avatarColor(h.name)} text-white flex items-center justify-center font-semibold text-base shrink-0`}>
                 {h.name.replace(/^The /, "").slice(0, 1)}
               </div>

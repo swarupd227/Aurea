@@ -46,7 +46,7 @@ export default function MeetingDetail() {
         <Card>
           <div className="flex items-center justify-between mb-3">
             <div className="font-semibold text-ink flex items-center gap-2"><Sparkles size={17} className="text-gold" /> Prepared brief</div>
-            <button className="btn-outline text-xs" disabled={busy === "prep"} onClick={runPrep}><Play size={13} /> {busy === "prep" ? "Preparing…" : brief.agenda ? "Refresh" : "Run prep"}</button>
+            <button className="btn-outline text-xs" data-testid="meeting-run-prep" disabled={busy === "prep"} onClick={runPrep}><Play size={13} /> {busy === "prep" ? "Preparing…" : brief.agenda ? "Refresh" : "Run prep"}</button>
           </div>
           {brief.agenda ? (
             <div className="space-y-4 text-sm">

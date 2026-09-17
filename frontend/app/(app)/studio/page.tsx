@@ -70,7 +70,7 @@ export default function Cockpit() {
         title={`Good day, ${user?.full_name?.split(" ")[0] || "there"}`}
         sub="Delegate to your agents, watch them work, and approve what they propose."
         actions={
-          <button className="btn-gold" onClick={() => setShowScan(true)}>
+          <button className="btn-gold" data-testid="book-scan" onClick={() => setShowScan(true)}>
             <Radar size={16} /> Scan book
           </button>
         }
@@ -87,10 +87,10 @@ export default function Cockpit() {
           <Wand2 size={16} className="text-gold" /> Delegate to your workforce
         </div>
         <form onSubmit={(e) => { e.preventDefault(); delegate(delegateText); }} className="flex gap-2">
-          <input className="input" aria-label="Delegate a task to your workforce"
+          <input className="input" aria-label="Delegate a task to your workforce" data-testid="delegate-input"
             placeholder="e.g. Rebalance any client that has drifted…"
             value={delegateText} onChange={(e) => setDelegateText(e.target.value)} />
-          <button className="btn-primary" disabled={delegating}><Send size={16} /> {delegating ? "Routing…" : "Delegate"}</button>
+          <button className="btn-primary" data-testid="delegate-submit" disabled={delegating}><Send size={16} /> {delegating ? "Routing…" : "Delegate"}</button>
         </form>
         {delegateError && (
           <p className="text-sm text-critical bg-critical/5 rounded-lg px-3 py-2 mt-2" role="alert">
@@ -145,7 +145,7 @@ export default function Cockpit() {
                 <div className="space-y-3">
                   <p>No open recommendations yet.</p>
                   <div className="flex justify-center gap-2">
-                    <button className="btn-gold text-sm" onClick={() => setShowScan(true)}>
+                    <button className="btn-gold text-sm" data-testid="book-scan-empty" onClick={() => setShowScan(true)}>
                       <Radar size={15} /> Scan book
                     </button>
                     <span className="text-ink-muted self-center text-sm">or delegate a task above.</span>

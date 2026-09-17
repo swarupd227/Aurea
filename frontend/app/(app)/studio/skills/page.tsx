@@ -168,7 +168,7 @@ export default function Skills() {
 
       <div className="flex gap-2 mb-4">
         {FILTERS.map(([k, label]) => (
-          <button key={k} onClick={() => setFilter(k)}
+          <button key={k} data-testid={`skills-filter-${k}`} onClick={() => setFilter(k)}
             className={`chip ${filter === k ? "bg-navy-800 text-white" : "bg-navy-50 text-ink-muted"}`}>{label}</button>
         ))}
       </div>

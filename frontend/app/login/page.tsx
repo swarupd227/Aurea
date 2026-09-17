@@ -208,7 +208,7 @@ export default function LoginPage() {
               />
             </div>
             {error && <div className="text-sm text-critical bg-critical/5 rounded-lg px-3 py-2">{error}</div>}
-            <button className="btn-primary w-full" disabled={busy}>
+            <button className="btn-primary w-full" disabled={busy} data-testid="login-submit">
               {busy ? "Signing in…" : "Sign in"}
             </button>
           </form>
@@ -221,6 +221,7 @@ export default function LoginPage() {
               {DEMO.map((d) => (
                 <button
                   key={d.email}
+                  data-testid={`login-persona-${d.role.toLowerCase()}`}
                   onClick={() => pickPersona(d)}
                   disabled={busy}
                   className="text-left rounded-lg border border-navy-100 px-3 py-2 hover:border-gold/50 hover:bg-gold-soft/10 transition disabled:opacity-50"

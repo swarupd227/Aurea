@@ -86,6 +86,9 @@ export default function Admin() {
                 return (
                   <button
                     key={item.id}
+                    data-testid={`admin-tab-${item.id}`}
+                    role="tab"
+                    aria-selected={active}
                     onClick={() => setTab(item.id)}
                     className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors text-left ${
                       active

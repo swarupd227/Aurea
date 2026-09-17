@@ -263,7 +263,8 @@ export default function RecommendationCard({
   }
 
   return (
-    <div className="card overflow-hidden">
+    <div className="card overflow-hidden" data-testid="rec-card" data-agent={rec.agent_key}
+         data-status={rec.status}>
       {/* Header */}
       <div className="p-4 flex items-start gap-3">
         <div className="flex-1 min-w-0">
@@ -462,27 +463,27 @@ export default function RecommendationCard({
           {!mode ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-ink-muted mr-auto">Adviser decision required · Tier {rec.tier.slice(-1)}</span>
-              <button className="btn-outline" onClick={() => { setMode("dismiss"); setOpen(true); }}>
+              <button className="btn-outline" data-testid="rec-dismiss" onClick={() => { setMode("dismiss"); setOpen(true); }}>
                 <X size={15} /> Dismiss
               </button>
               {isDrift && (
-                <button className="btn-outline" onClick={() => { setMode("revise"); setOpen(true); }}>
+                <button className="btn-outline" data-testid="rec-revise" onClick={() => { setMode("revise"); setOpen(true); }}>
                   <Wand2 size={15} /> Revise
                 </button>
               )}
               {orders.length > 0 && (
-                <button className="btn-outline" onClick={() => { setMode("modify"); setOpen(true); }}>
+                <button className="btn-outline" data-testid="rec-modify" onClick={() => { setMode("modify"); setOpen(true); }}>
                   <Pencil size={15} /> Modify
                 </button>
               )}
-              <button className="btn-gold" onClick={() => { setMode("approve"); setOpen(true); }}>
+              <button className="btn-gold" data-testid="rec-approve" onClick={() => { setMode("approve"); setOpen(true); }}>
                 <Check size={15} /> Approve
               </button>
             </div>
           ) : mode === "revise" ? (
             <div className="space-y-2">
               <div className="text-xs text-ink-soft">Tell the agent what to change — it will re-run and propose a revised order set.</div>
-              <textarea className="input text-sm" rows={2}
+              <textarea className="input text-sm" rows={2} data-testid="rec-revise-note"
                 placeholder="e.g. Keep realised gains under $10k and don't sell AAPL — harvest losses elsewhere."
                 value={rev.note} onChange={(e) => setRev({ ...rev, note: e.target.value })} />
               <div className="grid grid-cols-3 gap-2">
@@ -506,7 +507,7 @@ export default function RecommendationCard({
               {err && <div className="text-xs text-critical">{err}</div>}
               <div className="flex items-center gap-2 justify-end">
                 <button className="btn-ghost" onClick={() => setMode(null)} disabled={busy}>Cancel</button>
-                <button className="btn-primary" disabled={busy || !rev.note.trim()} onClick={revise}>
+                <button className="btn-primary" data-testid="rec-revise-submit" disabled={busy || !rev.note.trim()} onClick={revise}>
                   <Wand2 size={15} /> {busy ? "Re-running…" : "Revise & re-run"}
                 </button>
               </div>
@@ -516,6 +517,7 @@ export default function RecommendationCard({
               <textarea
                 className="input text-sm"
                 rows={2}
+                data-testid="rec-decision-note"
                 placeholder={
                   mode === "dismiss" ? "Reason for dismissing (optional)…"
                   : mode === "modify" ? "Note — uncheck any orders above to exclude them…"
@@ -531,6 +533,7 @@ export default function RecommendationCard({
                 </button>
                 <button
                   className={mode === "dismiss" ? "btn-outline" : "btn-primary"}
+                  data-testid={`rec-confirm-${mode}`}
                   disabled={busy}
                   onClick={() => submit(mode)}
                 >
@@ -559,14 +562,14 @@ export default function RecommendationCard({
                 <Mail size={13} /> Draft client letter
               </button>
               {!confirmRollback ? (
-                <button className="btn-ghost text-xs text-critical" disabled={busy} onClick={() => setConfirmRollback(true)}>
+                <button className="btn-ghost text-xs text-critical" data-testid="rec-rollback" disabled={busy} onClick={() => setConfirmRollback(true)}>
                   <Undo2 size={13} /> Roll back
                 </button>
               ) : (
                 <span className="flex items-center gap-2">
                   <span className="text-xs text-critical font-medium">Roll back — effects will be reversed. Confirm?</span>
                   <button className="btn-ghost text-xs" onClick={() => setConfirmRollback(false)}>Cancel</button>
-                  <button className="btn-ghost text-xs border border-critical/40 text-critical px-2 py-0.5 rounded" disabled={busy} onClick={rollback}>
+                  <button className="btn-ghost text-xs border border-critical/40 text-critical px-2 py-0.5 rounded" data-testid="rec-rollback-confirm" disabled={busy} onClick={rollback}>
                     {busy ? "Rolling back…" : "Confirm"}
                   </button>
                 </span>

@@ -245,8 +245,7 @@ async function main() {
   await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded", timeout: 20000 });
   await sleep(800);
   await norm("Sign in as Sophie, a senior wealth adviser", 1000, async () => {
-    const btn = page.locator("button").filter({ hasText: "Studio cockpit" });
-    await btn.click({ timeout: 8000 });
+    await page.locator('[data-testid="login-persona-adviser"]').click({ timeout: 8000 });
     await page.waitForURL((url) => !url.href.includes("/login"), { timeout: 20000 });
     await sleep(1500);
   });
@@ -266,7 +265,7 @@ async function main() {
     await tryNav(page, "/studio/clients");
   });
   await norm("Click any household to see the full picture", 2500, async () => {
-    await tryClick(page, ['a:has-text("Chen")', 'text=Chen Family', '[href*="clients/"]']);
+    await tryClick(page, ['[data-testid="client-row"]:has-text("Chen")', '[data-testid="client-row"]']);
     await sleep(1500);
   });
   await norm("Accounts, goals, family members, and portfolio value — all together", 3000, async () => {
@@ -306,19 +305,25 @@ async function main() {
   });
 
   // ── 6. REVISE & APPROVE ────────────────────────────────────────────────────
+  // Scoped to a rebalancing card: the review queue holds many agents' proposals, and the
+  // first card on the page is not necessarily the drift one the captions describe.
+  const DRIFT = '[data-testid="rec-card"][data-agent="drift_rebalancing"][data-status="proposed"]';
   await norm("Sophie adds a constraint — the agent re-runs with it", 3000, async () => {
     await page.mouse.wheel(0, -3000);
     await sleep(600);
-    await tryClick(page, ['button:has-text("Revise")', 'button:has-text("Modify")']);
+    await tryClick(page, [`${DRIFT} [data-testid="rec-revise"]`]);
     await sleep(900);
-    const ta = page.locator("textarea").first();
-    await ta.fill("Do not sell AAPL. Keep capital gains under $8,000.").catch(() => {});
+    await page.locator(`${DRIFT} [data-testid="rec-revise-note"]`).first()
+      .fill("Do not sell AAPL. Keep capital gains under $8,000.").catch(() => {});
     await sleep(500);
+    // Previously the note was typed and never submitted, so no re-run happened.
+    await tryClick(page, [`${DRIFT} [data-testid="rec-revise-submit"]`]);
+    await sleep(2500);
   });
   await norm("Sophie approves — the decision is saved permanently to the ledger", 2500, async () => {
-    await tryClick(page, ['button:has-text("Approve")']);
+    await tryClick(page, [`${DRIFT} [data-testid="rec-approve"]`]);
     await sleep(500);
-    await tryClick(page, ['button:has-text("Confirm")']);
+    await tryClick(page, ['[data-testid="rec-confirm-approve"]']);
     await sleep(1500);
   });
 
@@ -331,13 +336,13 @@ async function main() {
     await sleep(600);
   });
   await norm("Portfolio analytics — client returns, drift exposure, and tax-harvesting opportunities", 3500, async () => {
-    await tryClick(page, ['button:has-text("Portfolio")', 'text=Portfolio']);
+    await tryClick(page, ['[data-testid="analytics-tab-portfolio"]']);
     await sleep(700);
     await scroll(page, 400);
     await sleep(500);
   });
   await norm("Practice economics — fee revenue, margin trends, and profitability by client segment", 3500, async () => {
-    await tryClick(page, ['button:has-text("Practice")', 'text=Practice']);
+    await tryClick(page, ['[data-testid="analytics-tab-practice"]']);
     await sleep(700);
     await scroll(page, 400);
     await sleep(500);
@@ -345,10 +350,13 @@ async function main() {
 
   // ── 8. BOOK SCAN ───────────────────────────────────────────────────────────
   await norm("Book Scan — one click to check every client in the book", 2000, async () => {
-    await tryNav(page, "/studio/clients");
+    // The scan lives on the cockpit. This used to open /studio/clients, where there is no
+    // scan button, and look for "Book scan" when the label is "Scan book" — so the step
+    // silently did nothing.
+    await tryNav(page, "/studio");
   });
   await norm("Book Scan running — scanning for drift, tax signals, and at-risk clients", 2500, async () => {
-    await tryClick(page, ['button:has-text("Book scan")', 'button:has-text("Scan")', '[data-testid="book-scan"]']);
+    await tryClick(page, ['[data-testid="book-scan"]']);
     await sleep(1200);
   });
   await norm("Urgent items surfaced across the full book — prioritised for the adviser", 3500, async () => {
@@ -360,7 +368,10 @@ async function main() {
   await norm("Meeting Prep — the agent reads the client file and writes the agenda", 2500, async () => {
     await tryNav(page, "/studio/meetings");
     await sleep(500);
-    await tryClick(page, ['text=Prep', 'button:has-text("Prep")']);
+    // Prep runs from a meeting's own page, not the list.
+    await tryClick(page, ['[data-testid="meeting-row"]']);
+    await sleep(1200);
+    await tryClick(page, ['[data-testid="meeting-run-prep"]']);
     await sleep(1200);
   });
   await norm("Talking points, risk flags, next steps — ready before the meeting starts", 3000, async () => {
@@ -383,9 +394,9 @@ async function main() {
 
   // ── 11. ROLE SWITCH ────────────────────────────────────────────────────────
   await norm("The same platform — a completely different view depending on your role", 2500, async () => {
-    await tryClick(page, ['button:has-text("Switch role")', 'button:has-text("Switch")']);
+    await tryClick(page, ['[data-testid="role-switcher"]']);
     await sleep(700);
-    await tryClick(page, ['text=Head of Compliance', 'text=Compliance Officer', 'text=Compliance']);
+    await tryClick(page, ['[data-testid="role-option"][data-role="compliance"]']);
     await page.waitForLoadState("domcontentloaded").catch(() => {});
     await sleep(1200);
   });
@@ -414,7 +425,7 @@ async function main() {
     await sleep(700);
   });
   await diff("A cryptographic hash proves the record was never altered — full audit confidence", 3000, async () => {
-    await tryClick(page, ['button:has-text("Verify chain")', 'button:has-text("Verify")']);
+    await tryClick(page, ['[data-testid="ledger-verify"]']);
     await sleep(1200);
   });
 
@@ -432,7 +443,7 @@ async function main() {
   await diff("Advisers can build their own AI skills — no coding required", 2500, async () => {
     await tryNav(page, "/studio/skills");
     await sleep(500);
-    await tryClick(page, ['button:has-text("Firm library")', 'button:has-text("Public")']);
+    await tryClick(page, ['[data-testid="skills-filter-public"]']);
     await sleep(700);
   });
   await diff("Write a plain-English instruction. The AI runs it. Governance wraps it automatically.", 3500, async () => {
@@ -445,7 +456,9 @@ async function main() {
   await diff("The AI monitors its own quality and adjusts its own autonomy level", 2500, async () => {
     await tryNav(page, "/provenance");
     await sleep(500);
-    await tryClick(page, ['[role="tab"]:has-text("Quality")', 'button:has-text("Quality")']);
+    // There is no "Quality" tab on Provenance — it is a section — so the old click matched
+    // nothing. Bring the section into view instead.
+    await page.locator('[data-testid="provenance-agent-quality"]').scrollIntoViewIfNeeded().catch(() => {});
     await sleep(700);
   });
   await diff("If approval rate drops, autonomy is automatically narrowed", 3000, async () => {
@@ -471,7 +484,7 @@ async function main() {
   await diff("A platform — not a fixed product. Any firm, any brand, any market.", 2500, async () => {
     await tryNav(page, "/admin");
     await sleep(500);
-    await tryClick(page, ['button:has-text("Branding")', '[role="tab"]:has-text("Branding")']);
+    await tryClick(page, ['[data-testid="admin-tab-branding"]']);
     await sleep(700);
   });
   await diff("The client Canvas carries the adviser's name and colours — not Astra's", 3500, async () => {

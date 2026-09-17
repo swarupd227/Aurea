@@ -101,10 +101,10 @@ export default function Provenance() {
                 <button className="px-4 py-2.5 text-sm text-left hover:bg-navy-50 text-ink" onClick={() => exportLedger("jsonl")}>JSONL (machine)</button>
               </div>
             </div>
-            <button className="btn-outline" onClick={() => setShowReport((v) => !v)}>
+            <button className="btn-outline" data-testid="compliance-report" onClick={() => setShowReport((v) => !v)}>
               <ArrowUpRight size={16} /> Compliance report
             </button>
-            <button className="btn-outline" onClick={runVerify}>
+            <button className="btn-outline" data-testid="ledger-verify" onClick={runVerify}>
               <ShieldCheck size={16} /> Verify chain
             </button>
           </div>
@@ -200,7 +200,7 @@ export default function Provenance() {
       )}
 
       {/* Agent quality & adaptive autonomy */}
-      <Card className="mb-6">
+      <Card className="mb-6" data-testid="provenance-agent-quality">
         <div className="flex items-center justify-between mb-3">
           <div className="font-semibold text-ink flex items-center gap-2"><Activity size={17} className="text-navy-600" /> Agent quality & autonomy</div>
           <button className="btn-outline text-xs" disabled={evaluating} onClick={runEval}>

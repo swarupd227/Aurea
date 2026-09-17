@@ -1,11 +1,16 @@
 "use client";
-import { ReactNode } from "react";
+import { HTMLAttributes, ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle, ChevronRight, RotateCw } from "lucide-react";
 import { titleCase } from "@/lib/format";
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`card p-5 ${className}`}>{children}</div>;
+export function Card({
+  children, className = "", ...rest
+}: { children: ReactNode; className?: string } & Omit<HTMLAttributes<HTMLDivElement>, "children" | "className"> & {
+  "data-testid"?: string;
+}) {
+  // Passes through standard attributes so a card can carry a stable test id.
+  return <div className={`card p-5 ${className}`} {...rest}>{children}</div>;
 }
 
 export function SectionTitle({ children, sub }: { children: ReactNode; sub?: string }) {
@@ -88,7 +93,8 @@ export function Segment({ children }: { children: string }) {
 
 export function Spinner({ label }: { label?: string }) {
   return (
-    <div className="flex items-center gap-3 text-ink-muted text-sm py-8 justify-center">
+    <div className="flex items-center gap-3 text-ink-muted text-sm py-8 justify-center"
+         data-testid="loading" role="status" aria-live="polite">
       <span className="h-4 w-4 rounded-full border-2 border-navy-200 border-t-navy-700 animate-spin" />
       {label || "Loading…"}
     </div>

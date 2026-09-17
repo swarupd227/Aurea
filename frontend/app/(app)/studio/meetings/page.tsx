@@ -25,7 +25,8 @@ export default function Meetings() {
       ) : (
         <div className="grid gap-3">
           {data.map((m) => (
-            <Link key={m.id} href={`/studio/meetings/${m.id}`} className="card p-5 flex items-center gap-4 hover:shadow-lift transition group">
+            <Link key={m.id} href={`/studio/meetings/${m.id}`} data-testid="meeting-row"
+              className="card p-5 flex items-center gap-4 hover:shadow-lift transition group">
               <div className="h-11 w-11 rounded-xl bg-navy-800 text-white flex items-center justify-center"><CalendarClock size={18} /></div>
               <div className="flex-1">
                 <div className="font-semibold text-ink">{m.title}</div>
