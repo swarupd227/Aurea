@@ -42,6 +42,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   };
 
   const handleConfirm = async (pendingActionId: string) => {
+    setError(null);
     try {
       await confirmPendingAction(pendingActionId, true);
       await reload();
@@ -52,6 +53,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   };
 
   const handleReject = async (pendingActionId: string) => {
+    setError(null);
     try {
       await confirmPendingAction(pendingActionId, false);
       await reload();
