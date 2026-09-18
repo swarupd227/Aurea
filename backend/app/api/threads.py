@@ -6,6 +6,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.db import get_db
 from app.core.security import get_current_user
@@ -173,7 +174,9 @@ async def get_thread(
 ) -> dict:
     """Fetch a thread with its messages."""
 
-    thread = await session.get(Thread, thread_id)
+    stmt = select(Thread).where(Thread.id == thread_id).options(selectinload(Thread.messages))
+    result = await session.execute(stmt)
+    thread = result.scalar_one_or_none()
     if not thread or thread.firm_id != user.firm_id:
         raise HTTPException(status_code=404, detail="Thread not found")
 

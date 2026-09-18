@@ -262,9 +262,20 @@ class Gateway:
         if not thread:
             return {"text": "Thread not found.", "tool_calls": [], "suggestions": []}
 
-        # Build message history for context
+        # Build message history for context — query directly rather than lazy-loading
+        # thread.messages, which would attempt a sync-style load outside the async
+        # greenlet context and raise sqlalchemy.exc.MissingGreenlet.
+        recent_stmt = (
+            select(ThreadMessage)
+            .where(ThreadMessage.thread_id == thread_id)
+            .order_by(ThreadMessage.created_at.desc())
+            .limit(5)
+        )
+        recent_result = await self.session.execute(recent_stmt)
+        recent_messages = list(reversed(recent_result.scalars().all()))
+
         history = []
-        for msg in thread.messages[-5:]:  # Last 5 messages for context
+        for msg in recent_messages:
             role = "user" if msg.role == MessageRole.USER else "assistant"
             history.append(f"{role}: {msg.text}")
 
