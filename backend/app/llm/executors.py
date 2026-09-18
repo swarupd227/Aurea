@@ -215,11 +215,12 @@ class ToolExecutors:
         except AlreadyDecidedError as exc:
             raise ExecutorError(str(exc))
 
+        past_tense = {"approve": "Approved", "modify": "Modified", "dismiss": "Dismissed"}[action_str]
         return {
             "recommendation_id": str(rec.id),
             "action": action_str,
             "status": str(rec.status),
-            "message": f"{action_str.capitalize()}d '{rec.title}'. Status: {rec.status}.",
+            "message": f"{past_tense} '{rec.title}'. Status: {rec.status}.",
         }
 
     async def execute_orders(self, inputs: dict[str, Any]) -> dict[str, Any]:
