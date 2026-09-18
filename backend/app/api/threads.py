@@ -30,7 +30,12 @@ router = APIRouter(prefix="/api/threads", tags=["threads"])
 
 
 def _serialize_message(m: ThreadMessage, pending_by_tool_call: dict[uuid.UUID, PendingAction]) -> dict:
-    sources = sorted({tc.tool_key for tc in m.tool_calls if tc.status == ToolCallStatus.DONE})
+    done_calls = [tc for tc in m.tool_calls if tc.status == ToolCallStatus.DONE]
+    sources = sorted({tc.tool_key for tc in done_calls})
+    # One artifact per completed tool call, in call order — the frontend picks a
+    # renderer by tool_key and falls back to nothing (the prose already covers it)
+    # for a tool_key it doesn't have a card for.
+    artifacts = [{"tool_key": tc.tool_key, "result": tc.result} for tc in done_calls]
     pending = next((pending_by_tool_call[tc.id] for tc in m.tool_calls if tc.id in pending_by_tool_call), None)
 
     return {
@@ -39,6 +44,7 @@ def _serialize_message(m: ThreadMessage, pending_by_tool_call: dict[uuid.UUID, P
         "speaking_agent": m.speaking_agent,
         "text": m.text,
         "sources": sources,
+        "artifacts": artifacts,
         "pending_action": {
             "id": str(pending.id),
             "tool_key": next(tc.tool_key for tc in m.tool_calls if tc.id == pending.tool_call_id),

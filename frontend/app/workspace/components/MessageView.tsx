@@ -1,6 +1,7 @@
 import { Markdown } from "./Markdown";
 import { ConfirmationCard } from "./ConfirmationCard";
 import { Sources } from "./Sources";
+import { ArtifactRenderer } from "./artifacts/ArtifactRenderer";
 import type { Message } from "../types";
 
 function AstraMark() {
@@ -38,6 +39,10 @@ export function MessageView({
       <AstraMark />
       <div className="min-w-0 flex-1 space-y-3">
         {message.text && <Markdown text={message.text} className="text-sm text-ink" />}
+
+        {message.artifacts.map((a, i) => (
+          <ArtifactRenderer key={i} artifact={a} />
+        ))}
 
         {message.pending_action && (
           <ConfirmationCard action={message.pending_action} onConfirm={onConfirm} onReject={onReject} />

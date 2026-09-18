@@ -5,12 +5,18 @@ export interface PendingActionRef {
   decision: "confirmed" | "declined" | null;
 }
 
+export interface Artifact {
+  tool_key: string;
+  result: Record<string, any>;
+}
+
 export interface Message {
   id: string;
   role: "user" | "astra" | "agent";
   speaking_agent: string | null;
   text: string;
   sources: string[];
+  artifacts: Artifact[];
   pending_action: PendingActionRef | null;
   suggestions: string[];
   created_at: string;
