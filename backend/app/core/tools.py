@@ -184,7 +184,7 @@ def validate_tool_call(role: UserRole, tool_key: str, inputs: dict[str, Any]) ->
 
     if role not in tool.roles_required:
         allowed = ", ".join(sorted(r.value for r in tool.roles_required))
-        return False, f"Role {role.value} may not call '{tool.name}'. Allowed: {allowed}"
+        return False, f"Role {role} may not call '{tool.name}'. Allowed: {allowed}"
 
     # Validate required inputs
     required = {inp.name for inp in tool.inputs if inp.required}

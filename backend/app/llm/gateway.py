@@ -306,7 +306,7 @@ Your role is to help users manage their wealth through conversation. You have ac
 **Thread History:**
 {history_text}
 
-**User's Role:** {self.role.value}
+**User's Role:** {self.role}
 
 Respond naturally. When you decide to call a tool, include it as a JSON object:
 {{"tool_key": "tool_name", "inputs": {{...}}}}
