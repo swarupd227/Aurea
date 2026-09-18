@@ -1,24 +1,39 @@
-"""Phase 2: Tool executors — wire gateway tools to domain functions.
+"""Tool executors — wire gateway tools to real domain logic.
 
 Each tool in the catalogue has a corresponding executor that calls the actual
-business logic (household_brain, execute_orders, etc.) and returns a result.
-
-Executors run after the gateway validates role access and (if needed) user confirmation.
+business logic (household_brain, runtime.decide, execute_order_set, etc.) and
+returns a result. Executors run after the gateway validates role access and
+(if needed) user confirmation — but decide_recommendation and execute_orders
+still re-check the domain-level rules (decision_rights, exactly-once locking)
+because those are stricter than the tool catalogue's coarse role list and are
+the actual source of truth per CLAUDE.md.
 """
 from __future__ import annotations
 
 import uuid
 from typing import Any
 
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.graph import household_brain
 from app.models.enums import UserRole
+from app.models.graph import Account, Goal, Mandate
+from app.models.portfolio import Holding, Instrument, Price
 
 
 class ExecutorError(Exception):
     """Error during tool execution."""
     pass
+
+
+def _parse_uuid(value: Any, field: str) -> uuid.UUID:
+    if isinstance(value, uuid.UUID):
+        return value
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, TypeError):
+        raise ExecutorError(f"Invalid {field}: {value}")
 
 
 class ToolExecutors:
@@ -34,12 +49,9 @@ class ToolExecutors:
         """Execute a tool by key and return the result."""
 
         executor_map = {
-            # Read-only tools
             "read_household": self.read_household,
             "read_portfolio": self.read_portfolio,
             "search_holdings": self.search_holdings,
-
-            # State-changing tools
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
             "update_goal": self.update_goal,
@@ -50,8 +62,9 @@ class ToolExecutors:
             raise ExecutorError(f"No executor for tool '{tool_key}'")
 
         try:
-            result = await executor(inputs)
-            return result
+            return await executor(inputs)
+        except ExecutorError:
+            raise
         except Exception as e:
             raise ExecutorError(f"Tool '{tool_key}' failed: {e}")
 
@@ -61,14 +74,7 @@ class ToolExecutors:
 
     async def read_household(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Fetch a household's complete brain."""
-        household_id = inputs.get("household_id")
-        if not household_id:
-            raise ExecutorError("household_id is required")
-
-        try:
-            household_id = uuid.UUID(household_id) if isinstance(household_id, str) else household_id
-        except ValueError:
-            raise ExecutorError(f"Invalid household_id: {household_id}")
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
 
         brain = await household_brain(self.session, household_id, firm_id=self.firm_id)
         if not brain:
@@ -81,37 +87,81 @@ class ToolExecutors:
         }
 
     async def read_portfolio(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Fetch a mandate's holdings and positions."""
-        mandate_id = inputs.get("mandate_id")
-        if not mandate_id:
-            raise ExecutorError("mandate_id is required")
+        """Fetch a mandate's holdings, cash, and total value."""
+        mandate_id = _parse_uuid(inputs.get("mandate_id") or "", "mandate_id")
 
-        try:
-            mandate_id = uuid.UUID(mandate_id) if isinstance(mandate_id, str) else mandate_id
-        except ValueError:
-            raise ExecutorError(f"Invalid mandate_id: {mandate_id}")
+        mandate = await self.session.get(Mandate, mandate_id)
+        if not mandate or mandate.firm_id != self.firm_id:
+            raise ExecutorError(f"Mandate {mandate_id} not found or access denied")
 
-        # Stub: In real implementation, would fetch mandate.holdings and compute metrics
+        accounts = (
+            await self.session.execute(select(Account).where(Account.mandate_id == mandate_id))
+        ).scalars().all()
+        account_ids = [a.id for a in accounts]
+
+        holdings: list[dict[str, Any]] = []
+        total_value = 0.0
+        if account_ids:
+            rows = (
+                await self.session.execute(
+                    select(Holding, Instrument)
+                    .join(Instrument, Holding.instrument_id == Instrument.id)
+                    .where(Holding.account_id.in_(account_ids))
+                )
+            ).all()
+            for h, inst in rows:
+                mv = float(h.market_value or 0)
+                total_value += mv
+                holdings.append({
+                    "symbol": inst.symbol,
+                    "name": inst.name,
+                    "asset_class": str(inst.asset_class),
+                    "quantity": float(h.quantity),
+                    "market_value": mv,
+                })
+
+        cash = sum(float(a.cash_balance or 0) for a in accounts)
+        total_value += cash
+
         return {
             "mandate_id": str(mandate_id),
-            "holdings": [],
-            "total_value": 0,
-            "message": f"Fetched portfolio for mandate {mandate_id}",
+            "mandate_name": mandate.name,
+            "holdings": holdings,
+            "cash": cash,
+            "total_value": total_value,
+            "message": f"{mandate.name}: {len(holdings)} holding(s), cash {cash:,.2f}, total value {total_value:,.2f}",
         }
 
     async def search_holdings(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Search for holdings by symbol or name across the firm."""
+        """Search for instruments by symbol or name across the firm."""
         query = inputs.get("query")
-        limit = inputs.get("limit", 10)
-
         if not query:
             raise ExecutorError("query is required")
+        limit = int(inputs.get("limit") or 10)
 
-        # Stub: In real implementation, would search across all mandates
+        stmt = (
+            select(Instrument)
+            .where(
+                Instrument.firm_id == self.firm_id,
+                or_(Instrument.symbol.ilike(f"%{query}%"), Instrument.name.ilike(f"%{query}%")),
+            )
+            .limit(limit)
+        )
+        rows = (await self.session.execute(stmt)).scalars().all()
+
+        results = [
+            {
+                "instrument_id": str(i.id),
+                "symbol": i.symbol,
+                "name": i.name,
+                "asset_class": str(i.asset_class),
+            }
+            for i in rows
+        ]
         return {
             "query": query,
-            "results": [],
-            "message": f"Searched for '{query}' (found 0 holdings)",
+            "results": results,
+            "message": f"Found {len(results)} holding(s) matching '{query}'",
         }
 
     # ─────────────────────────────────────────────────────────────────────
@@ -119,84 +169,183 @@ class ToolExecutors:
     # ─────────────────────────────────────────────────────────────────────
 
     async def decide_recommendation(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Approve, modify, dismiss, or revise a recommendation."""
-        recommendation_id = inputs.get("recommendation_id")
-        action = inputs.get("action")
-        note = inputs.get("note")
+        """Approve, modify, or dismiss a recommendation via the same exactly-once,
+        role-checked path the Studio review page uses (app.atlas.runtime.decide)."""
+        from app.atlas.runtime import AlreadyDecidedError, decide
+        from app.core import decision_rights
+        from app.models.enums import HumanAction, RecommendationStatus
+        from app.models.governance import Recommendation
+        from app.models.identity import User
+        from app.models.tenant import Firm
 
-        if not recommendation_id or not action:
-            raise ExecutorError("recommendation_id and action are required")
+        recommendation_id = _parse_uuid(inputs.get("recommendation_id") or "", "recommendation_id")
+        action_str = inputs.get("action")
 
-        if action not in ("approve", "modify", "dismiss", "revise"):
-            raise ExecutorError(f"Invalid action: {action}. Must be approve|modify|dismiss|revise")
+        if action_str == "revise":
+            raise ExecutorError(
+                "Revise isn't available through conversation yet — it re-runs the agent with "
+                "new constraints (CGT budget, drift band, protected holdings). Use the "
+                "Recommendations page in Studio for that, or approve/dismiss here."
+            )
+        if action_str not in ("approve", "modify", "dismiss"):
+            raise ExecutorError(f"Invalid action: {action_str}. Must be approve, modify, or dismiss")
+
+        rec = await self.session.get(Recommendation, recommendation_id)
+        if not rec or rec.firm_id != self.firm_id:
+            raise ExecutorError(f"Recommendation {recommendation_id} not found or access denied")
 
         try:
-            recommendation_id = uuid.UUID(recommendation_id) if isinstance(recommendation_id, str) else recommendation_id
-        except ValueError:
-            raise ExecutorError(f"Invalid recommendation_id: {recommendation_id}")
+            decision_rights.check(self.role, rec.agent_key, action_str)
+        except decision_rights.DecisionForbidden as exc:
+            raise ExecutorError(str(exc))
 
-        # In real implementation, would call runtime.decide() and persist ledger entry
+        if str(rec.status) != str(RecommendationStatus.PROPOSED):
+            raise ExecutorError(f"Already {rec.status}")
+
+        firm = await self.session.get(Firm, self.firm_id)
+        user = await self.session.get(User, self.user_id)
+        note = inputs.get("note")
+
+        try:
+            rec = await decide(
+                self.session, firm=firm, recommendation=rec, action=HumanAction(action_str),
+                actor_id=self.user_id, actor_label=f"{user.full_name} ({user.role})",
+                note=note,
+            )
+        except AlreadyDecidedError as exc:
+            raise ExecutorError(str(exc))
+
         return {
-            "recommendation_id": str(recommendation_id),
-            "action": action,
-            "decision_by": str(self.user_id),
-            "note": note,
-            "message": f"Recorded {action} decision on recommendation {recommendation_id}",
+            "recommendation_id": str(rec.id),
+            "action": action_str,
+            "status": str(rec.status),
+            "message": f"{action_str.capitalize()}d '{rec.title}'. Status: {rec.status}.",
         }
 
     async def execute_orders(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Execute buy/sell orders on a mandate."""
-        mandate_id = inputs.get("mandate_id")
-        orders = inputs.get("orders", [])
-        reason = inputs.get("reason")
+        """Submit buy/sell orders on a mandate's first account, via the same order
+        engine (draft -> staged -> placed -> filled -> settled) the drift-rebalancing
+        agent uses — real prices, real book entries, honest about a paper venue."""
+        from app.conduit.execution import execute_order_set
+        from app.models.tenant import Firm
 
-        if not mandate_id or not orders:
-            raise ExecutorError("mandate_id and orders are required")
+        mandate_id = _parse_uuid(inputs.get("mandate_id") or "", "mandate_id")
+        orders_in = inputs.get("orders") or []
+        reason = inputs.get("reason") or ""
 
-        try:
-            mandate_id = uuid.UUID(mandate_id) if isinstance(mandate_id, str) else mandate_id
-        except ValueError:
-            raise ExecutorError(f"Invalid mandate_id: {mandate_id}")
+        if not orders_in:
+            raise ExecutorError("orders is required and must be a non-empty list")
 
-        if not isinstance(orders, list):
-            raise ExecutorError("orders must be a list")
+        mandate = await self.session.get(Mandate, mandate_id)
+        if not mandate or mandate.firm_id != self.firm_id:
+            raise ExecutorError(f"Mandate {mandate_id} not found or access denied")
 
-        # In real implementation, would call execute_trade, size orders, and settle
+        accounts = (
+            await self.session.execute(select(Account).where(Account.mandate_id == mandate_id))
+        ).scalars().all()
+        if not accounts:
+            raise ExecutorError(f"Mandate {mandate_id} has no account to trade in")
+        # Simplification: trade against the mandate's first account. Mandates with
+        # multiple accounts (rare) need an account_id per order — not yet supported
+        # from conversation.
+        account = accounts[0]
+
+        order_set = []
+        for o in orders_in:
+            symbol = o.get("symbol")
+            side = o.get("side", "buy")
+            quantity = o.get("quantity")
+            if not symbol or not quantity:
+                raise ExecutorError("Each order needs a symbol and quantity")
+
+            inst = (
+                await self.session.execute(
+                    select(Instrument).where(Instrument.firm_id == self.firm_id, Instrument.symbol == symbol)
+                )
+            ).scalar_one_or_none()
+            if not inst:
+                raise ExecutorError(f"Unknown instrument symbol: {symbol}")
+
+            price_row = (
+                await self.session.execute(
+                    select(Price).where(Price.instrument_id == inst.id).order_by(Price.as_of.desc()).limit(1)
+                )
+            ).scalar_one_or_none()
+            est_price = float(price_row.close) if price_row else 0.0
+            est_value = est_price * float(quantity)
+
+            order_set.append({
+                "account_id": str(account.id),
+                "instrument_id": str(inst.id),
+                "side": side,
+                "quantity": quantity,
+                "est_price": est_price,
+                "est_value": est_value,
+                "symbol": symbol,
+                "asset_class": str(inst.asset_class),
+                "reason": reason,
+            })
+
+        firm = await self.session.get(Firm, self.firm_id)
+        result = await execute_order_set(
+            self.session, firm=firm, order_set=order_set, mandate_id=mandate_id, actor=str(self.role),
+        )
+
+        note = (
+            f"{result['orders_settled']} of {result['orders_created']} order(s) filled and "
+            f"settled via '{result['venue']}'"
+            + ("" if result["reaches_market"] else " (paper venue — real prices and real book "
+                                                   "entries, but no market was reached)")
+            + (f". {result['orders_failed']} could not be executed." if result["orders_failed"] else ".")
+        )
+
         return {
             "mandate_id": str(mandate_id),
-            "orders_count": len(orders),
-            "reason": reason,
-            "fills": [],
-            "total_value": 0,
-            "message": f"Executed {len(orders)} orders on mandate {mandate_id}",
+            "orders_count": len(order_set),
+            "orders_settled": result["orders_settled"],
+            "orders_failed": result["orders_failed"],
+            "venue": result["venue"],
+            "fills": result["settled"],
+            "failed": result["failed"],
+            "message": note,
         }
 
     async def update_goal(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Update a household goal."""
-        goal_id = inputs.get("goal_id")
+        """Update a household goal's target, timeline, or priority."""
+        goal_id = _parse_uuid(inputs.get("goal_id") or "", "goal_id")
         target = inputs.get("target")
         timeline = inputs.get("timeline")
         priority = inputs.get("priority")
 
-        if not goal_id:
-            raise ExecutorError("goal_id is required")
+        goal = await self.session.get(Goal, goal_id)
+        if not goal or goal.firm_id != self.firm_id:
+            raise ExecutorError(f"Goal {goal_id} not found or access denied")
 
-        try:
-            goal_id = uuid.UUID(goal_id) if isinstance(goal_id, str) else goal_id
-        except ValueError:
-            raise ExecutorError(f"Invalid goal_id: {goal_id}")
-
-        updates = {}
+        updates: dict[str, Any] = {}
         if target is not None:
-            updates["target"] = float(target)
+            goal.target_amount = float(target)
+            updates["target_amount"] = float(target)
         if timeline:
-            updates["timeline"] = timeline
+            # Only a bare 4-digit year is unambiguous from conversation; anything
+            # else (e.g. "5 years") is left for the goal-planning UI to resolve.
+            text = str(timeline).strip()
+            if text.isdigit() and len(text) == 4:
+                from datetime import date
+                goal.target_date = date(int(text), 12, 31)
+                updates["target_date"] = goal.target_date.isoformat()
+            else:
+                updates["timeline_note"] = f"'{timeline}' wasn't a specific year — target date unchanged"
         if priority:
-            updates["priority"] = priority
+            priority_map = {"high": 1, "medium": 2, "low": 3}
+            mapped = priority_map.get(str(priority).lower())
+            if mapped:
+                goal.priority = mapped
+                updates["priority"] = str(priority).lower()
 
-        # In real implementation, would update the goal and recalculate plan
+        await self.session.flush()
+
         return {
             "goal_id": str(goal_id),
             "updates": updates,
-            "message": f"Updated goal {goal_id}",
+            "message": f"Updated goal '{goal.name}'.",
         }
