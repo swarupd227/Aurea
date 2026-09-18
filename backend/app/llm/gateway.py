@@ -116,6 +116,11 @@ class Gateway:
             suggestions=astra_response.get("suggestions", []),
         )
         self.session.add(astra_msg)
+        # Flush so astra_msg.id (a client-side UUID default) is actually assigned
+        # before _process_tool_calls reads it to set ToolCall.message_id — without
+        # this, message.id is still None and the ToolCall insert violates the
+        # NOT NULL constraint on message_id.
+        await self.session.flush()
 
         # Process tool calls from Astra's response
         tool_calls = astra_response.get("tool_calls", [])
