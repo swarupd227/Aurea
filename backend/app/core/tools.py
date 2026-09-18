@@ -194,3 +194,43 @@ def validate_tool_call(role: UserRole, tool_key: str, inputs: dict[str, Any]) ->
         return False, f"Missing required inputs: {', '.join(sorted(missing))}"
 
     return True, ""
+
+
+def _json_schema_type(type_name: str) -> dict[str, Any]:
+    """Map a ToolInput.type_name to a JSON Schema fragment for Claude's tool-use API."""
+    if type_name == "uuid":
+        return {"type": "string", "description": "A UUID"}
+    if type_name == "number":
+        return {"type": "number"}
+    if type_name.startswith("list["):
+        inner = type_name[len("list["):-1]
+        item_type = {"type": "object"} if inner in ("object", "dict") else {"type": "string"}
+        return {"type": "array", "items": item_type}
+    return {"type": "string"}
+
+
+def anthropic_tool_schema(tool: Tool) -> dict[str, Any]:
+    """Convert a Tool into Claude's native tool-use schema (Anthropic Messages API)."""
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for inp in tool.inputs:
+        schema = _json_schema_type(inp.type_name)
+        schema["description"] = inp.description
+        properties[inp.name] = schema
+        if inp.required:
+            required.append(inp.name)
+
+    return {
+        "name": tool.key,
+        "description": tool.description,
+        "input_schema": {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+        },
+    }
+
+
+def anthropic_tools_for_role(role: UserRole) -> list[dict[str, Any]]:
+    """The Claude tool-use schema list for every tool this role may call."""
+    return [anthropic_tool_schema(t) for t in tools_for_role(role).values()]

@@ -4,6 +4,8 @@ API keys are passed in per call (resolved by the LLM service from the firm's in-
 the environment), so a key set in the Admin console takes effect without a restart."""
 from __future__ import annotations
 
+from typing import Any, AsyncGenerator
+
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.llm.base import LLMMessage, LLMResult
@@ -41,6 +43,36 @@ class AnthropicProvider:
         return LLMResult(text=text, model=model, provider=self.name, stop_reason=resp.stop_reason,
                          usage={"input_tokens": resp.usage.input_tokens,
                                 "output_tokens": resp.usage.output_tokens})
+
+    async def stream(
+        self, *, system: str, messages: list[LLMMessage], model: str, api_key: str,
+        tools: list[dict[str, Any]] | None = None, max_tokens: int = 1024, temperature: float = 0.4,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stream a completion. Yields {"type": "text", "text": delta} chunks as prose
+        arrives, then a final {"type": "done", "tool_uses": [...], "stop_reason": ...}
+        once the message is complete. Tool-use input JSON is never streamed as text —
+        the SDK's text_stream only carries text content blocks, so a tool call Claude
+        decides to make is never partially visible to the user."""
+        kwargs: dict[str, Any] = dict(
+            model=model, system=system, max_tokens=max_tokens,
+            messages=[{"role": m.role, "content": m.content} for m in messages],
+        )
+        if "opus-4-8" not in model:
+            kwargs["temperature"] = temperature
+        if tools:
+            kwargs["tools"] = tools
+
+        async with self._client(api_key).messages.stream(**kwargs) as stream:
+            async for text in stream.text_stream:
+                yield {"type": "text", "text": text}
+            final = await stream.get_final_message()
+
+        tool_uses = [
+            {"id": b.id, "name": b.name, "input": b.input}
+            for b in final.content
+            if getattr(b, "type", "") == "tool_use"
+        ]
+        yield {"type": "done", "tool_uses": tool_uses, "stop_reason": final.stop_reason}
 
 
 class OpenAIProvider:

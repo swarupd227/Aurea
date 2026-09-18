@@ -64,3 +64,21 @@ export interface Mentionable {
   name: string;
   description: string;
 }
+
+export interface LiveStep {
+  tool_key: string;
+  state: "running" | "ok" | "failed";
+}
+
+export interface LiveTurn {
+  text: string;
+  steps: LiveStep[];
+}
+
+export type StreamEvent =
+  | { type: "token"; text: string }
+  | { type: "tool_start"; tool_key: string }
+  | { type: "tool_result"; tool_key: string; ok: boolean }
+  | { type: "pending_action"; pending_action_id: string; tool_key: string; confirmation_text: string }
+  | { type: "done"; message_id: string }
+  | { type: "error"; message: string };

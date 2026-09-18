@@ -1,17 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { confirmPendingAction, fetchMentionables, fetchThread, sendMessage } from "../api";
+import { confirmPendingAction, fetchMentionables, fetchThread, sendMessageStream } from "../api";
 import { useWorkspace } from "../context";
 import { ThreadView } from "../components/ThreadView";
-import type { Mentionable, ThreadDetail } from "../types";
+import type { LiveTurn, Mentionable, ThreadDetail } from "../types";
 
 export default function ThreadPage({ params }: { params: { id: string } }) {
   const { composerInsert, refetchThreads } = useWorkspace();
   const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [mentionables, setMentionables] = useState<Mentionable[]>([]);
   const [loading, setLoading] = useState(true);
-  const [streaming, setStreaming] = useState(false);
+  const [live, setLive] = useState<LiveTurn | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -28,16 +28,37 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   }, [reload]);
 
   const handleSend = async (text: string) => {
-    setStreaming(true);
     setError(null);
+    setLive({ text: "", steps: [] });
     try {
-      await sendMessage(params.id, text);
+      await sendMessageStream(params.id, text, (event) => {
+        if (event.type === "token") {
+          setLive((prev) => ({ text: (prev?.text ?? "") + event.text, steps: prev?.steps ?? [] }));
+        } else if (event.type === "tool_start") {
+          setLive((prev) => ({
+            text: prev?.text ?? "",
+            steps: [...(prev?.steps ?? []), { tool_key: event.tool_key, state: "running" }],
+          }));
+        } else if (event.type === "tool_result") {
+          setLive((prev) => ({
+            text: prev?.text ?? "",
+            steps: (prev?.steps ?? []).map((s) =>
+              s.tool_key === event.tool_key ? { ...s, state: event.ok ? "ok" : "failed" } : s
+            ),
+          }));
+        } else if (event.type === "error") {
+          setError(event.message);
+        }
+        // "done" and "pending_action" just end the stream; the reload() below
+        // fetches the authoritative persisted state rather than reconstructing
+        // it from stream events.
+      });
       await reload();
       refetchThreads();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
-      setStreaming(false);
+      setLive(null);
     }
   };
 
@@ -83,7 +104,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     <ThreadView
       messages={thread.messages}
       status={thread.status}
-      streaming={streaming}
+      live={live}
       error={error}
       hasThread
       onSend={handleSend}

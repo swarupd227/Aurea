@@ -4,14 +4,15 @@ import { useEffect, useRef } from "react";
 import { CircleAlert } from "lucide-react";
 import { Composer, type ComposerInsert } from "./Composer";
 import { MessageView } from "./MessageView";
+import { LiveMessage } from "./LiveMessage";
 import { Briefing } from "./Briefing";
 import { STARTERS } from "../lib/prompts";
-import type { Message, Mentionable, ThreadStatus } from "../types";
+import type { LiveTurn, Message, Mentionable, ThreadStatus } from "../types";
 
 export function ThreadView({
   messages,
   status,
-  streaming,
+  live,
   error,
   hasThread,
   onSend,
@@ -22,7 +23,7 @@ export function ThreadView({
 }: {
   messages: Message[];
   status: ThreadStatus;
-  streaming: boolean;
+  live: LiveTurn | null;
   error: string | null;
   hasThread: boolean;
   onSend: (text: string) => void;
@@ -31,10 +32,11 @@ export function ThreadView({
   mentionables: Mentionable[];
   composerInsert: ComposerInsert | null;
 }) {
+  const streaming = live !== null;
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [messages.length, streaming]);
+  }, [messages.length, streaming, live?.text, live?.steps.length]);
 
   const waiting = status === "awaiting_confirmation";
   const last = messages[messages.length - 1];
@@ -75,20 +77,7 @@ export function ThreadView({
             <MessageView key={m.id} message={m} onConfirm={onConfirm} onReject={onReject} />
           ))}
 
-          {streaming && (
-            <div className="flex gap-3" aria-live="polite">
-              <div
-                aria-hidden
-                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-accent font-mono text-[11px] font-bold text-ink agent-working"
-              >
-                A
-              </div>
-              <div className="flex items-center gap-2 text-sm text-ink-muted">
-                <span aria-hidden className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                Working
-              </div>
-            </div>
-          )}
+          {live && <LiveMessage live={live} />}
 
           {error && (
             <div role="alert" className="flex gap-2 rounded-lg border border-crit/35 bg-crit-bg p-3 text-sm text-ink">

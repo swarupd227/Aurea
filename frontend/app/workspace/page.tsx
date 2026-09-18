@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createThread, fetchMentionables, sendMessage } from "./api";
+import { createThread, fetchMentionables, sendMessageStream } from "./api";
 import { useWorkspace } from "./context";
 import { ThreadView } from "./components/ThreadView";
 import type { Mentionable } from "./types";
@@ -24,9 +24,15 @@ export default function WorkspaceHomePage() {
     setError(null);
     try {
       const thread = await createThread({ kind: "ask_astra", title: text.slice(0, 60) });
-      await sendMessage(thread.id, text);
+      // Streamed but not rendered here — we navigate to the thread page as soon
+      // as it's created, which shows this same turn streaming live once mounted.
+      let streamError: string | null = null;
+      await sendMessageStream(thread.id, text, (event) => {
+        if (event.type === "error") streamError = event.message;
+      });
       refetchThreads();
       router.push(`/workspace/${thread.id}`);
+      if (streamError) setError(streamError);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start conversation");
       setCreating(false);
@@ -37,7 +43,7 @@ export default function WorkspaceHomePage() {
     <ThreadView
       messages={[]}
       status="idle"
-      streaming={creating}
+      live={creating ? { text: "", steps: [] } : null}
       error={error}
       hasThread={false}
       onSend={handleSend}

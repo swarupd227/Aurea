@@ -7,9 +7,11 @@ we don't have data for is left out rather than faked.
 """
 from __future__ import annotations
 
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.core.db import get_db
 from app.core.security import get_current_user
 from app.core.tools import tools_for_role
-from app.llm.gateway import Gateway, ConfirmationRequiredError, RoleForbiddenError, GatewayError
+from app.llm.gateway import Gateway, GatewayError
 from app.models.identity import User
 from app.models.thread import (
     Thread, ThreadKind, ThreadMessage, ToolCall, ToolCallStatus,
@@ -52,54 +54,52 @@ def _serialize_message(m: ThreadMessage, pending_by_tool_call: dict[uuid.UUID, P
     }
 
 
+def _sse(event: dict) -> str:
+    return f"data: {json.dumps(event)}\n\n"
+
+
 @router.post("/{thread_id}/send")
 async def send_message(
     thread_id: uuid.UUID,
     message: dict,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
-) -> dict:
+) -> StreamingResponse:
     """
-    Send a message to a thread and process the orchestrator response.
+    Send a message to a thread and stream Astra's turn back as Server-Sent Events.
 
-    The gateway validates role access, executes read-only tools immediately,
-    and pauses state-changing tools waiting for confirmation.
+    The gateway validates role access, streams prose as it's generated, executes
+    read-only tools immediately, and pauses state-changing tools for confirmation.
+    Each line is `data: <json>\\n\\n`; event shapes are documented on
+    Gateway.send_message. The frontend re-fetches the thread once it sees "done"
+    or "pending_action" rather than trying to reconstruct persisted state from the
+    stream itself.
     """
 
     text = message.get("text")
     if not text:
         raise HTTPException(status_code=400, detail="message.text is required")
 
+    # Checked before the stream starts, so a bad thread id still gets a normal 404
+    # rather than a 200 that immediately emits an error event.
     thread = await session.get(Thread, thread_id)
     if not thread or thread.firm_id != user.firm_id:
         raise HTTPException(status_code=404, detail="Thread not found")
 
     gateway = Gateway(session, user.id, user.role, user.firm_id)
 
-    try:
-        responses = []
-        async for event in gateway.send_message(thread_id, text):
-            responses.append(event)
+    async def event_stream():
+        try:
+            async for event in gateway.send_message(thread_id, text):
+                yield _sse(event)
+        except GatewayError as e:
+            yield _sse({"type": "error", "message": str(e)})
 
-        return {
-            "thread_id": str(thread_id),
-            "events": responses,
-        }
-
-    except ConfirmationRequiredError as e:
-        return {
-            "thread_id": str(thread_id),
-            "type": "pending_action",
-            "pending_action_id": str(e.pending_action_id),
-            "tool_key": e.tool_key,
-            "confirmation_text": str(e),
-        }
-
-    except RoleForbiddenError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-
-    except GatewayError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/pending-actions/{pending_action_id}/confirm")
