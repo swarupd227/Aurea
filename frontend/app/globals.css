@@ -214,3 +214,44 @@ html, body {
     animation: none;
   }
 }
+
+/* ── Workspace message markdown ──────────────────────────────────────────── */
+.astra-md { line-height: 1.6; overflow-wrap: anywhere; }
+.astra-md > * + * { margin-top: .6em; }
+.astra-md h1, .astra-md h2, .astra-md h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 1em;
+  color: var(--color-ink);
+}
+.astra-md h1 { font-size: 1.25rem; }
+.astra-md h2 { font-size: 1.125rem; }
+.astra-md h3 { font-size: 1rem; }
+.astra-md ul { list-style: disc; padding-left: 1.25rem; }
+.astra-md ol { list-style: decimal; padding-left: 1.25rem; }
+.astra-md li + li { margin-top: .2em; }
+.astra-md a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 2px; }
+.astra-md strong { font-weight: 600; color: var(--color-ink); }
+.astra-md code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .85em;
+  padding: .1em .35em;
+  border-radius: .25rem;
+  background: var(--color-border-soft);
+}
+.astra-md pre {
+  overflow-x: auto;
+  padding: .75rem;
+  border-radius: .375rem;
+  background: var(--color-border-soft);
+}
+.astra-md pre code { padding: 0; background: none; }
+.astra-md table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.astra-md th, .astra-md td { border: 1px solid var(--color-border); padding: .3rem .55rem; text-align: left; }
+.astra-md blockquote { border-left: 2px solid var(--color-border); padding-left: .75rem; color: var(--color-ink-muted); }
