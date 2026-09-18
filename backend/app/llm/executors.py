@@ -101,6 +101,7 @@ class ToolExecutors:
 
         holdings: list[dict[str, Any]] = []
         total_value = 0.0
+        real_priced = synthetic_priced = 0
         if account_ids:
             rows = (
                 await self.session.execute(
@@ -112,12 +113,26 @@ class ToolExecutors:
             for h, inst in rows:
                 mv = float(h.market_value or 0)
                 total_value += mv
+                # Honesty rule (CLAUDE.md): a valuation resting on a synthetic price
+                # says so. The latest Price row for this instrument carries is_real —
+                # whether that close came from the real market feed or seed data.
+                latest_price = (
+                    await self.session.execute(
+                        select(Price).where(Price.instrument_id == inst.id).order_by(Price.as_of.desc()).limit(1)
+                    )
+                ).scalar_one_or_none()
+                is_real = bool(latest_price.is_real) if latest_price else False
+                if is_real:
+                    real_priced += 1
+                else:
+                    synthetic_priced += 1
                 holdings.append({
                     "symbol": inst.symbol,
                     "name": inst.name,
                     "asset_class": str(inst.asset_class),
                     "quantity": float(h.quantity),
                     "market_value": mv,
+                    "price_source": "real" if is_real else "synthetic",
                 })
 
         cash = sum(float(a.cash_balance or 0) for a in accounts)
@@ -129,6 +144,7 @@ class ToolExecutors:
             "holdings": holdings,
             "cash": cash,
             "total_value": total_value,
+            "pricing": {"real": real_priced, "synthetic": synthetic_priced},
             "message": f"{mandate.name}: {len(holdings)} holding(s), cash {cash:,.2f}, total value {total_value:,.2f}",
         }
 

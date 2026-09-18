@@ -6,6 +6,7 @@ import { ArrowLeft, Plus } from "lucide-react";
 import { getToken } from "@/lib/api";
 import { WorkspaceProvider, useWorkspace } from "./context";
 import { Rail } from "./components/Rail";
+import { CommandPalette } from "./components/CommandPalette";
 
 function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -47,6 +48,8 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
         </header>
         <div className="min-h-0 flex-1">{children}</div>
       </main>
+
+      <CommandPalette />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { Markdown } from "./Markdown";
 import { ConfirmationCard } from "./ConfirmationCard";
-import { Sources } from "./Sources";
+import { ProofStrip } from "./ProofStrip";
 import { ArtifactRenderer } from "./artifacts/ArtifactRenderer";
 import type { Message } from "../types";
 
@@ -48,7 +48,7 @@ export function MessageView({
           <ConfirmationCard action={message.pending_action} onConfirm={onConfirm} onReject={onReject} />
         )}
 
-        <Sources tools={message.sources} />
+        <ProofStrip tools={message.sources} artifacts={message.artifacts} />
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, House, Plus } from "lucide-react";
+import { ArrowLeft, House, Plus, Search } from "lucide-react";
 import { fetchMentionables, fetchNeedsYou } from "../api";
 import type { Mentionable, NeedsYou, ThreadSummary } from "../types";
 
@@ -38,10 +38,12 @@ export function Rail({
   const router = useRouter();
   const [needsYou, setNeedsYou] = useState<NeedsYou | null>(null);
   const [agents, setAgents] = useState<Mentionable[]>([]);
+  const [shortcutLabel, setShortcutLabel] = useState("Ctrl K");
 
   useEffect(() => {
     fetchNeedsYou().then(setNeedsYou).catch(() => setNeedsYou(null));
     fetchMentionables().then((d) => setAgents(d.mentionables)).catch(() => setAgents([]));
+    if (/Mac|iPhone|iPad/.test(navigator.userAgent)) setShortcutLabel("⌘K");
   }, []);
 
   const waitingThreads = threads.filter((t) => t.status === "awaiting_confirmation");
@@ -176,6 +178,14 @@ export function Rail({
       </div>
 
       <div className="shrink-0 border-t border-border p-2">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event("astra:open-palette"))}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-ink-soft hover:bg-border-soft/60 hover:text-ink transition-colors"
+        >
+          <Search className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden /> Search
+          <kbd className="ml-auto font-mono text-[10px] text-ink-muted">{shortcutLabel}</kbd>
+        </button>
         <button
           type="button"
           onClick={() => router.push("/studio")}
