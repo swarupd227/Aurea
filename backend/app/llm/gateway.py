@@ -1,17 +1,24 @@
-"""Gateway — the streaming orchestration loop for the conversation-first interface.
+"""Gateway — the streaming, multi-step orchestration loop for the conversation-first
+interface.
 
 The gateway runs the core loop:
 1. User sends a message to Astra
 2. Astra (Claude, via native tool-use) streams a response and may request tools
 3. Gateway validates role access as each tool request arrives
-4. Read-only tools execute immediately; state-changing tools pause for confirmation
-5. The full turn (prose + tool activity) streams back to the caller as it happens
+4. A read-only tool executes immediately, and its result is handed straight back to
+   Claude so it can decide whether to call another tool or answer — up to
+   MAX_TOOL_ROUNDS times in one turn, so "check the portfolio, then look up that
+   symbol, then tell me the answer" resolves without the user re-prompting.
+5. A state-changing tool pauses the whole turn for the user's confirmation.
+6. The full turn (prose + tool activity, across every round) streams back to the
+   caller as it happens.
 
 The gateway is the single enforcement point for decision rights, role checks, and
 exactly-once execution of state-changing tools.
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, AsyncGenerator
@@ -27,6 +34,11 @@ from app.models.thread import (
 )
 from app.llm.executors import ToolExecutors
 from app.llm.service import llm_service
+
+# A tool round-trip (Claude's tool_use -> our result -> Claude again) this many times
+# in one turn before the gateway stops chaining and just answers with what it has —
+# a guardrail against a confused model looping, not a limit anyone should normally hit.
+MAX_TOOL_ROUNDS = 4
 
 
 class GatewayError(Exception):
@@ -51,18 +63,22 @@ to read client data (households, portfolios, holdings), decide on recommendation
 trades, and update goals. Use a tool whenever the user's request calls for real data or a
 real action — never invent numbers or pretend to have checked something you haven't.
 
+You can call a tool, see its result, and call another tool in the same turn — so if
+answering well takes two or three steps (look up a household, then check a mandate it
+owns, then answer), just do them in sequence rather than stopping to ask the user to
+continue. Once you have what you need, answer in prose; don't narrate empty tool calls.
+
 State-changing tools (deciding a recommendation, executing orders, updating a goal) always
 pause for the user's explicit confirmation before anything happens — that pause is handled
 for you automatically when you call the tool, so call it as soon as you have what you need
-rather than asking the user to confirm in words first.
+rather than asking the user to confirm in words first. A state-changing tool call always
+ends your turn (there is no result to continue from, since nothing happens until the user
+confirms), so make it your last step.
 
 Be concise, direct, and conversational. This is a regulated wealth platform: don't guess at
 client identifiers: ask for them, or use search_holdings, if you don't already have one.
 
 User's role: {role}
-
-Recent conversation:
-{history}
 """
 
 
@@ -89,14 +105,15 @@ class Gateway:
         text: str,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
-        Send a user message and stream Astra's turn back as it happens.
+        Send a user message and stream Astra's turn back as it happens — possibly
+        across several rounds of tool use before the final answer.
 
         Yields, in order:
-        - {"type": "token", "text": "..."} — prose chunks, zero or more
+        - {"type": "token", "text": "..."} — prose chunks, zero or more per round
         - {"type": "tool_start", "tool_key": "..."} — before a read-only tool executes
         - {"type": "tool_result", "tool_key": "...", "ok": bool} — after it finishes
         - {"type": "pending_action", "pending_action_id": "...", "tool_key": "...",
-           "confirmation_text": "..."} — a state-changing tool is paused for confirmation
+           "confirmation_text": "..."} — a state-changing tool paused the turn
         - {"type": "done", "message_id": "..."} — the turn is fully persisted
         - {"type": "error", "message": "..."} — something went wrong; the turn still ends
         """
@@ -109,97 +126,148 @@ class Gateway:
         self.session.add(user_msg)
         await self.session.flush()
 
-        full_text = ""
-        tool_uses: list[dict[str, Any]] = []
+        messages = await self._build_messages(thread_id)
+        accumulated_text: list[str] = []
+        astra_msg: ThreadMessage | None = None
+
         try:
-            async for event in self._stream_tokens(thread_id):
-                if event["type"] == "token":
-                    yield event
-                elif event["type"] == "_final":
-                    full_text = event["text"]
-                    tool_uses = event["tool_uses"]
+            for _round in range(MAX_TOOL_ROUNDS):
+                round_text = ""
+                tool_uses: list[dict[str, Any]] = []
+                content_blocks: list[dict[str, Any]] = []
+
+                async for event in self._stream_tokens(messages):
+                    if event["type"] == "token":
+                        round_text += event["text"]
+                        yield event
+                    elif event["type"] == "_final":
+                        tool_uses = event["tool_uses"]
+                        content_blocks = event["content_blocks"]
+
+                if round_text:
+                    accumulated_text.append(round_text)
+
+                if not tool_uses:
+                    break  # Claude answered in prose — the turn is done.
+
+                # A message now exists to attach ToolCall rows to. Created once, on
+                # the first round that actually calls a tool, and reused across
+                # further rounds in the same turn.
+                if astra_msg is None:
+                    astra_msg = ThreadMessage(thread_id=thread_id, role=MessageRole.ASTRA, text="", suggestions=[])
+                    self.session.add(astra_msg)
+                    await self.session.flush()
+
+                messages.append({"role": "assistant", "content": content_blocks})
+                tool_result_blocks: list[dict[str, Any]] = []
+
+                for tool_use in tool_uses:
+                    tool_key = tool_use["name"]
+                    inputs = tool_use["input"] or {}
+
+                    is_valid, error_msg = validate_tool_call(self.role, tool_key, inputs)
+                    if not is_valid:
+                        astra_msg.text = "\n\n".join(accumulated_text)
+                        await self.session.commit()
+                        yield {"type": "error", "message": error_msg}
+                        return
+
+                    tool = get_tool(tool_key)
+                    if not tool:
+                        astra_msg.text = "\n\n".join(accumulated_text)
+                        await self.session.commit()
+                        yield {"type": "error", "message": f"Tool '{tool_key}' does not exist"}
+                        return
+
+                    tool_call = ToolCall(
+                        message_id=astra_msg.id, tool_key=tool_key, inputs=inputs, status=ToolCallStatus.PENDING,
+                    )
+                    self.session.add(tool_call)
+                    await self.session.flush()
+
+                    if tool.change_state == ToolChangeState.PAUSE_FOR_CONFIRMATION:
+                        # Nothing left to chain: a state change can't happen until the
+                        # user confirms, so there is no result yet to hand back to
+                        # Claude. Any further tool_uses this round are dropped — the
+                        # confirmed action's result (once decided) starts a fresh turn.
+                        pending = PendingAction(
+                            thread_id=thread_id,
+                            tool_call_id=tool_call.id,
+                            confirmation_text=tool.confirmation or f"Confirm {tool.name}?",
+                            requires_user_id=self.user_id,
+                            expires_at=datetime.utcnow() + timedelta(hours=24),
+                        )
+                        self.session.add(pending)
+                        await self.session.flush()
+                        astra_msg.text = "\n\n".join(accumulated_text)
+                        await self.session.commit()
+
+                        yield {
+                            "type": "pending_action",
+                            "pending_action_id": str(pending.id),
+                            "tool_key": tool_key,
+                            "confirmation_text": pending.confirmation_text,
+                        }
+                        return
+
+                    # Read-only: execute now and feed the result back to Claude so it
+                    # can decide the next step (another tool, or the final answer).
+                    yield {"type": "tool_start", "tool_key": tool_key}
+                    try:
+                        result = await self._execute_tool(tool_key, inputs)
+                        tool_call.status = ToolCallStatus.DONE
+                        tool_call.result = result
+                        tool_call.completed_at = datetime.utcnow()
+                        yield {"type": "tool_result", "tool_key": tool_key, "ok": True}
+                        tool_result_blocks.append({
+                            "type": "tool_result", "tool_use_id": tool_use["id"],
+                            "content": json.dumps(result, default=str),
+                        })
+                    except Exception as e:
+                        # A failed tool isn't fatal to the turn — Claude sees the error
+                        # as the tool's result and can explain it or try something
+                        # else, same as a person would read an error message.
+                        tool_call.status = ToolCallStatus.FAILED
+                        tool_call.error = str(e)
+                        tool_call.completed_at = datetime.utcnow()
+                        yield {"type": "tool_result", "tool_key": tool_key, "ok": False}
+                        tool_result_blocks.append({
+                            "type": "tool_result", "tool_use_id": tool_use["id"],
+                            "content": f"Error: {e}", "is_error": True,
+                        })
+
+                messages.append({"role": "user", "content": tool_result_blocks})
+                # Loop: call Claude again with the tool results now in the conversation.
+            else:
+                accumulated_text.append(
+                    "(I've made several tool calls on this — let me know if you'd like me to keep going.)"
+                )
         except Exception as e:  # pragma: no cover - network dependent
             await self.session.rollback()
             yield {"type": "error", "message": f"I hit an error talking to the model: {e}"}
             return
 
-        astra_msg = ThreadMessage(
-            thread_id=thread_id,
-            role=MessageRole.ASTRA,
-            text=full_text,
-            suggestions=["Continue", "Show details", "Confirm action"] if full_text else [],
-        )
-        self.session.add(astra_msg)
-        # Flush so astra_msg.id (a client-side UUID default) is assigned before
-        # ToolCall rows reference it — without this, message_id is still None and
-        # the insert violates the NOT NULL constraint.
-        await self.session.flush()
-
-        for tool_use in tool_uses:
-            tool_key = tool_use["name"]
-            inputs = tool_use["input"] or {}
-
-            is_valid, error_msg = validate_tool_call(self.role, tool_key, inputs)
-            if not is_valid:
-                await self.session.commit()
-                yield {"type": "error", "message": error_msg}
-                return
-
-            tool = get_tool(tool_key)
-            if not tool:
-                await self.session.commit()
-                yield {"type": "error", "message": f"Tool '{tool_key}' does not exist"}
-                return
-
-            tool_call = ToolCall(
-                message_id=astra_msg.id, tool_key=tool_key, inputs=inputs, status=ToolCallStatus.PENDING,
+        final_text = "\n\n".join(t for t in accumulated_text if t.strip())
+        if astra_msg is None:
+            astra_msg = ThreadMessage(
+                thread_id=thread_id, role=MessageRole.ASTRA, text=final_text,
+                suggestions=["Continue", "Show details", "Confirm action"] if final_text else [],
             )
-            self.session.add(tool_call)
+            self.session.add(astra_msg)
             await self.session.flush()
-
-            if tool.change_state == ToolChangeState.PAUSE_FOR_CONFIRMATION:
-                pending = PendingAction(
-                    thread_id=thread_id,
-                    tool_call_id=tool_call.id,
-                    confirmation_text=tool.confirmation or f"Confirm {tool.name}?",
-                    requires_user_id=self.user_id,
-                    expires_at=datetime.utcnow() + timedelta(hours=24),
-                )
-                self.session.add(pending)
-                await self.session.flush()
-                await self.session.commit()
-
-                yield {
-                    "type": "pending_action",
-                    "pending_action_id": str(pending.id),
-                    "tool_key": tool_key,
-                    "confirmation_text": pending.confirmation_text,
-                }
-                return
-
-            # Read-only: execute immediately and let the caller know it happened.
-            yield {"type": "tool_start", "tool_key": tool_key}
-            try:
-                result = await self._execute_tool(tool_key, inputs)
-                tool_call.status = ToolCallStatus.DONE
-                tool_call.result = result
-                tool_call.completed_at = datetime.utcnow()
-                yield {"type": "tool_result", "tool_key": tool_key, "ok": True}
-            except Exception as e:
-                tool_call.status = ToolCallStatus.FAILED
-                tool_call.error = str(e)
-                tool_call.completed_at = datetime.utcnow()
-                yield {"type": "tool_result", "tool_key": tool_key, "ok": False}
-                await self.session.commit()
-                yield {"type": "error", "message": str(e)}
-                return
+        else:
+            astra_msg.text = final_text
+            astra_msg.suggestions = ["Continue", "Show details", "Confirm action"] if final_text else []
 
         await self.session.commit()
         yield {"type": "done", "message_id": str(astra_msg.id)}
 
-    async def _stream_tokens(self, thread_id: uuid.UUID) -> AsyncGenerator[dict[str, Any], None]:
-        """Yields {"type": "token", ...} chunks then a final {"type": "_final", ...}
-        carrying the accumulated text and any tool_uses Claude requested."""
+    async def _build_messages(self, thread_id: uuid.UUID) -> list[dict[str, Any]]:
+        """The last few turns of this thread, in Anthropic message format, ending with
+        the just-added user message. Consecutive same-role messages are merged —
+        Claude's API requires strict user/assistant alternation, and while normal
+        conversation already alternates, this is a cheap guard against anything that
+        doesn't (e.g. two system-inserted messages in a row)."""
 
         recent_stmt = (
             select(ThreadMessage)
@@ -210,33 +278,36 @@ class Gateway:
         recent_result = await self.session.execute(recent_stmt)
         recent_messages = list(reversed(recent_result.scalars().all()))
 
-        history_lines = []
-        for msg in recent_messages[:-1] if recent_messages else []:
+        messages: list[dict[str, Any]] = []
+        for msg in recent_messages:
             role = "user" if msg.role == MessageRole.USER else "assistant"
-            history_lines.append(f"{role}: {msg.text}")
-        history_text = "\n".join(history_lines) if history_lines else "(no prior messages)"
+            if messages and messages[-1]["role"] == role:
+                messages[-1]["content"] = f"{messages[-1]['content']}\n\n{msg.text}"
+            else:
+                messages.append({"role": role, "content": msg.text})
+        return messages
 
-        latest = recent_messages[-1] if recent_messages else None
-        if not latest or latest.role != MessageRole.USER:
-            yield {"type": "_final", "text": "No message found.", "tool_uses": []}
-            return
+    async def _stream_tokens(self, messages: list[dict[str, Any]]) -> AsyncGenerator[dict[str, Any], None]:
+        """Yields {"type": "token", ...} chunks then a final {"type": "_final", ...}
+        carrying the tool_uses Claude requested this round and its raw content_blocks
+        (for the caller to append as the next "assistant" turn if it continues)."""
 
-        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(role=str(self.role), history=history_text)
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(role=str(self.role))
         tools = anthropic_tools_for_role(self.role)
 
-        full_text = ""
         tool_uses: list[dict[str, Any]] = []
+        content_blocks: list[dict[str, Any]] = []
         async for event in llm_service.stream(
-            task="advice", system=system_prompt, prompt=latest.text, tools=tools,
+            task="advice", system=system_prompt, messages=messages, tools=tools,
             max_tokens=1500, temperature=0.5,
         ):
             if event["type"] == "text":
-                full_text += event["text"]
                 yield {"type": "token", "text": event["text"]}
             elif event["type"] == "done":
                 tool_uses = event.get("tool_uses", [])
+                content_blocks = event.get("content_blocks", [])
 
-        yield {"type": "_final", "text": full_text, "tool_uses": tool_uses}
+        yield {"type": "_final", "tool_uses": tool_uses, "content_blocks": content_blocks}
 
     async def confirm_pending_action(
         self,

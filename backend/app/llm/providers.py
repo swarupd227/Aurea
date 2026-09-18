@@ -45,18 +45,23 @@ class AnthropicProvider:
                                 "output_tokens": resp.usage.output_tokens})
 
     async def stream(
-        self, *, system: str, messages: list[LLMMessage], model: str, api_key: str,
+        self, *, system: str, messages: list[dict[str, Any]], model: str, api_key: str,
         tools: list[dict[str, Any]] | None = None, max_tokens: int = 1024, temperature: float = 0.4,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        """Stream a completion. Yields {"type": "text", "text": delta} chunks as prose
-        arrives, then a final {"type": "done", "tool_uses": [...], "stop_reason": ...}
-        once the message is complete. Tool-use input JSON is never streamed as text —
-        the SDK's text_stream only carries text content blocks, so a tool call Claude
-        decides to make is never partially visible to the user."""
-        kwargs: dict[str, Any] = dict(
-            model=model, system=system, max_tokens=max_tokens,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
-        )
+        """Stream a completion. `messages` is raw Anthropic message-format dicts (not
+        LLMMessage) — content may be a plain string or a list of content blocks
+        (text/tool_use/tool_result), so a multi-round tool-use loop can pass back its
+        own turn plus the tool results Claude is waiting on.
+
+        Yields {"type": "text", "text": delta} chunks as prose arrives, then a final
+        {"type": "done", "tool_uses": [...], "content_blocks": [...], "stop_reason": ...}.
+        Tool-use input JSON is never streamed as text — the SDK's text_stream only
+        carries text content blocks, so a tool call Claude decides to make is never
+        partially visible to the user. content_blocks is Claude's full turn (text +
+        tool_use, JSON-serializable dicts) for the caller to append as the next
+        "assistant" message if it continues the loop with tool results.
+        """
+        kwargs: dict[str, Any] = dict(model=model, system=system, max_tokens=max_tokens, messages=messages)
         if "opus-4-8" not in model:
             kwargs["temperature"] = temperature
         if tools:
@@ -67,12 +72,20 @@ class AnthropicProvider:
                 yield {"type": "text", "text": text}
             final = await stream.get_final_message()
 
-        tool_uses = [
-            {"id": b.id, "name": b.name, "input": b.input}
-            for b in final.content
-            if getattr(b, "type", "") == "tool_use"
-        ]
-        yield {"type": "done", "tool_uses": tool_uses, "stop_reason": final.stop_reason}
+        content_blocks = []
+        tool_uses = []
+        for b in final.content:
+            btype = getattr(b, "type", "")
+            if btype == "text":
+                content_blocks.append({"type": "text", "text": b.text})
+            elif btype == "tool_use":
+                content_blocks.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
+                tool_uses.append({"id": b.id, "name": b.name, "input": b.input})
+
+        yield {
+            "type": "done", "tool_uses": tool_uses, "content_blocks": content_blocks,
+            "stop_reason": final.stop_reason,
+        }
 
 
 class OpenAIProvider:

@@ -115,7 +115,7 @@ class LLMService:
         *,
         task: str,
         system: str,
-        prompt: str,
+        messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         firm_model_config: dict | None = None,
         creds: dict | None = None,
@@ -124,20 +124,22 @@ class LLMService:
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream a completion with optional native tool-use. Anthropic only — streaming
         multi-provider fallback isn't worth the complexity while it's the only configured
-        provider in practice. Yields {"type": "text"|"done", ...} — see providers.stream().
-        On failure, yields a single "done" event with no tool_uses and a fallback message
-        wrapped as a "text" event first, so the caller's accumulation logic doesn't need a
-        separate error path.
+        provider in practice. `messages` is raw Anthropic-format dicts (see
+        providers.stream()), not LLMMessage — a multi-round tool-use loop needs to pass
+        back tool_use/tool_result content blocks, which LLMMessage's plain-string
+        content can't carry. Yields {"type": "text"|"done", ...}. On failure, yields a
+        single "done" event with no tool_uses and a fallback message wrapped as a
+        "text" event first, so the caller's accumulation logic doesn't need a separate
+        error path.
         """
         model = self.model_for(task, firm_model_config)
         key = self._keys(creds)["anthropic"]
         if not key:
-            yield {"type": "text", "text": _generic_fallback(system, prompt)}
-            yield {"type": "done", "tool_uses": [], "stop_reason": "fallback"}
+            yield {"type": "text", "text": _generic_fallback(system, "")}
+            yield {"type": "done", "tool_uses": [], "content_blocks": [], "stop_reason": "fallback"}
             return
 
         provider = get_provider("anthropic")
-        messages = [LLMMessage(role="user", content=prompt)]
         try:
             async for event in provider.stream(
                 system=system, messages=messages, model=model, api_key=key,
@@ -147,7 +149,7 @@ class LLMService:
         except Exception as exc:  # pragma: no cover - network dependent
             log.warning("llm_stream_failed", error=str(exc))
             yield {"type": "text", "text": f"I hit an error talking to the model ({exc}). Please try again."}
-            yield {"type": "done", "tool_uses": [], "stop_reason": "error"}
+            yield {"type": "done", "tool_uses": [], "content_blocks": [], "stop_reason": "error"}
 
 
 def _generic_fallback(system: str, prompt: str) -> str:
