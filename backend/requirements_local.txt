@@ -37,7 +37,6 @@ numpy==2.2.1
 structlog==24.4.0
 
 # Local embeddings for RAG (CPU, no external API). Optional at runtime — guarded import.
-fastembed==0.5.1
 
 # PDF generation (I1 — wealth summary PDF)
 fpdf2==2.8.2

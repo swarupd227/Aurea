@@ -2,7 +2,10 @@
 from app.models import (  # noqa: F401
     client_experience,
     compliance,
+    compliance_program,
     connectors,
+    corporate_actions,
+    crm,
     engagement,
     governance,
     graph,
@@ -11,6 +14,7 @@ from app.models import (  # noqa: F401
     onboarding,
     portfolio,
     skill,
+    sleeves,
     telemetry,
     tenant,
     thread,
