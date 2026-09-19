@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Play, TrendingUp, Users2, Target, GitBranch, Building2, PiggyBank, SlidersHorizontal,
-  CalendarClock, FileText, Sparkles, RefreshCw } from "lucide-react";
+  CalendarClock, FileText, Sparkles, RefreshCw, Layers, AlertTriangle, Check } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Breadcrumb, Card, SkeletonCard, StatTile, Empty, TierBadge } from "@/components/ui";
 import { AllocationDonut } from "@/components/Charts";
@@ -25,6 +25,39 @@ const HOUSEHOLD_AGENTS = [
   { key: "asset_location", label: "Asset location" },
   { key: "wallet_share_scout", label: "Wallet share" },
 ];
+
+function AccountSleeves({ accountId }: { accountId: string }) {
+  const { data } = useApi<any>(`/api/sleeves?account_id=${accountId}`, [accountId]);
+  const { data: recon } = useApi<any>(
+    data?.items?.length ? `/api/sleeves/accounts/${accountId}/reconcile` : null, [accountId, data?.items?.length]
+  );
+
+  if (!data?.items?.length) return null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border-soft">
+      <div className="flex items-center gap-2 mb-2">
+        <Layers size={14} className="text-ink-muted" />
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Sleeves ({data.items.length})
+        </span>
+        {recon && (
+          <span className={`ml-auto inline-flex items-center gap-1 text-[11px] ${recon.clean ? "text-ok" : "text-warn"}`}>
+            {recon.clean ? <Check size={12} /> : <AlertTriangle size={12} />}
+            {recon.clean ? "reconciled" : `${recon.breaks.length} break(s)`}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {data.items.map((s: any) => (
+          <span key={s.id} className="chip bg-border-soft text-ink-soft">
+            {s.name} · {(s.target_weight * 100).toFixed(0)}%
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function WalletShareTile({ persons, totalValue }: { persons: any[]; totalValue: number }) {
   const heldAway = persons.reduce((s: number, p: any) => s + ((p.profile?.held_away) || 0), 0);
@@ -165,6 +198,7 @@ export default function ClientDetail() {
                   </tbody>
                 </table>
               </div>
+              <AccountSleeves accountId={acc.id} />
             </Card>
           ))}
         </div>

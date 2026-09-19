@@ -55,6 +55,19 @@ class ToolExecutors:
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
             "update_goal": self.update_goal,
+            "read_compliance_program": self.read_compliance_program,
+            "mark_conflict_reviewed": self.mark_conflict_reviewed,
+            "log_wsp_evidence": self.log_wsp_evidence,
+            "read_crm_pipeline": self.read_crm_pipeline,
+            "create_crm_contact": self.create_crm_contact,
+            "create_crm_opportunity": self.create_crm_opportunity,
+            "log_crm_activity": self.log_crm_activity,
+            "update_crm_opportunity_stage": self.update_crm_opportunity_stage,
+            "read_corporate_actions": self.read_corporate_actions,
+            "compute_corporate_action_entitlements": self.compute_corporate_action_entitlements,
+            "post_corporate_action_entitlement": self.post_corporate_action_entitlement,
+            "read_sleeves": self.read_sleeves,
+            "net_sleeve_intents": self.net_sleeve_intents,
         }
 
         executor = executor_map.get(tool_key)
@@ -365,4 +378,390 @@ class ToolExecutors:
             "goal_id": str(goal_id),
             "updates": updates,
             "message": f"Updated goal '{goal.name}'.",
+        }
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Compliance program: conflicts inventory + WSP grid
+    # ─────────────────────────────────────────────────────────────────────
+
+    async def read_compliance_program(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import compliance_program as engine
+        from app.models.compliance_program import ConflictInventoryItem, WSPRule
+
+        conflicts = (await self.session.execute(
+            select(ConflictInventoryItem).where(ConflictInventoryItem.firm_id == self.firm_id)
+            .order_by(ConflictInventoryItem.title)
+        )).scalars().all()
+        wsp_rows = (await self.session.execute(
+            select(WSPRule).where(WSPRule.firm_id == self.firm_id).order_by(WSPRule.rule_key)
+        )).scalars().all()
+
+        summary = {
+            "conflicts": await engine.conflicts_summary(self.session, self.firm_id),
+            "evidence_coverage": await engine.evidence_coverage(self.session, self.firm_id),
+        }
+
+        return {
+            "conflicts": [{
+                "conflict_key": c.conflict_key, "title": c.title, "status": c.status,
+                "owner": c.owner, "last_reviewed_at": c.last_reviewed_at.isoformat() if c.last_reviewed_at else None,
+            } for c in conflicts],
+            "wsp_rules": [{
+                "rule_key": r.rule_key, "obligation": r.obligation, "frequency": r.frequency,
+                "evidence_automated": r.evidence_automated,
+                "last_evidence_at": r.last_evidence_at.isoformat() if r.last_evidence_at else None,
+            } for r in wsp_rows],
+            "summary": summary,
+            "message": (
+                f"{summary['conflicts']['active']} active conflict(s), "
+                f"{len(summary['conflicts']['overdue_review'])} overdue for review. "
+                f"WSP evidence coverage {summary['evidence_coverage']['coverage_pct']}%, "
+                f"{len(summary['evidence_coverage']['stale_evidence'])} rule(s) stale."
+            ),
+        }
+
+    async def mark_conflict_reviewed(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.core.db import utcnow
+        from app.models.compliance_program import ConflictInventoryItem
+        from app.models.identity import User
+
+        conflict_key = inputs.get("conflict_key")
+        if not conflict_key:
+            raise ExecutorError("conflict_key is required")
+
+        row = (await self.session.execute(
+            select(ConflictInventoryItem).where(
+                ConflictInventoryItem.firm_id == self.firm_id,
+                ConflictInventoryItem.conflict_key == conflict_key,
+            )
+        )).scalar_one_or_none()
+        if row is None:
+            raise ExecutorError(f"No conflict-inventory item with key '{conflict_key}'")
+
+        user = await self.session.get(User, self.user_id)
+        row.last_reviewed_at = utcnow()
+        row.last_reviewed_by = user.email if user else str(self.role)
+        if inputs.get("notes"):
+            row.notes = inputs["notes"]
+        await self.session.flush()
+
+        return {
+            "conflict_key": row.conflict_key, "title": row.title,
+            "last_reviewed_at": row.last_reviewed_at.isoformat(),
+            "message": f"Marked '{row.title}' reviewed as of today.",
+        }
+
+    async def log_wsp_evidence(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.core.db import utcnow
+        from app.models.compliance_program import WSPRule
+
+        rule_key = inputs.get("rule_key")
+        if not rule_key:
+            raise ExecutorError("rule_key is required")
+
+        row = (await self.session.execute(
+            select(WSPRule).where(WSPRule.firm_id == self.firm_id, WSPRule.rule_key == rule_key)
+        )).scalar_one_or_none()
+        if row is None:
+            raise ExecutorError(f"No WSP rule with key '{rule_key}'")
+
+        row.last_evidence_at = utcnow()
+        await self.session.flush()
+
+        return {
+            "rule_key": row.rule_key, "obligation": row.obligation,
+            "last_evidence_at": row.last_evidence_at.isoformat(),
+            "message": f"Logged evidence for '{row.obligation}' as of today.",
+        }
+
+    # ─────────────────────────────────────────────────────────────────────
+    # CRM pipeline
+    # ─────────────────────────────────────────────────────────────────────
+
+    async def read_crm_pipeline(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import crm as engine
+        from app.models.crm import CrmContact, CrmOpportunity
+
+        contacts = (await self.session.execute(
+            select(CrmContact).where(CrmContact.firm_id == self.firm_id).order_by(CrmContact.full_name)
+        )).scalars().all()
+        opportunities = (await self.session.execute(
+            select(CrmOpportunity).where(CrmOpportunity.firm_id == self.firm_id)
+            .order_by(CrmOpportunity.opened_at.desc())
+        )).scalars().all()
+        summary = await engine.pipeline_summary(self.session, self.firm_id)
+
+        contacts_by_id = {c.id: c for c in contacts}
+        return {
+            "contacts": [{
+                "id": str(c.id), "full_name": c.full_name, "contact_type": c.contact_type,
+                "source": c.source,
+            } for c in contacts],
+            "opportunities": [{
+                "id": str(o.id), "contact_name": contacts_by_id[o.contact_id].full_name
+                    if o.contact_id in contacts_by_id else None,
+                "title": o.title, "stage": o.stage,
+                "estimated_aum": float(o.estimated_aum) if o.estimated_aum is not None else None,
+                "probability_pct": o.probability_pct,
+            } for o in opportunities],
+            "summary": summary,
+            "message": (
+                f"{len(contacts)} contact(s), {summary['open_pipeline_count']} open opportunity(ies) "
+                f"worth {summary['weighted_open_value']:,.0f} weighted."
+            ),
+        }
+
+    async def create_crm_contact(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.models.crm import CONTACT_TYPES, CrmContact
+
+        full_name = inputs.get("full_name")
+        if not full_name:
+            raise ExecutorError("full_name is required")
+        contact_type = inputs.get("contact_type") or "prospect"
+        if contact_type not in CONTACT_TYPES:
+            raise ExecutorError(f"contact_type must be one of {CONTACT_TYPES}")
+
+        row = CrmContact(
+            firm_id=self.firm_id, full_name=full_name, contact_type=contact_type,
+            email=inputs.get("email"), source=inputs.get("source"), notes=inputs.get("notes"),
+            owner_user_id=self.user_id, is_active=True,
+        )
+        self.session.add(row)
+        await self.session.flush()
+
+        return {
+            "contact_id": str(row.id), "full_name": row.full_name, "contact_type": row.contact_type,
+            "message": f"Added '{row.full_name}' as a {row.contact_type.replace('_', ' ')}.",
+        }
+
+    async def create_crm_opportunity(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.core.db import utcnow
+        from app.models.crm import CrmContact, CrmOpportunity
+
+        contact_id = _parse_uuid(inputs.get("contact_id") or "", "contact_id")
+        title = inputs.get("title")
+        if not title:
+            raise ExecutorError("title is required")
+
+        contact = (await self.session.execute(
+            select(CrmContact).where(CrmContact.id == contact_id, CrmContact.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if contact is None:
+            raise ExecutorError(f"Contact {contact_id} not found")
+
+        row = CrmOpportunity(
+            firm_id=self.firm_id, contact_id=contact_id, title=title, stage="lead",
+            estimated_aum=inputs.get("estimated_aum"), probability_pct=int(inputs.get("probability_pct") or 10),
+            opened_at=utcnow(),
+        )
+        self.session.add(row)
+        await self.session.flush()
+
+        return {
+            "opportunity_id": str(row.id), "contact_name": contact.full_name, "title": row.title,
+            "stage": row.stage,
+            "message": f"Opened '{row.title}' against {contact.full_name}, stage lead.",
+        }
+
+    async def log_crm_activity(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.core.db import utcnow
+        from app.models.crm import ACTIVITY_TYPES, CrmActivity, CrmContact
+
+        contact_id = _parse_uuid(inputs.get("contact_id") or "", "contact_id")
+        detail = inputs.get("detail")
+        if not detail:
+            raise ExecutorError("detail is required")
+        activity_type = inputs.get("activity_type") or "note"
+        if activity_type not in ACTIVITY_TYPES:
+            raise ExecutorError(f"activity_type must be one of {ACTIVITY_TYPES}")
+
+        contact = (await self.session.execute(
+            select(CrmContact).where(CrmContact.id == contact_id, CrmContact.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if contact is None:
+            raise ExecutorError(f"Contact {contact_id} not found")
+
+        opportunity_id = inputs.get("opportunity_id")
+        row = CrmActivity(
+            firm_id=self.firm_id, contact_id=contact_id,
+            opportunity_id=_parse_uuid(opportunity_id, "opportunity_id") if opportunity_id else None,
+            activity_type=activity_type, occurred_at=utcnow(), detail=detail,
+            logged_by_user_id=self.user_id,
+        )
+        self.session.add(row)
+        await self.session.flush()
+
+        return {
+            "activity_id": str(row.id), "contact_name": contact.full_name, "activity_type": activity_type,
+            "message": f"Logged a {activity_type} with {contact.full_name}.",
+        }
+
+    async def update_crm_opportunity_stage(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.core.db import utcnow
+        from app.models.crm import PIPELINE_STAGES, CrmOpportunity
+
+        opportunity_id = _parse_uuid(inputs.get("opportunity_id") or "", "opportunity_id")
+        stage = inputs.get("stage")
+        if stage not in PIPELINE_STAGES:
+            raise ExecutorError(f"stage must be one of {PIPELINE_STAGES}")
+
+        row = (await self.session.execute(
+            select(CrmOpportunity).where(CrmOpportunity.id == opportunity_id, CrmOpportunity.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if row is None:
+            raise ExecutorError(f"Opportunity {opportunity_id} not found")
+
+        row.stage = stage
+        if stage in ("won", "lost") and row.closed_at is None:
+            row.closed_at = utcnow()
+        if stage == "lost" and inputs.get("lost_reason"):
+            row.lost_reason = inputs["lost_reason"]
+        await self.session.flush()
+
+        return {
+            "opportunity_id": str(row.id), "title": row.title, "stage": row.stage,
+            "message": f"Moved '{row.title}' to {stage}.",
+        }
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Corporate actions
+    # ─────────────────────────────────────────────────────────────────────
+
+    async def read_corporate_actions(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.models.corporate_actions import CorporateAction, CorporateActionEntitlement
+        from app.models.portfolio import Instrument
+
+        query = select(CorporateAction).where(CorporateAction.firm_id == self.firm_id)
+        status = inputs.get("status")
+        if status:
+            query = query.where(CorporateAction.status == status)
+        actions = (await self.session.execute(query.order_by(CorporateAction.ex_date))).scalars().all()
+
+        out = []
+        for a in actions:
+            inst = await self.session.get(Instrument, a.instrument_id)
+            entitlements = (await self.session.execute(
+                select(CorporateActionEntitlement).where(CorporateActionEntitlement.corporate_action_id == a.id)
+            )).scalars().all()
+            out.append({
+                "id": str(a.id), "symbol": inst.symbol if inst else None, "action_type": a.action_type,
+                "status": a.status, "is_voluntary": a.is_voluntary,
+                "payable_date": a.payable_date.isoformat() if a.payable_date else None,
+                "entitlement_count": len(entitlements),
+                "entitlements_posted": sum(1 for e in entitlements if e.status == "posted"),
+            })
+
+        return {
+            "actions": out,
+            "message": f"{len(out)} corporate action(s)" + (f" with status '{status}'" if status else "") + ".",
+        }
+
+    async def compute_corporate_action_entitlements(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import corporate_actions as engine
+        from app.aurea_core.corporate_actions import CorporateActionError
+        from app.models.corporate_actions import CorporateAction
+
+        action_id = _parse_uuid(inputs.get("corporate_action_id") or "", "corporate_action_id")
+        action = (await self.session.execute(
+            select(CorporateAction).where(CorporateAction.id == action_id, CorporateAction.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if action is None:
+            raise ExecutorError(f"Corporate action {action_id} not found")
+
+        try:
+            created = await engine.compute_entitlements(self.session, action_id)
+        except CorporateActionError as exc:
+            raise ExecutorError(str(exc))
+
+        return {
+            "corporate_action_id": str(action_id), "created_count": len(created),
+            "message": f"Computed {len(created)} new entitlement(s) for {action.action_type}.",
+        }
+
+    async def post_corporate_action_entitlement(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import corporate_actions as engine
+        from app.aurea_core.corporate_actions import CorporateActionError
+
+        from app.models.corporate_actions import CorporateActionEntitlement
+
+        entitlement_id = _parse_uuid(inputs.get("entitlement_id") or "", "entitlement_id")
+        row = await self.session.get(CorporateActionEntitlement, entitlement_id)
+        if row is None or row.firm_id != self.firm_id:
+            raise ExecutorError(f"Entitlement {entitlement_id} not found")
+
+        try:
+            posted = await engine.post_entitlement(self.session, entitlement_id)
+        except CorporateActionError as exc:
+            raise ExecutorError(str(exc))
+
+        return {
+            "entitlement_id": str(posted.id), "status": posted.status,
+            "cash_amount": float(posted.cash_amount) if posted.cash_amount is not None else None,
+            "message": f"Posted entitlement — status {posted.status}.",
+        }
+
+    # ─────────────────────────────────────────────────────────────────────
+    # UMA sleeves
+    # ─────────────────────────────────────────────────────────────────────
+
+    async def read_sleeves(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import sleeves as engine
+        from app.models.sleeves import Sleeve
+
+        account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
+        sleeves = (await self.session.execute(
+            select(Sleeve).where(Sleeve.account_id == account_id, Sleeve.firm_id == self.firm_id)
+        )).scalars().all()
+        if not sleeves:
+            return {"account_id": str(account_id), "sleeves": [], "reconciliation": None,
+                    "message": "This account has no sleeves — it runs a single model."}
+
+        reconciliation = await engine.reconcile(self.session, account_id)
+
+        return {
+            "account_id": str(account_id),
+            "sleeves": [{
+                "id": str(s.id), "name": s.name, "target_weight": float(s.target_weight),
+                "status": s.status,
+            } for s in sleeves],
+            "reconciliation": reconciliation,
+            "message": (
+                f"{len(sleeves)} sleeve(s). Reconciliation "
+                + ("clean." if reconciliation["clean"] else
+                   f"found {len(reconciliation['breaks'])} break(s) and "
+                   f"{len(reconciliation['orphaned_attributions'])} orphaned attribution(s).")
+            ),
+        }
+
+    async def net_sleeve_intents(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core.sleeves import SleeveIntent, net_intents
+
+        intents_in = inputs.get("intents") or []
+        if not intents_in:
+            raise ExecutorError("intents is required and must be a non-empty list")
+
+        try:
+            intents = [
+                SleeveIntent(
+                    sleeve_id=str(i["sleeve_id"]), account_id=str(i["account_id"]),
+                    instrument_id=str(i["instrument_id"]), symbol=i["symbol"], side=i["side"],
+                    quantity=float(i["quantity"]),
+                )
+                for i in intents_in
+            ]
+            orders = net_intents(intents)
+        except (KeyError, ValueError) as exc:
+            raise ExecutorError(f"Invalid intent: {exc}")
+
+        return {
+            "net_orders": [{
+                "account_id": o.account_id, "instrument_id": o.instrument_id, "symbol": o.symbol,
+                "side": o.side, "quantity": o.quantity, "crossed_quantity": o.crossed_quantity,
+                "gross_buy_quantity": o.gross_buy_quantity, "gross_sell_quantity": o.gross_sell_quantity,
+                "sleeve_allocations": o.sleeve_allocations,
+            } for o in orders],
+            "message": (
+                f"{len(orders)} net order(s) from {len(intents)} sleeve intent(s); "
+                f"{sum(o.crossed_quantity for o in orders):,.0f} share(s) crossed internally."
+            ),
         }

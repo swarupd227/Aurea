@@ -19,6 +19,7 @@ from app.models.corporate_actions import (
     ACTION_STATUSES, ACTION_TYPES, CorporateAction, CorporateActionEntitlement,
 )
 from app.models.identity import User
+from app.models.portfolio import Instrument
 from app.models.tenant import Firm
 
 router = APIRouter(prefix="/api/corporate-actions", tags=["corporate-actions"])
@@ -74,7 +75,20 @@ async def list_actions(status: str | None = None, user: User = StaffDep, firm: F
     if status:
         query = query.where(CorporateAction.status == status)
     rows = (await db.execute(query.order_by(CorporateAction.ex_date))).scalars().all()
-    return {"items": [_action_out(a) for a in rows]}
+
+    items = []
+    for a in rows:
+        inst = await db.get(Instrument, a.instrument_id)
+        entitlements = (await db.execute(
+            select(CorporateActionEntitlement).where(CorporateActionEntitlement.corporate_action_id == a.id)
+        )).scalars().all()
+        items.append({
+            **_action_out(a),
+            "symbol": inst.symbol if inst else None,
+            "entitlement_count": len(entitlements),
+            "entitlements_posted": sum(1 for e in entitlements if e.status == "posted"),
+        })
+    return {"items": items}
 
 
 @router.post("")

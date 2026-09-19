@@ -7,7 +7,7 @@ import {
   Sparkles, Settings, LogOut, PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare,
   MessageSquare, Gauge, BarChart3, Workflow, PiggyBank, Scale, Wand2, KeyRound, Eye, EyeOff, Bell,
   AlertTriangle, CheckCircle2, Building2, Shield, Copy, Check, History, UserCircle, Landmark, Target,
-  Receipt, Brain, Timer,
+  Receipt, Brain, Timer, TrendingUp, Repeat,
 } from "lucide-react";
 import { clearSession, getToken, getUser } from "@/lib/api";
 import RoleSwitcher from "./RoleSwitcher";
@@ -53,11 +53,15 @@ const STAFF_NAV: NavGroup[] = [
       { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT] },
       { href: "/studio/regulatory-countdown", label: "Regulatory countdown", icon: Timer, roles: [A, P, PT] },
       { href: "/studio/agent-history", label: "Agent history", icon: History, roles: [A, PT, C, B] },
+      { href: "/studio/pipeline", label: "Growth pipeline", icon: TrendingUp, roles: [A, P, PT] },
     ],
   },
   {
     title: "Governance",
-    items: [{ href: "/provenance", label: "Provenance", icon: ShieldCheck, roles: [C, B] }],
+    items: [
+      { href: "/provenance", label: "Provenance", icon: ShieldCheck, roles: [C, B] },
+      { href: "/studio/corporate-actions", label: "Corporate actions", icon: Repeat, roles: [O, C] },
+    ],
   },
   {
     title: "Experience",

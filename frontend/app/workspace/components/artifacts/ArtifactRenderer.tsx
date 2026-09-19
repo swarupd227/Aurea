@@ -1,5 +1,10 @@
 import { PortfolioCard } from "./PortfolioCard";
 import { OrdersCard } from "./OrdersCard";
+import { CompliancePanelCard } from "./CompliancePanelCard";
+import { CrmPipelineCard } from "./CrmPipelineCard";
+import { CorporateActionsCard } from "./CorporateActionsCard";
+import { SleevesCard } from "./SleevesCard";
+import { SleeveNettingCard } from "./SleeveNettingCard";
 import type { Artifact } from "../../types";
 
 /**
@@ -18,6 +23,21 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
       case "execute_orders":
         if (!Array.isArray(artifact.result?.fills)) return null;
         return <OrdersCard result={artifact.result as any} />;
+      case "read_compliance_program":
+        if (!Array.isArray(artifact.result?.conflicts)) return null;
+        return <CompliancePanelCard result={artifact.result as any} />;
+      case "read_crm_pipeline":
+        if (!Array.isArray(artifact.result?.opportunities)) return null;
+        return <CrmPipelineCard result={artifact.result as any} />;
+      case "read_corporate_actions":
+        if (!Array.isArray(artifact.result?.actions)) return null;
+        return <CorporateActionsCard result={artifact.result as any} />;
+      case "read_sleeves":
+        if (!Array.isArray(artifact.result?.sleeves)) return null;
+        return <SleevesCard result={artifact.result as any} />;
+      case "net_sleeve_intents":
+        if (!Array.isArray(artifact.result?.net_orders)) return null;
+        return <SleeveNettingCard result={artifact.result as any} />;
       default:
         return null;
     }

@@ -159,6 +159,208 @@ TOOLS: dict[str, Tool] = {
         output=ToolOutput("object", "Updated goal with recalculated progress"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
+
+    # ─── Compliance program: conflicts inventory + WSP grid (L200-7)
+
+    "read_compliance_program": Tool(
+        key="read_compliance_program",
+        name="Read Compliance Program",
+        speaking_agent="astra",
+        description="Fetch the firm's conflicts inventory, WSP grid, and evidence-coverage summary.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Conflicts, WSP rules, and coverage/overdue-review summary"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
+    "mark_conflict_reviewed": Tool(
+        key="mark_conflict_reviewed",
+        name="Mark Conflict Reviewed",
+        speaking_agent="astra",
+        description="Record that a conflicts-inventory item has been reviewed today, resetting its review cadence.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will record a review of this conflict as of today. Continue?",
+        inputs=[
+            ToolInput("conflict_key", "string", "The conflict's key (e.g. revenue_sharing)", required=True),
+            ToolInput("notes", "string", "Optional notes on the review", required=False),
+        ],
+        output=ToolOutput("object", "The updated conflict-inventory item"),
+        roles_required={UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
+    "log_wsp_evidence": Tool(
+        key="log_wsp_evidence",
+        name="Log WSP Evidence",
+        speaking_agent="astra",
+        description="Record that a WSP grid rule's supervisory activity produced evidence today.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will log evidence for this obligation as of today. Continue?",
+        inputs=[
+            ToolInput("rule_key", "string", "The WSP rule's key (e.g. wash_sale.loss_harvest)", required=True),
+        ],
+        output=ToolOutput("object", "The updated WSP rule"),
+        roles_required={UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
+    # ─── CRM pipeline (L200-8 §2.1)
+
+    "read_crm_pipeline": Tool(
+        key="read_crm_pipeline",
+        name="Read CRM Pipeline",
+        speaking_agent="astra",
+        description="Fetch contacts, pipeline opportunities, and pipeline summary stats (stage counts, weighted value, win rate).",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Contacts, opportunities, and pipeline summary"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.RESEARCH_CIO, UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
+    "create_crm_contact": Tool(
+        key="create_crm_contact",
+        name="Create CRM Contact",
+        speaking_agent="astra",
+        description="Add a new prospect, referral source, or centre-of-influence contact to the pipeline.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will add a new contact to the CRM pipeline. Continue?",
+        inputs=[
+            ToolInput("full_name", "string", "The contact's name", required=True),
+            ToolInput("contact_type", "string", "prospect|referral_source|centre_of_influence", required=False),
+            ToolInput("email", "string", "Contact email", required=False),
+            ToolInput("source", "string", "How this contact came in (referral, event, inbound, cold)", required=False),
+            ToolInput("notes", "string", "Free-form notes", required=False),
+        ],
+        output=ToolOutput("object", "The created contact"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
+    ),
+
+    "create_crm_opportunity": Tool(
+        key="create_crm_opportunity",
+        name="Create CRM Opportunity",
+        speaking_agent="astra",
+        description="Open a new pipeline deal against an existing contact.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will open a new pipeline opportunity. Continue?",
+        inputs=[
+            ToolInput("contact_id", "uuid", "The contact this opportunity is against", required=True),
+            ToolInput("title", "string", "A short deal title", required=True),
+            ToolInput("estimated_aum", "number", "Estimated AUM if won", required=False),
+            ToolInput("probability_pct", "number", "Probability of winning, 0-100", required=False),
+        ],
+        output=ToolOutput("object", "The created opportunity"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
+    ),
+
+    "log_crm_activity": Tool(
+        key="log_crm_activity",
+        name="Log CRM Activity",
+        speaking_agent="astra",
+        description="Log a call, meeting, email, or note against a CRM contact (and optionally an opportunity).",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will log an activity on this contact's record. Continue?",
+        inputs=[
+            ToolInput("contact_id", "uuid", "The contact this activity is against", required=True),
+            ToolInput("activity_type", "string", "call|email|meeting|note|task", required=False),
+            ToolInput("detail", "string", "What happened", required=True),
+            ToolInput("opportunity_id", "uuid", "The opportunity this activity relates to", required=False),
+        ],
+        output=ToolOutput("object", "The logged activity"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
+    ),
+
+    "update_crm_opportunity_stage": Tool(
+        key="update_crm_opportunity_stage",
+        name="Update CRM Opportunity Stage",
+        speaking_agent="astra",
+        description="Move a pipeline opportunity to a new stage (lead/qualified/proposal/won/lost).",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will move the opportunity to a new pipeline stage. Continue?",
+        inputs=[
+            ToolInput("opportunity_id", "uuid", "The opportunity to move", required=True),
+            ToolInput("stage", "string", "lead|qualified|proposal|won|lost", required=True),
+            ToolInput("lost_reason", "string", "Why it was lost, if stage=lost", required=False),
+        ],
+        output=ToolOutput("object", "The updated opportunity"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
+    ),
+
+    # ─── Corporate actions (L200-4 §5)
+
+    "read_corporate_actions": Tool(
+        key="read_corporate_actions",
+        name="Read Corporate Actions",
+        speaking_agent="astra",
+        description="Fetch announced/open corporate actions and their entitlement status.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("status", "string", "Filter by status (announced|election_open|election_closed|posted|verified)", required=False),
+        ],
+        output=ToolOutput("object", "Corporate actions with their entitlement rows"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
+    "compute_corporate_action_entitlements": Tool(
+        key="compute_corporate_action_entitlements",
+        name="Compute Corporate Action Entitlements",
+        speaking_agent="astra",
+        description="Compute one entitlement row per account currently holding the instrument for a corporate action.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will compute entitlements for every account holding this instrument. Continue?",
+        inputs=[
+            ToolInput("corporate_action_id", "uuid", "The corporate action to compute entitlements for", required=True),
+        ],
+        output=ToolOutput("object", "Newly created entitlement rows"),
+        roles_required={UserRole.OPERATIONS, UserRole.ADMIN, UserRole.COMPLIANCE},
+    ),
+
+    "post_corporate_action_entitlement": Tool(
+        key="post_corporate_action_entitlement",
+        name="Post Corporate Action Entitlement",
+        speaking_agent="astra",
+        description="Post one account's entitlement — applies cash/holding/tax-lot arithmetic for mechanical events (dividends, splits, return of capital); records the human's cost-basis call for voluntary events (mergers, spin-offs).",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will post the entitlement and update the account's cash, holding, and tax lots. This cannot be undone or re-posted. Continue?",
+        inputs=[
+            ToolInput("entitlement_id", "uuid", "The entitlement to post", required=True),
+        ],
+        output=ToolOutput("object", "The posted entitlement"),
+        roles_required={UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
+    # ─── UMA sleeves (L200-3 §6)
+
+    "read_sleeves": Tool(
+        key="read_sleeves",
+        name="Read Sleeves",
+        speaking_agent="astra",
+        description="Fetch an account's sleeves and their reconciliation status against the flat custodial holdings.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("account_id", "uuid", "The account to read sleeves for", required=True),
+        ],
+        output=ToolOutput("object", "Sleeves and a reconciliation report"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
+    "net_sleeve_intents": Tool(
+        key="net_sleeve_intents",
+        name="Net Sleeve Intents",
+        speaking_agent="astra",
+        description="Cross conflicting sleeve trade intents on the same instrument into one net order per (account, instrument) — a stateless computation, nothing is placed or changed.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("intents", "list[object]", "Sleeve intents: {sleeve_id, account_id, instrument_id, symbol, side, quantity}", required=True),
+        ],
+        output=ToolOutput("object", "Net orders per (account, instrument) with sleeve allocations"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
+    ),
 }
 
 
