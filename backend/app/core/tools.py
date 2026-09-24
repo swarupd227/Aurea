@@ -106,6 +106,46 @@ TOOLS: dict[str, Tool] = {
                        UserRole.COMPLIANCE, UserRole.ADMIN},
     ),
 
+    "read_composites": Tool(
+        key="read_composites",
+        name="Read Composites",
+        speaking_agent="astra",
+        description="List the firm's GIPS composites (one per strategy/model portfolio).",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("list[object]", "Composites with their strategy and inclusion criteria"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.RESEARCH_CIO,
+                       UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
+    "read_composite_report": Tool(
+        key="read_composite_report",
+        name="Read Composite Report",
+        speaking_agent="astra",
+        description="Fetch a GIPS composite's presentation: gross return, internal dispersion, ex-post standard deviation (honestly labelled by how many months of history it actually used), benchmark, and account count.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("composite_id", "uuid", "The composite to report on", required=True),
+        ],
+        output=ToolOutput("object", "The composite's GIPS presentation"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.RESEARCH_CIO,
+                       UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
+    "read_firm_definition_check": Tool(
+        key="read_firm_definition_check",
+        name="Read Firm Definition Check",
+        speaking_agent="astra",
+        description="Check whether every discretionary account is captured in a composite — GIPS's 'foundational sin' verifiers test is a firm definition narrowed to exclude bad history.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Discretionary AUM vs. composite-captured AUM"),
+        roles_required={UserRole.PORTFOLIO_TEAM, UserRole.RESEARCH_CIO, UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
     "read_ai_governance_summary": Tool(
         key="read_ai_governance_summary",
         name="Read AI Governance Summary",

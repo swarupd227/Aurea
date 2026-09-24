@@ -52,6 +52,9 @@ class ToolExecutors:
             "read_household": self.read_household,
             "search_households": self.search_households,
             "check_household_wash_sale": self.check_household_wash_sale,
+            "read_composites": self.read_composites,
+            "read_composite_report": self.read_composite_report,
+            "read_firm_definition_check": self.read_firm_definition_check,
             "read_ai_governance_summary": self.read_ai_governance_summary,
             "read_account_registration": self.read_account_registration,
             "set_account_registration": self.set_account_registration,
@@ -175,6 +178,57 @@ class ToolExecutors:
             if n == 0 else
             f"{n} lot(s) would trigger a wash sale if harvested now, disallowing "
             f"{result['total_disallowed_loss']:,.0f} of loss."
+        )
+        return result
+
+    async def read_composites(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.models.composites import Composite
+        from app.models.portfolio import ModelPortfolio
+
+        rows = (await self.session.execute(
+            select(Composite).where(Composite.firm_id == self.firm_id).order_by(Composite.name)
+        )).scalars().all()
+        out = []
+        for c in rows:
+            model = await self.session.get(ModelPortfolio, c.model_portfolio_id)
+            out.append({
+                "composite_id": str(c.id), "name": c.name, "strategy": model.name if model else None,
+                "inclusion_criteria": c.inclusion_criteria, "status": c.status,
+            })
+        return {"composites": out, "message": f"{len(out)} composite(s)."}
+
+    async def read_composite_report(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import composites as engine
+        from app.models.composites import Composite
+
+        composite_id = _parse_uuid(inputs.get("composite_id") or "", "composite_id")
+        composite = (await self.session.execute(
+            select(Composite).where(Composite.id == composite_id, Composite.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if composite is None:
+            raise ExecutorError(f"Composite {composite_id} not found")
+
+        report = await engine.composite_report(self.session, composite)
+        std = report["ex_post_std_dev"]
+        report["message"] = (
+            f"{report['name']}: {report['accounts_included']} account(s), "
+            f"gross return {report['gross_return']*100:.1f}%" if report["gross_return"] is not None else
+            f"{report['name']}: {report['accounts_included']} account(s), no return computed yet"
+        ) + (
+            f"; ex-post std dev {std['value']*100:.1f}% ({std['months_used']}/{std['months_required_for_gips']} months — "
+            f"{'meets' if std['meets_gips_minimum'] else 'short of'} the GIPS minimum)." if std["value"] is not None else "."
+        )
+        return report
+
+    async def read_firm_definition_check(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import composites as engine
+
+        result = await engine.firm_definition_check(self.session, self.firm_id)
+        result["message"] = (
+            "Every discretionary account is captured in a composite."
+            if result["clean"] else
+            f"{result['uncaptured_aum']:,.0f} of discretionary AUM is not captured in any composite — "
+            "the firm definition may be narrowed to exclude it."
         )
         return result
 

@@ -9,6 +9,9 @@ import { WashSaleCalendarCard } from "./WashSaleCalendarCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
 import { AIGovernanceCard } from "./AIGovernanceCard";
+import { CompositesCard } from "./CompositesCard";
+import { CompositeReportCard } from "./CompositeReportCard";
+import { FirmDefinitionCheckCard } from "./FirmDefinitionCheckCard";
 import type { Artifact } from "../../types";
 
 /**
@@ -54,6 +57,15 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
       case "read_ai_governance_summary":
         if (!Array.isArray(artifact.result?.overdue_review)) return null;
         return <AIGovernanceCard result={artifact.result as any} />;
+      case "read_composites":
+        if (!Array.isArray(artifact.result?.composites)) return null;
+        return <CompositesCard result={artifact.result as any} />;
+      case "read_composite_report":
+        if (!artifact.result?.ex_post_std_dev) return null;
+        return <CompositeReportCard result={artifact.result as any} />;
+      case "read_firm_definition_check":
+        if (typeof artifact.result?.clean !== "boolean") return null;
+        return <FirmDefinitionCheckCard result={artifact.result as any} />;
       default:
         return null;
     }

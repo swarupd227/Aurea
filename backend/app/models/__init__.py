@@ -4,6 +4,7 @@ from app.models import (  # noqa: F401
     client_experience,
     compliance,
     compliance_program,
+    composites,
     connectors,
     corporate_actions,
     crm,
