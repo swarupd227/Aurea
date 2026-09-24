@@ -2,9 +2,9 @@
 from fastapi import APIRouter
 
 from app.api import (
-    account_registration, admin, agents, analytics, atlas, auth, canvas, compliance_program,
-    conduit, core, corporate_actions, crm, engage, onboarding, portfolios, provenance, skills,
-    sleeves, studio, superadmin, threads, vault,
+    account_registration, admin, agents, ai_governance, analytics, atlas, auth, canvas,
+    compliance_program, conduit, core, corporate_actions, crm, engage, onboarding, portfolios,
+    provenance, skills, sleeves, studio, superadmin, threads, vault,
 )
 
 api_router = APIRouter()
@@ -23,6 +23,7 @@ api_router.include_router(corporate_actions.router)
 api_router.include_router(sleeves.router)
 api_router.include_router(account_registration.router)
 api_router.include_router(account_registration.registration_audit_router)
+api_router.include_router(ai_governance.router)
 api_router.include_router(canvas.router)
 api_router.include_router(onboarding.router)
 api_router.include_router(engage.router)

@@ -120,6 +120,9 @@ export default function Foundation() {
       {/* Per-agent overrides */}
       <PerAgentOverrides firmPolicy={data.policy} />
 
+      {/* AI use-case inventory (L200-8 §8) */}
+      <AIGovernancePanel />
+
       {/* Telemetry + eval status */}
       <div className="grid lg:grid-cols-2 gap-5">
         <Card>
@@ -150,6 +153,75 @@ export default function Foundation() {
         </Card>
       </div>
     </div>
+  );
+}
+
+function AIGovernancePanel() {
+  const { data, refetch } = useApi<any>("/api/admin/ai-governance/summary");
+  const { data: useCases, refetch: refetchUseCases } = useApi<any>("/api/admin/ai-governance/use-cases");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  if (!data) return null;
+
+  const TIER_COLOR: Record<string, string> = {
+    high: "bg-critical/10 text-critical", medium: "bg-caution/10 text-caution", low: "bg-navy-50 text-ink-muted",
+  };
+
+  async function markReviewed(id: string) {
+    setBusy(id);
+    try {
+      await api(`/api/admin/ai-governance/use-cases/${id}`, { method: "PATCH", body: { mark_reviewed: true } });
+      await Promise.all([refetch(), refetchUseCases()]);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const overdueKeys = new Set((data.overdue_review as any[]).map((r) => r.use_case_key));
+
+  return (
+    <Card className="mb-6">
+      <div className="flex items-center justify-between mb-1">
+        <div className="font-semibold text-ink flex items-center gap-2"><Cpu size={17} /> AI use-case inventory</div>
+        <span className="text-xs text-ink-muted">{data.active} active · {data.by_risk_tier.high} high-risk · {data.entitlement_violations.total} violation(s) logged</span>
+      </div>
+      <p className="text-xs text-ink-muted mb-3">
+        Every agent and high-stakes tool, with an owner and a risk tier (L200-8 §8) — the register that ties
+        ownership to the eval-gate and usage signals below.
+      </p>
+      <div className="divide-y divide-navy-50 max-h-96 overflow-y-auto">
+        {(useCases?.items || []).map((u: any) => (
+          <div key={u.id} className="py-2.5 flex items-center gap-3">
+            {overdueKeys.has(u.use_case_key)
+              ? <AlertTriangle size={15} className="text-caution shrink-0" />
+              : <CheckCircle2 size={15} className="text-positive shrink-0" />}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-ink text-sm">{u.name}</span>
+                <span className={`chip ${TIER_COLOR[u.risk_tier]}`}>{u.risk_tier}</span>
+                <span className="chip bg-navy-50 text-ink-muted">{u.category}</span>
+              </div>
+              <div className="text-xs text-ink-muted mt-0.5">
+                {u.owner} · {u.last_reviewed_at ? `reviewed ${u.last_reviewed_at.slice(0, 10)}` : "never reviewed"}
+              </div>
+            </div>
+            <button className="btn-outline text-xs shrink-0" disabled={busy === u.id} onClick={() => markReviewed(u.id)}>
+              {busy === u.id ? "Saving…" : "Mark reviewed"}
+            </button>
+          </div>
+        ))}
+      </div>
+      {data.recent_changes.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-navy-50">
+          <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-1.5">Recent changes</div>
+          {data.recent_changes.slice(0, 5).map((c: any, i: number) => (
+            <div key={i} className="text-xs text-ink-muted py-0.5">
+              {c.changed_at.slice(0, 10)} · {c.changed_by} — {c.description}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

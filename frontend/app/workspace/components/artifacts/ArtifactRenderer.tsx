@@ -8,6 +8,7 @@ import { SleeveNettingCard } from "./SleeveNettingCard";
 import { WashSaleCalendarCard } from "./WashSaleCalendarCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
+import { AIGovernanceCard } from "./AIGovernanceCard";
 import type { Artifact } from "../../types";
 
 /**
@@ -50,6 +51,9 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
       case "read_beneficiary_audit":
         if (!Array.isArray(artifact.result?.gaps)) return null;
         return <BeneficiaryAuditCard result={artifact.result as any} />;
+      case "read_ai_governance_summary":
+        if (!Array.isArray(artifact.result?.overdue_review)) return null;
+        return <AIGovernanceCard result={artifact.result as any} />;
       default:
         return null;
     }

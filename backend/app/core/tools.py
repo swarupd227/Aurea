@@ -106,6 +106,18 @@ TOOLS: dict[str, Tool] = {
                        UserRole.COMPLIANCE, UserRole.ADMIN},
     ),
 
+    "read_ai_governance_summary": Tool(
+        key="read_ai_governance_summary",
+        name="Read AI Governance Summary",
+        speaking_agent="astra",
+        description="Fetch the AI use-case inventory: risk-tier breakdown, use cases overdue for review, entitlement-violation counts (zero-tolerance), and the most recent prompt/model/tool changes logged.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Use-case inventory coverage, violations, and recent changes"),
+        roles_required={UserRole.ADMIN, UserRole.COMPLIANCE},
+    ),
+
     "read_account_registration": Tool(
         key="read_account_registration",
         name="Read Account Registration",

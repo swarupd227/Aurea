@@ -167,6 +167,21 @@ class Gateway:
 
                     is_valid, error_msg = validate_tool_call(self.role, tool_key, inputs)
                     if not is_valid:
+                        # A role trying a tool it isn't entitled to is the zero-tolerance
+                        # metric L200-8 §8 asks production monitoring to track — the
+                        # RBAC layer already blocked it (that's what is_valid=False means),
+                        # this just makes "how often, by whom" a query instead of an
+                        # unlogged error message. A malformed call (missing/invalid input
+                        # on an otherwise-permitted tool) is not an entitlement issue and
+                        # is not logged here.
+                        maybe_tool = get_tool(tool_key)
+                        if maybe_tool and self.role not in maybe_tool.roles_required:
+                            from app.aurea_core.ai_governance import record_violation
+                            await record_violation(
+                                self.session, self.firm_id, actor_user_id=self.user_id,
+                                actor_role=str(self.role), violation_type="tool_role_forbidden",
+                                subject_key=tool_key, detail=error_msg,
+                            )
                         astra_msg.text = "\n\n".join(accumulated_text)
                         await self.session.commit()
                         yield {"type": "error", "message": error_msg}

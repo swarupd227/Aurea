@@ -52,6 +52,7 @@ class ToolExecutors:
             "read_household": self.read_household,
             "search_households": self.search_households,
             "check_household_wash_sale": self.check_household_wash_sale,
+            "read_ai_governance_summary": self.read_ai_governance_summary,
             "read_account_registration": self.read_account_registration,
             "set_account_registration": self.set_account_registration,
             "add_account_beneficiary": self.add_account_beneficiary,
@@ -174,6 +175,18 @@ class ToolExecutors:
             if n == 0 else
             f"{n} lot(s) would trigger a wash sale if harvested now, disallowing "
             f"{result['total_disallowed_loss']:,.0f} of loss."
+        )
+        return result
+
+    async def read_ai_governance_summary(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import ai_governance as engine
+
+        result = await engine.inventory_summary(self.session, self.firm_id)
+        n_overdue = len(result["overdue_review"])
+        n_violations = result["entitlement_violations"]["total"]
+        result["message"] = (
+            f"{result['active']} active use case(s) ({result['by_risk_tier']['high']} high-risk). "
+            f"{n_overdue} overdue for review. {n_violations} entitlement violation(s) logged."
         )
         return result
 
@@ -425,6 +438,11 @@ class ToolExecutors:
         try:
             decision_rights.check(self.role, rec.agent_key, action_str)
         except decision_rights.DecisionForbidden as exc:
+            from app.aurea_core.ai_governance import record_violation
+            await record_violation(
+                self.session, self.firm_id, actor_user_id=self.user_id, actor_role=str(self.role),
+                violation_type="decision_rights_forbidden", subject_key=str(rec.agent_key), detail=str(exc),
+            )
             raise ExecutorError(str(exc))
 
         if str(rec.status) != str(RecommendationStatus.PROPOSED):
