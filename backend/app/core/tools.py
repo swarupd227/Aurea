@@ -91,6 +91,22 @@ TOOLS: dict[str, Tool] = {
                        UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS, UserRole.ADMIN},
     ),
 
+    "search_households": Tool(
+        key="search_households",
+        name="Search Households",
+        speaking_agent="astra",
+        description="Search for households by name across the firm. Each match includes its accounts (id, name, custodian), so a specific account can be resolved by name in one call — e.g. 'the Chen Family's Trust Custody account'.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("query", "string", "Household name or partial name", required=True),
+            ToolInput("limit", "number", "Max households to return", required=False),
+        ],
+        output=ToolOutput("list[object]", "Matching households, each with its accounts"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
     "search_holdings": Tool(
         key="search_holdings",
         name="Search Holdings",

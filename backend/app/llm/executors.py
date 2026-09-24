@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.graph import household_brain
 from app.models.enums import UserRole
-from app.models.graph import Account, Goal, Mandate
+from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding, Instrument, Price
 
 
@@ -50,6 +50,7 @@ class ToolExecutors:
 
         executor_map = {
             "read_household": self.read_household,
+            "search_households": self.search_households,
             "read_portfolio": self.read_portfolio,
             "search_holdings": self.search_holdings,
             "decide_recommendation": self.decide_recommendation,
@@ -97,6 +98,60 @@ class ToolExecutors:
             "household_id": str(household_id),
             "brain": brain,
             "message": f"Fetched household brain with {len(brain.get('accounts', []))} accounts",
+        }
+
+    async def search_households(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Search households by name, with each match's accounts inline — resolves a
+        phrase like 'the Chen Family's Trust Custody account' to an account_id without a
+        second read_household round trip."""
+        query = inputs.get("query")
+        if not query:
+            raise ExecutorError("query is required")
+        limit = int(inputs.get("limit") or 10)
+
+        households = (
+            await self.session.execute(
+                select(Household)
+                .where(Household.firm_id == self.firm_id, Household.name.ilike(f"%{query}%"))
+                .limit(limit)
+            )
+        ).scalars().all()
+
+        results = []
+        for h in households:
+            persons = (
+                await self.session.execute(select(Person).where(Person.household_id == h.id))
+            ).scalars().all()
+            entities = (
+                await self.session.execute(select(LegalEntity).where(LegalEntity.household_id == h.id))
+            ).scalars().all()
+            person_ids = [p.id for p in persons]
+            entity_ids = [e.id for e in entities]
+
+            conds = []
+            if person_ids:
+                conds.append(Mandate.person_id.in_(person_ids))
+            if entity_ids:
+                conds.append(Mandate.entity_id.in_(entity_ids))
+            mandates = (
+                await self.session.execute(select(Mandate).where(or_(*conds)))
+            ).scalars().all() if conds else []
+
+            mandate_ids = [m.id for m in mandates]
+            accounts = (
+                await self.session.execute(select(Account).where(Account.mandate_id.in_(mandate_ids)))
+            ).scalars().all() if mandate_ids else []
+
+            results.append({
+                "household_id": str(h.id), "name": h.name, "segment": str(h.segment),
+                "accounts": [{
+                    "account_id": str(a.id), "name": a.name, "custodian": a.custodian,
+                } for a in accounts],
+            })
+
+        return {
+            "results": results,
+            "message": f"Found {len(results)} household(s) matching '{query}'",
         }
 
     async def read_portfolio(self, inputs: dict[str, Any]) -> dict[str, Any]:
