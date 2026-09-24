@@ -91,6 +91,21 @@ TOOLS: dict[str, Tool] = {
                        UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS, UserRole.ADMIN},
     ),
 
+    "check_household_wash_sale": Tool(
+        key="check_household_wash_sale",
+        name="Check Household Wash Sale",
+        speaking_agent="astra",
+        description="Check a household's wash-sale calendar — which lots a loss-harvest would disallow right now, and which account's recent purchase (a spouse's account, an IRA, anywhere in the household) is the reason.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "The household to check", required=True),
+        ],
+        output=ToolOutput("object", "Flagged lots with disallowed-loss amounts and conflicting purchases"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
     "search_households": Tool(
         key="search_households",
         name="Search Households",

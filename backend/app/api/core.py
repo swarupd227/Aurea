@@ -311,6 +311,20 @@ async def household_tax_intel(
     return result
 
 
+@router.get("/households/{household_id}/wash-sale-calendar")
+async def household_wash_sale_calendar(
+    household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """Household-wide wash-sale calendar (L200-4 §7.2) — the lots a loss-harvest would
+    disallow right now, and which account's recent purchase is the reason. Lighter than
+    the full tax-intel report (no jurisdiction modules), and household-scoped by
+    construction (any account under any mandate under any person/entity in the household)."""
+    result = await tax_intelligence.household_wash_sale_calendar(db, household_id, firm_id=firm.id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Household not found")
+    return result
+
+
 @router.get("/households/{household_id}/regulatory-countdown")
 async def household_regulatory_countdown(
     household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)

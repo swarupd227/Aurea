@@ -113,13 +113,24 @@ async def _load_lots(session: AsyncSession, brain: dict) -> list[dict]:
         if qty > 0:
             holding_unit_price[h.id] = mv / qty
 
+    # The household wash-sale calendar (L200-4 §7.2): which recent purchases, in which
+    # account, of which instrument — not just whether "some" recent purchase exists.
+    # Anywhere in the household, per the module: a spouse's account or an IRA repurchasing
+    # the same security is exactly the case a single-account check misses.
     today = date.today()
-    recent_instrument_ids: set[uuid.UUID] = set()
+    recent_purchases: dict[uuid.UUID, list[dict]] = {}
     for lot in lots:
-        if (today - lot.acquired_on).days <= _WASH_SALE_WINDOW:
+        days_held = (today - lot.acquired_on).days
+        if days_held <= _WASH_SALE_WINDOW:
             h = holding_map.get(lot.holding_id)
-            if h:
-                recent_instrument_ids.add(h.instrument_id)
+            if not h:
+                continue
+            acc = account_map.get(str(h.account_id)) or {}
+            recent_purchases.setdefault(h.instrument_id, []).append({
+                "lot_id": str(lot.id), "account_name": acc.get("name", ""),
+                "acquired_on": lot.acquired_on.isoformat(), "quantity": float(lot.quantity),
+                "days_ago": days_held,
+            })
 
     result = []
     for lot in lots:
@@ -131,6 +142,17 @@ async def _load_lots(session: AsyncSession, brain: dict) -> list[dict]:
         acc = account_map.get(str(h.account_id)) or {}
         mandate_id = acc.get("mandate_id")
         mandate = mandate_map.get(mandate_id) or {} if mandate_id else {}
+        days_held = (today - lot.acquired_on).days
+        qty = float(lot.quantity)
+        cost_per_unit = float(lot.cost_per_unit)
+        # IRC §1091 disallows a LOSS repurchased within the window — a gain lot has no
+        # wash-sale consequence at all, however recently the instrument was rebought.
+        is_loss_lot = current_price < cost_per_unit
+        # A lot's own acquisition never counts as a conflict with itself; excluded by
+        # construction since a flagged (old) lot's days_held always exceeds the window,
+        # while `recent_purchases` only holds lots within it.
+        conflicts = recent_purchases.get(h.instrument_id, []) if is_loss_lot and days_held > _WASH_SALE_WINDOW else []
+        disallowed_loss = round(qty * (cost_per_unit - current_price), 2) if conflicts else 0.0
 
         result.append({
             "lot_id": str(lot.id),
@@ -139,17 +161,39 @@ async def _load_lots(session: AsyncSession, brain: dict) -> list[dict]:
             "mandate_name": mandate.get("name", ""),
             "symbol": inst.symbol if inst else "",
             "instrument_name": inst.name if inst else "",
-            "quantity": float(lot.quantity),
-            "cost_per_unit": float(lot.cost_per_unit),
+            "quantity": qty,
+            "cost_per_unit": cost_per_unit,
             "current_price": current_price,
             "acquired_on": lot.acquired_on.isoformat(),
-            "holding_days": (today - lot.acquired_on).days,
-            "wash_sale_risk": (
-                h.instrument_id in recent_instrument_ids
-                and (today - lot.acquired_on).days > _WASH_SALE_WINDOW
-            ),
+            "holding_days": days_held,
+            "wash_sale_risk": bool(conflicts),
+            "wash_sale_disallowed_loss": disallowed_loss,
+            "wash_sale_conflicts": conflicts,
         })
     return result
+
+
+async def household_wash_sale_calendar(
+    session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID
+) -> dict | None:
+    """Just the wash-sale calendar — the lots a loss-harvest would disallow right now,
+    and which account's recent purchase is the reason — without running the full
+    jurisdiction-dispatched tax report. Household-wide by construction: `_load_lots`
+    walks every account under every mandate under every person/entity in the household."""
+    brain = await household_brain(session, household_id, firm_id=firm_id)
+    if not brain:
+        return None
+
+    lots = await _load_lots(session, brain)
+    flagged = [l for l in lots if l["wash_sale_risk"]]
+
+    return {
+        "household_id": str(household_id),
+        "household_name": brain["household"]["name"],
+        "lots_checked": len(lots),
+        "violations": sorted(flagged, key=lambda l: -l["wash_sale_disallowed_loss"]),
+        "total_disallowed_loss": round(sum(l["wash_sale_disallowed_loss"] for l in flagged), 2),
+    }
 
 
 # ════════════════════════════════════════════════════════════════════════════════

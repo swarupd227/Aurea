@@ -216,6 +216,58 @@ function WithdrawalPanel({ data, currency }: { data: { sequences: any[]; count: 
   );
 }
 
+// ── Household wash-sale calendar (L200-4 §7.2) — household-wide, not jurisdiction-specific ──
+
+interface WashSaleConflict { account_name: string; acquired_on: string; quantity: number; days_ago: number }
+interface WashSaleViolation {
+  lot_id: string; account_name: string; mandate_name: string; symbol: string; instrument_name: string;
+  wash_sale_disallowed_loss: number; wash_sale_conflicts: WashSaleConflict[];
+}
+interface WashSaleResult { lots_checked: number; violations: WashSaleViolation[]; total_disallowed_loss: number }
+
+function WashSaleCalendarPanel({ data, currency }: { data: WashSaleResult; currency: string }) {
+  const fmt = makeFmt(currency);
+  const clean = data.violations.length === 0;
+  return (
+    <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl p-4">
+      <SectionHeader icon={AlertTriangle} title="Household wash-sale calendar" count={data.violations.length}
+        badge={clean ? { text: "Clear", color: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" }
+                     : { text: `${fmt(data.total_disallowed_loss)} at risk`, color: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" }} />
+      <p className="text-xs text-ink-muted dark:text-neutral-400 mb-2">
+        Any account under this household — a spouse's account, an IRA — repurchasing the same instrument within
+        30 days disallows a loss harvested here. {data.lots_checked} lot(s) checked.
+      </p>
+      {clean ? (
+        <div className="text-sm text-ink-muted py-4 text-center">No conflicts right now.</div>
+      ) : (
+        <div className="space-y-2">
+          {data.violations.map((v) => (
+            <div key={v.lot_id} className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-medium text-sm">{v.symbol} — {v.instrument_name}</div>
+                  <div className="text-xs text-ink-muted mt-0.5">{v.mandate_name} · {v.account_name}</div>
+                  <div className="text-xs text-amber-700 dark:text-amber-300 mt-1.5 space-y-0.5">
+                    {v.wash_sale_conflicts.map((c, i) => (
+                      <div key={i}>
+                        {c.account_name} bought {c.quantity.toLocaleString()} share(s) {c.days_ago} day(s) ago
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="font-semibold text-sm text-amber-700 dark:text-amber-300">{fmt(v.wash_sale_disallowed_loss)}</div>
+                  <div className="text-xs text-ink-muted">disallowed</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InfoNote({ text }: { text: string }) {
   return (
     <div className="flex gap-2 text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2 mt-2">
@@ -746,6 +798,7 @@ export default function TaxIntelligencePage() {
   const [selectedHH, setSelectedHH] = useState<string>("");
   const [bookData, setBookData] = useState<BookResult | null>(null);
   const [hhData, setHhData] = useState<HouseholdResult | null>(null);
+  const [washSale, setWashSale] = useState<WashSaleResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -763,8 +816,13 @@ export default function TaxIntelligencePage() {
   const loadHousehold = useCallback(async (id: string) => {
     if (!id) return;
     setLoading(true); setError(null);
-    try { setHhData(await api(`/api/core/households/${id}/tax-intel`)); }
-    catch (e: any) { setError(e.message || "Failed to load household tax data"); }
+    try {
+      const [tax, ws] = await Promise.all([
+        api(`/api/core/households/${id}/tax-intel`),
+        api(`/api/core/households/${id}/wash-sale-calendar`),
+      ]);
+      setHhData(tax); setWashSale(ws);
+    } catch (e: any) { setError(e.message || "Failed to load household tax data"); }
     finally { setLoading(false); }
   }, []);
 
@@ -826,9 +884,15 @@ export default function TaxIntelligencePage() {
 
       {!loading && mode === "household" && hhData && (() => {
         const jur = (hhData as any).jurisdiction;
-        if (jur === "US") return <USResultView data={hhData as USResult & any} />;
-        if (jur === "UK") return <UKResultView data={hhData as UKResult & any} />;
-        return <NZResultView data={hhData as NZResult & any} />;
+        const currency = (hhData as any).currency || "USD";
+        return (
+          <div className="space-y-4">
+            {washSale && <WashSaleCalendarPanel data={washSale} currency={currency} />}
+            {jur === "US" && <USResultView data={hhData as USResult & any} />}
+            {jur === "UK" && <UKResultView data={hhData as UKResult & any} />}
+            {jur !== "US" && jur !== "UK" && <NZResultView data={hhData as NZResult & any} />}
+          </div>
+        );
       })()}
 
       {!loading && !bookData && !hhData && mode === "household" && !selectedHH && (

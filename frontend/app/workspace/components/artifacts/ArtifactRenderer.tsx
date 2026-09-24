@@ -5,6 +5,7 @@ import { CrmPipelineCard } from "./CrmPipelineCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
+import { WashSaleCalendarCard } from "./WashSaleCalendarCard";
 import type { Artifact } from "../../types";
 
 /**
@@ -38,6 +39,9 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
       case "net_sleeve_intents":
         if (!Array.isArray(artifact.result?.net_orders)) return null;
         return <SleeveNettingCard result={artifact.result as any} />;
+      case "check_household_wash_sale":
+        if (!Array.isArray(artifact.result?.violations)) return null;
+        return <WashSaleCalendarCard result={artifact.result as any} />;
       default:
         return null;
     }

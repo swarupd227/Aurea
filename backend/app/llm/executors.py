@@ -51,6 +51,7 @@ class ToolExecutors:
         executor_map = {
             "read_household": self.read_household,
             "search_households": self.search_households,
+            "check_household_wash_sale": self.check_household_wash_sale,
             "read_portfolio": self.read_portfolio,
             "search_holdings": self.search_holdings,
             "decide_recommendation": self.decide_recommendation,
@@ -153,6 +154,24 @@ class ToolExecutors:
             "results": results,
             "message": f"Found {len(results)} household(s) matching '{query}'",
         }
+
+    async def check_household_wash_sale(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tax_intelligence
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        result = await tax_intelligence.household_wash_sale_calendar(
+            self.session, household_id, firm_id=self.firm_id)
+        if result is None:
+            raise ExecutorError(f"Household {household_id} not found or access denied")
+
+        n = len(result["violations"])
+        result["message"] = (
+            f"No wash-sale conflicts right now — {result['lots_checked']} lot(s) checked."
+            if n == 0 else
+            f"{n} lot(s) would trigger a wash sale if harvested now, disallowing "
+            f"{result['total_disallowed_loss']:,.0f} of loss."
+        )
+        return result
 
     async def read_portfolio(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Fetch a mandate's holdings, cash, and total value."""
