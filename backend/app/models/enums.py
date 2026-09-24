@@ -241,6 +241,10 @@ class RegistrationType(StrEnum):
     CUSTODIAL_UTMA = "custodial_utma"
     CUSTODIAL_UGMA = "custodial_ugma"
     ESTATE_INHERITED = "estate_inherited"
+    INHERITED_IRA = "inherited_ira"      # RMD rules differ from a general estate account — L200-1 §4
+    PLAN_529 = "plan_529"
+    DAF = "daf"
+    HSA = "hsa"
 
 
 class NIGORootCause(StrEnum):

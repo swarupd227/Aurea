@@ -160,6 +160,11 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS callback_verified_by VARCHAR(200)"))
         await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS callback_number VARCHAR(48)"))
         await conn.execute(text("ALTER TABLE transfer_request ADD COLUMN IF NOT EXISTS reject_reason TEXT"))
+        # L200-1 §4: registration type onto the live account record (previously stranded on
+        # OnboardingCase and never propagated past intake), plus inherited-account RMD fields.
+        await conn.execute(text("ALTER TABLE account ADD COLUMN IF NOT EXISTS registration_type VARCHAR(32)"))
+        await conn.execute(text("ALTER TABLE account ADD COLUMN IF NOT EXISTS original_owner_death_date DATE"))
+        await conn.execute(text("ALTER TABLE account ADD COLUMN IF NOT EXISTS rmd_election_method VARCHAR(24)"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS transfer_request (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

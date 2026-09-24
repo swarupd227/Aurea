@@ -11,6 +11,7 @@ import RetirementPlanner from "@/components/RetirementPlanner";
 import PortfolioWhatIf from "@/components/PortfolioWhatIf";
 import { useAgentRunner } from "@/components/AgentConsole";
 import { useApi } from "@/lib/hooks";
+import { api } from "@/lib/api";
 import { money, pct, titleCase } from "@/lib/format";
 
 const HOUSEHOLD_AGENTS = [
@@ -55,6 +56,87 @@ function AccountSleeves({ accountId }: { accountId: string }) {
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+const RMD_STATUS_LABEL: Record<string, string> = {
+  required: "RMD required", not_yet: "No RMD yet", ten_year_rule: "10-year rule",
+  life_expectancy: "Life-expectancy method", needs_election: "Needs election", unknown: "RMD status unknown",
+};
+const RMD_STATUS_COLOR: Record<string, string> = {
+  required: "text-warn", needs_election: "text-crit", ten_year_rule: "text-warn",
+};
+
+function AccountRegistration({ accountId }: { accountId: string }) {
+  const { data, refetch } = useApi<any>(`/api/accounts/${accountId}/registration`, [accountId]);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [pct100, setPct100] = useState("100");
+  const [relationship, setRelationship] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!data || !data.registration_type) return null;
+
+  async function submit() {
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      await api(`/api/accounts/${accountId}/beneficiaries`, {
+        method: "POST",
+        body: { beneficiary_name: name.trim(), percentage: Number(pct100), relationship_to_owner: relationship || undefined },
+      });
+      setName(""); setRelationship(""); setPct100("100"); setAdding(false);
+      refetch();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const rmd = data.rmd;
+  const needsBeneficiaries = ["traditional_ira", "roth_ira", "employer_rollover", "inherited_ira",
+    "estate_inherited", "plan_529", "hsa"].includes(data.registration_type);
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border-soft">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          {data.registration_type.replace(/_/g, " ")}
+        </span>
+        {rmd && (
+          <span className={`ml-auto text-[11px] ${RMD_STATUS_COLOR[rmd.status] || "text-ink-muted"}`}>
+            {RMD_STATUS_LABEL[rmd.status] || rmd.status}
+            {rmd.status === "required" && ` · ${money(rmd.amount)}`}
+          </span>
+        )}
+      </div>
+      {needsBeneficiaries && (
+        <div className="space-y-1">
+          {data.beneficiaries.map((b: any) => (
+            <div key={b.id} className="flex items-center gap-2 text-xs">
+              <span className="text-ink-soft">{b.beneficiary_name}</span>
+              <span className="text-ink-muted">{b.designation_class} · {b.percentage}%</span>
+            </div>
+          ))}
+          {data.beneficiaries.length === 0 && (
+            <div className="text-xs text-crit">No beneficiaries on file.</div>
+          )}
+          {adding ? (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <input className="input text-xs w-32" placeholder="Beneficiary name" value={name}
+                onChange={(e) => setName(e.target.value)} />
+              <input className="input text-xs w-24" placeholder="Relationship" value={relationship}
+                onChange={(e) => setRelationship(e.target.value)} />
+              <input className="input text-xs w-16" type="number" value={pct100}
+                onChange={(e) => setPct100(e.target.value)} />
+              <button className="btn-primary text-xs" disabled={busy || !name.trim()} onClick={submit}>Add</button>
+              <button className="btn-ghost text-xs" onClick={() => setAdding(false)}>×</button>
+            </div>
+          ) : (
+            <button className="btn-ghost text-xs mt-1" onClick={() => setAdding(true)}>+ Add beneficiary</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -199,6 +281,7 @@ export default function ClientDetail() {
                 </table>
               </div>
               <AccountSleeves accountId={acc.id} />
+              <AccountRegistration accountId={acc.id} />
             </Card>
           ))}
         </div>

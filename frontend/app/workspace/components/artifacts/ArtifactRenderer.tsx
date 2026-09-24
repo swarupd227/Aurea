@@ -6,6 +6,8 @@ import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
 import { WashSaleCalendarCard } from "./WashSaleCalendarCard";
+import { AccountRegistrationCard } from "./AccountRegistrationCard";
+import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
 import type { Artifact } from "../../types";
 
 /**
@@ -42,6 +44,12 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
       case "check_household_wash_sale":
         if (!Array.isArray(artifact.result?.violations)) return null;
         return <WashSaleCalendarCard result={artifact.result as any} />;
+      case "read_account_registration":
+        if (!Array.isArray(artifact.result?.beneficiaries)) return null;
+        return <AccountRegistrationCard result={artifact.result as any} />;
+      case "read_beneficiary_audit":
+        if (!Array.isArray(artifact.result?.gaps)) return null;
+        return <BeneficiaryAuditCard result={artifact.result as any} />;
       default:
         return null;
     }

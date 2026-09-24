@@ -106,6 +106,74 @@ TOOLS: dict[str, Tool] = {
                        UserRole.COMPLIANCE, UserRole.ADMIN},
     ),
 
+    "read_account_registration": Tool(
+        key="read_account_registration",
+        name="Read Account Registration",
+        speaking_agent="astra",
+        description="Fetch an account's registration type, RMD status (computed from its actual holdings value), and beneficiary designations.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("account_id", "uuid", "The account to read", required=True),
+        ],
+        output=ToolOutput("object", "Registration type, RMD status, and beneficiaries"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
+    "set_account_registration": Tool(
+        key="set_account_registration",
+        name="Set Account Registration",
+        speaking_agent="astra",
+        description="Set an account's registration type, or (for an inherited IRA) the original owner's date of death and the 10-year-rule vs. life-expectancy RMD election.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will set the account's registration/RMD details, which changes how its tax treatment is computed. Continue?",
+        inputs=[
+            ToolInput("account_id", "uuid", "The account to update", required=True),
+            ToolInput("registration_type", "string", "e.g. traditional_ira, roth_ira, trust, inherited_ira", required=False),
+            ToolInput("original_owner_death_date", "string", "ISO date, for an inherited account", required=False),
+            ToolInput("rmd_election_method", "string", "10_year_rule|life_expectancy, for an inherited account", required=False),
+        ],
+        output=ToolOutput("object", "The updated account registration"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
+    "add_account_beneficiary": Tool(
+        key="add_account_beneficiary",
+        name="Add Account Beneficiary",
+        speaking_agent="astra",
+        description="Add a primary or contingent beneficiary designation to an account.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will add a beneficiary designation to the account record. Continue?",
+        inputs=[
+            ToolInput("account_id", "uuid", "The account to add a beneficiary to", required=True),
+            ToolInput("beneficiary_name", "string", "The beneficiary's name", required=True),
+            ToolInput("percentage", "number", "Share of this designation class, 0-100", required=True),
+            ToolInput("designation_class", "string", "primary|contingent (default primary)", required=False),
+            ToolInput("relationship_to_owner", "string", "e.g. spouse, child", required=False),
+            ToolInput("per_stirpes", "string", "true if per stirpes (default false)", required=False),
+        ],
+        output=ToolOutput("object", "The added beneficiary"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
+    "read_beneficiary_audit": Tool(
+        key="read_beneficiary_audit",
+        name="Read Beneficiary Audit",
+        speaking_agent="astra",
+        description="Check which accounts needing beneficiary designations (IRAs, trusts, 529s, HSAs, inherited accounts) are missing them or have percentages that don't sum to 100 — firm-wide, or for one household.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "Scope to one household instead of the whole firm", required=False),
+        ],
+        output=ToolOutput("object", "Accounts with incomplete beneficiary coverage"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
     "search_households": Tool(
         key="search_households",
         name="Search Households",

@@ -52,6 +52,10 @@ class ToolExecutors:
             "read_household": self.read_household,
             "search_households": self.search_households,
             "check_household_wash_sale": self.check_household_wash_sale,
+            "read_account_registration": self.read_account_registration,
+            "set_account_registration": self.set_account_registration,
+            "add_account_beneficiary": self.add_account_beneficiary,
+            "read_beneficiary_audit": self.read_beneficiary_audit,
             "read_portfolio": self.read_portfolio,
             "search_holdings": self.search_holdings,
             "decide_recommendation": self.decide_recommendation,
@@ -170,6 +174,127 @@ class ToolExecutors:
             if n == 0 else
             f"{n} lot(s) would trigger a wash sale if harvested now, disallowing "
             f"{result['total_disallowed_loss']:,.0f} of loss."
+        )
+        return result
+
+    async def read_account_registration(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import registration as engine
+        from app.models.graph import Account, AccountBeneficiary
+
+        account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
+        account = (await self.session.execute(
+            select(Account).where(Account.id == account_id, Account.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if account is None:
+            raise ExecutorError(f"Account {account_id} not found")
+
+        beneficiaries = (await self.session.execute(
+            select(AccountBeneficiary).where(AccountBeneficiary.account_id == account.id)
+        )).scalars().all()
+        rmd = await engine.rmd_for_account(self.session, account)
+
+        return {
+            "account_id": str(account.id), "account_name": account.name,
+            "registration_type": account.registration_type,
+            "rmd": rmd,
+            "beneficiaries": [{
+                "beneficiary_name": b.beneficiary_name, "designation_class": b.designation_class,
+                "percentage": float(b.percentage), "relationship_to_owner": b.relationship_to_owner,
+            } for b in beneficiaries],
+            "message": (
+                f"{account.name}: registered as {account.registration_type or 'unset'}, "
+                f"{len(beneficiaries)} beneficiary designation(s)"
+                + (f", RMD {rmd['status']}" if rmd else "") + "."
+            ),
+        }
+
+    async def set_account_registration(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from datetime import date as _date
+
+        from app.models.enums import RegistrationType
+        from app.models.graph import Account
+
+        account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
+        account = (await self.session.execute(
+            select(Account).where(Account.id == account_id, Account.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if account is None:
+            raise ExecutorError(f"Account {account_id} not found")
+
+        reg_type = inputs.get("registration_type")
+        if reg_type is not None:
+            if reg_type not in {t.value for t in RegistrationType}:
+                raise ExecutorError(f"Unknown registration_type: {reg_type}")
+            account.registration_type = reg_type
+
+        death_date = inputs.get("original_owner_death_date")
+        if death_date:
+            try:
+                account.original_owner_death_date = _date.fromisoformat(str(death_date)[:10])
+            except ValueError:
+                raise ExecutorError(f"Invalid original_owner_death_date: {death_date}")
+
+        election = inputs.get("rmd_election_method")
+        if election is not None:
+            if election not in ("10_year_rule", "life_expectancy"):
+                raise ExecutorError(f"rmd_election_method must be 10_year_rule or life_expectancy, got {election}")
+            account.rmd_election_method = election
+
+        await self.session.flush()
+        return {
+            "account_id": str(account.id), "registration_type": account.registration_type,
+            "message": f"Updated registration for {account.name}.",
+        }
+
+    async def add_account_beneficiary(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.core.db import utcnow
+        from app.models.graph import Account, AccountBeneficiary
+
+        account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
+        beneficiary_name = inputs.get("beneficiary_name")
+        percentage = inputs.get("percentage")
+        if not beneficiary_name or percentage is None:
+            raise ExecutorError("beneficiary_name and percentage are required")
+
+        account = (await self.session.execute(
+            select(Account).where(Account.id == account_id, Account.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if account is None:
+            raise ExecutorError(f"Account {account_id} not found")
+
+        designation_class = inputs.get("designation_class") or "primary"
+        if designation_class not in ("primary", "contingent"):
+            raise ExecutorError("designation_class must be primary or contingent")
+
+        row = AccountBeneficiary(
+            firm_id=self.firm_id, account_id=account.id, beneficiary_name=beneficiary_name,
+            percentage=float(percentage), designation_class=designation_class,
+            relationship_to_owner=inputs.get("relationship_to_owner"),
+            per_stirpes=str(inputs.get("per_stirpes", "")).lower() == "true",
+            date_designated=utcnow().date(),
+        )
+        self.session.add(row)
+        await self.session.flush()
+
+        return {
+            "beneficiary_id": str(row.id), "beneficiary_name": row.beneficiary_name,
+            "percentage": float(row.percentage),
+            "message": f"Added {row.beneficiary_name} as a {designation_class} beneficiary ({percentage}%) on {account.name}.",
+        }
+
+    async def read_beneficiary_audit(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import registration as engine
+
+        household_id = inputs.get("household_id")
+        result = await engine.beneficiary_audit(
+            self.session, self.firm_id,
+            household_id=_parse_uuid(household_id, "household_id") if household_id else None,
+        )
+        n = len(result["gaps"])
+        result["message"] = (
+            f"All {result['accounts_checked']} account(s) needing beneficiaries are covered."
+            if n == 0 else
+            f"{n} of {result['accounts_checked']} account(s) needing beneficiaries have a gap."
         )
         return result
 

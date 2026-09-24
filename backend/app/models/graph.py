@@ -117,8 +117,45 @@ class Account(Base):
     # Lineage for the account-level figures (source connector, as_of, confidence).
     lineage: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # L200-1 §4: the registration matrix — onboarding sets `OnboardingCase.registration_type`
+    # but that never reached the live account record, so nothing downstream (RMDs,
+    # beneficiary requirements) could tell an IRA from a taxable account after materialization.
+    registration_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Inherited-account specifics — which RMD regime applies is a function of these two,
+    # not of registration_type alone (a spouse-inheritor and a non-spouse EDB differ).
+    original_owner_death_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rmd_election_method: Mapped[str | None] = mapped_column(String(24), nullable=True)  # 10_year_rule | life_expectancy
+
     mandate: Mapped["Mandate | None"] = relationship(back_populates="accounts")
     holdings: Mapped[list["Holding"]] = relationship(back_populates="account")
+    beneficiaries: Mapped[list["AccountBeneficiary"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+
+
+class AccountBeneficiary(Base):
+    """A primary or contingent beneficiary designation on an account (L200-1 §4).
+
+    Real structured data — the prior state of the art was a free-text truthy check on
+    `OnboardingCase.intake["beneficiary_name"]`, which could not answer "do the
+    percentages sum to 100" or "who inherits if the primary predeceases", the exact
+    questions L200-1 §4 calls the #1 practical estate failure."""
+
+    __tablename__ = "account_beneficiary"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("account.id", ondelete="CASCADE"), index=True
+    )
+    beneficiary_name: Mapped[str] = mapped_column(String(200))
+    relationship_to_owner: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    designation_class: Mapped[str] = mapped_column(String(16), default="primary")  # primary | contingent
+    percentage: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    per_stirpes: Mapped[bool] = mapped_column(default=False)
+    date_designated: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    account: Mapped["Account"] = relationship(back_populates="beneficiaries")
 
 
 class Goal(Base):
