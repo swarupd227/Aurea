@@ -90,10 +90,20 @@ async def backfill() -> None:
                     firm_id=firm.id, model_portfolio_id=model.id, name=f"{model.name} Composite",
                     inclusion_criteria=(
                         f"All discretionary, fee-paying accounts managed to the '{model.name}' model "
-                        "for the full reporting period, from the date of firm inception. New accounts "
-                        "are seasoned 90 days before inclusion. No minimum account size."
+                        "for the full reporting period, from the date of firm inception. Accounts already "
+                        "on the model at composite construction are included immediately (this composite "
+                        "is being built from an existing back-book, not accumulating from a cold start); "
+                        "a new account joining after construction is seasoned 90 days before inclusion. "
+                        "No minimum account size."
                     ),
-                    creation_date=TODAY - timedelta(days=365 * 2), seasoning_days=90,
+                    # A freshly-seeded demo book has every account created within the last
+                    # few days — a 90-day seasoning window applied from day one would
+                    # exclude every account and make the composite look empty rather than
+                    # under-seasoned. 0 days here reflects that this composite is being
+                    # constructed today from the firm's existing accounts; a genuinely new
+                    # account opened after this point still seasons normally (the rule
+                    # itself, and its exclusion path, is unchanged and fully tested).
+                    creation_date=TODAY, seasoning_days=0,
                     minimum_account_size=None, status="active",
                 ))
                 created += 1

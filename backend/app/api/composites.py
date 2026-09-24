@@ -61,6 +61,32 @@ async def create_composite(body: CompositeIn, user: User = AdminDep, firm: Firm 
     return _composite_out(row)
 
 
+class CompositeUpdate(BaseModel):
+    name: str | None = None
+    inclusion_criteria: str | None = None
+    seasoning_days: int | None = None
+    minimum_account_size: float | None = None
+    status: str | None = None
+
+
+@router.patch("/{composite_id}")
+async def update_composite(composite_id: uuid.UUID, body: CompositeUpdate, user: User = AdminDep,
+                            firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    row = (await db.execute(
+        select(Composite).where(Composite.id == composite_id, Composite.firm_id == firm.id)
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Composite not found.")
+    if body.status is not None and body.status not in COMPOSITE_STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {COMPOSITE_STATUSES}.")
+    for field in ("name", "inclusion_criteria", "seasoning_days", "minimum_account_size", "status"):
+        value = getattr(body, field)
+        if value is not None:
+            setattr(row, field, value)
+    await db.flush()
+    return _composite_out(row)
+
+
 @router.get("/{composite_id}/report")
 async def get_report(composite_id: uuid.UUID, user: User = StaffDep, firm: Firm = Depends(current_firm),
                       db: AsyncSession = Depends(get_db)):
