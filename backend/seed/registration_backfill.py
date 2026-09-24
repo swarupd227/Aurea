@@ -83,6 +83,36 @@ async def backfill() -> None:
             if demo_clean and demo_inherited:
                 break
 
+        # No account name happened to carry an IRA-style keyword (the real case for a demo
+        # book of generically-named "Family A/C" / "Household A/C" accounts) — fall back to
+        # any two person-owned accounts and register them as IRAs explicitly, rather than
+        # silently shipping a beneficiary-audit / RMD feature with nothing to demonstrate.
+        if demo_clean is None or demo_inherited is None:
+            used_ids = {x[0].id for x in (demo_clean, demo_inherited) if x is not None}
+            candidates = []
+            for a in accounts:
+                if a.mandate_id is None or a.id in used_ids:
+                    continue
+                mandate = await s.get(Mandate, a.mandate_id)
+                if not mandate or not mandate.person_id:
+                    continue
+                owner = await s.get(Person, mandate.person_id)
+                if not owner:
+                    continue
+                candidates.append((a, owner))
+                if len(candidates) >= 2:
+                    break
+            if demo_clean is None and candidates:
+                account, owner = candidates.pop(0)
+                account.registration_type = "traditional_ira"
+                inferred[account.registration_type] = inferred.get(account.registration_type, 0) + 1
+                demo_clean = (account, owner)
+            if demo_inherited is None and candidates:
+                account, owner = candidates.pop(0)
+                account.registration_type = "traditional_ira"
+                inferred[account.registration_type] = inferred.get(account.registration_type, 0) + 1
+                demo_inherited = (account, owner)
+
         if demo_clean:
             account, owner = demo_clean
             existing = (await s.execute(
