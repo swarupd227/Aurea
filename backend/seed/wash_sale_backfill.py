@@ -10,7 +10,11 @@ repurchase, not a fabricated flag. `_load_lots` in tax_intelligence.py does the 
 it only disallows a loss lot that a recent same-instrument purchase conflicts with,
 exactly per IRC §1091.
 
-Idempotent: skips a firm that already has any tax lot inside the wash-sale window.
+Idempotent: skips a firm where a genuine violation already exists -- some instrument
+with both an aged loss lot and a lot inside the window -- rather than a firm that
+merely has *some* recent lot somewhere (day-to-day activity like funding or a
+corporate action creates those routinely, on instruments with no loss at all, and
+would otherwise make this look "already seeded" without ever having run).
 
     python -m seed.wash_sale_backfill
 """
@@ -40,11 +44,27 @@ async def backfill() -> None:
 
         for firm in firms:
             lots = (await s.execute(select(TaxLot).where(TaxLot.firm_id == firm.id))).scalars().all()
-            if any((today - lot.acquired_on).days <= _WASH_SALE_WINDOW for lot in lots):
-                continue  # already has a recent lot somewhere -- nothing to seed
-
             holdings = (await s.execute(select(Holding).where(Holding.firm_id == firm.id))).scalars().all()
             holding_map = {h.id: h for h in holdings}
+
+            # Per instrument: does it already have both a lot inside the window and an
+            # aged loss lot? That's a real existing violation, worth leaving alone. A
+            # firm with merely *some* recent lot on an unrelated, non-loss instrument
+            # is not "already seeded" -- funding and corporate-action activity creates
+            # those routinely and would otherwise make this backfill a permanent no-op.
+            recent_instruments: set = set()
+            loss_instruments: set = set()
+            for lot in lots:
+                h = holding_map.get(lot.holding_id)
+                if not h or float(h.quantity or 0) <= 0:
+                    continue
+                days_held = (today - lot.acquired_on).days
+                if days_held <= _WASH_SALE_WINDOW:
+                    recent_instruments.add(h.instrument_id)
+                elif float(h.market_value) / float(h.quantity) < float(lot.cost_per_unit):
+                    loss_instruments.add(h.instrument_id)
+            if recent_instruments & loss_instruments:
+                continue  # a real violation already exists here -- nothing to seed
 
             # The largest real loss position in the book: cost basis clearly above
             # today's market price, aged well past the window, so the repurchase we add
