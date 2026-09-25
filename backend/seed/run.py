@@ -665,7 +665,7 @@ async def _acquire_onboard(s, firm):
         s.add(OnboardingDocument(
             firm_id=firm.id, case_id=sokolov.id, doc_type="trust_deed", filename="trust_deed_sokolov.pdf",
             raw_text=sample_docs.trust_deed("Sokolov Family Trust", settlor="Viktor Sokolov",
-                                            trustees=["Viktor Sokolov", "Anna Sokolov", "Meridian Trustees Ltd"],
+                                            trustees=["Viktor Sokolov", "Anna Sokolov", "Cornerstone Trustees Ltd"],
                                             beneficiaries=["Sokolov children"])))
         s.add(OnboardingDocument(
             firm_id=firm.id, case_id=sokolov.id, doc_type="overseas_pension",
@@ -925,7 +925,7 @@ async def _gate_scenarios(s, firm):
         await s.flush()
         party(nak, PartyRole.TRUSTEE, "Kenji Nakamura", dob="1965-07-30")
         party(nak, PartyRole.TRUSTEE, "Yuki Nakamura", dob="1968-01-14")
-        party(nak, PartyRole.POA_HOLDER, "Meridian Trustees Ltd")
+        party(nak, PartyRole.POA_HOLDER, "Cornerstone Trustees Ltd")
         # Fee set but deliberately not yet confirmed — shows the maker/checker gate.
         nak.engagement_type = "trust_fiduciary"
         nak.agreement_status = "sent"
