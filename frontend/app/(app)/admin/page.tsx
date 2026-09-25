@@ -2425,7 +2425,7 @@ function BrandingTab() {
           <div className="flex gap-3 items-center">
             <div className="h-10 w-10 rounded-xl" style={{ background: preview.accent || "#c8a35e" }} />
             <div>
-              <div className="font-medium" style={{ color: preview.accent || "#c8a35e" }}>{preview.logo_text || "Aurea"}</div>
+              <div className="font-medium" style={{ color: preview.accent || "#c8a35e" }}>{preview.logo_text || "Your Firm"}</div>
               <div className="text-xs text-ink-muted">Used for buttons, highlights, and accents</div>
             </div>
           </div>

@@ -124,7 +124,7 @@ async def fetch_history_yahoo(symbol: str, *, rng: str = "1y", interval: str = "
     """Real monthly close history for a symbol from Yahoo. Returns [(YYYY-MM-DD, close), ...]."""
     from datetime import date as _date
 
-    headers = {"User-Agent": "Mozilla/5.0 (Aurera Conduit market-data connector)"}
+    headers = {"User-Agent": "Mozilla/5.0 (Astra Conduit market-data connector)"}
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
            f"?interval={interval}&range={rng}")
     out: list[tuple[str, float]] = []

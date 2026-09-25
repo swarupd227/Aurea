@@ -29,7 +29,7 @@ DEMO_PERSONAS: list[dict] = [
     {"email": "branch@aurea.demo", "role": UserRole.BRANCH_LEADER, "full_name": "Mark Sullivan",
      "title": "Branch Leader", "default_path": "/studio/capacity", "group": "Leadership",
      "description": "Capacity, growth and service quality across advisers."},
-    {"email": "admin@aurea.demo", "role": UserRole.ADMIN, "full_name": "Aurea Administrator",
+    {"email": "admin@aurea.demo", "role": UserRole.ADMIN, "full_name": "Jordan Reyes",
      "title": "Platform Admin", "default_path": "/admin", "group": "Platform",
      "description": "Configure the whole platform — branding, agents, connectors, models."},
     {"email": "client@aurea.demo", "role": UserRole.CLIENT, "full_name": "Wei Chen",

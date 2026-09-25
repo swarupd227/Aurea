@@ -154,9 +154,9 @@ async def seed() -> None:
         await s.flush()
 
         # ── Model portfolios ─────────────────────────────────────────────────
-        balanced = ModelPortfolio(firm_id=firm.id, name="Aurera Balanced",
+        balanced = ModelPortfolio(firm_id=firm.id, name="Core Balanced",
                                   description="50/30/10/10 balanced model.", drift_band=0.05)
-        growth = ModelPortfolio(firm_id=firm.id, name="Aurera Growth",
+        growth = ModelPortfolio(firm_id=firm.id, name="Core Growth",
                                 description="Growth-tilted model.", drift_band=0.05)
         s.add_all([balanced, growth])
         await s.flush()
@@ -665,7 +665,7 @@ async def _acquire_onboard(s, firm):
         s.add(OnboardingDocument(
             firm_id=firm.id, case_id=sokolov.id, doc_type="trust_deed", filename="trust_deed_sokolov.pdf",
             raw_text=sample_docs.trust_deed("Sokolov Family Trust", settlor="Viktor Sokolov",
-                                            trustees=["Viktor Sokolov", "Anna Sokolov", "Aurera Trustees Ltd"],
+                                            trustees=["Viktor Sokolov", "Anna Sokolov", "Meridian Trustees Ltd"],
                                             beneficiaries=["Sokolov children"])))
         s.add(OnboardingDocument(
             firm_id=firm.id, case_id=sokolov.id, doc_type="overseas_pension",
@@ -925,7 +925,7 @@ async def _gate_scenarios(s, firm):
         await s.flush()
         party(nak, PartyRole.TRUSTEE, "Kenji Nakamura", dob="1965-07-30")
         party(nak, PartyRole.TRUSTEE, "Yuki Nakamura", dob="1968-01-14")
-        party(nak, PartyRole.POA_HOLDER, "Aurera Trustees Ltd")
+        party(nak, PartyRole.POA_HOLDER, "Meridian Trustees Ltd")
         # Fee set but deliberately not yet confirmed — shows the maker/checker gate.
         nak.engagement_type = "trust_fiduciary"
         nak.agreement_status = "sent"
@@ -1099,7 +1099,7 @@ def _research_docs(firm_id) -> list[ResearchDocument]:
     return [
         ResearchDocument(
             firm_id=firm_id, title="House View — Q2: Measured Risk, Quality Tilt", doc_type="house_view",
-            author="Aurera Investment Committee",
+            author="Investment Committee",
             summary="Neutral equities with a quality tilt; favour duration in fixed income.",
             body="Our house view maintains a neutral allocation to equities with a deliberate tilt "
                  "toward quality and cash-generative businesses. We are wary of single-name "
@@ -1111,7 +1111,7 @@ def _research_docs(firm_id) -> list[ResearchDocument]:
             tags=["house_view", "rebalancing", "tax"]),
         ResearchDocument(
             firm_id=firm_id, title="Adviser Playbook — Values-Aligned Portfolios", doc_type="playbook",
-            author="Aurera Advice Standards",
+            author="Advice Standards",
             summary="How to implement exclusions and impact themes without sacrificing diversification.",
             body="When a mandate carries values exclusions, exit excluded holdings on the next "
                  "rebalance and redeploy into diversified, screened alternatives. For for-purpose "
@@ -1121,7 +1121,7 @@ def _research_docs(firm_id) -> list[ResearchDocument]:
             tags=["values", "esg", "for_purpose"]),
         ResearchDocument(
             firm_id=firm_id, title="Decumulation & Longevity Note", doc_type="research",
-            author="Aurera Research",
+            author="Research Desk",
             summary="Sequencing-of-returns risk dominates the early retirement window.",
             body="In the decumulation phase, sequencing-of-returns risk dominates. Maintain a cash "
                  "buffer of 1–2 years of spending and avoid forced selling of growth assets during "
