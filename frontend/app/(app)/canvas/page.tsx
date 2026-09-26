@@ -105,9 +105,9 @@ export default function Canvas() {
   }
 
   function downloadPdf() {
-    const { getToken } = require("@/lib/api");
+    const { getToken, API_BASE } = require("@/lib/api");
     const token = getToken();
-    const base = process.env.NEXT_PUBLIC_API_URL || "";
+    const base = API_BASE;
     const qs = !isClient && hid ? `?household_id=${hid}` : "";
     const url = `${base}/api/canvas/summary/pdf${qs}`;
     // Fetch with auth header and trigger download

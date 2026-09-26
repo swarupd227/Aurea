@@ -192,6 +192,12 @@ async def bootstrap() -> None:
             "CREATE INDEX IF NOT EXISTS ix_transfer_request_status ON transfer_request(status)"
         ))
 
+        # The fee schedule confirmed under maker/checker at onboarding, propagated onto the
+        # mandate it was set for — without this, the client-facing fee panel had no way back
+        # to it and silently fell back to a segment-based estimate for every household, even
+        # one with a firm-confirmed schedule on file.
+        await conn.execute(text("ALTER TABLE mandate ADD COLUMN IF NOT EXISTS fee_schedule_id UUID REFERENCES fee_schedule(id) ON DELETE SET NULL"))
+
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()
         for (firm_id,) in firms:

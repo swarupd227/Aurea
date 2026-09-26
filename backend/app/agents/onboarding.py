@@ -301,6 +301,9 @@ class OnboardingAgent(BaseAgent):
             suitability=proposal.get("suitability", {}),
             constraints=mandate_cfg.get("constraints", {}),
             model_portfolio_id=mandate_cfg.get("model_portfolio_id"),
+            # Carries the maker/checker-confirmed fee forward so the client-facing fee panel
+            # can bill against it instead of a segment-based estimate (L200 §2.1 Track A).
+            fee_schedule_id=case.fee_schedule_id,
         )
         s.add(mandate)
         await s.flush()

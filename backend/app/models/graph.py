@@ -95,6 +95,13 @@ class Mandate(Base):
     model_portfolio_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("model_portfolio.id", ondelete="SET NULL"), nullable=True
     )
+    # The fee schedule confirmed under maker/checker during onboarding (propagated from
+    # OnboardingCase.fee_schedule_id at materialisation). Null for a mandate that predates
+    # this column or was never routed through onboarding's fee step — the client-facing fee
+    # panel falls back to a segment-based estimate in that case, never a fabricated figure.
+    fee_schedule_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fee_schedule.id", ondelete="SET NULL"), nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     accounts: Mapped[list["Account"]] = relationship(back_populates="mandate")

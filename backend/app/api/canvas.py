@@ -627,11 +627,18 @@ async def get_fees(
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return fee schedule and estimated fees for this household based on AUM."""
+    """Return the fee for this household — the maker/checker-confirmed schedule from
+    onboarding when the household's mandate carries one, a segment-based estimate
+    otherwise. These used to be two permanently disagreeing sources: onboarding confirmed
+    a `FeeSchedule` that nothing ever read again, while this panel priced purely off
+    `FirmSegment.fee_tier_bps`, so a client could be shown a rate the firm never agreed
+    with them. `Mandate.fee_schedule_id` (propagated at onboarding materialisation) closes
+    that loop."""
+    from app.aurea_core import fees as fees_core
     from app.models.graph import Mandate, Person, Account
+    from app.models.onboarding import FeeSchedule
     from app.models.portfolio import Holding
     from app.models.tenant import FirmSegment
-    from sqlalchemy import or_
 
     hid = await _resolve_household(db, user, household_id)
 
@@ -642,7 +649,11 @@ async def get_fees(
     person_ids = [p.id for p in persons]
 
     total_aum = 0.0
+    mandates: list[Mandate] = []
     if person_ids:
+        mandates = (await db.execute(
+            select(Mandate).where(Mandate.firm_id == firm.id, Mandate.person_id.in_(person_ids))
+        )).scalars().all()
         aum_row = (await db.execute(
             select(func.coalesce(func.sum(Holding.market_value), 0))
             .join(Account, Account.id == Holding.account_id)
@@ -651,13 +662,43 @@ async def get_fees(
         )).scalar_one()
         total_aum = float(aum_row)
 
-    # Get all firm segments with fee tiers.
+    # A mandate carrying a confirmed fee schedule from onboarding is authoritative — bill
+    # against what the firm actually agreed with this client, not a segment estimate.
+    confirmed_schedule = None
+    for m in mandates:
+        if m.fee_schedule_id:
+            confirmed_schedule = await db.get(FeeSchedule, m.fee_schedule_id)
+            if confirmed_schedule:
+                break
+
+    if confirmed_schedule:
+        computed = fees_core.compute_annual_fee(confirmed_schedule, total_aum)
+        annual_fee = computed["annual_fee"] or 0.0
+        fee_bps = computed["effective_bps"] or 0.0
+        monthly_fee = annual_fee / 12
+        ytd_fee = monthly_fee * utcnow().month
+        return {
+            "aum": total_aum,
+            "currency": confirmed_schedule.currency or firm.base_currency or "NZD",
+            "fee_bps": fee_bps,
+            "fee_pct": round(fee_bps / 100, 4),
+            "annual_fee": round(annual_fee, 2),
+            "monthly_fee": round(monthly_fee, 2),
+            "ytd_fee": round(ytd_fee, 2),
+            "source": "confirmed_fee_schedule",
+            "fee_schedule_name": confirmed_schedule.name,
+            "breakdown": computed["breakdown"],
+            "applicable_segment": None,
+            "fee_schedule": [],
+        }
+
+    # No confirmed schedule on file — fall back to the segment-based estimate, clearly
+    # labelled as such rather than presented with the same confidence as an agreed fee.
     segments = (await db.execute(
         select(FirmSegment).where(FirmSegment.firm_id == firm.id, FirmSegment.is_active.is_(True))
         .order_by(FirmSegment.min_aum_usd)
     )).scalars().all()
 
-    # Determine applicable segment by AUM.
     applicable = None
     for seg in segments:
         if seg.min_aum_usd is None or total_aum >= (seg.min_aum_usd or 0):
@@ -677,6 +718,7 @@ async def get_fees(
         "annual_fee": round(annual_fee, 2),
         "monthly_fee": round(monthly_fee, 2),
         "ytd_fee": round(ytd_fee, 2),
+        "source": "segment_estimate",
         "applicable_segment": {
             "slug": applicable.slug, "label": applicable.label, "fee_bps": applicable.fee_tier_bps,
             "min_aum": applicable.min_aum_usd,
