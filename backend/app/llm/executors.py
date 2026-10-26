@@ -202,7 +202,10 @@ class ToolExecutors:
         if d["synthetic_price_symbols"]:
             notes.append("synthetic prices: " + ", ".join(d["synthetic_price_symbols"]))
         if d["unpriced_flat_symbols"]:
-            notes.append("held flat, no price history: " + ", ".join(d["unpriced_flat_symbols"]))
+            notes.append(
+                "no price history, so counted in the total at its current value with zero return "
+                "(not excluded): " + ", ".join(d["unpriced_flat_symbols"])
+            )
         if d["stale_days"] and d["stale_days"] > 45:
             notes.append(f"latest price is {d['stale_days']} days old")
         mwr = f", money-weighted {result['mwr']['period']:+.1%}" if result["mwr"] else ""
