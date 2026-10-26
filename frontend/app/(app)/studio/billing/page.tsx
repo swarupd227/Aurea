@@ -139,6 +139,11 @@ export default function Billing() {
               <div className="font-semibold text-ink">Run awaiting approval · {run.as_of}</div>
               {run.awaiting_decision && run.recommendation_id && (
                 <div className="flex flex-wrap items-center gap-2">
+                  {!canApprove && (
+                    <span className="chip text-warn" data-testid="billing-approval-rights">
+                      Approval: operations or branch leader · you are {label(role ?? "unknown")}
+                    </span>
+                  )}
                   {staleHeld > 0 && (
                     <label className="flex items-center gap-1.5 text-xs text-ink-muted">
                       <input type="checkbox" checked={acceptStale} onChange={(e) => setAcceptStale(e.target.checked)} />
