@@ -53,6 +53,10 @@ class ToolExecutors:
             "search_households": self.search_households,
             "check_household_wash_sale": self.check_household_wash_sale,
             "read_performance": self.read_performance,
+            "read_billing": self.read_billing,
+            "explain_invoice": self.explain_invoice,
+            "run_billing": self.run_billing,
+            "credit_invoice": self.credit_invoice,
             "read_composites": self.read_composites,
             "read_composite_report": self.read_composite_report,
             "read_firm_definition_check": self.read_firm_definition_check,
@@ -214,6 +218,126 @@ class ToolExecutors:
             f"to {result['end']} (" + "; ".join(notes) + ")."
         )
         return result
+
+    async def read_billing(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import billing_views
+        from app.models.graph import Household
+
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            household = await self.session.get(Household, household_id)
+            if household is None or household.firm_id != self.firm_id:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            result = await billing_views.household_invoices(self.session, self.firm_id, household_id)
+            result.update({"scope": "household", "household_name": household.name,
+                           "open_run": None, "exceptions": None})
+            n = len(result["invoices"])
+            result["message"] = (f"{household.name} has no invoices yet." if n == 0 else
+                                 f"{n} invoice(s)/credit note(s) for {household.name}.")
+            return result
+
+        result = await billing_views.overview(self.session, self.firm_id)
+        ex = result["exceptions"]
+        result.update({"scope": "firm", "invoices": result["open_run"]["invoices"] if result["open_run"] else []})
+        result["message"] = (
+            ("A billing run is awaiting approval. " if result["open_run"] else "No billing run is waiting. ")
+            + f"{len(ex['no_agreement'])} mandate(s) have no fee agreement on file, "
+              f"{len(ex['held'])} bill(s) are held by a block, {len(ex['unpaid'])} issued bill(s) are unpaid "
+              "for lack of cash."
+        )
+        return result
+
+    async def explain_invoice(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import billing_views
+        from app.models.billing import Invoice
+
+        if inputs.get("invoice_id"):
+            invoice_id = _parse_uuid(inputs["invoice_id"], "invoice_id")
+        elif inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            latest = (await self.session.execute(
+                select(Invoice).where(Invoice.firm_id == self.firm_id, Invoice.household_id == household_id,
+                                      Invoice.kind == "invoice", Invoice.status != "void")
+                .order_by(Invoice.period_end.desc(), Invoice.created_at.desc()))).scalars().first()
+            if latest is None:
+                raise ExecutorError("That household has no invoices to explain.")
+            invoice_id = latest.id
+        else:
+            raise ExecutorError("Give an invoice_id or a household_id.")
+
+        view = await billing_views.invoice_detail(self.session, self.firm_id, invoice_id)
+        if view is None:
+            raise ExecutorError(f"Invoice {invoice_id} not found or access denied")
+        calc, val = view.get("calculation") or {}, (view.get("calculation") or {}).get("valuation") or {}
+        view["message"] = (
+            f"{view['number'] or 'Draft'} for {view['household_name'] or view['mandate_name']}: "
+            f"{view['currency']} {view['amount']:,.2f} for {view['period_start']} to {view['period_end']}, "
+            f"on a balance of {calc.get('billable_value', 0):,.2f} valued on {val.get('basis_date')} "
+            f"(oldest price {val.get('oldest_price_date') or 'not recorded'}; a single snapshot, not an "
+            f"average balance)."
+        )
+        return view
+
+    async def run_billing(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.atlas.base import Subject
+        from app.atlas.runtime import AgentPausedError, run_agent
+        from app.aurea_core import billing_run, billing_views
+        from app.models.billing import BillingRun
+        from app.models.enums import AgentKey
+        from app.models.tenant import Firm
+
+        firm = await self.session.get(Firm, self.firm_id)
+        try:
+            run = await run_agent(self.session, firm=firm, agent_key=AgentKey.BILLING,
+                                  subject=Subject("firm", firm.id, firm.name), trigger="conversation")
+        except AgentPausedError as exc:
+            raise ExecutorError(str(exc))
+        proposed = (await self.session.execute(
+            select(BillingRun).where(BillingRun.agent_run_id == run.id))).scalars().first()
+        if proposed is None:
+            waiting = await billing_run.open_run(self.session, self.firm_id)
+            reason = ("A billing run is already awaiting approval." if waiting else "Nothing is due to be billed.")
+            view = await billing_views.run_view(self.session, waiting, with_invoices=True) if waiting else None
+            return {"proposed": False, "reason": reason, "run": view, "message": reason,
+                    "invoices": view["invoices"] if view else []}
+        view = await billing_views.run_view(self.session, proposed, with_invoices=True)
+        s = view["summary"]
+        view_out = {"proposed": True, "run": view, "invoices": view["invoices"], "scope": "firm",
+                    "open_run": view, "exceptions": {"no_agreement": s.get("no_agreement", []), "held": [], "unpaid": []},
+                    "message": (f"Prepared a billing run: {s['invoices']} bill(s), {s['blocked']} held by a block, "
+                                f"{s['amount_by_currency']}. Nothing is issued until operations or a branch leader "
+                                "approves it.")}
+        return view_out
+
+    async def credit_invoice(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import billing_run, billing_views
+        from app.core import decision_rights
+        from app.models.billing import Invoice
+        from app.models.enums import AgentKey
+
+        invoice_id = _parse_uuid(inputs.get("invoice_id") or "", "invoice_id")
+        reason = (inputs.get("reason") or "").strip()
+        if not reason:
+            raise ExecutorError("A reason is required to credit an invoice.")
+        try:
+            decision_rights.check(self.role, AgentKey.BILLING, "approve")
+        except decision_rights.DecisionForbidden as exc:
+            raise ExecutorError(str(exc))
+        inv = await self.session.get(Invoice, invoice_id)
+        if inv is None or inv.firm_id != self.firm_id:
+            raise ExecutorError(f"Invoice {invoice_id} not found or access denied")
+        from app.models.identity import User
+        user = await self.session.get(User, self.user_id)
+        try:
+            note = await billing_run.credit_invoice(self.session, inv, reason=reason, by=user.email if user else "unknown")
+        except billing_run.BillingError as exc:
+            raise ExecutorError(str(exc))
+        view = billing_views.invoice_view(note, detail=True, credit_of_number=inv.invoice_number)
+        view["scope"] = "household"
+        view["invoices"] = [view]
+        view["message"] = (f"Credited {inv.invoice_number} in full with {note.invoice_number}; the invoice is kept "
+                           "and any fee already taken from cash was returned as its own entry.")
+        return view
 
     async def read_composites(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.models.composites import Composite

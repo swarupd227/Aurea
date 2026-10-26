@@ -620,12 +620,71 @@ async def submit_questionnaire(
 
 # ── I3: Fee Transparency Dashboard ────────────────────────────────────────────
 
+async def _client_billing(db: AsyncSession, firm: Firm, hid: uuid.UUID) -> dict:
+    """What this household has actually been billed - issued bills and credit notes only,
+    without the internal checks. A client never sees a draft or a held bill."""
+    from app.models.billing import Invoice
+
+    rows = (await db.execute(
+        select(Invoice).where(Invoice.firm_id == firm.id, Invoice.household_id == hid,
+                              Invoice.status.in_(("issued", "debited", "credited")))
+        .order_by(Invoice.issued_at.desc()))).scalars().all()
+    year = utcnow().year
+    billed_ytd = sum(float(i.amount) for i in rows if i.issued_at and i.issued_at.year == year)
+    return {
+        "invoices": [{
+            "id": str(i.id), "number": i.invoice_number, "kind": i.kind, "status": i.status,
+            "period_start": i.period_start.isoformat(), "period_end": i.period_end.isoformat(),
+            "amount": float(i.amount), "currency": i.currency, "paid": i.debit_status == "posted",
+        } for i in rows],
+        "billed_ytd": round(billed_ytd, 2) if rows else None,
+    }
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+async def download_invoice_pdf(
+    invoice_id: uuid.UUID, household_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user), firm: Firm = Depends(current_firm),
+    db: AsyncSession = Depends(get_db),
+):
+    """A client's copy of one of their own invoices. The household comes from the caller, not
+    the request, so another household's invoice id is a 404 rather than a document."""
+    from fastapi.responses import Response
+
+    from app.aurea_core import billing_views
+    from app.aurea_core.invoice_pdf import render_invoice_pdf
+    from app.models.billing import Invoice
+
+    hid = await _resolve_household(db, user, household_id)
+    inv = await db.get(Invoice, invoice_id)
+    if (inv is None or inv.firm_id != firm.id or inv.household_id != hid
+            or inv.status not in ("issued", "debited", "credited")):
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+    original = await db.get(Invoice, inv.credit_of_id) if inv.credit_of_id else None
+    view = billing_views.invoice_view(inv, detail=True, credit_of_number=original.invoice_number if original else None)
+    pdf = render_invoice_pdf(view, firm_name=firm.name, accent=(firm.branding or {}).get("accent", "#c8a35e"),
+                             base_currency=firm.base_currency or "NZD")
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{inv.invoice_number}.pdf"'})
+
+
 @router.get("/fees")
 async def get_fees(
     household_id: uuid.UUID | None = None,
     user: User = Depends(get_current_user),
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
+):
+    terms = await _fee_terms(household_id, user, firm, db)
+    hid = await _resolve_household(db, user, household_id)
+    return {**terms, **(await _client_billing(db, firm, hid))}
+
+
+async def _fee_terms(
+    household_id: uuid.UUID | None,
+    user: User,
+    firm: Firm,
+    db: AsyncSession,
 ):
     """Return the fee for this household — the maker/checker-confirmed schedule from
     onboarding when the household's mandate carries one, a segment-based estimate

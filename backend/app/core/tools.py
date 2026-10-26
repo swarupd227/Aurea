@@ -121,6 +121,66 @@ TOOLS: dict[str, Tool] = {
                        UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS, UserRole.ADMIN},
     ),
 
+    "read_billing": Tool(
+        key="read_billing",
+        name="Read Billing",
+        speaking_agent="billing",
+        description="Billing position. With a household: its invoices and credit notes, whether each was paid from cash, and any checks raised on them. Without one: the billing run waiting for approval, the exceptions (mandates with no fee agreement on file, bills held by a block, bills issued but unpaid for lack of cash) and what has been billed this year.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "A household to show invoices for; leave out for the firm-wide position", required=False),
+        ],
+        output=ToolOutput("object", "Invoices, the open run, and billing exceptions"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "explain_invoice": Tool(
+        key="explain_invoice",
+        name="Explain Invoice",
+        speaking_agent="billing",
+        description="Show how one invoice was worked out: the fee schedule and its bands, the balance each account contributed, the proration, the date it was valued on and how old the oldest price was, and every check raised on it. Give an invoice id, or a household to explain its most recent bill.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("invoice_id", "uuid", "The invoice to explain", required=False),
+            ToolInput("household_id", "uuid", "Explain this household's most recent invoice", required=False),
+        ],
+        output=ToolOutput("object", "The invoice with its full working"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "run_billing": Tool(
+        key="run_billing",
+        name="Prepare Billing Run",
+        speaking_agent="billing",
+        description="Have the billing agent work out what is due for the current period and prepare a billing run for approval. Nothing is issued and no fee is taken until operations or a branch leader approves the run.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Prepare a billing run? It only drafts the bills for approval - nothing is issued and no fee is taken from any account until operations or a branch leader approves it.",
+        inputs=[],
+        output=ToolOutput("object", "The proposed run, its bills and their checks"),
+        roles_required={UserRole.OPERATIONS, UserRole.BRANCH_LEADER, UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
+    "credit_invoice": Tool(
+        key="credit_invoice",
+        name="Credit Invoice",
+        speaking_agent="billing",
+        description="Offset an issued invoice in full with a credit note. The invoice is kept; any fee already taken from cash is returned as its own entry.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Credit this invoice in full? The invoice stays on record, a credit note offsets it, and any fee already taken from the client's cash is returned.",
+        inputs=[
+            ToolInput("invoice_id", "uuid", "The issued invoice to credit", required=True),
+            ToolInput("reason", "string", "Why it is being credited", required=True),
+        ],
+        output=ToolOutput("object", "The credit note"),
+        roles_required={UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

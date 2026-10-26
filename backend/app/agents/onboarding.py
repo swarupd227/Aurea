@@ -317,6 +317,7 @@ class OnboardingAgent(BaseAgent):
                 set_by=case.fee_set_by, set_at=case.fee_set_at,
                 confirmed_by=case.fee_confirmed_by, confirmed_at=case.fee_confirmed_at,
                 source="onboarding",
+                agreed_billable_aum=float(case.billable_aum) if case.billable_aum is not None else None,
             )
             created["fee_arrangement_id"] = str(arrangement.id)
 

@@ -78,7 +78,7 @@ export default function Analytics() {
         <Kpi icon={Wallet}        label="Wallet share"    value={pct(h.firm_wallet_share, 0)}
           hint={`${money(h.consolidation_opportunity)} held away — consolidation opportunity`}     onClick={() => setTab("client")} />
         <Kpi icon={PiggyBank}     label="Firm margin"     value={pct(h.firm_margin, 0)}
-          hint={`${money(h.fee_revenue)} fee revenue`}                                              onClick={() => setTab("practice")} />
+          hint={`${money(h.fee_revenue)} est. fee revenue`}                                              onClick={() => setTab("practice")} />
         <Kpi icon={Target}        label="Goals on track"  value={h.goals_on_track_pct === null ? "—" : pct(h.goals_on_track_pct, 0)} onClick={() => setTab("client")} />
         <Kpi icon={AlertTriangle} label="At-risk clients" value={h.attrition_high}
           accent={h.attrition_high ? "critical" : undefined}                                       onClick={() => setTab("client")} />
@@ -260,7 +260,17 @@ export default function Analytics() {
                 `${Math.round(v.effective_rate * 10000)} bps`,
                 pct(v.margin, 0),
               ])} />
-            <div className="text-xs text-ink-muted mt-2">Estimated fee leakage {money(pr.fee_margin.fee_leakage_estimate)} · ROA = revenue ÷ AUM in basis points</div>
+            <div className="mt-3 flex flex-wrap gap-1.5" data-testid="fee-billing-position">
+              <span className="chip bg-navy-50 text-ink-muted">Revenue is an estimate from segment rates</span>
+              <span className="chip bg-navy-50 text-ink-muted">
+                Billed this year {pr.fee_margin.billed_this_year == null ? "—" : money(pr.fee_margin.billed_this_year)}
+              </span>
+              {pr.fee_margin.fee_at_risk != null && (
+                <span className={`chip ${pr.fee_margin.fee_at_risk > 0 ? "bg-caution/10 text-caution" : "bg-navy-50 text-ink-muted"}`}>
+                  Unpaid {money(pr.fee_margin.unpaid)} · held {money(pr.fee_margin.held)}
+                </span>
+              )}
+            </div>
           </Card>
           <Card>
             <CardTitle>M&A / book integration</CardTitle>

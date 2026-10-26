@@ -75,7 +75,7 @@ async def activate_arrangement(
     session: AsyncSession, *, firm_id: uuid.UUID, mandate: Mandate, fee_schedule_id: uuid.UUID,
     billing_method: str, billing_frequency: str, householding: bool, effective_from: date,
     set_by: str | None, set_at, confirmed_by: str | None, confirmed_at,
-    source: str = "onboarding", notes: str | None = None,
+    source: str = "onboarding", notes: str | None = None, agreed_billable_aum: float | None = None,
 ) -> FeeArrangement:
     """Make these the mandate's fee terms, ending whatever applied before."""
     if billing_method not in fees_core.BILLING_METHODS:
@@ -94,7 +94,7 @@ async def activate_arrangement(
         firm_id=firm_id, mandate_id=mandate.id, fee_schedule_id=fee_schedule_id,
         billing_method=billing_method, billing_frequency=billing_frequency,
         householding=householding, effective_from=effective_from, status="active", source=source,
-        set_by=set_by, set_at=set_at, confirmed_by=confirmed_by, confirmed_at=confirmed_at, notes=notes,
+        agreed_billable_aum=agreed_billable_aum, set_by=set_by, set_at=set_at, confirmed_by=confirmed_by, confirmed_at=confirmed_at, notes=notes,
     )
     session.add(arrangement)
     # The client-facing fee panel reads the schedule off the mandate; keep the two in step.

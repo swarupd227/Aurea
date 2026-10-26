@@ -40,6 +40,9 @@ class FeeArrangement(Base):
     # Aggregate this mandate with the household's others on the same schedule, so the
     # breakpoint is reached on the combined balance.
     householding: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The balance the fee was agreed on (the case's billable AUM). The first bill is checked
+    # against it: a fee confirmed on 200k and first billed on 2m has changed beneath the agreement.
+    agreed_billable_aum: Mapped[float | None] = mapped_column(Numeric(18, 2), nullable=True)
 
     effective_from: Mapped[date] = mapped_column(Date)
     ended_on: Mapped[date | None] = mapped_column(Date, nullable=True)

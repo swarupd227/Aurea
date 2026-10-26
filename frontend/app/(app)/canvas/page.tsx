@@ -104,6 +104,20 @@ export default function Canvas() {
     setFeesLoaded(true);
   }
 
+  function downloadInvoice(id: string, number: string) {
+    const { getToken, API_BASE } = require("@/lib/api");
+    const qs = !isClient && hid ? `?household_id=${hid}` : "";
+    fetch(`${API_BASE}/api/canvas/invoices/${id}/pdf${qs}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${number}.pdf`;
+        a.click();
+      })
+      .catch(() => {});
+  }
+
   function downloadPdf() {
     const { getToken, API_BASE } = require("@/lib/api");
     const token = getToken();
@@ -326,18 +340,43 @@ export default function Canvas() {
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-navy-50 rounded-xl p-3 text-center">
-                <div className="text-lg font-bold text-ink">{fees.fee_pct ? `${(fees.fee_pct * 100).toFixed(2)}%` : "—"}</div>
-                <div className="text-xs text-ink-muted">Annual fee rate</div>
+                <div className="text-lg font-bold text-ink">{fees.fee_pct ? `${Number(fees.fee_pct).toFixed(2)}%` : "—"}</div>
+                <div className="text-xs text-ink-muted">{fees.source === "confirmed_fee_schedule" ? "Annual fee rate (effective)" : "Annual fee rate (estimate)"}</div>
               </div>
               <div className="bg-navy-50 rounded-xl p-3 text-center">
                 <div className="text-lg font-bold text-ink">{fees.currency} {fees.annual_fee?.toLocaleString(undefined, {maximumFractionDigits:0}) || "—"}</div>
                 <div className="text-xs text-ink-muted">Estimated annual fee</div>
               </div>
-              <div className="bg-navy-50 rounded-xl p-3 text-center">
-                <div className="text-lg font-bold text-ink">{fees.currency} {fees.ytd_fee?.toLocaleString(undefined, {maximumFractionDigits:0}) || "—"}</div>
-                <div className="text-xs text-ink-muted">YTD fee (est.)</div>
+              <div className="bg-navy-50 rounded-xl p-3 text-center" data-testid="fees-billed-ytd">
+                {fees.billed_ytd != null ? (
+                  <>
+                    <div className="text-lg font-bold text-ink">{fees.currency} {fees.billed_ytd.toLocaleString(undefined, {maximumFractionDigits:0})}</div>
+                    <div className="text-xs text-ink-muted">Billed this year</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-lg font-bold text-ink">{fees.currency} {fees.ytd_fee?.toLocaleString(undefined, {maximumFractionDigits:0}) || "—"}</div>
+                    <div className="text-xs text-ink-muted">Year to date (estimate, nothing billed yet)</div>
+                  </>
+                )}
               </div>
             </div>
+            {fees.invoices?.length > 0 && (
+              <table className="w-full text-xs" data-testid="fees-invoices">
+                <thead><tr className="text-left text-ink-muted"><th className="pb-1">Invoice</th><th>Period</th><th className="text-right">Amount</th><th className="pl-3">Status</th><th /></tr></thead>
+                <tbody>
+                  {fees.invoices.map((i: any) => (
+                    <tr key={i.id} className="border-t border-navy-100">
+                      <td className="py-1 pr-3">{i.number}{i.kind === "credit_note" ? " (credit)" : ""}</td>
+                      <td className="py-1 pr-3">{i.period_start} → {i.period_end}</td>
+                      <td className="py-1 text-right tabular-nums">{i.currency} {i.amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                      <td className="py-1 pl-3">{i.status === "credited" ? "Credited" : i.kind === "credit_note" ? "Credit applied" : i.paid ? "Paid" : "Unpaid"}</td>
+                      <td className="py-1 pl-3 text-right"><button className="underline text-ink-muted hover:text-ink" onClick={() => downloadInvoice(i.id, i.number)}>PDF</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
             {fees.applicable_segment && (
               <div className="text-xs text-ink-muted">
                 Segment: <span className="font-medium">{fees.applicable_segment.label}</span> · {fees.applicable_segment.fee_bps} bps on {fees.currency} {fees.aum?.toLocaleString(undefined, {maximumFractionDigits:0})} AUM
@@ -353,7 +392,7 @@ export default function Canvas() {
                       <tr key={s.slug} className="border-t border-navy-100">
                         <td className="py-1 pr-4">{s.label}</td>
                         <td className="py-1 pr-4">{s.min_aum ? `${fees.currency} ${s.min_aum.toLocaleString()}` : "Any"}</td>
-                        <td className="py-1">{(s.fee_pct * 100).toFixed(2)}%</td>
+                        <td className="py-1">{Number(s.fee_pct).toFixed(2)}%</td>
                       </tr>
                     ))}
                   </tbody>

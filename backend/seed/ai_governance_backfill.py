@@ -71,6 +71,8 @@ _AGENTS = [
      "Surfaces held-away consolidation opportunities with talking points."),
     ("abandonment_recovery", "Abandonment Recovery", "agent", "Head of Operations", "low",
      "Detects stalled onboarding cases and drafts an adviser nudge."),
+    ("billing", "Billing", "agent", "Head of Operations", "high",
+     "Works out each fee, proposes the billing run, and on approval issues bills and takes them from client cash — a wrong fee is a client reimbursement and a named exam topic."),
 ]
 
 _TOOLS = [
@@ -81,6 +83,10 @@ _TOOLS = [
     ("post_corporate_action_entitlement", "Post Corporate Action Entitlement (tool)", "tool",
      "Head of Operations", "high",
      "Applies cash/holding/tax-lot arithmetic for a corporate action — cannot be undone or re-posted."),
+    ("credit_invoice", "Credit Invoice (tool)", "tool", "Head of Operations", "high",
+     "Offsets an issued invoice in full and returns any fee already taken to the client's cash."),
+    ("run_billing", "Prepare Billing Run (tool)", "tool", "Head of Operations", "medium",
+     "Has the billing agent draft a run for approval; nothing is issued or taken until it is approved."),
 ]
 
 
@@ -90,17 +96,20 @@ async def backfill() -> None:
         created = 0
 
         for firm in firms:
-            existing = (await s.execute(select(AIUseCase).where(AIUseCase.firm_id == firm.id))).scalar_one_or_none()
-            if existing is not None:
-                continue
-
+            have = set((await s.execute(
+                select(AIUseCase.use_case_key).where(AIUseCase.firm_id == firm.id))).scalars().all())
+            added = 0
             for key, name, category, owner, risk_tier, description in _AGENTS + _TOOLS:
+                if key in have:
+                    continue
                 s.add(AIUseCase(
                     firm_id=firm.id, use_case_key=key, name=name, category=category, owner=owner,
                     risk_tier=risk_tier, description=description, status="active",
                 ))
                 created += 1
-            log.info("ai_use_cases_seeded", firm=firm.slug, count=len(_AGENTS) + len(_TOOLS))
+                added += 1
+            if added:
+                log.info("ai_use_cases_seeded", firm=firm.slug, count=added)
 
         await s.commit()
         print(f"\nSeeded {created} AI use-case inventory row(s) across {len(firms)} firm(s).\n")

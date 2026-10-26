@@ -26,6 +26,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.billing import preview
+from app.aurea_core.billing_reconcile import merge_checks, reconcile_invoice
 from app.core.db import utcnow
 from app.models.billing import BillingRun, Invoice
 from app.models.enums import RecommendationStatus
@@ -109,31 +110,41 @@ async def propose_run(
     if not entries:
         return None
 
-    by_currency: dict[str, float] = defaultdict(float)
-    for e in entries:
-        if not e["blocked"] and e["currency"]:
-            by_currency[e["currency"]] += e["amount"]
-    run = BillingRun(
-        firm_id=firm_id, as_of=as_of, status="proposed", trigger=trigger, agent_run_id=agent_run_id,
-        summary={"invoices": len(entries), "blocked": sum(1 for e in entries if e["blocked"]),
-                 "amount_by_currency": {k: round(v, 2) for k, v in by_currency.items()},
-                 "already_billed": already, "no_agreement": pv["no_agreement"]},
-    )
+    run = BillingRun(firm_id=firm_id, as_of=as_of, status="proposed", trigger=trigger,
+                     agent_run_id=agent_run_id, summary={})
     session.add(run)
     await session.flush()
 
+    drafts: list[Invoice] = []
     for e in entries:
         old = held.get((e["arrangement_id"], e["period_start"]))
         if old is not None:
             old.status = "void"
-        session.add(Invoice(
+        inv = Invoice(
             firm_id=firm_id, run_id=run.id, kind="invoice", status="draft",
             arrangement_id=uuid.UUID(e["arrangement_id"]), mandate_id=uuid.UUID(e["mandate_id"]),
             household_id=uuid.UUID(e["household_id"]) if e["household_id"] else None,
             mandate_name=e["mandate_name"], household_name=e["household_name"],
             period_start=date.fromisoformat(e["period_start"]), period_end=date.fromisoformat(e["period_end"]),
             amount=e["amount"], currency=e["currency"] or "NZD", calculation=e, checks=e["checks"],
-        ))
+        )
+        session.add(inv)
+        drafts.append(inv)
+    await session.flush()
+
+    # Reconcile each against the agreement it claims to follow, now that it has an id.
+    for inv in drafts:
+        inv.checks = merge_checks(inv.checks, await reconcile_invoice(session, inv))
+    await session.flush()
+
+    by_currency: dict[str, float] = defaultdict(float)
+    for inv in drafts:
+        if not any(c["severity"] == "block" for c in inv.checks):
+            by_currency[inv.currency] += float(inv.amount)
+    run.summary = {"invoices": len(drafts),
+                   "blocked": sum(1 for i in drafts if any(c["severity"] == "block" for c in i.checks)),
+                   "amount_by_currency": {k: round(v, 2) for k, v in by_currency.items()},
+                   "already_billed": already, "no_agreement": pv["no_agreement"]}
     await session.flush()
     return run
 
@@ -201,6 +212,9 @@ async def approve_run(
     issued_by_currency: dict[str, float] = defaultdict(float)
 
     for inv in drafts:
+        # Between proposal and approval a schedule can be edited or an arrangement ended;
+        # the bill is checked against the agreement as it stands at the moment it is issued.
+        inv.checks = merge_checks(inv.checks, await reconcile_invoice(session, inv))
         blocks = [c["code"] for c in (inv.checks or []) if c["severity"] == "block"]
         if blocks and not all(b in acknowledged for b in blocks):
             inv.status = "held"

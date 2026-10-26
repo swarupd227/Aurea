@@ -39,8 +39,15 @@ def check(label: str, got, want) -> None:
 
 async def main() -> int:
     db = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        return await _run(db)
+    finally:
+        await db.dispose()  # otherwise the process hangs on the open pool at exit - even on a failure
+
+
+async def _run(db) -> int:
     wanted = ["firm", "household", "person", "mandate", "account", "instrument", "holding",
-              "fee_schedule", "firm_segment"]
+              "fee_schedule", "firm_segment", "billing_run", "invoice"]
     tables = [Base.metadata.tables[n] for n in wanted]
     async with db.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
@@ -121,7 +128,42 @@ async def main() -> int:
         check("the minimum raises the fee to 5,000", r["annual_fee"], 5_000)
         check("effective rate reflects the minimum (100 bps)", r["fee_bps"], 100)
 
-    await db.dispose()  # otherwise the process hangs on the open pool at exit
+        print("\n=== What the client sees of billing: issued bills only, nothing internal ===")
+        from datetime import date, datetime, timezone
+        from app.models.billing import BillingRun, Invoice
+        hh = await household("Billed", 1_000_000, tiered.id)
+        other = await household("Someone else", 1_000_000, tiered.id)
+        check("nothing billed yet: no invoices", (await fees(hh))["invoices"], [])
+        check("and no billed figure - not a zero", (await fees(hh))["billed_ytd"], None)
+
+        run = BillingRun(firm_id=firm.id, as_of=date(2026, 10, 5), status="issued", summary={})
+        s.add(run)
+        await s.flush()
+        now = datetime.now(timezone.utc)
+
+        def bill(household_id, status, *, amount=2_500.0, kind="invoice", number=None, debit="posted"):
+            s.add(Invoice(firm_id=firm.id, run_id=run.id, kind=kind, status=status, household_id=household_id,
+                          mandate_name="m", period_start=date(2026, 7, 1), period_end=date(2026, 9, 30),
+                          amount=amount, currency="NZD", invoice_number=number, issued_at=now,
+                          debit_status=debit, checks=[{"code": "internal", "severity": "warn", "detail": "x"}]))
+
+        bill(hh, "debited", number="INV-1")
+        bill(hh, "draft")
+        bill(hh, "held")
+        bill(hh, "void", number="INV-V")
+        bill(other, "debited", number="INV-OTHER")
+        await s.flush()
+        r = await fees(hh)
+        check("only the issued bill is shown", [i["number"] for i in r["invoices"]], ["INV-1"])
+        check("a draft, a held and a voided bill are never shown", len(r["invoices"]), 1)
+        check("another household's bill is not shown", "INV-OTHER" in [i["number"] for i in r["invoices"]], False)
+        check("it is marked paid", r["invoices"][0]["paid"], True)
+        check("the internal checks are not exposed", "checks" in r["invoices"][0], False)
+        check("what was billed this year is the real figure", r["billed_ytd"], 2_500)
+        bill(hh, "issued", amount=-2_500.0, kind="credit_note", number="CN-1", debit=None)
+        await s.flush()
+        r = await fees(hh)
+        check("a credit note nets it off", r["billed_ytd"], 0)
 
     print("\n" + "=" * 64)
     print(f"{len(PASS)} passed, {len(FAIL)} failed")

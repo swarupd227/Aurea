@@ -7,7 +7,7 @@ import {
   Sparkles, Settings, LogOut, PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare,
   MessageSquare, Gauge, BarChart3, Workflow, PiggyBank, Scale, Wand2, KeyRound, Eye, EyeOff, Bell,
   AlertTriangle, CheckCircle2, Building2, Shield, Copy, Check, History, UserCircle, Landmark, Target,
-  Receipt, Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart,
+  Receipt, Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote,
 } from "lucide-react";
 import { clearSession, getToken, getUser } from "@/lib/api";
 import RoleSwitcher from "./RoleSwitcher";
@@ -31,6 +31,7 @@ const STAFF_NAV: NavGroup[] = [
       { href: "/studio/ask", label: "Ask your book", icon: MessageSquareText, roles: [A, P, R, B] },
       { href: "/studio/analytics", label: "Analytics", icon: BarChart3, roles: [A, PT, R, B] },
       { href: "/studio/composites", label: "Composites", icon: LineChart, roles: [A, PT, R, C] },
+      { href: "/studio/billing", label: "Billing", icon: Banknote, roles: [A, C, O, B] },
       { href: "/studio/tasks", label: "Tasks", icon: CheckSquare, roles: [A, P] },
       { href: "/studio/capacity", label: "Capacity & outcomes", icon: Gauge, roles: [B, A] },
     ],

@@ -4,6 +4,7 @@ The board-level view: capacity, cost-to-serve, growth, fee/margin and M&A econom
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,26 @@ from app.models.enums import OnboardingStatus, RecommendationStatus
 from app.models.governance import AgentRun, Recommendation
 from app.models.onboarding import BookIntegrationBatch, OnboardingCase
 from app.models.portfolio import Transaction
+
+
+async def _billing_position(session: AsyncSession, firm_id: uuid.UUID) -> dict:
+    """What has really been billed, and what is stuck. None - not zero - when nothing has been
+    billed yet: an unmeasured figure is not a figure of nil."""
+    from app.models.billing import Invoice
+    from app.models.tenant import Firm
+
+    firm = await session.get(Firm, firm_id)
+    currency = (firm.base_currency if firm else None) or "NZD"
+    rows = (await session.execute(select(Invoice).where(
+        Invoice.firm_id == firm_id, Invoice.currency == currency))).scalars().all()
+    year = date.today().year
+    billed = [i for i in rows if i.status in ("issued", "debited", "credited") and i.issued_at and i.issued_at.year == year]
+    unpaid = sum(float(i.amount) for i in rows if i.kind == "invoice" and i.status == "issued"
+                 and i.debit_status == "insufficient_cash")
+    held = sum(float(i.amount) for i in rows if i.status == "held")
+    return {"currency": currency,
+            "billed_this_year": round(sum(float(i.amount) for i in billed), 2) if billed else None,
+            "unpaid": round(unpaid, 2), "held": round(held, 2), "at_risk": round(unpaid + held, 2) if rows else None}
 
 
 async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] | None = None) -> dict:
@@ -55,7 +76,7 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
         seg_m["cost"] += cost
         seg_m["aum"] += aum
 
-    fee_leakage = round(rev_total * 0.03, 2)  # indicative 3% realisation leakage
+    billing = await _billing_position(session, firm_id)
 
     # ── Net New Assets (NNA) & ROA bps ──
     txns = (await session.execute(select(Transaction).where(Transaction.firm_id == firm_id))).scalars().all()
@@ -115,9 +136,13 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
                           "profit": round(rev_total - cost_total, 2),
                           "firm_margin": round((rev_total - cost_total) / rev_total, 3) if rev_total else 0.0,
                           "by_household": sorted(rows, key=lambda r: -r["profit"])},
-        "fee_margin": {"fee_revenue": round(rev_total, 2),
+        # `fee_revenue` is still the segment-rate estimate (cost-to-serve margins are built on it) and
+        # says so; what was actually billed sits beside it. The old "fee leakage" was a flat 3% of the
+        # estimate - an invented number - and is replaced by what is genuinely unpaid or held.
+        "fee_margin": {"fee_revenue": round(rev_total, 2), "fee_revenue_basis": "estimate",
                        "blended_fee_rate": round(rev_total / aum_total, 4) if aum_total else 0.0,
-                       "fee_leakage_estimate": fee_leakage,
+                       "billed_this_year": billing["billed_this_year"], "billing_currency": billing["currency"],
+                       "fee_at_risk": billing["at_risk"], "unpaid": billing["unpaid"], "held": billing["held"],
                        "by_segment": {s: {"revenue": round(v["revenue"], 2),
                                           "margin": round((v["revenue"] - v["cost"]) / v["revenue"], 3) if v["revenue"] else 0.0,
                                           "effective_rate": round(v["revenue"] / v["aum"], 4) if v["aum"] else 0.0}

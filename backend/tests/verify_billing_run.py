@@ -47,11 +47,20 @@ def check(label: str, got, want, tol: float = 0.005) -> None:
     print(f"  {'PASS' if ok else 'FAIL'}  {label}: got {got}, want {want}")
 
 
+async def _refused(executors, tool, inputs) -> bool:
+    from app.llm.executors import ExecutorError
+    try:
+        await executors.execute(tool, inputs)
+        return False
+    except ExecutorError:
+        return True
+
+
 async def run() -> None:
     db = create_async_engine("sqlite+aiosqlite:///:memory:")
     wanted = ["firm", "household", "person", "legal_entity", "mandate", "account", "instrument", "price",
               "holding", "fee_schedule", "fee_arrangement", "billing_run", "invoice", "txn", "agent_run",
-              "recommendation", "app_user"]
+              "recommendation", "app_user", "message"]
     async with db.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(
             c, tables=[Base.metadata.tables[n] for n in wanted]))
@@ -161,9 +170,17 @@ async def run() -> None:
             rec = Recommendation(
                 firm_id=firm.id, run_id=ar.id, agent_key="billing", tier="tier_2",
                 status=RecommendationStatus.PROPOSED, title=drafts[0].title, summary=drafts[0].summary,
-                payload=drafts[0].payload, decided_by=approver.id)
+                payload=drafts[0].payload)
             s.add(rec)
             await s.flush()
+
+            print("\n=== No autonomy tier lets the agent issue fees by itself ===")
+            # At Tier 3 the runtime calls act() right after think(), with no human decision recorded.
+            unattended = await agent.act(ctx, rec)
+            check("act() with nobody having decided does nothing", unattended["executed"], False)
+            check("the run is still waiting", (await s.get(BillingRun, run1.id)).status, "proposed")
+            check("and no cash has moved", await cash(a1), 100_000)
+            rec.decided_by = approver.id
 
             print("\n=== Approving issues the bills and takes the fee from cash, and no further ===")
             result = await agent.act(ctx, rec)
@@ -188,6 +205,16 @@ async def run() -> None:
             check("blocked bills are held, with no number", (m3_inv.status, m3_inv.invoice_number), ("held", None))
             check("a currency we cannot convert is held", m4_inv.status, "held")
             check("the money in the run matches what was issued", result["issued_by_currency"]["NZD"], 5_000)
+
+            print("\n=== The client is told, only for bills that were issued ===")
+            from app.models.client_experience import Message
+            msgs = (await s.execute(select(Message).where(Message.firm_id == firm.id))).scalars().all()
+            check("one message per household with an issued bill", len(msgs), 2)
+            check("each says which invoice, and is traceable to the approval",
+                  all("INV-" in m.body and m.source_recommendation_id == rec.id for m in msgs), True)
+            by_text = " ".join(m.body for m in msgs)
+            check("the unpaid one says so plainly", "not enough cash" in by_text, True)
+            check("a held bill is not announced", "M3" in by_text or "0003" in by_text, False)
 
             print("\n=== A run is issued once ===")
             try:
@@ -256,6 +283,56 @@ async def run() -> None:
             check("a dismissed run is no longer open", await billing_run.open_run(s, firm.id), None)
             check("it is cancelled", (await s.get(BillingRun, run3.id)).status, "cancelled")
             check("and its drafts are voided", (await invoice_of(run3, "M4 Usd")).status, "void")
+
+            print("\n=== The same facts through the conversation tools ===")
+            from app.core.tools import TOOLS, ToolChangeState
+            from app.llm.executors import ExecutorError, ToolExecutors
+            ex = ToolExecutors(s, approver.id, UserRole.OPERATIONS, firm.id)
+            firm_view = await ex.execute("read_billing", {})
+            check("the firm view is firm-scoped", firm_view["scope"], "firm")
+            check("it lists the mandate with no agreement",
+                  [u["mandate_name"] for u in firm_view["exceptions"]["no_agreement"]], ["M5 Unconfirmed"])
+            hh_view = await ex.execute("read_billing", {"household_id": str(i1.household_id)})
+            check("a household's view holds its invoice and the credit note that offsets it",
+                  sorted(i["kind"] for i in hh_view["invoices"]), ["credit_note", "invoice"])
+            why = await ex.execute("explain_invoice", {"household_id": str(m3_new.household_id)})
+            check("a bill explains itself: schedule, balance and valuation date",
+                  (why["calculation"]["schedule"]["name"], why["calculation"]["billable_value"] == 1_000_000,
+                   why["calculation"]["valuation"]["basis"]), ("Tiered", True, "snapshot"))
+            check("and says it is a snapshot, not an average", "snapshot" in why["message"], True)
+            check("with the stale valuation that was accepted shown on it",
+                  [o["code"] for o in why["overrides"]], ["stale_valuation"])
+            try:
+                await ToolExecutors(s, approver.id, UserRole.OPERATIONS, uuid.uuid4()).execute(
+                    "explain_invoice", {"invoice_id": str(i1.id)})
+                check("another firm's invoice id is refused", "shown", "refused")
+            except ExecutorError:
+                check("another firm's invoice id is refused", "refused", "refused")
+            try:
+                await ToolExecutors(s, approver.id, UserRole.OPERATIONS, uuid.uuid4()).execute(
+                    "read_billing", {"household_id": str(i1.household_id)})
+                check("another firm's household is refused", "shown", "refused")
+            except ExecutorError:
+                check("another firm's household is refused", "refused", "refused")
+            try:
+                await ToolExecutors(s, approver.id, UserRole.ADVISER, firm.id).execute(
+                    "credit_invoice", {"invoice_id": str(m3_new.id), "reason": "x"})
+                check("an adviser cannot credit an invoice", "credited", "refused")
+            except ExecutorError:
+                check("an adviser cannot credit an invoice", "refused", "refused")
+            check("a credit needs a reason", await _refused(ex, "credit_invoice", {"invoice_id": str(m3_new.id), "reason": " "}), True)
+            credited = await ex.execute("credit_invoice", {"invoice_id": str(m3_new.id), "reason": "Client query upheld"})
+            check("operations can credit it", credited["amount"], -2_500)
+            check("and the cash comes back", await cash(a3), 5_000)
+            check("credit and run tools pause for confirmation",
+                  (TOOLS["credit_invoice"].change_state, TOOLS["run_billing"].change_state),
+                  (ToolChangeState.PAUSE_FOR_CONFIRMATION, ToolChangeState.PAUSE_FOR_CONFIRMATION))
+            check("the read tools do not", (TOOLS["read_billing"].change_state, TOOLS["explain_invoice"].change_state),
+                  (ToolChangeState.NO, ToolChangeState.NO))
+            check("only operations or a branch leader may credit through the catalogue",
+                  TOOLS["credit_invoice"].roles_required, {UserRole.OPERATIONS, UserRole.BRANCH_LEADER})
+            check("a client holds none of the billing tools",
+                  any(UserRole.CLIENT in TOOLS[k].roles_required for k in ("read_billing", "explain_invoice", "run_billing", "credit_invoice")), False)
 
             print("\n=== Another firm sees none of it ===")
             other = await billing.preview(s, uuid.uuid4(), as_of=TODAY)

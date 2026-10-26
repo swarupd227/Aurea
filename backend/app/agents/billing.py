@@ -15,7 +15,8 @@ from sqlalchemy import select
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import billing_run
 from app.models.billing import BillingRun, Invoice
-from app.models.enums import AgentKey, AutonomyTier
+from app.models.client_experience import Message
+from app.models.enums import AgentKey, AutonomyTier, MessageAuthor
 from app.models.identity import User
 
 
@@ -81,6 +82,14 @@ class BillingAgent(BaseAgent):
         )]
 
     async def act(self, ctx: AgentContext, recommendation) -> dict:
+        # Issuing a fee and taking it from client cash is never the agent's own decision. At
+        # Tier 3 the runtime calls act() straight after think() with nobody having decided;
+        # decision_rights only guards a human decision, so without this a tier setting alone
+        # would bill every client. The proposal simply stays open for a person.
+        if not recommendation.decided_by:
+            return {"executed": False,
+                    "note": "Fees are only issued when operations or a branch leader approves the run; "
+                            "this run is waiting for that decision."}
         s = ctx.session
         payload = {**(recommendation.payload or {}), **(recommendation.modified_payload or {})}
         run = await s.get(BillingRun, uuid.UUID(payload["billing_run_id"]))
@@ -94,9 +103,34 @@ class BillingAgent(BaseAgent):
         except billing_run.BillingError as exc:
             return {"executed": False, "note": str(exc)}
         run.recommendation_id = recommendation.id
+        await self._tell_clients(s, run, recommendation)
         return {"executed": result["issued"] > 0, **result,
                 "note": (f"Issued {result['issued']} bill(s); {result['debited']} paid from cash, "
                          f"{result['insufficient_cash']} issued with not enough cash, {result['held']} held.")}
+
+    async def _tell_clients(self, session, run: BillingRun, recommendation) -> None:
+        """One message per household in its secure thread, so the client hears about a fee from
+        us before they see it on a statement. Sent only for bills that were actually issued."""
+        issued = (await session.execute(
+            select(Invoice).where(Invoice.run_id == run.id, Invoice.kind == "invoice",
+                                  Invoice.status.in_(("issued", "debited"))))).scalars().all()
+        by_household: dict[uuid.UUID, list[Invoice]] = {}
+        for inv in issued:
+            if inv.household_id:
+                by_household.setdefault(inv.household_id, []).append(inv)
+        for household_id, invs in by_household.items():
+            lines = []
+            for inv in invs:
+                paid = ("taken from your account's cash" if inv.debit_status == "posted"
+                        else "not yet paid - there was not enough cash in the account to take it")
+                lines.append(f"{inv.invoice_number}: {inv.currency} {float(inv.amount):,.2f} for "
+                             f"{inv.period_start.isoformat()} to {inv.period_end.isoformat()}, {paid}.")
+            session.add(Message(
+                firm_id=run.firm_id, household_id=household_id, author_role=MessageAuthor.AGENT,
+                author_name="Billing", body="Your fee invoice has been issued.\n" + "\n".join(lines) +
+                "\nYou can see how each fee was worked out under Fees.",
+                source_recommendation_id=recommendation.id, read_by_client=False, read_by_adviser=False))
+        await session.flush()
 
     async def rollback(self, ctx: AgentContext, recommendation) -> dict:
         payload = {**(recommendation.payload or {}), **(recommendation.modified_payload or {})}
