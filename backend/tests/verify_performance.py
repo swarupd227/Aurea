@@ -192,6 +192,29 @@ async def run() -> None:
             check("an instrument with no price history is named", r["disclosures"]["unpriced_flat_symbols"], ["PRIV"])
             check("flat holdings give a flat return", r["twr"], 0.0)
 
+            print("\n=== A NZ stock stamped a day earlier than a US one is still measured ===")
+            a7 = await account("Two calendars")
+            from datetime import timedelta
+            us = await instrument("USX", "equity", [(D1, 100), (D2, 110), (D3, 121)])
+            nz = await instrument("NZX.NZ", "equity", [(D1 - timedelta(days=1), 50),
+                                                       (D2 - timedelta(days=1), 55),
+                                                       (D3 - timedelta(days=1), 60.5)])
+            await hold(a7, us, 10, 1210)
+            await hold(a7, nz, 20, 1210)
+            await s.flush()
+            r = await performance.account_performance(s, a7.id, firm_id=firm.id)
+            check("both calendars give a measurable return", r["months"], 2)
+            check("+10% then +10% on each leg is 21%", r["twr"], 0.21)
+            a8 = await account("Too far apart")
+            far = await instrument("FAR", "equity", [(D1 + timedelta(days=10), 10),
+                                                     (D2 + timedelta(days=10), 11),
+                                                     (D3 + timedelta(days=10), 12)])
+            await hold(a8, us, 10, 1210)
+            await hold(a8, far, 100, 1200)
+            await s.flush()
+            r = await performance.account_performance(s, a8.id, firm_id=firm.id)
+            check("a series ten days off is not silently matched", r["twr"], None)
+
             print("\n=== Household scope, firm scope and the benchmark window ===")
             bench = await instrument("BENCH", "equity", [(D1, 100), (D2, 105), (D3, 110)])
             model = ModelPortfolio(id=uuid.uuid4(), firm_id=firm.id, name="Core", drift_band=0.05,

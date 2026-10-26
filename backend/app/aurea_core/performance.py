@@ -23,7 +23,8 @@ What it cannot do, and says so in `disclosures` rather than papering over:
 from __future__ import annotations
 
 import uuid
-from collections import defaultdict
+from bisect import bisect_left
+from collections import Counter, defaultdict
 from datetime import date
 
 from sqlalchemy import or_, select
@@ -36,6 +37,7 @@ from app.models.portfolio import (
 )
 
 _EPS = 1e-9
+_SNAP_DAYS = 3
 _INCOME_TYPES = {"dividend", "distribution"}
 
 
@@ -178,7 +180,32 @@ async def performance_for_accounts(
     if not priced:
         return _empty(account_value, **base_disclosure)
 
-    grid = sorted(set.intersection(*(set(closes[iid]) for iid in priced)))
+    # One common calendar to value every position on. Exchanges stamp a month's first close
+    # a day apart (a NZ stock lands on the 31st, a US one on the 1st), so each instrument's
+    # close is matched to the nearest date within a few days rather than demanding an exact
+    # match - which would leave any household holding a NZ and a US stock unmeasurable.
+    sorted_dates = {iid: sorted(closes[iid]) for iid in priced}
+
+    def snap(iid, g: date) -> date | None:
+        ds = sorted_dates[iid]
+        i = bisect_left(ds, g)
+        best = None
+        for j in (i - 1, i):
+            if 0 <= j < len(ds):
+                gap = abs((ds[j] - g).days)
+                if gap <= _SNAP_DAYS and (best is None or gap < best[0]):
+                    best = (gap, ds[j])
+        return best[1] if best else None
+
+    reference = Counter(tuple(sorted_dates[iid]) for iid in priced).most_common(1)[0][0]
+    grid: list[date] = []
+    px: dict[uuid.UUID, dict[date, float]] = {iid: {} for iid in priced}
+    for g in reference:
+        snapped = {iid: snap(iid, g) for iid in priced}
+        if all(v is not None for v in snapped.values()):
+            grid.append(g)
+            for iid, v in snapped.items():
+                px[iid][g] = closes[iid][v]
     if len(grid) < 2:
         return _empty(account_value, **base_disclosure)
     # Only a purchase inside the measured window matters; seed lots predate the ledger by design.
@@ -209,8 +236,8 @@ async def performance_for_accounts(
         period_flows: list[tuple[date, float]] = []
         for iid in priced:
             c = by_class[asset_class(iid)]
-            c["va"] += qty_at(iid, a) * closes[iid][a]
-            c["vb"] += qty_at(iid, b) * closes[iid][b]
+            c["va"] += qty_at(iid, a) * px[iid][a]
+            c["vb"] += qty_at(iid, b) * px[iid][b]
             for ed, _, flow in events.get(iid, []):
                 if a < ed <= b:
                     c["f"] += flow
