@@ -121,6 +121,8 @@ class AgentKey(StrEnum):
     # Phase 3 mock integrations
     CIP_IDENTITY_VERIFIER = "cip_identity_verifier"
     CUSTODIAN_ACCOUNT_OPENER = "custodian_account_opener"
+    # Operations
+    BILLING = "billing"
 
 
 class ActivityKind(StrEnum):

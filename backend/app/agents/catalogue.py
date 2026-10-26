@@ -234,4 +234,18 @@ CATALOGUE: dict[str, dict] = {
                 "suggested check-in agenda for each flagged household.",
         "checkpoint": "Compliance reviews flags; adviser initiates re-engagement.",
     },
+    AgentKey.BILLING: {
+        "name": "Billing", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_2, "subject": "firm",
+        "senses": "Each mandate's confirmed fee arrangement (schedule, method, frequency, "
+                  "householding), the cash and holdings it is billed on, and the age and "
+                  "source of the prices used.",
+        "acts": "Works out what is due for the period - prorated, with household accounts billed "
+                "on their combined balance - checks each bill for stale or synthetic prices, "
+                "currency mismatches and missing agreements, and proposes the run. On approval "
+                "it issues the bills and takes each fee from the mandate's own cash.",
+        "checkpoint": "Operations or a branch leader approves the run; compliance may stop it or "
+                      "offset it. A bill with no cash behind it stays issued and unpaid - assets "
+                      "are never sold to pay a fee.",
+    },
 }

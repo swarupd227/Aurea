@@ -17,6 +17,11 @@ The firm's rule:
     override is deliberately not honoured here.
   - Every other proposal keeps its existing rule: any staff member.
 
+Billing is the second thing that moves a client's money, so it gets the same shape of rule
+with different people. Fees are issued and taken from cash only by operations or a branch
+leader - not the adviser who earns them and not the portfolio team. Compliance may stop a
+run or offset an issued one but not authorise it. Administrators hold neither.
+
 This is the first slice of the per-role tool rights the conversation workspace needs (the
 catalogue in docs/02_UX/agentic-ux-philosophy.md). It lives in one place so the gateway,
 the routes and the browser can be made to read the same answer rather than each keeping
@@ -32,6 +37,11 @@ BOOK_MOVING_AGENTS: frozenset[str] = frozenset({AgentKey.DRIFT_REBALANCING.value
 TRADE_APPROVERS: frozenset[UserRole] = frozenset({UserRole.ADVISER, UserRole.PORTFOLIO_TEAM})
 TRADE_VETO: frozenset[UserRole] = frozenset({UserRole.COMPLIANCE})
 
+# Agents whose approved proposals issue fees and take them from client cash.
+CASH_MOVING_AGENTS: frozenset[str] = frozenset({AgentKey.BILLING.value})
+BILLING_APPROVERS: frozenset[UserRole] = frozenset({UserRole.OPERATIONS, UserRole.BRANCH_LEADER})
+BILLING_VETO: frozenset[UserRole] = frozenset({UserRole.COMPLIANCE})
+
 STAFF: frozenset[UserRole] = frozenset(r for r in UserRole if r != UserRole.CLIENT)
 
 
@@ -43,12 +53,22 @@ def moves_the_book(agent_key: str | AgentKey) -> bool:
     return str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in BOOK_MOVING_AGENTS
 
 
+def moves_client_cash(agent_key: str | AgentKey) -> bool:
+    return str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in CASH_MOVING_AGENTS
+
+
 def roles_for(agent_key: str | AgentKey, decision: str) -> frozenset[UserRole]:
     """The roles that may take `decision` on a proposal from `agent_key`.
 
     `decision` is a HumanAction value ("approve", "modify", "dismiss") or one of the
     non-HITL decisions "revise" and "rollback".
     """
+    if moves_client_cash(agent_key):
+        if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
+            return BILLING_APPROVERS
+        if decision in (HumanAction.DISMISS.value, "rollback"):
+            return BILLING_APPROVERS | BILLING_VETO
+        return frozenset()
     if not moves_the_book(agent_key):
         return STAFF
     if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
@@ -65,6 +85,12 @@ def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> Non
     allowed = roles_for(agent_key, decision)
     if role in allowed:
         return
+    if moves_client_cash(agent_key):
+        who = ("operations, a branch leader or compliance" if decision in ("dismiss", "rollback")
+               else "operations or a branch leader")
+        raise DecisionForbidden(
+            f"This run issues fees and takes them from client cash, so only {who} may {decision} it."
+        )
     if moves_the_book(agent_key):
         if decision in ("dismiss", "rollback"):
             who = "an adviser, the portfolio team or compliance"

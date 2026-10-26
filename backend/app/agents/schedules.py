@@ -121,6 +121,11 @@ DEFAULT_SCHEDULES: dict[str, tuple[str, str]] = {
         "0 3 7 * *",
         "A 12-month inactivity threshold does not need checking more often than monthly.",
     ),
+    AgentKey.BILLING: (
+        "30 5 3 * *",
+        "Proposes a run on the 3rd, after month-end prices settle. A bill already issued for its "
+        "period is never proposed again, so quarterly and annual arrangements simply wait their turn.",
+    ),
 }
 
 

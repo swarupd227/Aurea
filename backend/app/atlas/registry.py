@@ -35,6 +35,8 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
     # Phase 3 mock integrations
     from app.agents.cip_identity_verifier import CIPIdentityVerifierAgent
     from app.agents.custodian_account_opener import CustodianAccountOpenerAgent
+    # Operations
+    from app.agents.billing import BillingAgent
 
     agents: list[BaseAgent] = [
         OnboardingAgent(),
@@ -65,6 +67,8 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
         # Phase 3 mock integrations
         CIPIdentityVerifierAgent(),
         CustodianAccountOpenerAgent(),
+        # Operations
+        BillingAgent(),
     ]
     return {a.key: a for a in agents}
 
