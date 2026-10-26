@@ -39,7 +39,7 @@ def check(label: str, got, want) -> None:
 async def main() -> int:
     db = create_async_engine("sqlite+aiosqlite:///:memory:")
     wanted = ["firm", "account", "instrument", "price", "holding", "mandate",
-              "model_portfolio", "composite"]
+              "model_portfolio", "composite", "txn", "tax_lot"]  # the return engine reads the ledger
     tables = [Base.metadata.tables[n] for n in wanted]
     async with db.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))

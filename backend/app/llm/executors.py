@@ -52,6 +52,7 @@ class ToolExecutors:
             "read_household": self.read_household,
             "search_households": self.search_households,
             "check_household_wash_sale": self.check_household_wash_sale,
+            "read_performance": self.read_performance,
             "read_composites": self.read_composites,
             "read_composite_report": self.read_composite_report,
             "read_firm_definition_check": self.read_firm_definition_check,
@@ -178,6 +179,36 @@ class ToolExecutors:
             if n == 0 else
             f"{n} lot(s) would trigger a wash sale if harvested now, disallowing "
             f"{result['total_disallowed_loss']:,.0f} of loss."
+        )
+        return result
+
+    async def read_performance(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import performance
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        result = await performance.household_performance(self.session, household_id, firm_id=self.firm_id)
+        if result is None:
+            raise ExecutorError(f"Household {household_id} not found or access denied")
+
+        d = result["disclosures"]
+        if result["twr"] is None:
+            result["message"] = (
+                "Performance could not be measured - there is not enough price history on file "
+                "for this household's holdings."
+            )
+            return result
+
+        notes = ["securities only", "gross of fees", "no deposits or withdrawals recorded"]
+        if d["synthetic_price_symbols"]:
+            notes.append("synthetic prices: " + ", ".join(d["synthetic_price_symbols"]))
+        if d["unpriced_flat_symbols"]:
+            notes.append("held flat, no price history: " + ", ".join(d["unpriced_flat_symbols"]))
+        if d["stale_days"] and d["stale_days"] > 45:
+            notes.append(f"latest price is {d['stale_days']} days old")
+        mwr = f", money-weighted {result['mwr']['period']:+.1%}" if result["mwr"] else ""
+        result["message"] = (
+            f"Time-weighted return {result['twr']:+.1%}{mwr} over {result['months']} month(s) "
+            f"to {result['end']} (" + "; ".join(notes) + ")."
         )
         return result
 

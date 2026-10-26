@@ -141,6 +141,42 @@ function AccountRegistration({ accountId }: { accountId: string }) {
   );
 }
 
+function HouseholdPerformance({ householdId }: { householdId: string }) {
+  const { data } = useApi<any>(`/api/core/households/${householdId}/performance`, [householdId]);
+  if (!data) return null;
+  const tone = (n: number | null | undefined) => (n == null ? "text-ink-muted" : n >= 0 ? "text-ok" : "text-crit");
+  const fmt = (n: number | null | undefined) => (n == null ? "—" : `${n > 0 ? "+" : ""}${(n * 100).toFixed(2)}%`);
+  const d = data.disclosures;
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <div className="font-semibold text-ink flex items-center gap-2"><TrendingUp size={17} /> Performance</div>
+        <span className="font-mono text-xs text-ink-muted">
+          {data.start && data.end ? `${data.start} → ${data.end} · ${data.months} mo` : "not measurable"}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-x-8 gap-y-2" data-testid="household-performance">
+        <div><div className="tile-label">Time-weighted</div><div className={`font-mono text-lg tabular-nums ${tone(data.twr)}`}>{fmt(data.twr)}</div></div>
+        <div><div className="tile-label">Money-weighted</div><div className={`font-mono text-lg tabular-nums ${tone(data.mwr?.period)}`}>{fmt(data.mwr?.period)}</div></div>
+        {data.benchmark_symbol && (
+          <div><div className="tile-label">Benchmark · {data.benchmark_symbol}</div><div className={`font-mono text-lg tabular-nums ${tone(data.benchmark_return)}`}>{fmt(data.benchmark_return)}</div></div>
+        )}
+        {data.alpha != null && (
+          <div><div className="tile-label">Alpha</div><div className={`font-mono text-lg tabular-nums ${tone(data.alpha)}`}>{fmt(data.alpha)}</div></div>
+        )}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <span className="chip bg-border-soft text-ink-muted">Securities only</span>
+        <span className="chip bg-border-soft text-ink-muted">Gross of fees</span>
+        {d.synthetic_price_symbols.length > 0 && <span className="chip bg-border-soft text-warn">Synthetic price: {d.synthetic_price_symbols.join(", ")}</span>}
+        {d.unpriced_flat_symbols.length > 0 && <span className="chip bg-border-soft text-warn">Held flat: {d.unpriced_flat_symbols.join(", ")}</span>}
+        {d.ledger_gap_lots > 0 && <span className="chip bg-border-soft text-warn">{d.ledger_gap_lots} purchase(s) not in ledger</span>}
+        {d.stale_days > 45 && <span className="chip bg-border-soft text-warn">Prices as of {d.as_of}</span>}
+      </div>
+    </Card>
+  );
+}
+
 function WalletShareTile({ persons, totalValue }: { persons: any[]; totalValue: number }) {
   const heldAway = persons.reduce((s: number, p: any) => s + ((p.profile?.held_away) || 0), 0);
   const total = totalValue + heldAway;
@@ -232,6 +268,8 @@ export default function ClientDetail() {
             </div>
             <AllocationDonut data={t.by_asset_class} />
           </Card>
+
+          <HouseholdPerformance householdId={id} />
 
           {brain.accounts.map((acc: any) => (
             <Card key={acc.id}>

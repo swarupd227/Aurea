@@ -127,8 +127,11 @@ export default function Analytics() {
       <Layer active={tab === "portfolio"} n="2.2" title="Portfolio & investment analytics" q="Is this the right advice?" icon={BarChart3}>
         <div className="grid lg:grid-cols-3 gap-4">
           <Card>
-            <CardTitle>Performance & attribution (TWR){pf.performance.period ? ` · ${pf.performance.period}` : ""}</CardTitle>
-            <Metric k="Total return (TWR)" v={pct(pf.performance.total_return)} accent={pf.performance.total_return >= 0 ? "positive" : "critical"} />
+            <CardTitle>Performance & attribution{pf.performance.period ? ` · ${pf.performance.period}` : ""}</CardTitle>
+            <Metric k="Time-weighted return" v={pct(pf.performance.total_return)} accent={pf.performance.total_return == null ? undefined : pf.performance.total_return >= 0 ? "positive" : "critical"} />
+            {pf.performance.mwr && (
+              <Metric k="Money-weighted return" v={pct(pf.performance.mwr.period)} accent={pf.performance.mwr.period >= 0 ? "positive" : "critical"} />
+            )}
             {pf.performance.benchmark_symbol && (
               <Metric k={`Benchmark (${pf.performance.benchmark_symbol})`} v={pf.performance.benchmark_return != null ? pct(pf.performance.benchmark_return) : "—"} />
             )}
@@ -137,8 +140,21 @@ export default function Analytics() {
             )}
             <Metric k="Unrealised gain" v={money(pf.performance.unrealised_gain)} />
             <div className="mt-2"><BarList items={pf.performance.attribution.map((a: any) => ({ label: titleCase(a.asset_class), value: Math.max(a.contribution, 0), right: pct(a.contribution) }))} /></div>
-            <div className="mt-3 text-[10px] text-ink-faint border-t border-navy-50 pt-2">
-              TWR = Time-Weighted Return — measures strategy performance independent of cash-flow timing. MWR (client dollar experience) shown in Canvas.
+            <div className="mt-3 flex flex-wrap gap-1.5 border-t border-navy-50 pt-2" data-testid="performance-disclosures">
+              <span className="chip bg-navy-50 text-ink-muted">Securities only</span>
+              <span className="chip bg-navy-50 text-ink-muted">Gross of fees</span>
+              {pf.performance.disclosures?.synthetic_price_symbols?.length > 0 && (
+                <span className="chip bg-caution/10 text-caution">Synthetic price: {pf.performance.disclosures.synthetic_price_symbols.join(", ")}</span>
+              )}
+              {pf.performance.disclosures?.unpriced_flat_symbols?.length > 0 && (
+                <span className="chip bg-caution/10 text-caution">Held flat: {pf.performance.disclosures.unpriced_flat_symbols.join(", ")}</span>
+              )}
+              {pf.performance.disclosures?.ledger_gap_lots > 0 && (
+                <span className="chip bg-caution/10 text-caution">{pf.performance.disclosures.ledger_gap_lots} purchase(s) not in ledger</span>
+              )}
+              {pf.performance.disclosures?.stale_days > 45 && (
+                <span className="chip bg-caution/10 text-caution">Prices as of {pf.performance.disclosures.as_of}</span>
+              )}
             </div>
           </Card>
           <Card>

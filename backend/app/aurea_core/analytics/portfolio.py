@@ -2,38 +2,15 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import planning
+from app.aurea_core import performance, planning
 from app.aurea_core.analytics._common import gather_brains, goal_projections_all, positions_of
 from app.models.graph import Account, Mandate
-from app.models.portfolio import Holding, Instrument, ModelPortfolio, Price, TargetAllocation
-
-
-async def _price_window(session: AsyncSession, firm_id, instruments: dict) -> dict:
-    """Earliest vs latest close per instrument from stored price history."""
-    by_id_symbol = {i.id: sym for sym, i in instruments.items()}
-    prices = (
-        await session.execute(select(Price).where(Price.firm_id == firm_id).order_by(Price.as_of.asc()))
-    ).scalars().all()
-    grouped: dict = {}
-    for p in prices:
-        grouped.setdefault(p.instrument_id, []).append(p)
-    out: dict = {}
-    all_start, all_end = None, None
-    for inst_id, rows in grouped.items():
-        sym = by_id_symbol.get(inst_id)
-        if not sym or len(rows) < 2:
-            continue
-        out[sym] = {"start": float(rows[0].close), "end": float(rows[-1].close),
-                    "start_date": rows[0].as_of.isoformat(), "end_date": rows[-1].as_of.isoformat()}
-        all_start = rows[0].as_of if (all_start is None or rows[0].as_of < all_start) else all_start
-        all_end = rows[-1].as_of if (all_end is None or rows[-1].as_of > all_end) else all_end
-    if all_start and all_end:
-        out["__period__"] = f"{all_start.strftime('%b %Y')} – {all_end.strftime('%b %Y')}"
-    return out
+from app.models.portfolio import Holding, Instrument, ModelPortfolio, TargetAllocation
 
 
 async def _drift_summary(session: AsyncSession, firm_id: uuid.UUID) -> dict:
@@ -89,14 +66,7 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
         i.symbol: i for i in (await session.execute(select(Instrument).where(Instrument.firm_id == firm_id))).scalars().all()
     }
 
-    # Real price history → start-of-period vs latest close per instrument (trailing window).
-    price_window = await _price_window(session, firm_id, instruments)
-    period = price_window.get("__period__")
-
     total_mv = total_cost = 0.0
-    start_mv = 0.0  # value of CURRENT holdings at the start of the window (real history)
-    class_start: dict[str, float] = {}
-    class_end: dict[str, float] = {}
     class_gain: dict[str, float] = {}
     class_cost: dict[str, float] = {}
     by_class_mv: dict[str, float] = {}
@@ -115,13 +85,6 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
             by_class_mv[cls] = by_class_mv.get(cls, 0.0) + mv
             class_gain[cls] = class_gain.get(cls, 0.0) + (mv - cost)
             class_cost[cls] = class_cost.get(cls, 0.0) + cost
-            # Period start value of this position from real history (fallback: cost basis).
-            win = price_window.get(p["instrument"])
-            start_px = win["start"] if win else None
-            sv = (p["quantity"] * start_px) if (start_px and p.get("quantity")) else cost
-            start_mv += sv
-            class_start[cls] = class_start.get(cls, 0.0) + sv
-            class_end[cls] = class_end.get(cls, 0.0) + mv
             gain = mv - cost
             if gain < 0:
                 harvestable += -gain
@@ -143,20 +106,18 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
     risk = planning.portfolio_risk(allocation, total_mv)
     stress = planning.stress_test(allocation)
 
-    # Performance & attribution — time-weighted over the price window on current holdings.
-    total_return = round((total_mv - start_mv) / start_mv, 4) if start_mv else 0.0
-    attribution = [
-        {"asset_class": c,
-         "contribution": round((class_end.get(c, 0) - class_start.get(c, 0)) / start_mv, 4) if start_mv else 0.0,
-         "class_return": round((class_end.get(c, 0) - class_start.get(c, 0)) / class_start[c], 4) if class_start.get(c) else 0.0,
-         "weight": round(by_class_mv[c] / total_mv, 4) if total_mv else 0.0}
-        for c in sorted(by_class_mv, key=lambda c: -(class_end.get(c, 0) - class_start.get(c, 0)))
-    ]
+    # Performance & attribution: the real linked return from `performance.py`, not the old
+    # "today's holdings at the earliest price" figure. None means it could not be measured
+    # (no price history), which is different from 0% and is reported as such.
+    perf = await performance.book_performance(session, firm_id)
+    total_return = perf["twr"]
+    period = (f"{date.fromisoformat(perf['start']).strftime('%b %Y')} - "
+              f"{date.fromisoformat(perf['end']).strftime('%b %Y')}") if perf["start"] else None
 
     goals = await goal_projections_all(brains)
     on_track = sum(1 for g in goals if g["on_track"])
 
-    # Benchmark alpha: look up any mandate's benchmark in price_window for comparison.
+    # Benchmark alpha over exactly the window the book was measured on.
     mandates_with_bm = (
         await session.execute(
             select(Mandate).where(Mandate.firm_id == firm_id, Mandate.model_portfolio_id.isnot(None))
@@ -167,19 +128,19 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
     for mb in mandates_with_bm:
         mp = await session.get(ModelPortfolio, mb.model_portfolio_id)
         bm_sym = getattr(mp, "benchmark_symbol", None) if mp else None
-        if bm_sym and bm_sym in price_window:
-            win = price_window[bm_sym]
-            if win["start"] and win["end"] and win["start"] > 0:
-                benchmark_return = round((win["end"] - win["start"]) / win["start"], 4)
-                benchmark_symbol_used = bm_sym
-                break
-    alpha = round(total_return - benchmark_return, 4) if benchmark_return is not None else None
+        bm = await performance.benchmark_return(session, firm_id, bm_sym, perf["start"], perf["end"])
+        if bm is not None:
+            benchmark_return, benchmark_symbol_used = bm, bm_sym
+            break
+    alpha = round(total_return - benchmark_return, 4) if (
+        benchmark_return is not None and total_return is not None) else None
 
     return {
-        "performance": {"total_return": total_return, "period": period or "current holdings",
-                        "market_value": round(total_mv, 2), "start_value": round(start_mv, 2),
+        "performance": {"total_return": total_return, "mwr": perf["mwr"],
+                        "period": period, "months": perf["months"],
+                        "market_value": round(total_mv, 2), "start_value": perf["start_value"],
                         "cost_basis": round(total_cost, 2), "unrealised_gain": round(total_mv - total_cost, 2),
-                        "attribution": attribution,
+                        "attribution": perf["attribution"], "disclosures": perf["disclosures"],
                         "benchmark_symbol": benchmark_symbol_used,
                         "benchmark_return": benchmark_return, "alpha": alpha},
         "risk": {**risk, "stress_test": stress, "allocation": allocation},

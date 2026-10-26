@@ -106,6 +106,21 @@ TOOLS: dict[str, Tool] = {
                        UserRole.COMPLIANCE, UserRole.ADMIN},
     ),
 
+    "read_performance": Tool(
+        key="read_performance",
+        name="Read Performance",
+        speaking_agent="astra",
+        description="A household's investment performance: time-weighted and money-weighted return over the months of price history on file, benchmark and alpha, and what drove it by asset class. Securities only, gross of fees, with synthetic or unpriced holdings and stale prices named.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "The household to measure", required=True),
+        ],
+        output=ToolOutput("object", "TWR, MWR, monthly returns, attribution by asset class, benchmark, and disclosures"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

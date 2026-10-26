@@ -41,9 +41,9 @@ def main():
     # ── Real performance & attribution ──
     ov = call("/api/analytics/overview", token=admin)[1]
     perf = ov["portfolio"]["performance"]
-    print(f"PERFORMANCE: return={perf['total_return']:.1%} period='{perf['period']}' "
+    print(f"PERFORMANCE: twr={perf['total_return']} period='{perf['period']}' "
           f"start={perf['start_value']:.0f} end={perf['market_value']:.0f}")
-    assert perf["period"] != "current holdings"  # real history present
+    assert perf["total_return"] is not None and perf["period"]  # real history present
     assert perf["start_value"] > 0
 
     # ── Cockpit populated by the seed pre-run ──

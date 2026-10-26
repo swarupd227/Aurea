@@ -36,51 +36,22 @@ def _aware(dt):
 
 
 async def account_return_series(session: AsyncSession, account_id: uuid.UUID) -> dict:
-    """Monthly returns for one account, built the same way the existing firm-wide number
-    is (current holdings held constant across the window — no cash-flow adjustment, so
-    this is a close-to-close return, not a true time-weighted return with intra-period
-    flows), but across every monthly price point on file instead of just the first/last.
+    """Monthly returns for one account, from the same engine every other performance
+    figure uses (`performance.py`): positions rebuilt at each month-end from the ledger,
+    trades treated as flows, months linked. This used to be a second, cruder method -
+    today's holdings weighted by today's value, held constant across the window - which
+    meant a composite and a household could report different returns for the same money.
     """
-    holdings = (await session.execute(select(Holding).where(Holding.account_id == account_id))).scalars().all()
-    total_value = sum(float(h.market_value or 0) for h in holdings)
-    if not holdings or total_value <= 0:
-        return {"periods": [], "returns": [], "account_value": round(total_value, 2)}
+    from app.aurea_core import performance
 
-    instrument_ids = list({h.instrument_id for h in holdings})
-    prices = (await session.execute(
-        select(Price).where(Price.instrument_id.in_(instrument_ids)).order_by(Price.as_of.asc())
-    )).scalars().all()
-    by_instrument: dict[uuid.UUID, dict] = {}
-    for p in prices:
-        by_instrument.setdefault(p.instrument_id, {})[p.as_of] = float(p.close)
-
-    # Only instruments with at least 2 price points can contribute a return at all — an
-    # instrument with a single (or no) price point is weighted in the account but treated
-    # as flat for every period, the same fallback analytics/portfolio.py uses.
-    date_sets = [set(closes) for closes in by_instrument.values() if len(closes) >= 2]
-    if not date_sets:
-        return {"periods": [], "returns": [], "account_value": round(total_value, 2)}
-    common_dates = sorted(set.intersection(*date_sets)) if len(date_sets) > 1 else sorted(date_sets[0])
-    if len(common_dates) < 2:
-        return {"periods": [], "returns": [], "account_value": round(total_value, 2)}
-
-    weights = {h.instrument_id: float(h.market_value or 0) / total_value for h in holdings}
-
-    returns = []
-    for i in range(1, len(common_dates)):
-        prev_d, cur_d = common_dates[i - 1], common_dates[i]
-        period_return = 0.0
-        for h in holdings:
-            closes = by_instrument.get(h.instrument_id, {})
-            if prev_d in closes and cur_d in closes and closes[prev_d] > 0:
-                inst_return = (closes[cur_d] - closes[prev_d]) / closes[prev_d]
-                period_return += weights.get(h.instrument_id, 0.0) * inst_return
-        returns.append(period_return)
-
+    account = await session.get(Account, account_id)
+    if account is None:
+        return {"periods": [], "returns": [], "account_value": 0.0}
+    perf = await performance.account_performance(session, account_id, firm_id=account.firm_id)
     return {
-        "periods": [d.isoformat() for d in common_dates[1:]],
-        "returns": [round(r, 6) for r in returns],
-        "account_value": round(total_value, 2),
+        "periods": [p["end"] for p in perf["periods"]],
+        "returns": [p["return"] for p in perf["periods"]],
+        "account_value": perf["account_value"],
     }
 
 

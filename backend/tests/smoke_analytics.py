@@ -26,7 +26,7 @@ def main():
     _, ov = call("/api/analytics/overview", token=tok)
     h = ov["headline"]
     print(f"OVERVIEW: AUM={h['firm_aum']:.0f} clients={h['clients']} wallet_share={h['firm_wallet_share']:.0%} "
-          f"return={h['total_return']:.0%} margin={h['firm_margin']:.0%} DQ={h['data_quality_score']:.0%}")
+          f"return={'n/a' if h['total_return'] is None else format(h['total_return'], '.0%')} margin={h['firm_margin']:.0%} DQ={h['data_quality_score']:.0%}")
     assert h["firm_aum"] > 0 and h["clients"] >= 3
     assert all(L in ov for L in ["client_intelligence", "portfolio", "advice", "practice", "risk_data"])
     assert len(ov["maturity"]) == 5

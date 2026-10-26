@@ -325,6 +325,20 @@ async def household_wash_sale_calendar(
     return result
 
 
+@router.get("/households/{household_id}/performance")
+async def household_performance(
+    household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+):
+    """Time-weighted and money-weighted return for a household's securities, with
+    attribution and what the figure does and does not cover (`aurea_core/performance.py`)."""
+    from app.aurea_core import performance
+
+    result = await performance.household_performance(db, household_id, firm_id=firm.id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Household not found")
+    return result
+
+
 @router.get("/households/{household_id}/regulatory-countdown")
 async def household_regulatory_countdown(
     household_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
