@@ -701,25 +701,28 @@ async def _fee_terms(
 
     hid = await _resolve_household(db, user, household_id)
 
-    # Compute total AUM for this household via persons → mandates → accounts → holdings.
-    persons = (await db.execute(
-        select(Person).where(Person.firm_id == firm.id, Person.household_id == hid)
-    )).scalars().all()
-    person_ids = [p.id for p in persons]
+    # The household's balance is every account under every person AND entity in it, cash
+    # included - the same balance billing charges on. This used to follow persons only, so a
+    # household whose money sits under a trust was shown a fee on a fraction of it, disagreeing
+    # with what it was actually billed.
+    from app.aurea_core.performance import household_account_ids
 
+    account_ids = await household_account_ids(db, hid, firm_id=firm.id) or []
     total_aum = 0.0
     mandates: list[Mandate] = []
-    if person_ids:
+    if account_ids:
+        mandate_ids = {a.mandate_id for a in (await db.execute(
+            select(Account).where(Account.id.in_(account_ids)))).scalars().all() if a.mandate_id}
         mandates = (await db.execute(
-            select(Mandate).where(Mandate.firm_id == firm.id, Mandate.person_id.in_(person_ids))
-        )).scalars().all()
-        aum_row = (await db.execute(
-            select(func.coalesce(func.sum(Holding.market_value), 0))
-            .join(Account, Account.id == Holding.account_id)
-            .join(Mandate, Mandate.id == Account.mandate_id)
-            .where(Mandate.firm_id == firm.id, Mandate.person_id.in_(person_ids))
+            select(Mandate).where(Mandate.firm_id == firm.id, Mandate.id.in_(mandate_ids))
+        )).scalars().all() if mandate_ids else []
+        held = (await db.execute(
+            select(func.coalesce(func.sum(Holding.market_value), 0)).where(Holding.account_id.in_(account_ids))
         )).scalar_one()
-        total_aum = float(aum_row)
+        cash = (await db.execute(
+            select(func.coalesce(func.sum(Account.cash_balance), 0)).where(Account.id.in_(account_ids))
+        )).scalar_one()
+        total_aum = float(held) + float(cash)
 
     # A mandate carrying a confirmed fee schedule from onboarding is authoritative — bill
     # against what the firm actually agreed with this client, not a segment estimate.

@@ -47,7 +47,7 @@ async def main() -> int:
 
 async def _run(db) -> int:
     wanted = ["firm", "household", "person", "mandate", "account", "instrument", "holding",
-              "fee_schedule", "firm_segment", "billing_run", "invoice"]
+              "fee_schedule", "firm_segment", "billing_run", "invoice", "legal_entity"]
     tables = [Base.metadata.tables[n] for n in wanted]
     async with db.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
@@ -127,6 +127,31 @@ async def _run(db) -> int:
         r = await fees(await household("Minimum", 500_000, minimum.id))
         check("the minimum raises the fee to 5,000", r["annual_fee"], 5_000)
         check("effective rate reflects the minimum (100 bps)", r["fee_bps"], 100)
+
+        print("\n=== The balance is every account in the household - a trust's included - with cash ===")
+        from app.models.graph import LegalEntity
+        hh_t = Household(id=uuid.uuid4(), firm_id=firm.id, name="Trust household")
+        s.add(hh_t)
+        await s.flush()
+        trust = LegalEntity(id=uuid.uuid4(), firm_id=firm.id, household_id=hh_t.id, name="The Trust",
+                            entity_type="trust")
+        s.add(trust)
+        await s.flush()
+        mt = Mandate(id=uuid.uuid4(), firm_id=firm.id, entity_id=trust.id, name="Trust mandate",
+                     mandate_type="advisory", fee_schedule_id=tiered.id)
+        s.add(mt)
+        await s.flush()
+        at = Account(id=uuid.uuid4(), firm_id=firm.id, mandate_id=mt.id, name="Trust account",
+                     currency="NZD", cash_balance=Decimal("100000"))
+        s.add(at)
+        await s.flush()
+        s.add(Holding(id=uuid.uuid4(), firm_id=firm.id, account_id=at.id, instrument_id=inst.id,
+                      quantity=Decimal("1"), market_value=Decimal("1900000"), cost_basis=Decimal("1900000")))
+        await s.flush()
+        r = await fees(hh_t.id)
+        check("money held by a trust is counted, with its cash: 1,900,000 + 100,000", r["aum"], 2_000_000)
+        check("so the fee is the same 15,000 a year billing would charge", r["annual_fee"], 15_000)
+        check("and the confirmed schedule is found on the entity's mandate", r["source"], "confirmed_fee_schedule")
 
         print("\n=== What the client sees of billing: issued bills only, nothing internal ===")
         from datetime import date, datetime, timezone

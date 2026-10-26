@@ -321,8 +321,9 @@ class ToolExecutors:
             raise ExecutorError("A reason is required to credit an invoice.")
         try:
             decision_rights.check(self.role, AgentKey.BILLING, "approve")
-        except decision_rights.DecisionForbidden as exc:
-            raise ExecutorError(str(exc))
+        except decision_rights.DecisionForbidden:
+            raise ExecutorError("Crediting an invoice returns money that has already moved, so only "
+                                "operations or a branch leader may do it.")
         inv = await self.session.get(Invoice, invoice_id)
         if inv is None or inv.firm_id != self.firm_id:
             raise ExecutorError(f"Invoice {invoice_id} not found or access denied")

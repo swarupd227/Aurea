@@ -33,7 +33,9 @@ export default function Canvas() {
       if (!isClient) {
         const hh = await api("/api/core/households");
         setHouseholds(hh);
-        setHid(hh[0]?.id || null);
+        // "View as client" links here with ?household_id=, which used to be ignored.
+        const wanted = new URLSearchParams(window.location.search).get("household_id");
+        setHid(hh.find((h: any) => h.id === wanted)?.id || hh[0]?.id || null);
       } else {
         load(null);
       }

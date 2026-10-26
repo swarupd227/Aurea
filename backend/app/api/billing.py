@@ -114,8 +114,9 @@ async def credit_invoice(invoice_id: uuid.UUID, body: CreditIn, user: User = Sta
     """Offset an issued invoice in full with a credit note; cash already taken is returned."""
     try:
         decision_rights.check(user.role, AgentKey.BILLING, "approve")
-    except decision_rights.DecisionForbidden as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+    except decision_rights.DecisionForbidden:
+        raise HTTPException(status_code=403, detail="Crediting an invoice returns money that has already "
+                            "moved, so only operations or a branch leader may do it.")
     inv = await db.get(Invoice, invoice_id)
     if inv is None or inv.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Invoice not found.")
