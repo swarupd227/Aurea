@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import knowledge
+from app.aurea_core import billing, knowledge
 from app.aurea_core.document_intel import DOC_LABELS, extract
 from app.aurea_core.screening import screen_parties
 from app.core.db import utcnow
@@ -301,13 +301,24 @@ class OnboardingAgent(BaseAgent):
             suitability=proposal.get("suitability", {}),
             constraints=mandate_cfg.get("constraints", {}),
             model_portfolio_id=mandate_cfg.get("model_portfolio_id"),
-            # Carries the maker/checker-confirmed fee forward so the client-facing fee panel
-            # can bill against it instead of a segment-based estimate (L200 §2.1 Track A).
-            fee_schedule_id=case.fee_schedule_id,
         )
         s.add(mandate)
         await s.flush()
         created["mandate_id"] = str(mandate.id)
+
+        # The fee terms the case confirmed under maker/checker become the mandate's billing
+        # arrangement - the thing a bill is later reconciled to (L200 Track A step 2). The
+        # activation gate already refuses a case whose fee is unset or unconfirmed.
+        if case.fee_schedule_id and case.billing_method and case.billing_frequency:
+            arrangement = await billing.activate_arrangement(
+                s, firm_id=ctx.firm.id, mandate=mandate, fee_schedule_id=case.fee_schedule_id,
+                billing_method=case.billing_method, billing_frequency=case.billing_frequency,
+                householding=bool(case.householding), effective_from=utcnow().date(),
+                set_by=case.fee_set_by, set_at=case.fee_set_at,
+                confirmed_by=case.fee_confirmed_by, confirmed_at=case.fee_confirmed_at,
+                source="onboarding",
+            )
+            created["fee_arrangement_id"] = str(arrangement.id)
 
         account = Account(firm_id=ctx.firm.id, mandate_id=mandate.id,
                           name=f"{case.prospect_name.split()[0]} Account", custodian="BNY Pershing",
