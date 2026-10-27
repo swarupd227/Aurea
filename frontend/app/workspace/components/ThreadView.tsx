@@ -8,6 +8,7 @@ import { MessageView } from "./MessageView";
 import { LiveMessage } from "./LiveMessage";
 import { Briefing } from "./Briefing";
 import { getUser } from "@/lib/api";
+import { readable } from "@/lib/refs";
 import { roleStarters, useSuggestionContext } from "@/lib/suggestions";
 import type { LiveTurn, Message, Mentionable, ThreadStatus } from "../types";
 
@@ -107,7 +108,7 @@ export function ThreadView({
           {pendingUser && (
             <div className="flex justify-end">
               <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent/15 border border-accent/20 px-3.5 py-2 text-sm text-ink">
-                {pendingUser}
+                {readable(pendingUser)}
               </div>
             </div>
           )}

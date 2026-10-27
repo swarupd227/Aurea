@@ -26,6 +26,11 @@ function Section({ title, children, count }: { title: string; children: React.Re
 
 const rowBase = "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors";
 
+/** Shown until a section's data has arrived: an empty list must mean empty, not "not loaded yet". */
+function Loading() {
+  return <div role="status" aria-label="Loading" className="mx-2 my-1 h-3 w-28 rounded bg-border-soft motion-safe:animate-pulse" />;
+}
+
 export function Rail({
   threads,
   activeId,
@@ -36,8 +41,11 @@ export function Rail({
   onOpenView,
   openRoute = null,
   view,
+  threadsLoaded = true,
 }: {
   threads: ThreadSummary[];
+  /** False until the conversation list has been fetched once. */
+  threadsLoaded?: boolean;
   activeId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
@@ -54,7 +62,7 @@ export function Rail({
   const open = (route: string) => (onOpenView ? onOpenView(route) : router.push(route));
   const openPath = openRoute ? openRoute.split("?")[0] : null;
   const [needsYou, setNeedsYou] = useState<NeedsYou | null>(null);
-  const [agents, setAgents] = useState<Mentionable[]>([]);
+  const [agents, setAgents] = useState<Mentionable[] | null>(null);
   const [shortcutLabel, setShortcutLabel] = useState("Ctrl K");
   const [user, setUser] = useState<any>(null);
   const [showAllThreads, setShowAllThreads] = useState(false);
@@ -67,14 +75,37 @@ export function Rail({
 
   // Re-read what is waiting whenever a conversation settles (a decision was made, a run finished).
   const threadSignature = threads.map((t) => `${t.id}:${t.status}:${t.updated_at}`).join("|");
+  // Threads whose question was just answered, until the thread list itself catches up.
+  const [answeredThreads, setAnsweredThreads] = useState<Set<string>>(new Set());
+  useEffect(() => setAnsweredThreads(new Set()), [threadSignature]);
   useEffect(() => {
-    fetchNeedsYou().then(setNeedsYou).catch(() => {});
+    // A failed first read shows the section as empty rather than loading for ever.
+    fetchNeedsYou().then(setNeedsYou).catch(() =>
+      setNeedsYou((n) => n ?? { needs_decision: [], needs_decision_count: 0, proposals: [], proposals_count: 0 }));
   }, [threadSignature]);
   // A decision taken in the work pane changes what is waiting without moving any thread.
   useEffect(() => {
     const again = () => fetchNeedsYou().then(setNeedsYou).catch(() => {});
+    // A confirmation answered in a thread leaves Needs-you at once, not when its run finishes.
+    const answered = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      setNeedsYou((n) => {
+        const item = n?.needs_decision.find((i) => i.id === id);
+        if (!n || !item) return n;
+        setAnsweredThreads((s) => new Set(s).add(item.thread_id));
+        return {
+          ...n,
+          needs_decision: n.needs_decision.filter((i) => i.id !== id),
+          needs_decision_count: Math.max(0, n.needs_decision_count - 1),
+        };
+      });
+    };
     window.addEventListener("astra:changed", again);
-    return () => window.removeEventListener("astra:changed", again);
+    window.addEventListener("astra:pending-answered", answered);
+    return () => {
+      window.removeEventListener("astra:changed", again);
+      window.removeEventListener("astra:pending-answered", answered);
+    };
   }, []);
 
   const role: string = user?.role ?? "";
@@ -84,12 +115,15 @@ export function Rail({
   // The newest few are enough on the rail; the rest are one palette search away.
   const RECENT = 8;
   const shownThreads = showAllThreads ? threads : threads.slice(0, RECENT);
-  const waitingThreads = threads.filter((t) => t.status === "awaiting_confirmation");
   const items = needsYou?.needs_decision ?? [];
+  // A waiting thread is listed once: by its question when Needs-you has it, by its title otherwise.
+  const asked = new Set(items.map((i) => i.thread_id));
+  const waitingThreads = threads.filter(
+    (t) => t.status === "awaiting_confirmation" && !answeredThreads.has(t.id) && !asked.has(t.id)
+  );
   const proposals = needsYou?.proposals ?? [];
   const proposalsTotal = needsYou?.proposals_count ?? proposals.length;
-  const needsYouTotal =
-    waitingThreads.length + Math.max(0, (needsYou?.needs_decision_count ?? 0) - waitingThreads.length) + proposalsTotal;
+  const needsYouTotal = waitingThreads.length + (needsYou?.needs_decision_count ?? 0) + proposalsTotal;
 
   return (
     <nav className="flex h-full min-h-0 flex-col bg-surface/60" aria-label="Astra" data-testid="astra-rail">
@@ -127,8 +161,10 @@ export function Rail({
       </div>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 pb-4">
-        <Section title="Needs you" count={needsYouTotal}>
-          {needsYouTotal === 0 ? (
+        <Section title="Needs you" count={needsYou ? needsYouTotal : undefined}>
+          {!needsYou && waitingThreads.length === 0 ? (
+            <Loading />
+          ) : needsYouTotal === 0 ? (
             <p className="px-2 text-xs text-ink-muted">Nothing waiting on you.</p>
           ) : (
             <ul className="space-y-0.5" data-testid="needs-you-list">
@@ -230,7 +266,9 @@ export function Rail({
         </Section>
 
         <Section title="Conversations">
-          {threads.length === 0 ? (
+          {!threadsLoaded ? (
+            <Loading />
+          ) : threads.length === 0 ? (
             <p className="px-2 text-xs text-ink-muted">None yet.</p>
           ) : (
             <ul className="space-y-0.5">
@@ -326,7 +364,9 @@ export function Rail({
           )}
         </Section>
         <Section title="Your agents">
-          {agents.length === 0 ? (
+          {agents === null ? (
+            <Loading />
+          ) : agents.length === 0 ? (
             <p className="px-2 text-xs text-ink-muted">No agents you can run yet.</p>
           ) : (
             <ul className="space-y-0.5">

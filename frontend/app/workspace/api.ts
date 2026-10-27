@@ -86,9 +86,18 @@ export async function confirmPendingAction(
   confirmed: boolean,
   seenTier?: string
 ): Promise<any> {
-  return api(`/api/threads/pending-actions/${pendingActionId}/confirm`, {
-    body: seenTier ? { confirmed, seen_tier: seenTier } : { confirmed },
-  });
+  // The answer is given the moment the button is pressed, but a confirmed run is only reported
+  // back when it finishes. Tell the rail now, so Needs-you stops asking a question already
+  // answered; if the server refuses, "astra:changed" re-reads what is really waiting.
+  window.dispatchEvent(new CustomEvent("astra:pending-answered", { detail: pendingActionId }));
+  try {
+    return await api(`/api/threads/pending-actions/${pendingActionId}/confirm`, {
+      body: seenTier ? { confirmed, seen_tier: seenTier } : { confirmed },
+    });
+  } catch (err) {
+    window.dispatchEvent(new Event("astra:changed"));
+    throw err;
+  }
 }
 
 export async function fetchNeedsYou(): Promise<NeedsYou> {

@@ -12,6 +12,7 @@ import { useAgentRunner } from "@/components/AgentConsole";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { money, pct, titleCase } from "@/lib/format";
+import { withRef } from "@/lib/refs";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 
@@ -224,11 +225,13 @@ export function ClientView({ id }: { id: string }) {
     setBusy(agentKey + subjectId);
     setTimeout(() => setBusy(null), 600);
     if (nav.say) {
-      nav.say(
-        subjectType === "mandate"
-          ? `Run the ${agentKey} agent on mandate ${subjectId} (${subjectName || "account"} for ${name}).`
-          : `Run the ${agentKey} agent on household ${subjectId} (${name}).`
-      );
+      // Said in words, with the exact record riding along as a ref the reader never sees.
+      const sentence =
+        agentKey === "meeting_prep" ? `Prepare a meeting brief for ${name}.`
+        : agentKey === "research_reporting" ? `Draft a research note for ${name}.`
+        : agentKey === "drift_rebalancing" ? `Check whether ${subjectName || "this account"} for ${name} needs rebalancing.`
+        : `Have the ${label} agent look at ${subjectName ? `${subjectName} for ${name}` : name}.`;
+      nav.say(withRef(sentence, subjectType === "mandate" ? "mandate" : "household", subjectId));
       return;
     }
     runner.run({ agentKey, subjectType, subjectId, label });

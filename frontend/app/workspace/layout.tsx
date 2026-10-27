@@ -97,7 +97,7 @@ function ResizeHandle({ width, onChange, onCommit }: { width: number; onChange: 
 
 function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { threads, mention, askAstra, goThread, pane, openView, focus, sheetHidden, setSheetHidden } = useWorkspace();
+  const { threads, threadsLoaded, mention, askAstra, goThread, pane, openView, focus, sheetHidden, setSheetHidden } = useWorkspace();
   const [width, setWidth] = useState<number | null>(null);
 
   useEffect(() => {
@@ -119,6 +119,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
       <div className="hidden w-[260px] shrink-0 border-r border-border md:block">
         <Rail
           threads={threads}
+          threadsLoaded={threadsLoaded}
           activeId={threadId}
           onSelect={(id) => goThread(id)}
           onNew={() => goThread(null)}

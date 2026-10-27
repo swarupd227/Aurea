@@ -24,6 +24,8 @@ export function contextPrefix(chip: ViewContextChip): string {
 
 interface WorkspaceContextValue {
   threads: ThreadSummary[];
+  /** False until the conversation list has been fetched once - so "None yet" is never a guess. */
+  threadsLoaded: boolean;
   refetchThreads: () => void;
   composerInsert: ComposerInsert | null;
   mention: (name: string) => void;
@@ -68,6 +70,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const search = useSearchParams();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [threadsLoaded, setThreadsLoaded] = useState(false);
   const [composerInsert, setComposerInsert] = useState<ComposerInsert | null>(null);
   const [role, setRole] = useState<string>("");
 
@@ -76,7 +79,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const refetchThreads = useCallback(() => {
     fetchThreads()
       .then((d) => setThreads(d.threads))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setThreadsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -184,7 +188,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   return (
     <WorkspaceContext.Provider
       value={{
-        threads, refetchThreads, composerInsert, mention, insertInComposer, askAstra, say, registerSender, goThread,
+        threads, threadsLoaded, refetchThreads, composerInsert, mention, insertInComposer, askAstra, say, registerSender, goThread,
         pane, openView, closeView, trail, titles, setViewTitle, focus, setFocus, sheetHidden, setSheetHidden,
         contextChip, setContextChip,
       }}

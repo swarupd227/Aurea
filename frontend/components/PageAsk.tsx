@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CircleAlert, ChevronDown, ExternalLink, Plus } from "lucide-react";
 import { getUser } from "@/lib/api";
+import { readable } from "@/lib/refs";
 import { pageSuggestions, useSuggestionContext } from "@/lib/suggestions";
 import {
   confirmPendingAction, createThread, fetchMentionables, fetchThread, sendMessageStream,
@@ -59,7 +60,7 @@ export default function PageAsk() {
       setLive({ text: "", steps: [] });
       const startedOn = pathRef.current;
       try {
-        const id = thread?.id ?? (await createThread({ kind: "ask_astra", title: text.slice(0, 60) })).id;
+        const id = thread?.id ?? (await createThread({ kind: "ask_astra", title: readable(text).slice(0, 60) })).id;
         await sendMessageStream(id, text, (event) => {
           if (event.type === "error") setError(event.message);
           else setLive((prev) => reduceLive(prev, event));
@@ -178,7 +179,7 @@ export default function PageAsk() {
               {pendingUser && (
                 <div className="flex justify-end">
                   <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg border border-accent/20 bg-accent/15 px-3.5 py-2 text-sm text-ink">
-                    {pendingUser}
+                    {readable(pendingUser)}
                   </div>
                 </div>
               )}

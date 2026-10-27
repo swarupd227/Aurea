@@ -4,6 +4,7 @@ import { Check, Pencil, X, FileText, ShieldAlert, ChevronDown, ChevronUp, Undo2,
   Scissors, Scale, Landmark, Target, TrendingDown, Wand2, Mail, Copy } from "lucide-react";
 import { api } from "@/lib/api";
 import { money, titleCase } from "@/lib/format";
+import { Markdown } from "@/app/workspace/components/Markdown";
 import { ConfidenceBar, StatusBadge, TierBadge } from "./ui";
 import { DriftBars } from "./Charts";
 
@@ -297,8 +298,9 @@ export default function RecommendationCard({
           {(rec.summary || rec.rationale) && (
             <figure className="border-l-2 border-border pl-3">
               <figcaption className="font-mono text-[10px] uppercase tracking-wider text-ink-muted mb-1">{agentName} · rationale</figcaption>
-              {rec.summary && <p className="text-sm text-ink">{rec.summary}</p>}
-              {rec.rationale && <p className="mt-1 text-sm text-ink-soft whitespace-pre-line leading-relaxed">{rec.rationale}</p>}
+              {/* Agents write Markdown; show it formatted, not as asterisks. */}
+              {rec.summary && <Markdown text={rec.summary} className="text-sm text-ink" />}
+              {rec.rationale && <Markdown text={rec.rationale} className="mt-1 text-sm text-ink-soft" />}
             </figure>
           )}
 
@@ -376,7 +378,7 @@ export default function RecommendationCard({
           {orders.length === 0 && payload.brief && <MeetingBriefView brief={payload.brief} />}
 
           {orders.length === 0 && !payload.brief && Object.keys(payload).length > 0 && (
-            <PayloadView payload={payload} />
+            <PayloadView payload={payload} shown={`${rec.summary ?? ""}\n${rec.rationale ?? ""}`} />
           )}
 
           <CompliancePanel recId={rec.id} />
@@ -669,8 +671,16 @@ function renderVal(v: any): string {
   return String(v);
 }
 
-function PayloadView({ payload }: { payload: any }) {
-  const entries = Object.entries(payload).filter(([k]) => !NOISY_KEYS.includes(k));
+/** A long text field is prose the agent wrote: formatted, and left out if the rationale above
+ * already says it word for word (a nudge the agent also quoted in its rationale). */
+const isProse = (v: unknown): v is string => typeof v === "string" && (v.length > 120 || v.includes("\n"));
+const squash = (s: string) => s.replace(/[*_#>`\s]+/g, " ").trim().toLowerCase();
+
+function PayloadView({ payload, shown = "" }: { payload: any; shown?: string }) {
+  const already = squash(shown);
+  const entries = Object.entries(payload).filter(
+    ([k, v]) => !NOISY_KEYS.includes(k) && !(isProse(v) && already.includes(squash(v)))
+  );
   if (entries.length === 0) return null;
   return (
     <div className={panel}>
@@ -679,7 +689,7 @@ function PayloadView({ payload }: { payload: any }) {
         {entries.map(([k, v]) => (
           <div key={k} className="flex flex-col gap-0.5 cq-sm:flex-row cq-sm:gap-2">
             <dt className="text-ink-muted cq-sm:min-w-[140px]">{titleCase(k)}</dt>
-            <dd className="flex-1 min-w-0 break-words">{renderVal(v)}</dd>
+            <dd className="flex-1 min-w-0 break-words">{isProse(v) ? <Markdown text={v} /> : renderVal(v)}</dd>
           </div>
         ))}
       </dl>

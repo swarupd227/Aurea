@@ -81,10 +81,10 @@ def _from_onboarding(inputs: dict, result: dict) -> list[Candidate]:
 FOLLOWS: dict[str, Callable[[dict, dict], list[Candidate]]] = {
     "read_household": lambda i, r: _household(_name_of(r)) if _name_of(r) else [],
     "search_households": lambda i, r: _household(_name_of(r)) if _name_of(r) else [],
-    "read_performance": lambda i, r: ([("check_household_wash_sale", f"Check household {i['household_id']} for wash-sale conflicts.")]
-                                      if i.get("household_id") else []) + [COMPOSITES],
-    "check_household_wash_sale": lambda i, r: [("read_performance", f"How has household {i['household_id']} performed against its benchmark?")]
-                                              if i.get("household_id") else [],
+    # A suggestion names the household as people do; with no name in the result it is not offered
+    # rather than offered with an id nobody can read.
+    "read_performance": lambda i, r: ([_household(_name_of(r))[1]] if _name_of(r) else []) + [COMPOSITES],
+    "check_household_wash_sale": lambda i, r: [_household(_name_of(r))[0]] if _name_of(r) else [],
     "explain_invoice": lambda i, r: _household(_name_of(r))[:2] if _name_of(r) else [],
     "read_billing": lambda i, r: [("read_billing", "Which bills are held, and why?")] if not i.get("household_id") else [],
     "run_billing": lambda i, r: [("read_billing", "Which bills are held, and why?")],

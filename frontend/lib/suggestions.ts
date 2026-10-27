@@ -5,6 +5,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { withRef } from "./refs";
 
 export interface Suggestion {
   /** Short chip text. */
@@ -115,10 +116,10 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
   const household = pathname.match(/^\/studio\/clients\/([0-9a-f-]{36})/i)?.[1];
   if (household) {
     return [
-      { label: "Walk me through it", prompt: `Show me the accounts, goals and holdings for household ${household}.` },
-      { label: "Performance", prompt: `How has household ${household} performed against its benchmark?` },
-      { label: "Wash sales", prompt: `Check household ${household} for wash-sale conflicts.` },
-      { label: "Billing", prompt: `Why was household ${household} billed what it was?` },
+      { label: "Walk me through it", prompt: withRef("Show me the accounts, goals and holdings for this household.", "household", household) },
+      { label: "Performance", prompt: withRef("How has this household performed against its benchmark?", "household", household) },
+      { label: "Wash sales", prompt: withRef("Check this household for wash-sale conflicts.", "household", household) },
+      { label: "Billing", prompt: withRef("Why was this household billed what it was?", "household", household) },
     ];
   }
   const route = pathname.replace(/\/$/, "");

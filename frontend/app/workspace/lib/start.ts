@@ -1,3 +1,4 @@
+import { readable } from "@/lib/refs";
 import { createThread } from "../api";
 
 const KEY = (threadId: string) => `astra:first:${threadId}`;
@@ -6,7 +7,7 @@ const KEY = (threadId: string) => `astra:first:${threadId}`;
  * handed to the thread page through sessionStorage, not the URL - it may name a client - and the
  * thread page sends it, so the turn streams in view instead of finishing off-screen. */
 export async function startConversation(text: string): Promise<string> {
-  const thread = await createThread({ kind: "ask_astra", title: text.slice(0, 60) });
+  const thread = await createThread({ kind: "ask_astra", title: readable(text).slice(0, 60) });
   try {
     sessionStorage.setItem(KEY(thread.id), text);
   } catch {

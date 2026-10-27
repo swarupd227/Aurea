@@ -2,6 +2,7 @@ import { useRouter } from "next/navigation";
 import { PanelRight } from "lucide-react";
 import { getUser } from "@/lib/api";
 import { matchPaneView, paneRouteForArtifact } from "@/lib/paneViews";
+import { readable } from "@/lib/refs";
 import { Markdown } from "./Markdown";
 import { ConfirmationCard } from "./ConfirmationCard";
 import { ProofStrip } from "./ProofStrip";
@@ -56,7 +57,7 @@ export function MessageView({
     return (
       <div className="flex justify-end">
         <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent/15 border border-accent/20 px-3.5 py-2 text-sm text-ink">
-          {message.text}
+          {readable(message.text)}
         </div>
       </div>
     );
