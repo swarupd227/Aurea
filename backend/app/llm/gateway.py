@@ -122,7 +122,8 @@ class Gateway:
         """
 
         thread = await self.session.get(Thread, thread_id)
-        if not thread or thread.firm_id != self.firm_id:
+        # Only the person who started a conversation may add to it (see api/threads._is_theirs).
+        if not thread or thread.firm_id != self.firm_id or thread.created_by_user_id != self.user_id:
             raise GatewayError(f"Thread {thread_id} not found or access denied")
 
         user_msg = ThreadMessage(thread_id=thread_id, role=MessageRole.USER, text=text)
