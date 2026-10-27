@@ -10,14 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.catalogue import CATALOGUE
 from app.api.deps import current_firm
-from app.atlas.base import Subject
 from app.atlas.registry import all_agents
 from app.atlas.runtime import AgentPausedError, run_agent
+from app.atlas.subjects import SubjectNotFound, resolve_subject
+from app.core import agent_runs
 from app.core.db import get_db
 from app.core.security import get_current_user, staff_user
-from app.models.enums import AgentKey, MandateType
+from app.models.enums import AgentKey
 from app.models.governance import AgentRun, Recommendation
-from app.models.graph import Household, Mandate, Person
 from app.models.tenant import AgentConfig, Firm
 
 router = APIRouter(prefix="/api/agents", tags=["agents"], dependencies=[Depends(staff_user)])
@@ -80,26 +80,16 @@ async def trigger_run(
     if agent_key not in all_agents():
         raise HTTPException(status_code=404, detail="Unknown agent")
 
-    subject = Subject(type=body.subject_type, id=body.subject_id)
-    mandate_type = None
-    if body.subject_type == "mandate" and body.subject_id:
-        m = await db.get(Mandate, body.subject_id)
-        if m:
-            subject.label = m.name
-            mandate_type = MandateType(m.mandate_type)
-    elif body.subject_type == "household" and body.subject_id:
-        h = await db.get(Household, body.subject_id)
-        subject.label = h.name if h else None
-    elif body.subject_type == "person" and body.subject_id:
-        p = await db.get(Person, body.subject_id)
-        subject.label = p.full_name if p else None
-    elif body.subject_type in (None, "firm"):
-        subject = Subject("firm", firm.id, firm.name)
+    try:
+        subject, mandate_type = await resolve_subject(db, firm, body.subject_type, body.subject_id)
+    except SubjectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
     try:
         run = await run_agent(
             db, firm=firm, agent_key=agent_key, subject=subject,
             trigger="manual", mandate_type=mandate_type,
+            require_human=agent_runs.forced_to_proposal(agent_key),
         )
     except AgentPausedError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

@@ -218,6 +218,18 @@ async def run_agent_behaviour() -> None:
             except ExecutorError as exc:
                 refused = "not found" in str(exc)
             check(f"run_agent: another firm's {label} reads as not found", refused, True)
+
+        # The Cockpit's run stream and POST /api/agents/{key}/run share one resolver.
+        from app.atlas.subjects import SubjectNotFound, resolve_subject
+        for kind, row_id in (("household", hh.id), ("mandate", m.id), ("person", p.id)):
+            subject, _ = await resolve_subject(s, theirs, kind, row_id)
+            check(f"cockpit run: its own firm resolves the {kind}", subject.id, row_id)
+            try:
+                await resolve_subject(s, mine, kind, row_id)
+                refused = False
+            except SubjectNotFound:
+                refused = True
+            check(f"cockpit run: another firm's {kind} reads as not found", refused, True)
     await engine.dispose()
 
 

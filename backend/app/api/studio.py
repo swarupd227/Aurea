@@ -165,7 +165,8 @@ async def revise_recommendation(
 
     try:
         run = await run_agent(db, firm=firm, agent_key=AgentKey.DRIFT_REBALANCING, subject=subject,
-                              trigger="revise", mandate_type=mandate_type, overrides=overrides)
+                              trigger="revise", mandate_type=mandate_type, overrides=overrides,
+                              require_human=True)  # a revision comes back for a decision
     except AgentPausedError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 

@@ -18,12 +18,12 @@ from app.atlas import delegate as delegate_svc
 from app.atlas import roster as roster_svc
 from app.atlas import scan_stream as scan_stream_svc
 from app.atlas import streaming
-from app.atlas.base import Subject
+from app.atlas.subjects import SubjectNotFound, resolve_subject
+from app.core import agent_runs
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
-from app.models.enums import AgentKey, MandateType
+from app.models.enums import AgentKey
 from app.models.governance import AgentActivity, AgentRun, Recommendation
-from app.models.graph import Household, Mandate, Person
 from app.models.identity import User
 from app.models.tenant import AgentConfig, Firm
 
@@ -45,38 +45,23 @@ async def activity(
     return await activity_svc.recent(db, firm.id, limit=limit, since=since_dt)
 
 
-# ── Subject resolution (shared) ───────────────────────────────────────────────
-async def _resolve_subject(db, firm, subject_type, subject_id):
-    subject = Subject(type=subject_type, id=subject_id)
-    mandate_type = None
-    if subject_type == "mandate" and subject_id:
-        m = await db.get(Mandate, subject_id)
-        if m:
-            subject.label = m.name
-            mandate_type = MandateType(m.mandate_type)
-    elif subject_type == "household" and subject_id:
-        h = await db.get(Household, subject_id)
-        subject.label = h.name if h else None
-    elif subject_type == "person" and subject_id:
-        p = await db.get(Person, subject_id)
-        subject.label = p.full_name if p else None
-    elif subject_type in (None, "firm"):
-        subject = Subject("firm", firm.id, firm.name)
-    return subject, mandate_type
-
-
 # ── Streaming run (sense → think → act, watch it work) ────────────────────────
 @router.get("/run-stream")
 async def run_stream(
     agent_key: AgentKey, subject_type: str | None = None, subject_id: uuid.UUID | None = None,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    subject, mandate_type = await _resolve_subject(db, firm, subject_type, subject_id)
+    try:
+        subject, mandate_type = await resolve_subject(db, firm, subject_type, subject_id)
+    except SubjectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
     async def gen():
         try:
+            # Started by a person from the Cockpit, so held to a proposal like a conversation run.
             async for ev in streaming.stream_run(db, firm=firm, agent_key=agent_key,
-                                                 subject=subject, mandate_type=mandate_type):
+                                                 subject=subject, mandate_type=mandate_type,
+                                                 require_human=agent_runs.forced_to_proposal(agent_key)):
                 yield f"data: {json.dumps(ev)}\n\n"
         except Exception as exc:  # pragma: no cover
             yield f"data: {json.dumps({'phase': 'error', 'message': str(exc)})}\n\n"
