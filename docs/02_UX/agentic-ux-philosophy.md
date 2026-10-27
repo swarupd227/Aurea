@@ -110,6 +110,43 @@ Humans keep the gates, and an agent never crosses one on its own:
   the palette. An empty thread teaches by example — *Try saying* shows role-specific sentences, each one
   answerable by a tool the role holds.
 
+- **The work pane** — the workspace is three columns: rail | conversation | work pane. The pane holds the
+  view the agents (or you) opened, beside the conversation, so a decision is taken next to the
+  sentence that explained it rather than on another page.
+  - **State is the URL.** `/workspace?view=<route>` and `/workspace/[id]?view=<route>` (for example
+    `?view=/studio/clients/<id>`, or `?view=/studio/review?rec=<id>` to bring one proposal to the top).
+    A pane is linkable and survives a reload; switching conversations keeps it open.
+  - **Only pane views open in it.** `PANE_VIEWS` in `frontend/lib/paneViews.ts`: Cockpit (`/studio`),
+    Recommendations (`/studio/review`), Clients (`/studio/clients`) and a client (`/studio/clients/[id]`),
+    each only for the roles its page's sidebar entry shows. Any other route navigates to its page as it
+    always has. The classic URLs work standalone, unchanged.
+  - **One view, two homes.** Each pane view is the page's own component (`frontend/components/views`),
+    imported by the classic route and by the pane — never forked, never an iframe. A view moves with
+    `useViewNav()` / `<ViewLink>`: an ordinary link on a page, `?view=` inside the pane (with a
+    breadcrumb back). In the pane, a view's agent buttons (Prep meeting, Rebalance, Run an agent, the
+    Delegate chips, Scan book) are sentences handed to the conversation beside it, so a run goes
+    through `run_agent` and its Confirm card like any other (rule 1); on a page they keep their own
+    controls. Views size to their own box (`cq-*` container variants), so they work at the pane's
+    420px and full page alike.
+  - **What opens it:** an *Open* chip on a message card whose result maps to a view (recommendations →
+    Recommendations, one proposal → that proposal, a household → that client, agents or a run → the
+    Cockpit); the rail's *Views* entries for pane views (others are marked as opening their page) and
+    its *Needs you* proposals (each opens on its proposal, with *Ask* beside it for the old sentence);
+    the ⌘K palette when invoked in the workspace; and **Astra itself**, with the `open_view` tool.
+  - **`open_view`** is read-only and states nothing: it returns a route. It takes an id only if a tool
+    returned it earlier in the same turn (the gateway hands it that turn's results) and only if the
+    caller's firm owns it; each view is gated like its page (`tests/verify_open_view.py`). The thread
+    opens the pane when the reply it just streamed carries one; reopening an old thread does not.
+  - **Header:** the view's title, breadcrumbs for navigation inside the pane, *Ask about this* (a chip
+    in the composer naming the open route and its id — never the data on it; Astra must still call a
+    tool before it states anything about it), *Open as page*, focus (widen over the conversation) and
+    close. Drag the edge (or arrow keys on it) to resize; the width is remembered in this browser
+    only. Below `lg` there is no room for both: the pane is a sheet over the conversation (full screen
+    below `md`) with a way back that leaves the view open.
+  - **Both stay live.** A confirm in the thread, or a run settling, fires `astra:changed` and the pane
+    reloads; a decision in the pane fires it and the thread, Needs you and the conversation list look
+    again.
+
 - **Artifact views** — the existing pages, at their existing URLs. Their sidebar is the same shape as the
   rail: *Talk to Astra*, *Search or ask*, the role's pinned views, *More views*.
 
@@ -147,11 +184,11 @@ Humans keep the gates, and an agent never crosses one on its own:
 | Phase | What | State |
 |---|---|---|
 | 0 | Trade decision rights, exactly-once decisions, firm-scoped reads, client document scoping, stable test ids, this document | Done |
-| 1 | Visual system: dark default, one yellow accent, ok/warn/crit/info, palette cleanup, honest motion | Partly: dark is pinned on `<html>` and the workspace is on the tokens; most classic pages still use retired `navy-*` / `gold` classes |
-| 2 | Tool catalogue, tool-capable model gateway, thread persistence, transcript validation | Done — `core/tools.py` (44 tools), `llm/gateway.py`, `llm/executors.py` |
-| 3 | Workspace: threads, rail, messages with Sources and suggestions, Confirm / Not now, ⌘K | Done, except the right-hand detail pane ("Open full view"). Suggestions under a reply are derived from the tools the turn used and the role's tools; compliance's Needs-you lists only the proposals where its veto is the control; a reply keeps being written, and lands on the thread, if the browser leaves mid-stream (the generation runs in a task of its own; the reload shows "Astra is still replying" until it is whole. In-process, so a restart mid-reply loses that reply, and only the replica running it can say it is working) |
+| 1 | Visual system: dark default, one yellow accent, ok/warn/crit/info, palette cleanup, honest motion | Partly: dark is pinned on `<html>`; the workspace and the four pane views (Cockpit, Recommendations, Clients, a client — with `RecommendationCard`, the activity rail, book scan, what-if and retirement planner inside them) are on the tokens, and autonomy tiers no longer borrow the yellow. The other classic pages still use retired `navy-*` / `gold` classes (which no longer exist in the Tailwind config, so they render unstyled) |
+| 2 | Tool catalogue, tool-capable model gateway, thread persistence, transcript validation | Done — `core/tools.py` (45 tools, with `open_view`), `llm/gateway.py`, `llm/executors.py` |
+| 3 | Workspace: threads, rail, messages with Sources and suggestions, Confirm / Not now, ⌘K, the work pane | Done. The work pane (rail \| conversation \| pane, `?view=`) shows Cockpit, Recommendations, Clients and a client beside the conversation; cards, the rail, ⌘K and Astra's `open_view` open it. Not yet: other pages as pane views (each is a refactor into `components/views` plus a `PANE_VIEWS` entry), and `open_view` for them. Suggestions under a reply are derived from the tools the turn used and the role's tools; compliance's Needs-you lists only the proposals where its veto is the control; a reply keeps being written, and lands on the thread, if the browser leaves mid-stream (the generation runs in a task of its own; the reload shows "Astra is still replying" until it is whole. In-process, so a restart mid-reply loses that reply, and only the replica running it can say it is working) |
 | 4 | Runs narrate into threads; `run_agent` and the streaming path merged; proposal supersession | Mostly: `run_agent` starts a run from a sentence through the Delegate bar's own streaming run (`atlas/streaming.stream_run`), behind a Confirm card that names the agent, what it will do and its tier; the run's card is on the thread from the moment it starts and the agent settles it with a message. Not done: pause / resume (the kill switch is only an administrator route, no domain function to wrap), proposal supersession, and retiring the Cockpit's Delegate bar (it is now held to a proposal at Tier 3 for book- and cash-moving agents, like a conversation run) |
-| 5 | Pages become artifact views: prose out of cards, page-scoped conversations, Ask and Canvas merged | Started — a docked conversation on every staff page, role-pinned views; classic cards still carry prose, Ask-your-book (`studio/ask`) still stuffs a book snapshot into a prompt |
+| 5 | Pages become artifact views: prose out of cards, page-scoped conversations, Ask and Canvas merged | Started — a docked conversation on every staff page, role-pinned views; the four pane views are figures, tables and chips (the agent's rationale stays, attributed to the agent); the rollback confirmation no longer says effects will be reversed. Other classic cards still carry prose, Ask-your-book (`studio/ask`) still stuffs a book snapshot into a prompt |
 | 6 | The rules as tests, run in CI | Started — decision rights, tenant scope and test-id checks exist |
 
 Staff now land in the conversation. Pages remain, at the same URLs, as views the conversation and the

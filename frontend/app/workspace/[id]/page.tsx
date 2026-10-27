@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getUser } from "@/lib/api";
+import { matchPaneView } from "@/lib/paneViews";
 import { confirmPendingAction, fetchMentionables, fetchThread, sendMessageStream } from "../api";
 import { useWorkspace } from "../context";
 import { ThreadView } from "../components/ThreadView";
@@ -8,8 +10,17 @@ import { reduceLive } from "../lib/live";
 import { takeFirstMessage } from "../lib/start";
 import type { LiveTurn, Mentionable, ThreadDetail } from "../types";
 
+/** The view Astra asked to open this turn (an `open_view` result on the reply), if any. */
+function viewOpenedBy(thread: ThreadDetail, sinceCount: number): string | null {
+  for (const m of thread.messages.slice(sinceCount).reverse()) {
+    const a = m.artifacts?.find((x) => x.tool_key === "open_view" && typeof x.result?.view === "string");
+    if (a) return a.result.view as string;
+  }
+  return null;
+}
+
 export default function ThreadPage({ params }: { params: { id: string } }) {
-  const { composerInsert, refetchThreads } = useWorkspace();
+  const { composerInsert, refetchThreads, registerSender, insertInComposer, openView } = useWorkspace();
   const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [mentionables, setMentionables] = useState<Mentionable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +31,17 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const reload = useCallback(async () => {
     const data = await fetchThread(params.id);
     setThread(data);
+    return data;
   }, [params.id]);
+
+  // A decision taken in the work pane may be the very proposal this thread is talking about.
+  useEffect(() => {
+    const again = () => {
+      reload().catch(() => {});
+    };
+    window.addEventListener("astra:changed", again);
+    return () => window.removeEventListener("astra:changed", again);
+  }, [reload]);
 
   useEffect(() => {
     setLoading(true);
@@ -34,6 +55,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     setError(null);
     setPendingUser(text);
     setLive({ text: "", steps: [] });
+    const before = thread?.messages.length ?? 0;
     try {
       await sendMessageStream(params.id, text, (event) => {
         if (event.type === "error") setError(event.message);
@@ -42,8 +64,12 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         // fetches the authoritative persisted state rather than reconstructing
         // it from stream events.
       });
-      await reload();
+      const data = await reload();
       refetchThreads();
+      // Astra opened a view with its reply: show it beside the conversation. Only for the turn
+      // just streamed - reopening an old thread does not reopen what it once showed.
+      const opened = viewOpenedBy(data, before);
+      if (opened && matchPaneView(opened, getUser()?.role)) openView(opened);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
@@ -89,6 +115,25 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     if (!running) refetchThreads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running]);
+  // A run settling put new proposals on the book: the open view (and the rail) look again.
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !running) window.dispatchEvent(new Event("astra:changed"));
+    wasRunning.current = !!running;
+  }, [running]);
+
+  // The work pane hands sentences to this thread (an agent run from a client's page, a Delegate
+  // chip). While the thread cannot take one - a reply streaming, a confirmation waiting - the
+  // sentence goes into the composer instead, to send when it can.
+  const busy = live !== null || thread?.status === "awaiting_confirmation" || awaitingReply;
+  const sendRef = useRef(handleSend);
+  sendRef.current = handleSend;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  useEffect(() => {
+    registerSender((text) => (busyRef.current ? insertInComposer(text) : void sendRef.current(text)));
+    return () => registerSender(null);
+  }, [registerSender, insertInComposer]);
 
   const handleConfirm = async (pendingActionId: string, seenTier?: string) => {
     setError(null);
@@ -97,6 +142,8 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       await confirmPendingAction(pendingActionId, true, seenTier);
       await reload();
       refetchThreads();
+      // The view beside the conversation may be showing what this just changed.
+      window.dispatchEvent(new Event("astra:changed"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to confirm action");
       await reload().catch(() => {}); // the card may now show a different tier, or no longer be open

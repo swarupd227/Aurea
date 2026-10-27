@@ -400,6 +400,33 @@ TOOLS: dict[str, Tool] = {
                        UserRole.BRANCH_LEADER, UserRole.ADMIN},
     ),
 
+    # ─── Opening a view beside the conversation. It reads nothing and states nothing: the view loads
+    # its own data, and the only ids it takes are ones a tool returned earlier in the same turn.
+    "open_view": Tool(
+        key="open_view",
+        name="Open View",
+        speaking_agent="astra",
+        description=(
+            "Open one of the workspace's views in the pane beside the conversation, so the person can look at it and "
+            "work on it: cockpit (the day's proposals and agent activity), recommendations (the proposals waiting for a "
+            "decision; give recommendation_id to bring one to the top), clients (the client list) or client (one "
+            "household; give household_id). It returns no data and states nothing - answer first, then open the view "
+            "when seeing it would help. An id must come from a tool you called earlier in this turn (search_households, "
+            "read_household, read_recommendations); an id from memory or an earlier turn is refused."
+        ),
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("view", "string", "cockpit, recommendations, clients or client", required=True),
+            ToolInput("household_id", "uuid", "For client: the household, as a tool returned it this turn", required=False),
+            ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
+        ],
+        output=ToolOutput("object", "The view's route - nothing about what it shows"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.RESEARCH_CIO, UserRole.COMPLIANCE, UserRole.OPERATIONS,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
     # ─── Reads that stand in for pages. Roles mirror frontend/lib/nav.ts for the page each replaces
     # (administrators see every view), so a conversation never shows a role what its sidebar hides.
 
@@ -752,6 +779,20 @@ TOOLS: dict[str, Tool] = {
         output=ToolOutput("object", "Net orders per (account, instrument) with sleeve allocations"),
         roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
     ),
+}
+
+
+# The views open_view may open: the page each stands for in frontend/lib/nav.ts (PANE_VIEWS in
+# frontend/lib/paneViews.ts), and the roles that page's sidebar entry shows. Administrators see every
+# view. tests/verify_open_view.py reads nav.ts so these cannot drift from it.
+_A, _P, _PT, _R, _C, _O, _B = (UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.RESEARCH_CIO,
+                               UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.BRANCH_LEADER)
+OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
+    # view: (route, label, roles)
+    "cockpit": ("/studio", "Cockpit", {_A, _P, _PT, _B}),
+    "recommendations": ("/studio/review", "Recommendations", {_A, _PT, _C}),
+    "clients": ("/studio/clients", "Clients", {_A, _P, _PT, _R, _O, _B}),
+    "client": ("/studio/clients", "Client", {_A, _P, _PT, _R, _O, _B}),
 }
 
 

@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, House, LogOut, Plus, Search } from "lucide-react";
+import { ArrowUpRight, ChevronRight, House, LogOut, MessageSquarePlus, Plus, Search } from "lucide-react";
 import { clearSession, getUser } from "@/lib/api";
 import { moreViews, pinnedViews } from "@/lib/nav";
+import { matchPaneView } from "@/lib/paneViews";
 import RoleSwitcher from "@/components/RoleSwitcher";
 import { fetchMentionables, fetchNeedsYou } from "../api";
 import type { Mentionable, NeedsYou, ThreadSummary } from "../types";
@@ -32,6 +33,8 @@ export function Rail({
   onNew,
   onMention,
   onAsk,
+  onOpenView,
+  openRoute = null,
   view,
 }: {
   threads: ThreadSummary[];
@@ -41,9 +44,15 @@ export function Rail({
   onMention: (name: string) => void;
   /** Start a conversation with this sentence. */
   onAsk: (text: string) => void;
+  /** Open a view: in the work pane if it is a pane view, as its page otherwise. */
+  onOpenView?: (route: string) => void;
+  /** The route open in the work pane, if any. */
+  openRoute?: string | null;
   view: "home" | "thread";
 }) {
   const router = useRouter();
+  const open = (route: string) => (onOpenView ? onOpenView(route) : router.push(route));
+  const openPath = openRoute ? openRoute.split("?")[0] : null;
   const [needsYou, setNeedsYou] = useState<NeedsYou | null>(null);
   const [agents, setAgents] = useState<Mentionable[]>([]);
   const [shortcutLabel, setShortcutLabel] = useState("Ctrl K");
@@ -61,6 +70,12 @@ export function Rail({
   useEffect(() => {
     fetchNeedsYou().then(setNeedsYou).catch(() => {});
   }, [threadSignature]);
+  // A decision taken in the work pane changes what is waiting without moving any thread.
+  useEffect(() => {
+    const again = () => fetchNeedsYou().then(setNeedsYou).catch(() => {});
+    window.addEventListener("astra:changed", again);
+    return () => window.removeEventListener("astra:changed", again);
+  }, []);
 
   const role: string = user?.role ?? "";
   const pinned = pinnedViews(role);
@@ -148,38 +163,61 @@ export function Rail({
                   </div>
                 </li>
               ))}
-              {proposals.slice(0, 5).map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    data-testid="needs-you-proposal"
-                    onClick={() =>
-                      onAsk(
-                        `Walk me through the proposal "${p.title}"${p.subject_label ? ` for ${p.subject_label}` : ""}, and ${
-                          p.action === "veto" ? "whether I should dismiss it" : "what it would do if I approve it"
-                        }.`
-                      )
-                    }
-                    title={p.title}
-                    className={`${rowBase} items-start hover:bg-border-soft`}
-                  >
-                    <span
-                      aria-hidden
-                      className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${p.priority <= 2 ? "bg-crit" : "bg-warn"}`}
-                    />
-                    <span className="min-w-0">
-                      <span className="block truncate text-ink">{p.title}</span>
-                      {p.subject_label && <span className="block truncate text-xs text-ink-muted">{p.subject_label}</span>}
-                    </span>
-                  </button>
-                </li>
-              ))}
+              {proposals.slice(0, 5).map((p) => {
+                const walk = () =>
+                  onAsk(
+                    `Walk me through the proposal "${p.title}"${p.subject_label ? ` for ${p.subject_label}` : ""}, and ${
+                      p.action === "veto" ? "whether I should dismiss it" : "what it would do if I approve it"
+                    }.`
+                  );
+                // The proposal opens beside the conversation where this role has the Recommendations
+                // view; otherwise the row asks Astra about it, as it always did.
+                const route = `/studio/review?rec=${p.id}`;
+                const inPane = !!onOpenView && !!matchPaneView(route, role);
+                return (
+                  <li key={p.id} className="group/row relative">
+                    <button
+                      type="button"
+                      data-testid="needs-you-proposal"
+                      onClick={inPane ? () => open(route) : walk}
+                      title={p.title}
+                      aria-current={openRoute === route ? "page" : undefined}
+                      className={`${rowBase} items-start pr-8 hover:bg-border-soft ${openRoute === route ? "bg-border-soft" : ""}`}
+                    >
+                      <span
+                        aria-hidden
+                        className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${p.priority <= 2 ? "bg-crit" : "bg-warn"}`}
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate text-ink">{p.title}</span>
+                        {p.subject_label && <span className="block truncate text-xs text-ink-muted">{p.subject_label}</span>}
+                      </span>
+                    </button>
+                    {inPane && (
+                      <button
+                        type="button"
+                        onClick={walk}
+                        data-testid="needs-you-proposal-ask"
+                        aria-label={`Ask Astra about "${p.title}"`}
+                        title="Ask Astra about it"
+                        className="absolute right-1 top-1.5 flex h-6 w-6 items-center justify-center rounded text-ink-muted opacity-0 transition-opacity hover:bg-border hover:text-ink focus-visible:opacity-100 group-hover/row:opacity-100"
+                      >
+                        <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
               {proposalsTotal > Math.min(proposals.length, 5) && (
                 <li>
                   <button
                     type="button"
                     data-testid="needs-you-more"
-                    onClick={() => onAsk("What proposals are waiting for my decision, most urgent first?")}
+                    onClick={() =>
+                      onOpenView && matchPaneView("/studio/review", role)
+                        ? open("/studio/review")
+                        : onAsk("What proposals are waiting for my decision, most urgent first?")
+                    }
                     className={`${rowBase} text-xs text-ink-muted hover:bg-border-soft/60 hover:text-ink`}
                   >
                     {proposalsTotal - Math.min(proposals.length, 5)} more proposals
@@ -233,15 +271,19 @@ export function Rail({
           <ul className="space-y-0.5" data-testid="rail-views">
             {pinned.map((v) => {
               const Icon = v.icon;
+              const here = openPath === v.href;
               return (
                 <li key={v.href}>
                   <button
                     type="button"
-                    onClick={() => router.push(v.href)}
-                    className={`${rowBase} text-ink-soft hover:bg-border-soft/60 hover:text-ink`}
+                    onClick={() => open(v.href)}
+                    aria-current={here ? "page" : undefined}
+                    data-pane={matchPaneView(v.href) ? "true" : undefined}
+                    className={`${rowBase} ${here ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60 hover:text-ink"}`}
                   >
                     <Icon className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
                     <span className="truncate">{v.label}</span>
+                    {!matchPaneView(v.href) && <ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-ink-faint" aria-label="opens its page" />}
                   </button>
                 </li>
               );
@@ -265,10 +307,14 @@ export function Rail({
                         <li key={v.href}>
                           <button
                             type="button"
-                            onClick={() => router.push(v.href)}
-                            className={`${rowBase} text-ink-soft hover:bg-border-soft/60 hover:text-ink`}
+                            onClick={() => open(v.href)}
+                            aria-current={openPath === v.href ? "page" : undefined}
+                            className={`${rowBase} ${
+                              openPath === v.href ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60 hover:text-ink"
+                            }`}
                           >
                             <span className="truncate pl-1">{v.label}</span>
+                            {!matchPaneView(v.href) && <ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-ink-faint" aria-label="opens its page" />}
                           </button>
                         </li>
                       ))}
