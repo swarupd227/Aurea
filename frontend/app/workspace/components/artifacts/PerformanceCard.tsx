@@ -13,6 +13,7 @@ interface Attribution {
 
 interface Disclosures {
   synthetic_price_symbols: string[];
+  declared_price_symbols?: string[];
   unpriced_flat_symbols: string[];
   ledger_gap_lots: number;
   periods_skipped: number;
@@ -68,6 +69,7 @@ export function PerformanceCard({ result }: { result: PerformancePayload }) {
     { text: "No deposits or withdrawals recorded" },
   ];
   if (d.synthetic_price_symbols.length) chips.push({ text: `Synthetic price: ${d.synthetic_price_symbols.join(", ")}`, warn: true });
+  if (d.declared_price_symbols?.length) chips.push({ text: `Stated valuation: ${d.declared_price_symbols.join(", ")}` });
   if (d.unpriced_flat_symbols.length) chips.push({ text: `Held flat, no price history: ${d.unpriced_flat_symbols.join(", ")}`, warn: true });
   if (d.ledger_gap_lots > 0) chips.push({ text: `${d.ledger_gap_lots} purchase(s) not in the ledger`, warn: true });
   if (d.periods_skipped > 0) chips.push({ text: `${d.periods_skipped} month(s) skipped, no capital` });

@@ -12,6 +12,7 @@ from datetime import date
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core.pricing import price_basis
 from app.core.logging import get_logger
 from app.models.graph import Account
 from app.models.portfolio import Holding, Instrument, Price
@@ -68,6 +69,7 @@ async def revalue_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict:
             "price_source": price.source,
             "price_as_of": price.as_of.isoformat(),
             "is_real_price": price.is_real,
+            "price_basis": price_basis(price.source, price.is_real),
             "instrument": inst.symbol if inst else None,
         }
         # Confidence: real public price = high; synthetic/private = lower.

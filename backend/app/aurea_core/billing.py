@@ -30,9 +30,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import fees as fees_core
+from app.aurea_core.pricing import PRIVATE_MAX_STALE_DAYS, price_basis
 from app.aurea_core.valuation import latest_prices
 from app.core.db import utcnow
 from app.models.billing import ARRANGEMENT_SOURCES, FeeArrangement
+from app.models.enums import MarketType
 from app.models.graph import Account, Household, LegalEntity, Mandate, Person
 from app.models.onboarding import FeeSchedule
 from app.models.portfolio import Holding, Instrument
@@ -120,7 +122,7 @@ async def _valuations(session: AsyncSession, firm_id: uuid.UUID, account_ids: li
     out: dict[uuid.UUID, dict] = {}
     for aid, acc in accounts.items():
         out[aid] = {"account": acc, "cash": float(acc.cash_balance or 0), "securities": 0.0,
-                    "price_dates": [], "synthetic": set(), "unpriced": set()}
+                    "price_dates": [], "priced": [], "synthetic": set(), "declared": set(), "unpriced": set()}
     for h in holdings:
         v = out[h.account_id]
         mv = float(h.market_value or 0)
@@ -133,8 +135,15 @@ async def _valuations(session: AsyncSession, firm_id: uuid.UUID, account_ids: li
                 v["unpriced"].add(sym)
         else:
             v["price_dates"].append(price.as_of)
-            if not price.is_real:
+            # A private fund is current for about a quarter - its manager states a value quarterly -
+            # where a listed price is stale after a month.
+            private = bool(inst and inst.market_type == MarketType.PRIVATE)
+            v["priced"].append((sym, price.as_of, PRIVATE_MAX_STALE_DAYS if private else MAX_STALE_DAYS))
+            basis = price_basis(price.source, price.is_real)
+            if basis == "synthetic":
                 v["synthetic"].add(sym)
+            elif basis == "declared":
+                v["declared"].add(sym)
     for v in out.values():
         v["value"] = v["cash"] + v["securities"]
     return out
@@ -247,12 +256,22 @@ async def preview(session: AsyncSession, firm_id: uuid.UUID, *, as_of: date | No
             oldest = min(price_dates) if price_dates else None
             stale = (as_of - oldest).days if oldest else None
             synthetic = sorted(set().union(*[a["synthetic"] for a in r["accts"]])) if r["accts"] else []
+            declared = sorted(set().union(*[a["declared"] for a in r["accts"]])) if r["accts"] else []
             unpriced = sorted(set().union(*[a["unpriced"] for a in r["accts"]])) if r["accts"] else []
 
             checks = list(r["checks"])
-            if stale is not None and stale > MAX_STALE_DAYS:
+            # Each price is judged against ITS limit. The worst offender is named, so the block
+            # says which holding is out of date rather than only that something is.
+            overdue = sorted(((as_of - d).days - limit, sym, d, limit)
+                             for a in r["accts"] for sym, d, limit in a["priced"] if (as_of - d).days > limit)
+            if overdue:
+                _excess, sym, d, limit = overdue[-1]
                 checks.append(_check("stale_valuation", "block",
-                                     f"The oldest price used is {stale} days old (as of {oldest.isoformat()})."))
+                                     f"{sym}'s price is {(as_of - d).days} days old (as of {d.isoformat()}); "
+                                     f"the limit for it is {limit} days."))
+            if declared:
+                checks.append(_check("declared_valuation", "warn",
+                                     "Valued on a stated valuation, not a market price: " + ", ".join(declared)))
             if synthetic:
                 checks.append(_check("synthetic_price", "warn", "Valued on a synthetic price: " + ", ".join(synthetic)))
             if unpriced:
@@ -290,7 +309,8 @@ async def preview(session: AsyncSession, firm_id: uuid.UUID, *, as_of: date | No
                               "securities": round(a["securities"], 2)} for a in r["accts"]],
                 "valuation": {"basis": "snapshot", "basis_date": as_of.isoformat(),
                               "oldest_price_date": oldest.isoformat() if oldest else None, "stale_days": stale,
-                              "synthetic_price_symbols": synthetic, "unpriced_symbols": unpriced},
+                              "synthetic_price_symbols": synthetic, "declared_price_symbols": declared,
+                              "unpriced_symbols": unpriced},
                 "checks": checks,
                 "blocked": any(c["severity"] == "block" for c in checks),
             })

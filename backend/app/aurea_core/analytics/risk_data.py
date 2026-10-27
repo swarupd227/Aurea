@@ -48,7 +48,14 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
 
     latest = list((await latest_prices(session, firm_id)).values())
     real = sum(1 for p in latest if p.is_real)
-    fresh = sum(1 for p in latest if (date.today() - p.as_of).days <= PRICE_FRESH_DAYS)
+    from app.aurea_core.pricing import PRIVATE_MAX_STALE_DAYS
+    from app.models.enums import MarketType
+    from app.models.portfolio import Instrument
+
+    private_ids = {i for i in (await session.execute(select(Instrument.id).where(
+        Instrument.firm_id == firm_id, Instrument.market_type == MarketType.PRIVATE))).scalars().all()}
+    fresh = sum(1 for p in latest if (date.today() - p.as_of).days <=
+                (PRIVATE_MAX_STALE_DAYS if p.instrument_id in private_ids else PRICE_FRESH_DAYS))
     completeness = with_lineage / n
     timeliness = fresh / (len(latest) or 1)
     accuracy = real / (len(latest) or 1)

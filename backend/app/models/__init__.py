@@ -20,6 +20,7 @@ from app.models import (  # noqa: F401
     sleeves,
     telemetry,
     tenant,
+    valuations,
     thread,
     trading,
     vault,

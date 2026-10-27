@@ -54,6 +54,8 @@ class ToolExecutors:
             "check_household_wash_sale": self.check_household_wash_sale,
             "read_performance": self.read_performance,
             "read_billing": self.read_billing,
+            "read_private_valuations": self.read_private_valuations,
+            "record_valuation": self.record_valuation,
             "explain_invoice": self.explain_invoice,
             "run_billing": self.run_billing,
             "credit_invoice": self.credit_invoice,
@@ -217,6 +219,56 @@ class ToolExecutors:
             f"Time-weighted return {result['twr']:+.1%}{mwr} over {result['months']} month(s) "
             f"to {result['end']} (" + "; ".join(notes) + ")."
         )
+        return result
+
+    async def read_private_valuations(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import valuations
+
+        rows = await valuations.private_valuations(self.session, self.firm_id)
+        overdue = [r for r in rows if r["overdue"]]
+        return {
+            "instruments": rows,
+            "message": (f"{len(rows)} private holding(s); {len(overdue)} without a current stated valuation."
+                        if rows else "There are no private holdings."),
+        }
+
+    async def record_valuation(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from datetime import date as _date
+
+        from app.aurea_core import valuations
+        from app.models.identity import User
+
+        # The gateway checks the catalogue's roles; this re-checks, as for the other tools that move money.
+        if self.role not in (UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM):
+            raise ExecutorError("Recording a valuation changes client balances and fees, so only "
+                                "operations or the portfolio team may do it.")
+        symbol = (inputs.get("symbol") or "").strip()
+        inst = (await self.session.execute(
+            select(Instrument).where(Instrument.firm_id == self.firm_id, Instrument.symbol == symbol)
+        )).scalar_one_or_none()
+        if inst is None:
+            raise ExecutorError(f"No instrument with symbol '{symbol}'.")
+        try:
+            as_of = _date.fromisoformat(str(inputs.get("as_of") or ""))
+        except ValueError:
+            raise ExecutorError("as_of must be a date, YYYY-MM-DD.")
+        try:
+            unit_value = float(inputs.get("unit_value"))
+        except (TypeError, ValueError):
+            raise ExecutorError("unit_value must be a number.")
+        user = await self.session.get(User, self.user_id)
+        try:
+            result = await valuations.record_valuation(
+                self.session, self.firm_id, instrument_id=inst.id, as_of=as_of, unit_value=unit_value,
+                source_document=inputs.get("source_document") or "", notes=inputs.get("notes"),
+                recorded_by=user.email if user else "unknown")
+        except valuations.ValuationError as exc:
+            raise ExecutorError(str(exc))
+        move = f" ({result['change_pct']:+.1%} against {result['previous']['value']:,.4f})" if result["change_pct"] is not None else ""
+        result["message"] = (
+            f"Recorded {inst.symbol} at {result['unit_value']:,.4f} as at {result['as_of']}{move}, from "
+            f"{result['source_document']}. {result['holdings_revalued']} holding(s) revalued, "
+            f"{result['value_before']:,.2f} to {result['value_after']:,.2f}.")
         return result
 
     async def read_billing(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -539,7 +591,7 @@ class ToolExecutors:
 
         holdings: list[dict[str, Any]] = []
         total_value = 0.0
-        real_priced = synthetic_priced = 0
+        real_priced = synthetic_priced = declared_priced = 0
         if account_ids:
             rows = (
                 await self.session.execute(
@@ -559,9 +611,12 @@ class ToolExecutors:
                         select(Price).where(Price.instrument_id == inst.id).order_by(Price.as_of.desc()).limit(1)
                     )
                 ).scalar_one_or_none()
-                is_real = bool(latest_price.is_real) if latest_price else False
-                if is_real:
+                from app.aurea_core.pricing import price_basis
+                basis = price_basis(latest_price.source, bool(latest_price.is_real)) if latest_price else "synthetic"
+                if basis == "market":
                     real_priced += 1
+                elif basis == "declared":
+                    declared_priced += 1     # a stated valuation: not a market price, not invented
                 else:
                     synthetic_priced += 1
                 holdings.append({
@@ -570,7 +625,7 @@ class ToolExecutors:
                     "asset_class": str(inst.asset_class),
                     "quantity": float(h.quantity),
                     "market_value": mv,
-                    "price_source": "real" if is_real else "synthetic",
+                    "price_source": {"market": "real", "declared": "declared", "synthetic": "synthetic"}[basis],
                 })
 
         cash = sum(float(a.cash_balance or 0) for a in accounts)
@@ -582,7 +637,7 @@ class ToolExecutors:
             "holdings": holdings,
             "cash": cash,
             "total_value": total_value,
-            "pricing": {"real": real_priced, "synthetic": synthetic_priced},
+            "pricing": {"real": real_priced, "declared": declared_priced, "synthetic": synthetic_priced},
             "message": f"{mandate.name}: {len(holdings)} holding(s), cash {cash:,.2f}, total value {total_value:,.2f}",
         }
 

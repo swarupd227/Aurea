@@ -44,3 +44,20 @@ def range_for_gap(days: int | None) -> str:
     if days <= 350:
         return "1y"
     return "2y"
+
+
+# ── Private holdings ─────────────────────────────────────────────────────────────────────
+# A private fund has no market to quote it. Its value is whatever the manager last stated,
+# which is neither a market price (nothing may ever trade on it) nor an invented one (it has
+# a source document and a person behind it). It gets its own name, and its own staleness limit:
+# a quarterly statement is current for roughly a quarter.
+DECLARED_SOURCE = "declared_valuation"
+# Applies to PRIVATE instruments; public prices use `billing.MAX_STALE_DAYS`.
+PRIVATE_MAX_STALE_DAYS = 100
+
+
+def price_basis(source: str | None, is_real: bool) -> str:
+    """"market" (a real quote), "declared" (a stated valuation with evidence) or "synthetic"."""
+    if source == DECLARED_SOURCE:
+        return "declared"
+    return "market" if is_real else "synthetic"

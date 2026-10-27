@@ -8,6 +8,7 @@ import { SleeveNettingCard } from "./SleeveNettingCard";
 import { WashSaleCalendarCard } from "./WashSaleCalendarCard";
 import { PerformanceCard } from "./PerformanceCard";
 import { BillingCard } from "./BillingCard";
+import { ValuationCard } from "./ValuationCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
@@ -51,6 +52,12 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
       case "check_household_wash_sale":
         if (!Array.isArray(artifact.result?.violations)) return null;
         return <WashSaleCalendarCard result={artifact.result as any} />;
+      case "read_private_valuations":
+        if (!Array.isArray(artifact.result?.instruments)) return null;
+        return <ValuationCard result={artifact.result as any} />;
+      case "record_valuation":
+        if (typeof artifact.result?.unit_value !== "number") return null;
+        return <ValuationCard result={artifact.result as any} />;
       case "read_billing":
       case "run_billing":
       case "credit_invoice":

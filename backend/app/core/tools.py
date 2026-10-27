@@ -181,6 +181,38 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
     ),
 
+    "read_private_valuations": Tool(
+        key="read_private_valuations",
+        name="Read Private Valuations",
+        speaking_agent="astra",
+        description="What each private holding (unlisted fund) is carried at: the value, whether it is a stated valuation or only a placeholder, the date, how old that is against the limit for private holdings, who recorded it and from which document, and how much of the book rests on it.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Private instruments with their latest valuation, age and exposure"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "record_valuation": Tool(
+        key="record_valuation",
+        name="Record Valuation",
+        speaking_agent="astra",
+        description="Record the value a manager has stated for a private holding, with the document it comes from. This revalues every holding of it, which changes client balances and the fees charged on them. Needs a source document; a move of more than 50% also needs a note explaining it.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this valuation? It revalues every holding of this fund, which changes client balances and the fees charged on them.",
+        inputs=[
+            ToolInput("symbol", "string", "The private instrument's symbol, e.g. PPEF1", required=True),
+            ToolInput("unit_value", "number", "The stated value per unit", required=True),
+            ToolInput("as_of", "string", "The date the value is stated as at (YYYY-MM-DD)", required=True),
+            ToolInput("source_document", "string", "The statement it comes from - name, date and manager", required=True),
+            ToolInput("notes", "string", "Required if the value moved by more than 50%", required=False),
+        ],
+        output=ToolOutput("object", "The recorded valuation, the move, and the value revalued"),
+        roles_required={UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

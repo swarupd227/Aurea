@@ -40,6 +40,7 @@ interface InvoicePayload {
       oldest_price_date: string | null;
       stale_days: number | null;
       synthetic_price_symbols: string[];
+      declared_price_symbols?: string[];
       unpriced_symbols: string[];
     };
   };
@@ -149,6 +150,7 @@ export function InvoiceCard({ result }: { result: InvoicePayload }) {
         {val && <span className="chip text-ink-muted">snapshot valued {val.basis_date}</span>}
         {val?.oldest_price_date && <span className={`chip ${stale ? "text-crit" : "text-ink-muted"}`}>oldest price {val.oldest_price_date}{val.stale_days != null ? ` · ${val.stale_days}d` : ""}</span>}
         {val?.synthetic_price_symbols?.length ? <span className="chip text-warn">synthetic price: {val.synthetic_price_symbols.join(", ")}</span> : null}
+        {val?.declared_price_symbols?.length ? <span className="chip text-ink-muted">stated valuation: {val.declared_price_symbols.join(", ")}</span> : null}
         {val?.unpriced_symbols?.length ? <span className="chip text-warn">no price: {val.unpriced_symbols.join(", ")}</span> : null}
         {result.credit_of && <span className="chip text-ink-muted">offsets {result.credit_of}</span>}
         {result.checks.map((k) => (

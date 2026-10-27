@@ -169,6 +169,7 @@ function HouseholdPerformance({ householdId }: { householdId: string }) {
         <span className="chip bg-border-soft text-ink-muted">Securities only</span>
         <span className="chip bg-border-soft text-ink-muted">Gross of fees</span>
         {d.synthetic_price_symbols.length > 0 && <span className="chip bg-border-soft text-warn">Synthetic price: {d.synthetic_price_symbols.join(", ")}</span>}
+        {d.declared_price_symbols?.length > 0 && <span className="chip bg-border-soft text-ink-muted">Stated valuation: {d.declared_price_symbols.join(", ")}</span>}
         {d.unpriced_flat_symbols.length > 0 && <span className="chip bg-border-soft text-warn">Held flat: {d.unpriced_flat_symbols.join(", ")}</span>}
         {d.ledger_gap_lots > 0 && <span className="chip bg-border-soft text-warn">{d.ledger_gap_lots} purchase(s) not in ledger</span>}
         {d.stale_days > 45 && <span className="chip bg-border-soft text-warn">Prices as of {d.as_of}</span>}

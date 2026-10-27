@@ -85,6 +85,8 @@ _TOOLS = [
      "Applies cash/holding/tax-lot arithmetic for a corporate action — cannot be undone or re-posted."),
     ("credit_invoice", "Credit Invoice (tool)", "tool", "Head of Operations", "high",
      "Offsets an issued invoice in full and returns any fee already taken to the client's cash."),
+    ("record_valuation", "Record Valuation (tool)", "tool", "Head of Operations", "high",
+     "Records a manager's stated value for a private holding - revalues every holding of it, which changes client balances and the fees charged on them."),
     ("run_billing", "Prepare Billing Run (tool)", "tool", "Head of Operations", "medium",
      "Has the billing agent draft a run for approval; nothing is issued or taken until it is approved."),
 ]

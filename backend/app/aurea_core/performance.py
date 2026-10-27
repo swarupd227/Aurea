@@ -30,7 +30,7 @@ from datetime import date
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core.pricing import month_end_points
+from app.aurea_core.pricing import month_end_points, price_basis
 from app.core.db import utcnow
 from app.models.graph import Account, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import (
@@ -53,6 +53,7 @@ def _empty(account_value: float = 0.0, **disclosure) -> dict:
         "account_value": round(account_value, 2),
         "disclosures": {"scope": "securities_only", "gross_of_fees": True,
                          "external_cash_flows_recorded": False, "synthetic_price_symbols": [],
+                         "declared_price_symbols": [],
                          "unpriced_flat_symbols": [], "ledger_gap_lots": 0, "periods_skipped": 0,
                          "as_of": None, "stale_days": None, **disclosure},
     }
@@ -159,17 +160,21 @@ async def performance_for_accounts(
         select(Price).where(Price.instrument_id.in_(instrument_ids)).order_by(Price.as_of.asc())
     )).scalars().all() if instrument_ids else []
     raw: dict[uuid.UUID, dict[date, float]] = defaultdict(dict)
-    real_on: dict[tuple[uuid.UUID, date], bool] = {}
+    basis_on: dict[tuple[uuid.UUID, date], str] = {}
     for p in prices:
         raw[p.instrument_id][p.as_of] = _f(p.close)
-        real_on[(p.instrument_id, p.as_of)] = bool(p.is_real)
+        basis_on[(p.instrument_id, p.as_of)] = price_basis(p.source, p.is_real)
     # Prices are stored daily; this engine reads them monthly. Counting days as months would
     # scale every return series and the composites' "months of history" by about twenty.
     closes: dict[uuid.UUID, dict[date, float]] = {iid: month_end_points(pts) for iid, pts in raw.items()}
     # Synthetic only if a point actually USED is - an old synthetic row that real history has
     # since replaced must not brand the instrument forever.
     synthetic: set[uuid.UUID] = {iid for iid, pts in closes.items()
-                                 if any(not real_on[(iid, d)] for d in pts)}
+                                 if any(basis_on[(iid, d)] == "synthetic" for d in pts)}
+    # A private fund's stated valuation is not a market price, but it is not invented either:
+    # it is named for what it is.
+    declared: set[uuid.UUID] = {iid for iid, pts in closes.items()
+                                if any(basis_on[(iid, d)] == "declared" for d in pts)}
 
     def symbol(iid) -> str:
         i = instruments.get(iid)
@@ -181,6 +186,7 @@ async def performance_for_accounts(
 
     base_disclosure = {
         "synthetic_price_symbols": sorted(symbol(i) for i in priced if i in synthetic),
+        "declared_price_symbols": sorted(symbol(i) for i in priced if i in declared),
         "unpriced_flat_symbols": sorted(symbol(i) for i in unpriced),
         "ledger_gap_lots": 0,
     }

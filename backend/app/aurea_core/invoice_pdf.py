@@ -91,6 +91,9 @@ def render_invoice_pdf(view: dict, *, firm_name: str, accent: str = "#c8a35e", b
                               f"{val.get('oldest_price_date') or 'not recorded'}."), ln=True)
             if val.get("synthetic_price_symbols"):
                 pdf.cell(0, 6, _a("  Valued on estimated prices: " + ", ".join(val["synthetic_price_symbols"])), ln=True)
+            if val.get("declared_price_symbols"):
+                pdf.cell(0, 6, _a("  Valued on the manager's stated valuation, not a market price: "
+                                  + ", ".join(val["declared_price_symbols"])), ln=True)
             if val.get("unpriced_symbols"):
                 pdf.cell(0, 6, _a("  No market price, valued at the recorded amount: " + ", ".join(val["unpriced_symbols"])), ln=True)
             pdf.ln(3)

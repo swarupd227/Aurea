@@ -146,6 +146,9 @@ export default function Analytics() {
               {pf.performance.disclosures?.synthetic_price_symbols?.length > 0 && (
                 <span className="chip bg-caution/10 text-caution">Synthetic price: {pf.performance.disclosures.synthetic_price_symbols.join(", ")}</span>
               )}
+              {pf.performance.disclosures?.declared_price_symbols?.length > 0 && (
+                <span className="chip bg-navy-50 text-ink-muted">Stated valuation: {pf.performance.disclosures.declared_price_symbols.join(", ")}</span>
+              )}
               {pf.performance.disclosures?.unpriced_flat_symbols?.length > 0 && (
                 <span className="chip bg-caution/10 text-caution">Held flat: {pf.performance.disclosures.unpriced_flat_symbols.join(", ")}</span>
               )}

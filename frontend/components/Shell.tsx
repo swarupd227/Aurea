@@ -32,6 +32,7 @@ const STAFF_NAV: NavGroup[] = [
       { href: "/studio/analytics", label: "Analytics", icon: BarChart3, roles: [A, PT, R, B] },
       { href: "/studio/composites", label: "Composites", icon: LineChart, roles: [A, PT, R, C] },
       { href: "/studio/billing", label: "Billing", icon: Banknote, roles: [A, C, O, B] },
+      { href: "/studio/valuations", label: "Valuations", icon: Landmark, roles: [PT, O, C, B] },
       { href: "/studio/tasks", label: "Tasks", icon: CheckSquare, roles: [A, P] },
       { href: "/studio/capacity", label: "Capacity & outcomes", icon: Gauge, roles: [B, A] },
     ],
