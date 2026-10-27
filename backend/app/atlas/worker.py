@@ -9,12 +9,13 @@ import asyncio
 from datetime import timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
 
 from app.agents import schedules as agent_schedules
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
-from app.conduit.service import sync_market_data
+
 from app.core.db import SessionLocal
 from app.core.logging import configure_logging, get_logger
 from app.models.enums import MandateType
@@ -60,12 +61,34 @@ async def _heartbeat() -> None:
 
 
 async def _refresh_market_data() -> None:
+    """Fetch prices, backfill any gap, and revalue holdings - recorded as a connector sync.
+
+    Goes through `run_sync` rather than calling the fetch directly, so a scheduled run and the
+    admin "Sync now" button leave the same record (including every symbol that failed and why).
+    It used to be registered paused and called the fetch bare, which is why prices stopped at
+    the day the demo was seeded."""
+    from app.conduit.service import ensure_default_connectors, run_sync
+    from app.models.connectors import Connector
+    from app.models.enums import ConnectorDomain
+
     async with SessionLocal() as s:
         firms = (await s.execute(select(Firm))).scalars().all()
         for firm in firms:
             try:
-                await sync_market_data(s, firm.id)
+                await ensure_default_connectors(s, firm.id)
+                connector = (await s.execute(
+                    select(Connector).where(Connector.firm_id == firm.id,
+                                            Connector.domain == ConnectorDomain.MARKET_RESEARCH_DATA,
+                                            Connector.use_mock.is_(False))
+                )).scalars().first()
+                if connector is None:  # an admin turned the live feed off; respect that
+                    continue
+                sync = await run_sync(s, connector)
                 await s.commit()
+                d = sync.detail or {}
+                log.info("market_refresh", firm=firm.slug, status=sync.status, resolved=d.get("resolved"),
+                         inserted=d.get("inserted"), failed=len(d.get("failed") or {}),
+                         stale=len(d.get("stale") or []))
             except Exception as exc:  # pragma: no cover
                 await s.rollback()
                 log.warning("market_refresh_failed", firm=firm.slug, error=str(exc))
@@ -332,7 +355,14 @@ async def main() -> None:
     # rationale in agents/schedules.py ("before the adviser's day starts") would quietly
     # stop being true. The container is UTC today; this makes that a decision, not luck.
     scheduler = AsyncIOScheduler(timezone=timezone.utc)
-    scheduler.add_job(_refresh_market_data, "interval", minutes=60, id="market", next_run_time=None)
+    # Prices, twice each weekday, just after the closes (the scheduler runs in UTC):
+    #   06:00 UTC = 19:00 NZDT / 18:00 NZST - after NZX closes (16:45 NZ time).
+    #   22:00 UTC = 18:00 EDT / 17:00 EST    - an hour or more after the US close.
+    # Prices are data, not decisions, so this runs without anyone asking; every run is recorded.
+    scheduler.add_job(_refresh_market_data, CronTrigger(day_of_week="mon-fri", hour=6, minute=0),
+                      id="market_nz")
+    scheduler.add_job(_refresh_market_data, CronTrigger(day_of_week="mon-fri", hour=22, minute=0),
+                      id="market_us")
     # Drift is no longer registered here — it is scheduled from AgentConfig like every
     # other scheduled agent, at the same 6-hourly cadence (see agents/schedules.py). One
     # mechanism rather than two, and its cadence is now changeable in Admin.
@@ -351,6 +381,12 @@ async def main() -> None:
     except Exception as exc:  # pragma: no cover
         log.warning("initial_schedule_sync_failed", error=str(exc))
     log.info("worker_started", jobs=[j.id for j in scheduler.get_jobs()])
+    # Catch up now rather than waiting for the next close: a worker that was down, or a database
+    # seeded months ago, would otherwise serve stale prices until the next scheduled run.
+    try:
+        await _refresh_market_data()
+    except Exception as exc:  # pragma: no cover
+        log.warning("initial_market_refresh_failed", error=str(exc))
     try:
         await _heartbeat()  # an immediate first pulse
     except Exception as exc:  # pragma: no cover

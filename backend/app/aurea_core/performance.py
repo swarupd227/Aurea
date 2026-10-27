@@ -24,12 +24,13 @@ from __future__ import annotations
 
 import uuid
 from bisect import bisect_left
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import date
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core.pricing import month_end_points
 from app.core.db import utcnow
 from app.models.graph import Account, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import (
@@ -37,7 +38,7 @@ from app.models.portfolio import (
 )
 
 _EPS = 1e-9
-_SNAP_DAYS = 3
+_SNAP_DAYS = 5   # month-end closes of different exchanges can sit several days apart around holidays
 _INCOME_TYPES = {"dividend", "distribution"}
 
 
@@ -157,12 +158,18 @@ async def performance_for_accounts(
     prices = (await session.execute(
         select(Price).where(Price.instrument_id.in_(instrument_ids)).order_by(Price.as_of.asc())
     )).scalars().all() if instrument_ids else []
-    closes: dict[uuid.UUID, dict[date, float]] = defaultdict(dict)
-    synthetic: set[uuid.UUID] = set()
+    raw: dict[uuid.UUID, dict[date, float]] = defaultdict(dict)
+    real_on: dict[tuple[uuid.UUID, date], bool] = {}
     for p in prices:
-        closes[p.instrument_id][p.as_of] = _f(p.close)
-        if not p.is_real:
-            synthetic.add(p.instrument_id)
+        raw[p.instrument_id][p.as_of] = _f(p.close)
+        real_on[(p.instrument_id, p.as_of)] = bool(p.is_real)
+    # Prices are stored daily; this engine reads them monthly. Counting days as months would
+    # scale every return series and the composites' "months of history" by about twenty.
+    closes: dict[uuid.UUID, dict[date, float]] = {iid: month_end_points(pts) for iid, pts in raw.items()}
+    # Synthetic only if a point actually USED is - an old synthetic row that real history has
+    # since replaced must not brand the instrument forever.
+    synthetic: set[uuid.UUID] = {iid for iid, pts in closes.items()
+                                 if any(not real_on[(iid, d)] for d in pts)}
 
     def symbol(iid) -> str:
         i = instruments.get(iid)
@@ -197,7 +204,10 @@ async def performance_for_accounts(
                     best = (gap, ds[j])
         return best[1] if best else None
 
-    reference = Counter(tuple(sorted_dates[iid]) for iid in priced).most_common(1)[0][0]
+    # The longest history sets the calendar. (It used to be the most COMMON exact date list,
+    # which only worked while instruments shared dates; month-end closes fall on different
+    # trading days, so every list is unique and "most common" would pick one arbitrarily.)
+    reference = max(sorted_dates.values(), key=lambda ds: (len(ds), ds[-1]))
     grid: list[date] = []
     px: dict[uuid.UUID, dict[date, float]] = {iid: {} for iid in priced}
     for g in reference:

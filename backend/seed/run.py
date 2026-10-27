@@ -564,7 +564,8 @@ async def _seed_price_history(s, firm_id):
     added = 0
     for inst in instruments:
         hist = await fetch_history_yahoo(inst.symbol)
-        if len(hist) < 2:
+        invented = len(hist) < 2
+        if invented:
             # Synthetic deterministic monthly path back from the current synthetic price.
             latest = (await s.execute(select(Price).where(Price.instrument_id == inst.id)
                                       .order_by(Price.as_of.desc()))).scalars().first()
@@ -581,8 +582,12 @@ async def _seed_price_history(s, firm_id):
                                                           Price.as_of == d))).scalar_one_or_none()
             if exists:
                 continue
+            # The offline fallback above is an invented path. It used to be stored here as real
+            # Yahoo history, which broke the rule that nothing synthetic is ever called real.
             s.add(Price(firm_id=firm_id, instrument_id=inst.id, as_of=d, close=close,
-                        currency=inst.currency, source="yahoo_history", is_real=True))
+                        currency=inst.currency,
+                        source="synthetic_history" if invented else "yahoo_history",
+                        is_real=not invented))
             added += 1
     await s.flush()
     log.info("price_history_seeded", points=added)

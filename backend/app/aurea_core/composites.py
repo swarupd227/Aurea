@@ -46,12 +46,13 @@ async def account_return_series(session: AsyncSession, account_id: uuid.UUID) ->
 
     account = await session.get(Account, account_id)
     if account is None:
-        return {"periods": [], "returns": [], "account_value": 0.0}
+        return {"periods": [], "returns": [], "account_value": 0.0, "start": None, "end": None}
     perf = await performance.account_performance(session, account_id, firm_id=account.firm_id)
     return {
         "periods": [p["end"] for p in perf["periods"]],
         "returns": [p["return"] for p in perf["periods"]],
         "account_value": perf["account_value"],
+        "start": perf["start"], "end": perf["end"],
     }
 
 
@@ -75,6 +76,8 @@ def _composite_series(per_account: list[dict]) -> list[float]:
 
 
 async def composite_report(session: AsyncSession, composite: Composite) -> dict:
+    from app.aurea_core import performance
+
     model = await session.get(ModelPortfolio, composite.model_portfolio_id)
     mandates = (await session.execute(
         select(Mandate).where(
@@ -124,24 +127,17 @@ async def composite_report(session: AsyncSession, composite: Composite) -> dict:
         monthly_std = statistics.pstdev(series)
         ex_post_std_dev = round(monthly_std * (12 ** 0.5), 4)
 
+    # The benchmark is measured over exactly the window the composite was, not over whatever
+    # price history happens to be stored (which now grows daily).
     benchmark = None
     if model and model.benchmark_symbol:
-        bm_prices = (await session.execute(
-            select(Price).where(Price.firm_id == composite.firm_id).order_by(Price.as_of.asc())
-        )).scalars().all()
-        # Matched by symbol via a join would need the Instrument row; a composite report
-        # is infrequent enough that a targeted lookup is clearer than pre-joining above.
-        from app.models.portfolio import Instrument
-        inst = (await session.execute(
-            select(Instrument).where(Instrument.firm_id == composite.firm_id, Instrument.symbol == model.benchmark_symbol)
-        )).scalar_one_or_none()
-        if inst:
-            bm_points = [p for p in bm_prices if p.instrument_id == inst.id]
-            if len(bm_points) >= 2 and float(bm_points[0].close) > 0:
-                benchmark = {
-                    "symbol": model.benchmark_symbol,
-                    "return": round((float(bm_points[-1].close) - float(bm_points[0].close)) / float(bm_points[0].close), 4),
-                }
+        starts = [p["start"] for p in per_account if p.get("start")]
+        ends = [p["end"] for p in per_account if p.get("end")]
+        if starts and ends:
+            bm = await performance.benchmark_return(
+                session, composite.firm_id, model.benchmark_symbol, min(starts), max(ends))
+            if bm is not None:
+                benchmark = {"symbol": model.benchmark_symbol, "return": bm}
 
     return {
         "composite_id": str(composite.id), "name": composite.name,

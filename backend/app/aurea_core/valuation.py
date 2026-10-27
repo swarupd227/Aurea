@@ -9,7 +9,7 @@ import uuid
 from collections import defaultdict
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -20,16 +20,23 @@ log = get_logger("aurea.valuation")
 
 
 async def latest_prices(session: AsyncSession, firm_id: uuid.UUID) -> dict[uuid.UUID, Price]:
-    """Most recent price per instrument for a firm."""
+    """Most recent price per instrument for a firm - one row each, chosen in the database.
+
+    Prices are stored daily, so loading every row and de-duplicating in Python (as this used
+    to) grows with the history; the unique (instrument, as_of) key makes the join exact."""
+    latest = (
+        select(Price.instrument_id.label("iid"), func.max(Price.as_of).label("mx"))
+        .where(Price.firm_id == firm_id)
+        .group_by(Price.instrument_id)
+        .subquery()
+    )
     rows = (
         await session.execute(
-            select(Price).where(Price.firm_id == firm_id).order_by(Price.as_of.desc())
+            select(Price).join(latest, and_(Price.instrument_id == latest.c.iid, Price.as_of == latest.c.mx))
+            .where(Price.firm_id == firm_id)
         )
     ).scalars().all()
-    out: dict[uuid.UUID, Price] = {}
-    for p in rows:
-        out.setdefault(p.instrument_id, p)  # first seen = latest due to ordering
-    return out
+    return {p.instrument_id: p for p in rows}
 
 
 async def revalue_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict:
@@ -54,7 +61,10 @@ async def revalue_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict:
             continue
         mv = float(h.quantity) * float(price.close)
         h.market_value = mv
+        # Merged, not replaced: a holding's lineage also records where it came from
+        # (onboarding, settlement, an acquired book), which a revaluation must not erase.
         h.lineage = {
+            **(h.lineage or {}),
             "price_source": price.source,
             "price_as_of": price.as_of.isoformat(),
             "is_real_price": price.is_real,

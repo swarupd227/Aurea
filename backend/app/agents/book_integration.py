@@ -218,7 +218,11 @@ class BookIntegrationAgent(BaseAgent):
             inst = inst_by_symbol.get(h["symbol"])
             if not acc or not inst:
                 continue
-            price = (await s.execute(select(Price).where(Price.instrument_id == inst.id))).scalars().first()
+            # The latest price - without an order this picked an arbitrary row, which was only
+            # tolerable while each instrument had a single price.
+            price = (await s.execute(
+                select(Price).where(Price.instrument_id == inst.id).order_by(Price.as_of.desc()).limit(1)
+            )).scalars().first()
             px = float(price.close) if price else 1.0
             holding = Holding(firm_id=ctx.firm.id, account_id=acc.id, instrument_id=inst.id,
                               quantity=h["quantity"], market_value=h["quantity"] * px,

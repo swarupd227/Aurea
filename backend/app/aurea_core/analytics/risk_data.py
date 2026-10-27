@@ -40,12 +40,18 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
     n = len(holdings) or 1
     with_lineage = sum(1 for h in holdings if h.lineage)
     avg_conf = sum(float(h.confidence or 0) for h in holdings) / n
-    prices = (await session.execute(select(Price).where(Price.firm_id == firm_id))).scalars().all()
-    real = sum(1 for p in prices if p.is_real)
-    today_priced = sum(1 for p in prices if p.as_of == date.today())
+    # Judged on each instrument's LATEST price. This used to count every stored row, so the more
+    # history there was the closer "timeliness" fell to zero - and a daily feed would have
+    # driven it there by being correct.
+    from app.aurea_core.pricing import PRICE_FRESH_DAYS
+    from app.aurea_core.valuation import latest_prices
+
+    latest = list((await latest_prices(session, firm_id)).values())
+    real = sum(1 for p in latest if p.is_real)
+    fresh = sum(1 for p in latest if (date.today() - p.as_of).days <= PRICE_FRESH_DAYS)
     completeness = with_lineage / n
-    timeliness = today_priced / (len(prices) or 1)
-    accuracy = real / (len(prices) or 1)
+    timeliness = fresh / (len(latest) or 1)
+    accuracy = real / (len(latest) or 1)
     dq_score = round((completeness * 0.3 + timeliness * 0.25 + accuracy * 0.2 + avg_conf * 0.25), 3)
 
     # ── Agent performance (reuse the evaluation harness) ──
