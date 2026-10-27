@@ -18,8 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.atlas import narration
+from app.core import agent_runs
 from app.core.db import SessionLocal, get_db
-from app.core.decision_rights import roles_for
+from app.core.decision_rights import queue_action, roles_for
 from app.core.logging import get_logger
 from app.core.security import get_current_user
 from app.core.tools import tools_for_role
@@ -212,12 +213,14 @@ async def create_thread(
     }
 
 
-async def _my_open_proposals(session: AsyncSession, user: User) -> list[Recommendation]:
-    """Open agent proposals this role may decide, most urgent first.
+async def _my_open_proposals(session: AsyncSession, user: User) -> list[tuple[Recommendation, str]]:
+    """Open agent proposals this role is asked about, most urgent first, each with what it is asked
+    to do ("decide", or "veto" for compliance on a proposal that moves money).
 
     The rights come from decision_rights - the same source the decide route and the executor
     use - so the rail never offers a decision the server would refuse. Admins configure the
-    platform and hold no proposals to decide.
+    platform and hold no proposals to decide. Compliance is asked only where its veto is the
+    control (decision_rights.queue_action), not about every draft it could technically approve.
     """
     if user.role in (UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.CLIENT):
         return []
@@ -229,7 +232,7 @@ async def _my_open_proposals(session: AsyncSession, user: User) -> list[Recommen
         .order_by(Recommendation.priority.asc(), Recommendation.created_at.desc())
         .limit(200)
     )).scalars().all()
-    return [r for r in recs if role in roles_for(r.agent_key, "approve")]
+    return [(r, a) for r in recs if (a := queue_action(role, r.agent_key))]
 
 
 @router.get("/needs-you")
@@ -274,9 +277,10 @@ async def needs_you(
             "agent_key": str(r.agent_key),
             "subject_label": r.subject_label,
             "priority": r.priority,
+            "action": action,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
-        for r in mine[:8]
+        for r, action in mine[:8]
     ]
 
     return {
@@ -308,7 +312,8 @@ async def briefing(
     threads_stmt = select(func.count(Thread.id)).where(Thread.firm_id == user.firm_id)
     threads_count = (await session.execute(threads_stmt)).scalar_one()
 
-    agents_count = len(tools_for_role(user.role))
+    # Agents, not tools: the count of agents this role may start from a conversation.
+    agents_count = len(agent_runs.runnable_agents(user.role))
 
     rows = [
         {

@@ -75,6 +75,8 @@ export interface NeedsYouProposal {
   agent_key: string;
   subject_label: string | null;
   priority: number;
+  /** "decide": the role may approve it. "veto": its standing is to dismiss or roll back (compliance, on money). */
+  action?: "decide" | "veto";
   created_at: string | null;
 }
 

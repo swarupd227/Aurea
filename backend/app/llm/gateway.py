@@ -34,6 +34,7 @@ from app.models.thread import (
     PendingAction, PendingActionStatus,
 )
 from app.atlas import narration
+from app.llm import follow_ups
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.llm.service import llm_service
 
@@ -131,6 +132,7 @@ class Gateway:
         messages = await self._build_messages(thread_id)
         accumulated_text: list[str] = []
         astra_msg: ThreadMessage | None = None
+        used_tools: list[dict[str, Any]] = []     # what this turn found, for the follow-up suggestions
 
         try:
             for _round in range(MAX_TOOL_ROUNDS):
@@ -257,6 +259,7 @@ class Gateway:
                         tool_call.status = ToolCallStatus.DONE
                         tool_call.result = result
                         tool_call.completed_at = datetime.utcnow()
+                        used_tools.append({"tool_key": tool_key, "inputs": inputs, "result": result})
                         yield {"type": "tool_result", "tool_key": tool_key, "ok": True}
                         tool_result_blocks.append({
                             "type": "tool_result", "tool_use_id": tool_use["id"],
@@ -287,16 +290,16 @@ class Gateway:
             return
 
         final_text = "\n\n".join(t for t in accumulated_text if t.strip())
+        suggestions = follow_ups.derive(self.role, used_tools) if final_text else []
         if astra_msg is None:
             astra_msg = ThreadMessage(
-                thread_id=thread_id, role=MessageRole.ASTRA, text=final_text,
-                suggestions=["Continue", "Show details", "Confirm action"] if final_text else [],
+                thread_id=thread_id, role=MessageRole.ASTRA, text=final_text, suggestions=suggestions,
             )
             self.session.add(astra_msg)
             await self.session.flush()
         else:
             astra_msg.text = final_text
-            astra_msg.suggestions = ["Continue", "Show details", "Confirm action"] if final_text else []
+            astra_msg.suggestions = suggestions
 
         await self.session.commit()
         yield {"type": "done", "message_id": str(astra_msg.id)}

@@ -79,6 +79,24 @@ def roles_for(agent_key: str | AgentKey, decision: str) -> frozenset[UserRole]:
     return frozenset()
 
 
+def queue_action(role: UserRole | str, agent_key: str | AgentKey) -> str | None:
+    """What, if anything, a proposal from `agent_key` asks of `role` in its Needs-you queue.
+
+    "decide" - the role may approve it. "veto" - the role's standing on it is the veto alone
+    (dismiss before execution, roll back after): compliance on a proposal that moves a client's
+    book or cash. None - nothing the role should be chased for.
+
+    Compliance is deliberately not asked about proposals that move no money. It *may* decide them
+    - roles_for says any staff member can - but being chased for every client-care draft made the
+    queue noise; its queue is the proposals where its veto is the control. They remain on the
+    Recommendations page and in read_recommendations."""
+    role = UserRole(role) if not isinstance(role, UserRole) else role
+    approve = role in roles_for(agent_key, "approve")
+    if role in TRADE_VETO | BILLING_VETO:
+        return "veto" if role in roles_for(agent_key, "dismiss") and not approve else None
+    return "decide" if approve else None
+
+
 def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> None:
     """Raise DecisionForbidden unless `role` may take `decision` on this agent's proposal."""
     role = UserRole(role) if not isinstance(role, UserRole) else role
