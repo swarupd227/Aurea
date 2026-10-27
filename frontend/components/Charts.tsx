@@ -43,8 +43,8 @@ export function AllocationDonut({
   const total = entries.reduce((s, [, v]) => s + v, 0);
   const chart = entries.map(([k, v]) => ({ name: k, value: v }));
   return (
-    <div className="flex items-center gap-5">
-      <div style={{ width: size, height: size }} className="relative">
+    <div className="flex flex-wrap items-center gap-5">
+      <div style={{ width: size, height: size }} className="relative shrink-0">
         <ResponsiveContainer>
           <PieChart>
             <Pie data={chart} dataKey="value" innerRadius={size * 0.32} outerRadius={size * 0.48} paddingAngle={2} stroke="none">
@@ -59,7 +59,7 @@ export function AllocationDonut({
           <div className="text-sm font-semibold text-ink">{money(total)}</div>
         </div>
       </div>
-      <div className="space-y-1.5">
+      <div className="min-w-0 space-y-1.5">
         {chart.map((e) => (
           <div key={e.name} className="flex items-center gap-2 text-sm">
             <span className="h-2.5 w-2.5 rounded-sm" style={{ background: ASSET_COLORS[e.name] || "#9aa7b2" }} />

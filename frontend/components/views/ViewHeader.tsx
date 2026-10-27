@@ -20,12 +20,13 @@ export function ViewHeader({
   useViewTitle(title);
   if (inPane && !meta && !actions) return null;
   return (
-    <div className="mb-5 flex flex-col gap-3 cq-sm:flex-row cq-sm:items-start cq-sm:justify-between">
-      <div className="min-w-0">
+    // Wraps rather than squeezes: at the pane's width the actions drop under the title and chips.
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-[12rem] flex-1">
         {!inPane && <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>}
         {meta && <div className={`flex flex-wrap items-center gap-1.5 ${inPane ? "" : "mt-2"}`}>{meta}</div>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2 cq-sm:shrink-0 cq-sm:justify-end">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

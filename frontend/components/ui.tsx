@@ -48,10 +48,12 @@ export function StatTile({
   );
 }
 
+// Autonomy tiers have no colour of their own (rule 8): yellow is only agent-working, the primary
+// action and focus. The label carries the tier.
 const TIER_STYLES: Record<string, string> = {
-  tier_1: "bg-info-bg text-info",
-  tier_2: "bg-accent/20 text-accent",
-  tier_3: "bg-warn-bg text-warn",
+  tier_1: "bg-border-soft text-ink-soft border border-border",
+  tier_2: "bg-border-soft text-ink-soft border border-border",
+  tier_3: "bg-border-soft text-ink-soft border border-border",
 };
 const TIER_LABELS: Record<string, string> = {
   tier_1: "Tier 1 · Assistive",

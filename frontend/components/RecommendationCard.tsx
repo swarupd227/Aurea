@@ -529,7 +529,7 @@ export default function RecommendationCard({
                 <span className="flex items-center gap-2">
                   <span className="text-xs text-crit font-medium">Roll back?</span>
                   <button className="btn-ghost text-xs" onClick={() => setConfirmRollback(false)}>Cancel</button>
-                  <button className="btn-crit text-xs px-2 py-0.5" data-testid="rec-rollback-confirm" disabled={busy} onClick={rollback}>
+                  <button className="btn bg-crit-bg text-crit border border-border text-xs px-2 py-0.5" data-testid="rec-rollback-confirm" disabled={busy} onClick={rollback}>
                     {busy ? "Rolling back…" : "Confirm"}
                   </button>
                 </span>
