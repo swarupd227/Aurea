@@ -3,114 +3,33 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard, Users, ClipboardCheck, Bot, MessageSquareText, ShieldCheck,
-  Sparkles, Settings, LogOut, PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare,
-  MessageSquare, Gauge, BarChart3, Workflow, PiggyBank, Scale, Wand2, KeyRound, Eye, EyeOff, Bell,
-  AlertTriangle, CheckCircle2, Building2, Shield, Copy, Check, History, UserCircle, Landmark, Target,
-  Receipt, Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote,
+  Sparkles, LogOut, PiggyBank, Target, KeyRound, Eye, EyeOff, Bell, AlertTriangle, CheckCircle2,
+  Shield, Copy, Check, MessageSquare, ChevronRight, Search,
 } from "lucide-react";
 import { clearSession, getToken, getUser } from "@/lib/api";
+import { isViewActive, moreViews, pinnedViews, viewsForRole, hasWorkspace, type View } from "@/lib/nav";
 import RoleSwitcher from "./RoleSwitcher";
+import PageAsk from "./PageAsk";
+import { CommandPalette } from "./CommandPalette";
 
-// roles: which personas see an item. Omitted ⇒ all staff. 'admin' always sees everything.
-type NavItem = { href: string; label: string; icon: any; roles?: string[] };
-type NavGroup = { title: string; items: NavItem[] };
+// The pages ("Views") live in lib/nav.ts, shared with the Astra workspace rail and the palette.
+// The conversation is the home; the sidebar carries a role's handful of everyday views and tucks
+// the rest under "More views" - every one is still a keystroke away in the palette (Ctrl/Cmd+K).
 
-const A = "adviser", P = "paraplanner", PT = "portfolio_team", R = "research_cio",
-  C = "compliance", O = "operations", B = "branch_leader";
-
-const STAFF_NAV: NavGroup[] = [
-  {
-    title: "Studio",
-    items: [
-      { href: "/studio", label: "Cockpit", icon: LayoutDashboard, roles: [A, P, PT, B] },
-      { href: "/studio/workforce", label: "Workforce", icon: Workflow, roles: [A, PT, C, B] },
-      { href: "/studio/skills", label: "Skills", icon: Wand2, roles: [A, P, PT] },
-      { href: "/studio/clients", label: "Clients", icon: Users, roles: [A, P, PT, R, O, B] },
-      { href: "/studio/review", label: "Recommendations", icon: ClipboardCheck, roles: [A, PT, C] },
-      { href: "/studio/ask", label: "Ask your book", icon: MessageSquareText, roles: [A, P, R, B] },
-      { href: "/studio/analytics", label: "Analytics", icon: BarChart3, roles: [A, PT, R, B] },
-      { href: "/studio/composites", label: "Composites", icon: LineChart, roles: [A, PT, R, C] },
-      { href: "/studio/billing", label: "Billing", icon: Banknote, roles: [A, C, O, B] },
-      { href: "/studio/valuations", label: "Valuations", icon: Landmark, roles: [PT, O, C, B] },
-      { href: "/studio/tasks", label: "Tasks", icon: CheckSquare, roles: [A, P] },
-      { href: "/studio/capacity", label: "Capacity & outcomes", icon: Gauge, roles: [B, A] },
-    ],
-  },
-  {
-    title: "Acquire & onboard",
-    items: [
-      { href: "/studio/onboarding", label: "Onboarding", icon: UserPlus, roles: [O, C, A] },
-      { href: "/studio/book-integration", label: "Book integration", icon: GitMerge, roles: [O] },
-    ],
-  },
-  {
-    title: "Advise & engage",
-    items: [
-      { href: "/studio/meetings", label: "Meetings", icon: CalendarClock, roles: [A, P] },
-      { href: "/studio/reports", label: "Reports", icon: FileText, roles: [A, P, R] },
-      { href: "/studio/messages", label: "Messages", icon: MessageSquare, roles: [A, P] },
-      { href: "/studio/family", label: "Family aggregate", icon: UserCircle, roles: [A, P, PT] },
-      { href: "/studio/estate", label: "Estate & succession", icon: Landmark, roles: [A, P, PT] },
-      { href: "/studio/tax", label: "Tax intelligence", icon: Receipt, roles: [A, P, PT] },
-      { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT] },
-      { href: "/studio/regulatory-countdown", label: "Regulatory countdown", icon: Timer, roles: [A, P, PT] },
-      { href: "/studio/agent-history", label: "Agent history", icon: History, roles: [A, PT, C, B] },
-      { href: "/studio/pipeline", label: "Growth pipeline", icon: TrendingUp, roles: [A, P, PT] },
-      { href: "/studio/beneficiary-audit", label: "Beneficiary audit", icon: UserCheck, roles: [A, P, PT, C] },
-    ],
-  },
-  {
-    title: "Governance",
-    items: [
-      { href: "/provenance", label: "Provenance", icon: ShieldCheck, roles: [C, B] },
-      { href: "/studio/corporate-actions", label: "Corporate actions", icon: Repeat, roles: [O, C] },
-    ],
-  },
-  {
-    title: "Experience",
-    items: [
-      { href: "/canvas", label: "Client view — Canvas", icon: Sparkles, roles: [A, P, B] },
-      { href: "/canvas/retirement", label: "Client view — Retirement", icon: PiggyBank, roles: [A, P, B] },
-      { href: "/canvas/goals", label: "Client view — Goals", icon: Target, roles: [A, P, B] },
-    ],
-  },
-  {
-    title: "Configure",
-    items: [
-      { href: "/admin", label: "Firm & agents", icon: Settings, roles: [] },  // admin-only
-      { href: "/admin/foundation", label: "Common foundation", icon: ShieldCheck, roles: [] },
-      { href: "/admin/regulatory", label: "Regulatory", icon: Scale, roles: [C] },
-      { href: "/admin/connectors", label: "Connectors", icon: PlugZap, roles: [O] },
-    ],
-  },
-  {
-    title: "Platform",
-    items: [
-      { href: "/superadmin", label: "Firm management", icon: Building2, roles: ["superadmin_only"] },
-    ],
-  },
-];
-
-function navForRole(role: string): NavGroup[] {
-  if (role === "superadmin") {
-    // Superadmin sees only their specific section
-    return STAFF_NAV.filter((g) => g.title === "Platform").map((g) => ({
-      ...g,
-      items: g.items.filter((i) => i.roles?.includes("superadmin_only") ?? false),
-    }));
-  }
-  if (role === "admin") {
-    // Admin sees everything except superadmin-only items
-    return STAFF_NAV.map((g) => ({
-      ...g,
-      items: g.items.filter((i) => !i.roles?.includes("superadmin_only")),
-    })).filter((g) => g.items.length > 0);
-  }
-  return STAFF_NAV.map((g) => ({
-    ...g,
-    items: g.items.filter((i) => !i.roles || (!i.roles.includes("superadmin_only") && i.roles.includes(role))),
-  })).filter((g) => g.items.length > 0);
+function ViewLink({ item, pathname }: { item: View; pathname: string }) {
+  const active = isViewActive(pathname, item.href);
+  const Icon = item.icon;
+  return (
+    <Link
+      href={item.href}
+      className={`flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition ${
+        active ? "bg-white/10 text-white" : "text-navy-200/80 hover:bg-white/5 hover:text-white"
+      }`}
+    >
+      <Icon size={17} strokeWidth={1.9} />
+      {item.label}
+    </Link>
+  );
 }
 
 export default function Shell({ children }: { children: ReactNode }) {
@@ -259,13 +178,21 @@ export default function Shell({ children }: { children: ReactNode }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const nav = isClient
-    ? [{ title: "Experience", items: [
-        { href: "/canvas", label: "My wealth", icon: Sparkles },
-        { href: "/canvas/retirement", label: "My retirement", icon: PiggyBank },
-        { href: "/canvas/goals", label: "My goals", icon: Target },
-      ] }]
-    : navForRole(user.role);
+  // Clients see their own three views; the platform owner sees one; staff get the conversation,
+  // a handful of pinned views for their role, and the rest under "More views".
+  const clientViews: View[] = [
+    { href: "/canvas", label: "My wealth", icon: Sparkles, intent: "clients" },
+    { href: "/canvas/retirement", label: "My retirement", icon: PiggyBank, intent: "clients" },
+    { href: "/canvas/goals", label: "My goals", icon: Target, intent: "clients" },
+  ];
+  const isStaff = !isClient && user.role !== "superadmin";
+  const showAstra = hasWorkspace(user.role);
+  // Admin pages are configuration forms, not decisions; the dock stays off them.
+  const showDock = isStaff && showAstra && user.role !== "admin";
+  const pinned = isStaff ? pinnedViews(user.role) : isClient ? clientViews : viewsForRole(user.role);
+  const more = isStaff ? moreViews(user.role) : [];
+  const moreActive = more.some((g) => g.items.some((i) => isViewActive(pathname, i.href)));
+  const moreCount = more.reduce((n, g) => n + g.items.length, 0);
 
   return (
     <div className="min-h-screen flex bg-paper">
@@ -281,32 +208,66 @@ export default function Shell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
-          {nav.map((group) => (
-            <div key={group.title}>
-              <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-navy-200/50 mb-1.5">
-                {group.title}
-              </div>
-              <div className="space-y-0.5">
-                {group.items.map((item) => {
-                  const active = pathname === item.href || (item.href !== "/studio" && pathname.startsWith(item.href + "/"));
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition ${
-                        active ? "bg-white/10 text-white" : "text-navy-200/80 hover:bg-white/5 hover:text-white"
-                      }`}
-                    >
-                      <Icon size={17} strokeWidth={1.9} />
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5" data-testid="shell-nav">
+          {showAstra && (
+            <div className="space-y-0.5">
+              <Link
+                href="/workspace"
+                data-testid="nav-astra"
+                className="flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium text-white bg-white/10 hover:bg-white/15 transition"
+              >
+                <MessageSquare size={17} strokeWidth={1.9} />
+                Talk to Astra
+              </Link>
+              <button
+                type="button"
+                data-testid="nav-search"
+                onClick={() => window.dispatchEvent(new Event("astra:open-palette"))}
+                className="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm text-navy-200/80 hover:bg-white/5 hover:text-white transition"
+              >
+                <Search size={17} strokeWidth={1.9} />
+                Search or ask
+                <kbd className="ml-auto font-mono text-[10px] text-navy-200/50">Ctrl K</kbd>
+              </button>
             </div>
-          ))}
+          )}
+
+          <div>
+            {isStaff && (
+              <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-navy-200/50 mb-1.5">
+                Views
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {pinned.map((item) => (
+                <ViewLink key={item.href} item={item} pathname={pathname} />
+              ))}
+            </div>
+          </div>
+
+          {more.length > 0 && (
+            <details key={moreActive ? "open" : "closed"} open={moreActive} className="group" data-testid="nav-more-views">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-navy-200/80 hover:bg-white/5 hover:text-white transition [&::-webkit-details-marker]:hidden">
+                <ChevronRight size={15} className="transition-transform group-open:rotate-90" />
+                More views
+                <span className="ml-auto font-mono text-[11px] tabular-nums text-navy-200/50">{moreCount}</span>
+              </summary>
+              <div className="mt-2 space-y-4">
+                {more.map((group) => (
+                  <div key={group.intent}>
+                    <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-navy-200/50 mb-1.5">
+                      {group.title}
+                    </div>
+                    <div className="space-y-0.5">
+                      {group.items.map((item) => (
+                        <ViewLink key={item.href} item={item} pathname={pathname} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </nav>
 
         <div className="relative p-3 border-t border-white/5 space-y-1">
@@ -385,7 +346,12 @@ export default function Shell({ children }: { children: ReactNode }) {
       {/* Main */}
       <main className="flex-1 ml-64 min-h-screen">
         <div className="max-w-[1280px] mx-auto px-8 py-7 fade-in">{children}</div>
+        {showDock && <div aria-hidden className="h-36" />}
       </main>
+
+      {/* A conversation docked on every page: same Astra, same tools, never replaces the page. */}
+      {showDock && <PageAsk />}
+      {isStaff && <CommandPalette />}
 
       {/* MFA modal */}
       {showMfa && (

@@ -8,7 +8,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    // data-theme="dark" pins the default: without it the light palette in globals.css wins on any
+    // OS set to light, and the (white-on-transparent) classic shell becomes unreadable.
+    <html lang="en" className="dark" data-theme="dark">
       <head>
         <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='15' stroke='%23ffdd00' stroke-width='1.5' fill='%231a1f26'/><path d='M16 7l6 11H10l6-11z' fill='%23ffdd00' opacity='0.9'/><circle cx='16' cy='20' r='2.4' fill='%230f1418'/></svg>" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />

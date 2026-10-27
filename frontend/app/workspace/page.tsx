@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createThread, fetchMentionables, sendMessageStream } from "./api";
+import { fetchMentionables } from "./api";
 import { useWorkspace } from "./context";
 import { ThreadView } from "./components/ThreadView";
+import { startConversation } from "./lib/start";
 import type { Mentionable } from "./types";
 
 export default function WorkspaceHomePage() {
@@ -23,16 +24,10 @@ export default function WorkspaceHomePage() {
     setCreating(true);
     setError(null);
     try {
-      const thread = await createThread({ kind: "ask_astra", title: text.slice(0, 60) });
-      // Streamed but not rendered here — we navigate to the thread page as soon
-      // as it's created, which shows this same turn streaming live once mounted.
-      let streamError: string | null = null;
-      await sendMessageStream(thread.id, text, (event) => {
-        if (event.type === "error") streamError = event.message;
-      });
+      // The thread page sends the first message, so the turn streams in view with its steps.
+      const path = await startConversation(text);
       refetchThreads();
-      router.push(`/workspace/${thread.id}`);
-      if (streamError) setError(streamError);
+      router.push(path);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start conversation");
       setCreating(false);

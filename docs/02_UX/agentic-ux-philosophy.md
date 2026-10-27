@@ -94,21 +94,33 @@ Humans keep the gates, and an agent never crosses one on its own:
 
 ## Surfaces
 
-- **Workspace** — `/w/[threadId]`. Threads:
+- **Workspace** — `/workspace` and `/workspace/[id]` (built; the earlier `/w/[threadId]` plan was not used).
+  It is the staff home: every staff role lands on it; administrators, the platform owner and clients keep
+  their own page. Threads:
   - **Ask Astra** — the firm-wide thread, opening with the day's brief.
   - **One per household** — the natural unit of a client relationship.
   - **One per open onboarding case.**
   - **One per auto-paused agent or open surveillance incident.**
 
-  The left rail leads with conversations, then the agents currently at work, then the existing pages
-  under *Views*. The right pane shows the card the latest message opened, with *Open full view*.
+  The left rail reads, top to bottom: **Needs you** (confirmations paused in a thread, plus the agents'
+  open proposals this role may decide), **Conversations**, **Views**, then the agents the role can
+  mention. *Views* are the existing pages: a role's four or so everyday pages are pinned and the rest sit
+  under *More views*, grouped by intent (Decide, Clients & advice, Run the business, Govern the agents,
+  Configure). The list lives in `frontend/lib/nav.ts` and is shared by the rail, the classic sidebar and
+  the palette. An empty thread teaches by example — *Try saying* shows role-specific sentences, each one
+  answerable by a tool the role holds.
 
-- **Artifact views** — the existing pages, at their existing URLs. Pages where decisions are made — Review,
-  an onboarding case, Provenance, book integration — embed a conversation scoped to the page. It never
-  replaces the page.
+- **Artifact views** — the existing pages, at their existing URLs. Their sidebar is the same shape as the
+  rail: *Talk to Astra*, *Search or ask*, the role's pinned views, *More views*.
 
-- **⌘K** — a typed sentence goes to Astra in the open thread first; screens, clients and preferences are
-  the fallbacks.
+- **A conversation docked on every staff page** (`PageAsk`) — an inline composer and chips phrased for
+  the route (Billing: "Prepare this quarter's billing run"). It is the same Astra with the same tools; a
+  Confirm / Not now card in it is the server-held pause, and a confirmed change tells the page to reload
+  (`astra:changed`). It folds away; it never replaces the page. Not shown on administrator pages.
+
+- **⌘K / Ctrl+K** — global, on the workspace and on every classic page. A typed sentence goes to Astra
+  first and opens a new conversation that streams in view; a word or two that names a view or a client
+  goes there first with Astra second; conversations are the fallback.
 
 ## How it will be built
 
@@ -135,12 +147,15 @@ Humans keep the gates, and an agent never crosses one on its own:
 | Phase | What | State |
 |---|---|---|
 | 0 | Trade decision rights, exactly-once decisions, firm-scoped reads, client document scoping, stable test ids, this document | Done |
-| 1 | Visual system: dark default, one yellow accent, ok/warn/crit/info, palette cleanup, honest motion | Not started |
-| 2 | Tool catalogue, tool-capable model gateway, thread persistence, transcript validation | Not started |
-| 3 | Workspace: threads, rail, messages with Sources and suggestions, Confirm / Not now, right pane, ⌘K | Not started |
-| 4 | Runs narrate into threads; `run_agent` and the streaming path merged; proposal supersession | Not started |
-| 5 | Pages become artifact views: prose out of cards, page-scoped conversations, Ask and Canvas merged | Not started |
+| 1 | Visual system: dark default, one yellow accent, ok/warn/crit/info, palette cleanup, honest motion | Partly: dark is pinned on `<html>` and the workspace is on the tokens; most classic pages still use retired `navy-*` / `gold` classes |
+| 2 | Tool catalogue, tool-capable model gateway, thread persistence, transcript validation | Done — `core/tools.py` (35 tools), `llm/gateway.py`, `llm/executors.py` |
+| 3 | Workspace: threads, rail, messages with Sources and suggestions, Confirm / Not now, ⌘K | Done, except the right-hand detail pane ("Open full view") |
+| 4 | Runs narrate into threads; `run_agent` and the streaming path merged; proposal supersession | Not started — agent runs still start from the Cockpit / Delegate bar, not from a thread |
+| 5 | Pages become artifact views: prose out of cards, page-scoped conversations, Ask and Canvas merged | Started — a docked conversation on every staff page, role-pinned views; classic cards still carry prose, Ask-your-book (`studio/ask`) still stuffs a book snapshot into a prompt |
 | 6 | The rules as tests, run in CI | Started — decision rights, tenant scope and test-id checks exist |
 
-Until Phase 3 ships, the platform is page-first and none of the conversational rules above are yet
-enforced by the product. They bind new work now.
+Staff now land in the conversation. Pages remain, at the same URLs, as views the conversation and the
+sidebar open. What is still page-first: onboarding, meetings, reports, messages, tasks, estate, tax,
+behavioural finance, regulatory countdown, agent history, workforce, skills, analytics, capacity, book
+integration and every administrator tab have no conversation tool yet. Each is a tool to add
+(see "Extending it"), not a page to redesign.

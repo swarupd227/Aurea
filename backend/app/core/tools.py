@@ -365,6 +365,24 @@ TOOLS: dict[str, Tool] = {
                        UserRole.RESEARCH_CIO, UserRole.OPERATIONS, UserRole.ADMIN},
     ),
 
+    "read_recommendations": Tool(
+        key="read_recommendations",
+        name="Read Recommendations",
+        speaking_agent="astra",
+        description="The agents' proposals waiting for a human decision (or recently decided), most urgent first, with the agent, the client it concerns, its priority, and whether the caller's role may decide it. Use it to find a recommendation_id before deciding one - never guess an id.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("status", "string", "open (default: waiting for a decision) or all", required=False),
+            ToolInput("subject", "string", "Only proposals whose client or subject name contains this text", required=False),
+            ToolInput("limit", "number", "Max results to return (default 20)", required=False),
+        ],
+        output=ToolOutput("object", "Proposals with id, title, agent, subject, priority, confidence and can_decide"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.RESEARCH_CIO, UserRole.COMPLIANCE, UserRole.OPERATIONS,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
     # ─── State-changing tools (require confirmation)
 
     "decide_recommendation": Tool(

@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, House, Plus, Search } from "lucide-react";
+import { ChevronRight, House, LogOut, Plus, Search } from "lucide-react";
+import { clearSession, getUser } from "@/lib/api";
+import { moreViews, pinnedViews } from "@/lib/nav";
+import RoleSwitcher from "@/components/RoleSwitcher";
 import { fetchMentionables, fetchNeedsYou } from "../api";
 import type { Mentionable, NeedsYou, ThreadSummary } from "../types";
 
@@ -20,12 +23,15 @@ function Section({ title, children, count }: { title: string; children: React.Re
   );
 }
 
+const rowBase = "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors";
+
 export function Rail({
   threads,
   activeId,
   onSelect,
   onNew,
   onMention,
+  onAsk,
   view,
 }: {
   threads: ThreadSummary[];
@@ -33,29 +39,49 @@ export function Rail({
   onSelect: (id: string) => void;
   onNew: () => void;
   onMention: (name: string) => void;
+  /** Start a conversation with this sentence. */
+  onAsk: (text: string) => void;
   view: "home" | "thread";
 }) {
   const router = useRouter();
   const [needsYou, setNeedsYou] = useState<NeedsYou | null>(null);
   const [agents, setAgents] = useState<Mentionable[]>([]);
   const [shortcutLabel, setShortcutLabel] = useState("Ctrl K");
+  const [user, setUser] = useState<any>(null);
+  const [showAllThreads, setShowAllThreads] = useState(false);
 
   useEffect(() => {
-    fetchNeedsYou().then(setNeedsYou).catch(() => setNeedsYou(null));
+    setUser(getUser());
     fetchMentionables().then((d) => setAgents(d.mentionables)).catch(() => setAgents([]));
     if (/Mac|iPhone|iPad/.test(navigator.userAgent)) setShortcutLabel("⌘K");
   }, []);
 
+  // Re-read what is waiting whenever a conversation settles (a decision was made, a run finished).
+  const threadSignature = threads.map((t) => `${t.id}:${t.status}:${t.updated_at}`).join("|");
+  useEffect(() => {
+    fetchNeedsYou().then(setNeedsYou).catch(() => {});
+  }, [threadSignature]);
+
+  const role: string = user?.role ?? "";
+  const pinned = pinnedViews(role);
+  const more = moreViews(role);
+
+  // The newest few are enough on the rail; the rest are one palette search away.
+  const RECENT = 8;
+  const shownThreads = showAllThreads ? threads : threads.slice(0, RECENT);
   const waitingThreads = threads.filter((t) => t.status === "awaiting_confirmation");
   const items = needsYou?.needs_decision ?? [];
-  const needsYouTotal = waitingThreads.length + Math.max(0, (needsYou?.needs_decision_count ?? 0) - waitingThreads.length);
+  const proposals = needsYou?.proposals ?? [];
+  const proposalsTotal = needsYou?.proposals_count ?? proposals.length;
+  const needsYouTotal =
+    waitingThreads.length + Math.max(0, (needsYou?.needs_decision_count ?? 0) - waitingThreads.length) + proposalsTotal;
 
   return (
-    <nav className="flex h-full min-h-0 flex-col bg-surface/60" aria-label="Astra">
+    <nav className="flex h-full min-h-0 flex-col bg-surface/60" aria-label="Astra" data-testid="astra-rail">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         <div
           aria-hidden
-          className="flex h-6 w-6 items-center justify-center rounded bg-accent font-mono text-[11px] font-bold text-ink"
+          className="flex h-6 w-6 items-center justify-center rounded bg-accent font-mono text-[11px] font-bold text-black"
         >
           A
         </div>
@@ -70,9 +96,7 @@ export function Rail({
           type="button"
           onClick={onNew}
           aria-current={view === "home" ? "page" : undefined}
-          className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors ${
-            view === "home" ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60"
-          }`}
+          className={`${rowBase} ${view === "home" ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60"}`}
         >
           <House className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden /> Home
         </button>
@@ -92,13 +116,13 @@ export function Rail({
           {needsYouTotal === 0 ? (
             <p className="px-2 text-xs text-ink-muted">Nothing waiting on you.</p>
           ) : (
-            <ul className="space-y-0.5">
+            <ul className="space-y-0.5" data-testid="needs-you-list">
               {waitingThreads.map((t) => (
                 <li key={t.id}>
                   <button
                     type="button"
                     onClick={() => onSelect(t.id)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-border-soft transition-colors"
+                    className={`${rowBase} hover:bg-border-soft`}
                   >
                     <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
                     <span className="truncate text-ink">{t.title || "Conversation"}</span>
@@ -124,6 +148,43 @@ export function Rail({
                   </div>
                 </li>
               ))}
+              {proposals.slice(0, 5).map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    data-testid="needs-you-proposal"
+                    onClick={() =>
+                      onAsk(
+                        `Walk me through the proposal "${p.title}"${p.subject_label ? ` for ${p.subject_label}` : ""}, and what it would do if I approve it.`
+                      )
+                    }
+                    title={p.title}
+                    className={`${rowBase} items-start hover:bg-border-soft`}
+                  >
+                    <span
+                      aria-hidden
+                      className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${p.priority <= 2 ? "bg-crit" : "bg-warn"}`}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-ink">{p.title}</span>
+                      {p.subject_label && <span className="block truncate text-xs text-ink-muted">{p.subject_label}</span>}
+                    </span>
+                  </button>
+                </li>
+              ))}
+              {proposalsTotal > Math.min(proposals.length, 5) && (
+                <li>
+                  <button
+                    type="button"
+                    data-testid="needs-you-more"
+                    onClick={() => onAsk("What proposals are waiting for my decision, most urgent first?")}
+                    className={`${rowBase} text-xs text-ink-muted hover:bg-border-soft/60 hover:text-ink`}
+                  >
+                    {proposalsTotal - Math.min(proposals.length, 5)} more proposals
+                    <ChevronRight className="ml-auto h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </li>
+              )}
             </ul>
           )}
         </Section>
@@ -133,13 +194,13 @@ export function Rail({
             <p className="px-2 text-xs text-ink-muted">None yet.</p>
           ) : (
             <ul className="space-y-0.5">
-              {threads.map((t) => (
+              {shownThreads.map((t) => (
                 <li key={t.id}>
                   <button
                     type="button"
                     onClick={() => onSelect(t.id)}
                     aria-current={t.id === activeId ? "page" : undefined}
-                    className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors ${
+                    className={`${rowBase} ${
                       t.id === activeId ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60"
                     }`}
                   >
@@ -150,10 +211,72 @@ export function Rail({
                   </button>
                 </li>
               ))}
+              {threads.length > RECENT && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllThreads((v) => !v)}
+                    data-testid="rail-all-conversations"
+                    className={`${rowBase} text-xs text-ink-muted hover:bg-border-soft/60 hover:text-ink`}
+                  >
+                    {showAllThreads ? "Show fewer" : `All ${threads.length} conversations`}
+                  </button>
+                </li>
+              )}
             </ul>
           )}
         </Section>
 
+        <Section title="Views">
+          <ul className="space-y-0.5" data-testid="rail-views">
+            {pinned.map((v) => {
+              const Icon = v.icon;
+              return (
+                <li key={v.href}>
+                  <button
+                    type="button"
+                    onClick={() => router.push(v.href)}
+                    className={`${rowBase} text-ink-soft hover:bg-border-soft/60 hover:text-ink`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+                    <span className="truncate">{v.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {more.length > 0 && (
+            <details className="group" data-testid="rail-more-views">
+              <summary
+                className={`${rowBase} cursor-pointer list-none text-xs text-ink-muted hover:bg-border-soft/60 hover:text-ink [&::-webkit-details-marker]:hidden`}
+              >
+                <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" aria-hidden />
+                More views
+                <span className="ml-auto font-mono tabular-nums">{more.reduce((n, g) => n + g.items.length, 0)}</span>
+              </summary>
+              <div className="mt-1 space-y-3 pb-1">
+                {more.map((g) => (
+                  <div key={g.intent}>
+                    <div className="px-2 pb-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-faint">{g.title}</div>
+                    <ul className="space-y-0.5">
+                      {g.items.map((v) => (
+                        <li key={v.href}>
+                          <button
+                            type="button"
+                            onClick={() => router.push(v.href)}
+                            className={`${rowBase} text-ink-soft hover:bg-border-soft/60 hover:text-ink`}
+                          >
+                            <span className="truncate pl-1">{v.label}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </Section>
         <Section title="Your agents">
           {agents.length === 0 ? (
             <p className="px-2 text-xs text-ink-muted">No agents you can run yet.</p>
@@ -165,7 +288,7 @@ export function Rail({
                     type="button"
                     onClick={() => onMention(a.name)}
                     title={`Mention @${a.name} in your message`}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-ink-soft hover:bg-border-soft/60 transition-colors"
+                    className={`${rowBase} text-ink-soft hover:bg-border-soft/60`}
                   >
                     <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" />
                     <span className="truncate">{a.name}</span>
@@ -175,24 +298,39 @@ export function Rail({
             </ul>
           )}
         </Section>
+
       </div>
 
-      <div className="shrink-0 border-t border-border p-2">
+      <div className="shrink-0 space-y-0.5 border-t border-border p-2">
         <button
           type="button"
           onClick={() => window.dispatchEvent(new Event("astra:open-palette"))}
-          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-ink-soft hover:bg-border-soft/60 hover:text-ink transition-colors"
+          className={`${rowBase} text-ink-soft hover:bg-border-soft/60 hover:text-ink`}
         >
           <Search className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden /> Search
           <kbd className="ml-auto font-mono text-[10px] text-ink-muted">{shortcutLabel}</kbd>
         </button>
-        <button
-          type="button"
-          onClick={() => router.push("/studio")}
-          className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-ink-muted hover:bg-border-soft/60 hover:text-ink transition-colors"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Back to the classic app
-        </button>
+        <RoleSwitcher />
+        {user && (
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm text-ink">{user.full_name}</div>
+              <div className="truncate text-[11px] capitalize text-ink-muted">{user.title || user.role}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                clearSession();
+                router.replace("/login");
+              }}
+              className="text-ink-muted hover:text-ink"
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
     </nav>
   );

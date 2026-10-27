@@ -33,7 +33,7 @@ export function LiveMessage({ live }: { live: LiveTurn }) {
     <div className="flex gap-3" aria-live="polite">
       <div
         aria-hidden
-        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-accent font-mono text-[11px] font-bold text-ink agent-working"
+        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-accent font-mono text-[11px] font-bold text-black agent-working"
       >
         A
       </div>
