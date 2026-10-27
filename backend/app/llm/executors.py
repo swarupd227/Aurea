@@ -39,11 +39,14 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID:
 class ToolExecutors:
     """Factory for tool executors. Each tool_key maps to an executor function."""
 
-    def __init__(self, session: AsyncSession, user_id: uuid.UUID, role: UserRole, firm_id: uuid.UUID):
+    def __init__(self, session: AsyncSession, user_id: uuid.UUID, role: UserRole, firm_id: uuid.UUID,
+                 on_card=None):
         self.session = session
         self.user_id = user_id
         self.role = role
         self.firm_id = firm_id
+        # Called with the run's card each time its beats move, so the gateway can publish them.
+        self.on_card = on_card
 
     async def execute(self, tool_key: str, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool by key and return the result."""
@@ -70,6 +73,13 @@ class ToolExecutors:
             "read_portfolio": self.read_portfolio,
             "search_holdings": self.search_holdings,
             "read_recommendations": self.read_recommendations,
+            "read_agents": self.read_agents,
+            "run_agent": self.run_agent,
+            "read_agent_history": self.read_agent_history,
+            "read_capacity": self.read_capacity,
+            "read_analytics": self.read_analytics,
+            "read_onboarding_cases": self.read_onboarding_cases,
+            "read_provenance": self.read_provenance,
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
             "update_goal": self.update_goal,
@@ -690,6 +700,400 @@ class ToolExecutors:
             "total": total,
             "recommendations": rows,
             "message": f"{total} proposal(s) {waiting}{shown}.",
+        }
+
+    async def read_agents(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The firm's agents with the caller's rights over each. The same roster the Workforce page
+        shows (atlas.roster), plus whether this role may start the agent from a conversation."""
+        from app.atlas import roster
+        from app.core import agent_runs
+        from app.models.enums import AgentKey
+
+        only_runnable = str(inputs.get("runnable_only") or "").lower() == "true"
+        rows = []
+        for r in await roster.workforce(self.session, self.firm_id):
+            key = AgentKey(str(r["agent_key"]))
+            role_ok = agent_runs.may_run(self.role, key)
+            if only_runnable and not role_ok:
+                continue
+            if key in agent_runs.NOT_FROM_CONVERSATION:
+                why_not = "page-first: " + agent_runs.NOT_FROM_CONVERSATION[key]
+            elif not role_ok:
+                why_not = "your role does not start this agent"
+            elif r["paused"]:
+                why_not = "paused" + (f": {r['paused_reason']}" if r.get("paused_reason") else "")
+            elif not r["enabled"]:
+                why_not = "disabled for this firm"
+            else:
+                why_not = None
+            rows.append({
+                "agent_key": key.value, "name": r["name"], "stage": r["stage"],
+                "tier": str(r["tier"]), "tier_label": agent_runs.TIER_LABEL.get(str(r["tier"]), str(r["tier"])),
+                "status": r["status"], "paused": r["paused"], "enabled": r["enabled"],
+                "runs": r["runs"], "proposals": r["contributions"],
+                "last_action": r["last_action"], "last_at": r["last_at"],
+                "can_run": why_not is None, "why_not": why_not,
+            })
+        startable = sum(1 for r in rows if r["can_run"])
+        paused = sum(1 for r in rows if r["paused"])
+        return {
+            "agents": rows, "total": len(rows), "startable": startable, "paused": paused,
+            "message": f"{len(rows)} agent(s); you may start {startable} from a conversation; {paused} paused.",
+        }
+
+    # ── run_agent: starting a run from a sentence ─────────────────────────────────────────────
+
+    async def _resolve_run(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Check that this role may start this agent on this subject, now, and say what it would
+        resolve to. Nothing is written. Raises ExecutorError with the reason fit to show a user.
+
+        Every id is read back scoped to the caller's firm: ids come from a language model, so
+        another firm's household or mandate reads as not found."""
+        from app.agents.catalogue import CATALOGUE
+        from app.atlas.base import Subject
+        from app.atlas.delegate import managed_mandates
+        from app.atlas.registry import all_agents
+        from app.core import agent_runs
+        from app.models.enums import AgentKey, MandateType
+        from app.models.tenant import Firm
+        from app.provenance import policy
+
+        raw = str(inputs.get("agent_key") or "").strip()
+        try:
+            key = AgentKey(raw)
+        except ValueError:
+            raise ExecutorError(f"There is no agent called '{raw}'. Ask which agents are available.")
+        name = CATALOGUE[key]["name"] if key in CATALOGUE else key.value
+        if key in agent_runs.NOT_FROM_CONVERSATION:
+            raise ExecutorError(f"{name} cannot be started from a conversation: {agent_runs.NOT_FROM_CONVERSATION[key]}.")
+        if key not in all_agents():
+            raise ExecutorError(f"{name} is not available.")
+        if not agent_runs.may_run(self.role, key):
+            raise ExecutorError(f"Your role may not start {name}.")
+
+        paused, reason = await policy.agent_paused(self.session, self.firm_id, key)
+        if paused:
+            raise ExecutorError(f"{name} is paused and will not run: {reason}")
+
+        firm = await self.session.get(Firm, self.firm_id)
+        if firm is None:
+            raise ExecutorError("Firm not found.")
+
+        need = agent_runs.SUBJECT_REQUIRED.get(key)
+        household_in, mandate_in = inputs.get("household_id"), inputs.get("mandate_id")
+        household = mandate = None
+        if household_in:
+            hid = _parse_uuid(household_in, "household_id")
+            household = (await self.session.execute(
+                select(Household).where(Household.id == hid, Household.firm_id == self.firm_id)
+            )).scalar_one_or_none()
+            if household is None:
+                raise ExecutorError(f"Household {hid} not found or access denied.")
+        if mandate_in:
+            mid = _parse_uuid(mandate_in, "mandate_id")
+            mandate = (await self.session.execute(
+                select(Mandate).where(Mandate.id == mid, Mandate.firm_id == self.firm_id)
+            )).scalar_one_or_none()
+            if mandate is None:
+                raise ExecutorError(f"Mandate {mid} not found or access denied.")
+
+        mandate_type = None
+        if need == "mandate":
+            if mandate is None and household is not None:
+                # "Rebalance the Chen Family" means the household's managed mandate - the same choice
+                # the Delegate bar makes.
+                managed = await managed_mandates(self.session, self.firm_id, household.id)
+                if not managed:
+                    raise ExecutorError(f"{household.name} has no managed mandate for {name} to work on.")
+                mandate = managed[0]
+            if mandate is None:
+                raise ExecutorError(f"{name} works on one mandate. Give a mandate_id, or a household_id to use its managed mandate.")
+            subject = Subject("mandate", mandate.id, mandate.name)
+            mandate_type = MandateType(mandate.mandate_type)
+        elif need == "household":
+            if household is None:
+                raise ExecutorError(f"{name} works on one household. Give a household_id.")
+            subject = Subject("household", household.id, household.name)
+        elif household is not None:
+            subject = Subject("household", household.id, household.name)
+        elif mandate is not None:
+            raise ExecutorError(f"{name} works on a household or across the book, not on a mandate. Give a household_id, or neither.")
+        else:
+            subject = Subject("firm", firm.id, firm.name)
+
+        tier, guardrails = await policy.resolve_tier(self.session, self.firm_id, key, mandate_type)
+        return {"key": key, "name": name, "firm": firm, "subject": subject,
+                "mandate_type": mandate_type, "tier": str(tier), "guardrails": guardrails}
+
+    async def preview_run_agent(self, inputs: dict[str, Any], *, record_refusal: bool = False) -> dict[str, Any]:
+        """What confirming a run would start - read from live policy, never typed by the model.
+
+        The three controls are kept apart on purpose: `confirms` is what the Confirm button does,
+        `autonomy` is what the agent may then do on its own, `decision` is who may approve what it
+        proposes. A run can sit at Tier 3 and still stop at a proposal; confirming it never
+        approves anything."""
+        try:
+            r = await self._resolve_run(inputs)
+        except ExecutorError as exc:
+            if record_refusal and str(exc).startswith("Your role"):
+                from app.aurea_core.ai_governance import record_violation
+                await record_violation(
+                    self.session, self.firm_id, actor_user_id=self.user_id, actor_role=str(self.role),
+                    violation_type="run_agent_forbidden", subject_key=str(inputs.get("agent_key")), detail=str(exc))
+            raise
+        return self._preview_of(r)
+
+    def _preview_of(self, r: dict[str, Any]) -> dict[str, Any]:
+        from app.agents.catalogue import CATALOGUE
+        from app.core import agent_runs, decision_rights
+        from app.models.enums import UserRole
+
+        key, tier = r["key"], r["tier"]
+        meta = CATALOGUE.get(key, {})
+        approvers = decision_rights.roles_for(key, "approve")
+        held = agent_runs.forced_to_proposal(key)
+        return {
+            "agent_key": key.value, "agent_name": r["name"], "stage": meta.get("stage"),
+            "does": meta.get("acts"), "checkpoint": meta.get("checkpoint"),
+            "subject_type": r["subject"].type, "subject_label": r["subject"].label,
+            "confirms": "start_only",
+            "autonomy": {
+                "tier": tier, "label": agent_runs.TIER_LABEL.get(tier, tier),
+                "acts_on_its_own": agent_runs.acts_on_its_own(key, tier),
+                "held_to_proposal": held,
+            },
+            "decision": {
+                "roles": sorted(x.value for x in approvers),
+                "any_staff": approvers == decision_rights.STAFF,
+                "you_may_decide": UserRole(self.role) in approvers,
+            },
+        }
+
+    async def run_agent(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Start the run through the same domain path as the Cockpit's Delegate bar: its streaming
+        run (atlas.streaming.stream_run), with its kill-switch check, tier resolution, ledger and
+        conduct surveillance. The beats are folded into a card as they arrive.
+
+        The run proposes; it never approves. At a tier that would act on its own it still acts
+        only where the agent does not move a client's book or cash. Nothing here calls
+        runtime.decide."""
+        from app.atlas import narration, streaming
+        from app.core import agent_runs
+        from app.models.enums import RecommendationStatus
+        from app.models.governance import Recommendation
+
+        r = await self._resolve_run(inputs)       # re-checked at execution, not just at confirmation
+        key = r["key"]
+        card = narration.new_card(self._preview_of(r))
+        if self.on_card:
+            await self.on_card(card)
+
+        rationale: list[str] = []
+        rec_ids: list[str] = []
+        outcome: dict[str, Any] = {}
+        async for ev in streaming.stream_run(
+            self.session, firm=r["firm"], agent_key=key, subject=r["subject"],
+            mandate_type=r["mandate_type"], require_human=agent_runs.forced_to_proposal(key),
+        ):
+            phase = ev.get("phase")
+            if phase == "error":
+                raise ExecutorError(str(ev.get("message") or "The run could not start."))
+            if phase == "rationale" and ev.get("chunk"):
+                rationale.append(ev["chunk"])
+            if phase in ("empty", "done"):
+                outcome = ev
+                rec_ids = list(ev.get("recommendation_ids") or [])
+            if narration.fold(card, ev) and self.on_card:
+                await self.on_card(card)
+
+        proposals: list[dict[str, Any]] = []
+        if rec_ids:
+            rows = (await self.session.execute(
+                select(Recommendation).where(
+                    Recommendation.firm_id == self.firm_id,
+                    Recommendation.id.in_([uuid.UUID(x) for x in rec_ids]))
+                .order_by(Recommendation.priority.asc(), Recommendation.created_at.asc())
+            )).scalars().all()
+            proposals = [{"id": str(p.id), "title": p.title, "priority": p.priority,
+                          "confidence": p.confidence, "status": str(p.status)} for p in rows]
+        if not proposals:
+            status = "nothing"
+        elif any(p["status"] == str(RecommendationStatus.PROPOSED) for p in proposals):
+            status = "proposed"
+        else:
+            status = "acted"
+        narration.settle(card, status=status, proposals=proposals)
+        text = narration.sentence(card, rationale="".join(rationale))
+        return {
+            "scope": "run", "status": status, "agent_key": key.value,
+            "run_id": card["run_id"], "recommendation_ids": rec_ids,
+            "autonomous": bool(outcome.get("autonomous")) and status == "acted",
+            "card": card, "message": text, "suggestions": narration.follow_ups(card),
+        }
+
+    # ── Reads that stand in for pages: each wraps the function the page's route calls ─────────
+
+    @staticmethod
+    def _limit(value: Any, default: int, top: int) -> int:
+        try:
+            return max(1, min(int(value or default), top))
+        except (TypeError, ValueError):
+            return default
+
+    async def _firm(self):
+        from app.models.tenant import Firm
+
+        firm = await self.session.get(Firm, self.firm_id)
+        if firm is None:
+            raise ExecutorError("Firm not found.")
+        return firm
+
+    async def read_agent_history(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Past agent runs, newest first - the Agent history page's read (atlas.history)."""
+        from collections import Counter
+
+        from app.agents.catalogue import CATALOGUE
+        from app.atlas import history
+        from app.models.enums import AgentKey
+
+        agent_key = str(inputs.get("agent_key") or "").strip() or None
+        if agent_key:
+            try:
+                agent_key = AgentKey(agent_key).value
+            except ValueError:
+                raise ExecutorError(f"There is no agent called '{agent_key}'.")
+        status = str(inputs.get("status") or "").strip() or None
+        rows = await history.run_history(
+            self.session, self.firm_id, agent_key=agent_key, status=status,
+            limit=self._limit(inputs.get("limit"), 20, 50))
+        for r in rows:
+            meta = CATALOGUE.get(r["agent_key"]) or {}
+            r["agent_name"] = meta.get("name") or str(r["agent_key"]).replace("_", " ").title()
+        by_status = dict(Counter(str(r["status"]) for r in rows))
+        scope = f" for {rows[0]['agent_name']}" if agent_key and rows else ""
+        return {
+            "runs": rows, "shown": len(rows), "by_status": by_status,
+            "filters": {"agent_key": agent_key, "status": status},
+            "message": f"{len(rows)} most recent run(s){scope}." if rows else "No agent runs match.",
+        }
+
+    async def read_capacity(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Capacity & outcomes - the Capacity page's read (atlas.history). The hours figure is an
+        estimate and is returned with its basis."""
+        from app.atlas import history
+
+        out = await history.capacity_outcomes(self.session, self.firm_id)
+        out["estimate"] = {"minutes_per_item": history.MINUTES_PER_ITEM, "measured": False}
+        out["message"] = (
+            f"{out['total_agent_runs']} agent run(s) and {out['decisions_made']} decision(s); "
+            f"{out['open_items']} proposal(s) still open. About {out['estimated_hours_reclaimed']} hours "
+            f"reclaimed - an estimate at {history.MINUTES_PER_ITEM} minutes per run or decision, not a measurement."
+        )
+        return out
+
+    async def read_analytics(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The Analytics page's headline figures (aurea_core.analytics.overview)."""
+        from app.aurea_core.analytics import overview
+
+        firm = await self._firm()
+        full = await overview.compute_all(self.session, self.firm_id)
+        h = full["headline"]
+        bits = []
+        if h.get("firm_aum") is not None:
+            bits.append(f"AUM {h['firm_aum']:,.0f} {firm.base_currency}")
+        bits.append(f"{h.get('clients', 0)} client household(s)")
+        if h.get("data_quality_score") is not None:
+            bits.append(f"data quality {h['data_quality_score']}")
+        if h.get("drift_breaches"):
+            bits.append(f"{h['drift_breaches']} mandate(s) outside tolerance")
+        # What each figure rests on, so no surface shows an estimate or a client's own declaration bare.
+        fee_basis = (full["practice"].get("fee_margin") or {}).get("fee_revenue_basis") or "estimate"
+        bases = {"fee_revenue": fee_basis, "firm_margin": "estimate (built on estimated revenue)",
+                 "firm_wallet_share": "declared", "consolidation_opportunity": "declared"}
+        return {"headline": h, "bases": bases, "currency": firm.base_currency,
+                "message": "Headline figures: " + "; ".join(bits) + "."}
+
+    async def read_onboarding_cases(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The onboarding board - cases with their four derived tracks (api.onboarding.cases_overview)."""
+        from collections import Counter
+
+        from app.api.onboarding import cases_overview
+
+        firm = await self._firm()
+        want = str(inputs.get("status") or "open").lower()
+        cases = await cases_overview(self.session, firm)
+        rows = []
+        for c in cases:
+            t = c["tracks"]
+            rows.append({
+                "id": c["id"], "prospect_name": c["prospect_name"], "status": c["status"],
+                "segment": c["segment"], "registration_type": c["registration_type"],
+                "sla_status": c["sla_status"], "nigo_flag": bool(c["nigo_flag"]),
+                "readiness_score": c["readiness_score"], "aml_risk_tier": c["aml_risk_tier"],
+                "edd_status": c["edd_status"], "cip_status": c["cip_status"],
+                "position": t["position"], "owner": t["owner"], "ready_to_activate": t["ready_to_activate"],
+                "blocked_tracks": t["blocked_tracks"],
+                "tracks": [{"code": x["code"], "label": x["label"], "state": x["state"]} for x in t["tracks"]],
+            })
+        total = len(rows)
+        is_open = lambda r: r["status"] not in ("approved", "rejected")  # noqa: E731
+        shown = [r for r in rows if is_open(r)] if want != "all" else rows
+        limit = self._limit(inputs.get("limit"), 25, 50)
+        summary = {
+            "total": total, "open": sum(1 for r in rows if is_open(r)),
+            "by_status": dict(Counter(r["status"] for r in rows)),
+            "sla_breached": sum(1 for r in rows if is_open(r) and r["sla_status"] == "breached"),
+            "blocked": sum(1 for r in rows if is_open(r) and r["blocked_tracks"]),
+            "ready_to_activate": sum(1 for r in rows if is_open(r) and r["ready_to_activate"]),
+        }
+        return {
+            "cases": shown[:limit], "shown": min(len(shown), limit), "scope": "all" if want == "all" else "open",
+            "summary": summary,
+            "message": (f"{summary['open']} open onboarding case(s) of {total}; {summary['blocked']} blocked, "
+                        f"{summary['sla_breached']} past their SLA, {summary['ready_to_activate']} ready to activate."),
+        }
+
+    async def read_provenance(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The Provenance page in brief: ledger integrity, open surveillance flags, agent quality and
+        recent autonomy changes (provenance.ledger / evaluation / views)."""
+        from app.agents.catalogue import CATALOGUE
+        from app.provenance import ledger, views
+        from app.provenance.evaluation import latest_evaluations
+
+        def name(key: str) -> str:
+            return (CATALOGUE.get(key) or {}).get("name") or str(key).replace("_", " ").title()
+
+        chain = await ledger.verify_chain(self.session, self.firm_id)
+        recent = [
+            {"seq": e["seq"], "event_type": e["event_type"], "agent_name": name(e["agent_key"]) if e["agent_key"] else None,
+             "actor": e["actor"], "created_at": e["created_at"]}
+            for e in await views.recent_ledger(self.session, self.firm_id, 8)
+        ]
+        flags = await views.surveillance_flags(self.session, self.firm_id)
+        open_flags = [f for f in flags if not f["resolved"]]
+        by_severity: dict[str, int] = {}
+        for f in open_flags:
+            by_severity[str(f["severity"])] = by_severity.get(str(f["severity"]), 0) + 1
+        evaluations = [
+            {"agent_key": e["agent_key"], "agent_name": name(e["agent_key"]), "quality_score": e["quality_score"],
+             "grade": e["grade"], "sample_size": e["sample_size"]}
+            for e in await latest_evaluations(self.session, self.firm_id)
+        ]
+        changes = [{**c, "agent_name": name(c["agent_key"])} for c in await views.autonomy_changes(self.session, self.firm_id, 5)]
+        integrity = (f"The ledger's hash chain is intact over {chain['count']} entries."
+                     if chain["valid"] else f"The ledger's hash chain is BROKEN at entry {chain['broken_at_seq']}.")
+        return {
+            "ledger": {**chain, "recent": recent},
+            "surveillance": {
+                "open": len(open_flags), "by_severity": by_severity,
+                "flags": [{"id": f["id"], "severity": f["severity"], "category": f["category"],
+                           "finding": f["finding"], "target_agent_name": name(f["target_agent_key"]) if f["target_agent_key"] else None,
+                           "auto_paused_agent": f["auto_paused_agent"], "escalated": f["escalated"],
+                           "created_at": f["created_at"]} for f in open_flags[:6]],
+            },
+            "evaluations": evaluations,
+            "autonomy_changes": changes,
+            "message": f"{integrity} {len(open_flags)} open surveillance flag(s). {len(evaluations)} agent(s) scored.",
         }
 
     async def search_holdings(self, inputs: dict[str, Any]) -> dict[str, Any]:

@@ -57,7 +57,10 @@ async def run_agent(
     trigger: str = "manual",
     mandate_type: MandateType | None = None,
     overrides: dict | None = None,
+    require_human: bool = False,
 ) -> AgentRun:
+    """`require_human` holds every draft as a proposal, even at Tier 3 — set for runs a person
+    started by hand of an agent that moves a client's book or cash (agent_runs.forced_to_proposal)."""
     agent = get_agent(agent_key)
     if agent is None:
         raise ValueError(f"Unknown agent {agent_key}")
@@ -166,7 +169,7 @@ async def run_agent(
             )
             await surveillance.review_recommendation(session, rec)
 
-            if policy.requires_human_checkpoint(tier) or require_all:
+            if policy.requires_human_checkpoint(tier) or require_all or require_human:
                 pending = True
                 await activity.emit(
                     session, firm_id=firm.id, agent_key=agent_key, kind=ActivityKind.PROPOSED,

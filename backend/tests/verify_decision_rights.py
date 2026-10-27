@@ -88,6 +88,30 @@ def rights() -> None:
     check("client care does not", dr.moves_the_book(care), False)
 
 
+def starting_is_not_deciding() -> None:
+    """Starting an agent from a conversation (core/agent_runs) is a different power from approving
+    what it proposes (decision_rights). The first must never imply the second."""
+    from app.core import agent_runs as runs
+
+    R = UserRole
+    print("\n=== a run that would move money is held to a proposal ===")
+    for key in dr.BOOK_MOVING_AGENTS | dr.CASH_MOVING_AGENTS:
+        check(f"{key} is held to a proposal when started from a conversation", runs.forced_to_proposal(key), True)
+        check(f"{key} never 'acts on its own' from a conversation, even at Tier 3", runs.acts_on_its_own(key, "tier_3"), False)
+
+    print("\n=== nobody who may only start a trade agent can thereby approve its trade ===")
+    drift = AgentKey.DRIFT_REBALANCING.value
+    for role in R:
+        if runs.may_run(role, drift):
+            approver = role in dr.roles_for(drift, "approve")
+            check(f"{role.value}: may start drift; may approve its trade", approver, role in dr.TRADE_APPROVERS)
+
+    print("\n=== roles with no standing to instruct a portfolio start nothing ===")
+    for role in (R.ADMIN, R.SUPERADMIN, R.CLIENT):
+        check(f"{role.value} starts no agent", runs.runnable_agents(role), [])
+    check("billing is never started through run_agent", runs.run_roles(AgentKey.BILLING), frozenset())
+
+
 async def once_only() -> None:
     """decide() refuses a proposal that is no longer PROPOSED, before doing anything."""
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -138,6 +162,7 @@ async def once_only() -> None:
 
 def main() -> int:
     rights()
+    starting_is_not_deciding()
     asyncio.run(once_only())
     print(f"\n{'=' * 64}\n{len(PASS)} passed, {len(FAIL)} failed")
     for f in FAIL:

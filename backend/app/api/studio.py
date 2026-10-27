@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
+from app.atlas import history as history_svc
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
 from app.aurea_core.graph import household_brain, list_households
@@ -164,7 +165,8 @@ async def revise_recommendation(
 
     try:
         run = await run_agent(db, firm=firm, agent_key=AgentKey.DRIFT_REBALANCING, subject=subject,
-                              trigger="revise", mandate_type=mandate_type, overrides=overrides)
+                              trigger="revise", mandate_type=mandate_type, overrides=overrides,
+                              require_human=True)  # a revision comes back for a decision
     except AgentPausedError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
@@ -308,30 +310,7 @@ async def draft_communication(
 @router.get("/capacity")
 async def capacity(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     """Capacity & outcomes — how AI-reclaimed time is translating into client outcomes."""
-    total_runs = (
-        await db.execute(select(func.count(AgentRun.id)).where(AgentRun.firm_id == firm.id))
-    ).scalar_one()
-    by_status = {}
-    for st in RecommendationStatus:
-        n = (
-            await db.execute(
-                select(func.count(Recommendation.id)).where(
-                    Recommendation.firm_id == firm.id, Recommendation.status == st
-                )
-            )
-        ).scalar_one()
-        by_status[st.value] = n
-    decided = by_status["approved"] + by_status["modified"] + by_status["dismissed"] + by_status["executed"]
-    # Indicative time saved: ~25 min of prep/monitoring per agent recommendation handled.
-    minutes_saved = (total_runs + decided) * 25
-    return {
-        "total_agent_runs": total_runs,
-        "recommendations_by_status": by_status,
-        "open_items": by_status["proposed"],
-        "decisions_made": decided,
-        "estimated_hours_reclaimed": round(minutes_saved / 60, 1),
-    }
-
+    return await history_svc.capacity_outcomes(db, firm.id)
 
 @router.post("/ask")
 async def ask_your_book(
@@ -576,36 +555,5 @@ async def get_agent_run_history(
     db: AsyncSession = Depends(get_db),
 ):
     """List historical AgentRun records with optional filters."""
-    from datetime import date as _date
-    q = select(AgentRun).where(AgentRun.firm_id == firm.id)
-    if agent_key:
-        q = q.where(AgentRun.agent_key == agent_key)
-    if status:
-        q = q.where(AgentRun.status == status)
-    if date_from:
-        try:
-            d = _date.fromisoformat(date_from)
-            q = q.where(AgentRun.created_at >= d)
-        except ValueError:
-            pass
-    if date_to:
-        try:
-            d2 = _date.fromisoformat(date_to)
-            q = q.where(AgentRun.created_at <= d2)
-        except ValueError:
-            pass
-    q = q.order_by(AgentRun.created_at.desc()).limit(min(limit, 200))
-    runs = (await db.execute(q)).scalars().all()
-    return [
-        {
-            "id": str(r.id),
-            "agent_key": r.agent_key,
-            "status": r.status,
-            "tier": r.tier,
-            "trigger": r.trigger,
-            "duration_ms": r.duration_ms if hasattr(r, "duration_ms") else None,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
-        }
-        for r in runs
-    ]
+    return await history_svc.run_history(
+        db, firm.id, agent_key=agent_key, status=status, date_from=date_from, date_to=date_to, limit=limit)

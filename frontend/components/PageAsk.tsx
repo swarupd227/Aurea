@@ -37,8 +37,11 @@ export default function PageAsk() {
     fetchMentionables().then((d) => setMentionables(d.mentionables)).catch(() => {});
   }, []);
 
-  // A page change starts a fresh conversation about the new page; the old one stays in Astra.
+  // A page change starts a fresh conversation about the new page; the old one stays in Astra. A reply still
+  // being written for the old page finishes on the server and lands in that thread, not on this page.
+  const pathRef = useRef(pathname);
   useEffect(() => {
+    pathRef.current = pathname;
     setThread(null);
     setOpen(false);
     setError(null);
@@ -54,13 +57,14 @@ export default function PageAsk() {
       setOpen(true);
       setPendingUser(text);
       setLive({ text: "", steps: [] });
+      const startedOn = pathRef.current;
       try {
         const id = thread?.id ?? (await createThread({ kind: "ask_astra", title: text.slice(0, 60) })).id;
         await sendMessageStream(id, text, (event) => {
           if (event.type === "error") setError(event.message);
           else setLive((prev) => reduceLive(prev, event));
         });
-        setThread(await fetchThread(id));
+        if (pathRef.current === startedOn) setThread(await fetchThread(id));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to reach Astra");
       } finally {
@@ -71,16 +75,38 @@ export default function PageAsk() {
     [thread?.id]
   );
 
+  // A confirmed run is on the thread while it works; look again until it settles.
+  const [confirming, setConfirming] = useState(false);
+  const running = !!thread?.messages.some((m) => m.card?.kind === "agent_run" && m.card.data?.status === "running");
+  const threadId = thread?.id;
+  useEffect(() => {
+    if (!threadId || (!running && !confirming)) return;
+    const timer = setInterval(() => {
+      fetchThread(threadId).then(setThread).catch(() => {});
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [threadId, running, confirming]);
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    // The run settled: what it proposed is new data for the page behind the dock.
+    if (wasRunning.current && !running) window.dispatchEvent(new Event("astra:changed"));
+    wasRunning.current = running;
+  }, [running]);
+
   const settle = useCallback(
-    async (pendingActionId: string, confirmed: boolean) => {
+    async (pendingActionId: string, confirmed: boolean, seenTier?: string) => {
       setError(null);
+      setConfirming(confirmed);
       try {
-        await confirmPendingAction(pendingActionId, confirmed);
+        await confirmPendingAction(pendingActionId, confirmed, seenTier);
         if (thread) setThread(await fetchThread(thread.id));
         // The page behind the dock is showing data this just changed: have it reload.
         if (confirmed) window.dispatchEvent(new Event("astra:changed"));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not record that");
+        if (thread) fetchThread(thread.id).then(setThread).catch(() => {});
+      } finally {
+        setConfirming(false);
       }
     },
     [thread]
@@ -89,7 +115,7 @@ export default function PageAsk() {
   const messages = thread?.messages ?? [];
   const waiting = thread?.status === "awaiting_confirmation";
   const last = messages[messages.length - 1];
-  const followUps = !live && !waiting && last?.role === "astra" ? last.suggestions : [];
+  const followUps = !live && !waiting && last && last.role !== "user" ? last.suggestions : [];
   const shownChips = followUps.length > 0 ? followUps.map((s) => ({ label: s, prompt: s })) : thread ? [] : chips;
   const hasConversation = messages.length > 0 || !!live || !!pendingUser;
 
@@ -145,7 +171,7 @@ export default function PageAsk() {
                 <MessageView
                   key={m.id}
                   message={m}
-                  onConfirm={(id) => settle(id, true)}
+                  onConfirm={(id, tier) => settle(id, true, tier)}
                   onReject={(id) => settle(id, false)}
                 />
               ))}

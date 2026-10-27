@@ -28,7 +28,7 @@ function Steps({ steps }: { steps: LiveTurn["steps"] }) {
 
 /** Astra's turn while it's still streaming — accumulating text plus any tool steps,
  * rendered distinct from finalized messages until the turn lands and the thread reloads. */
-export function LiveMessage({ live }: { live: LiveTurn }) {
+export function LiveMessage({ live, label = "Working" }: { live: LiveTurn; label?: string }) {
   return (
     <div className="flex gap-3" aria-live="polite">
       <div
@@ -43,7 +43,7 @@ export function LiveMessage({ live }: { live: LiveTurn }) {
         ) : (
           <div className="flex items-center gap-2 text-sm text-ink-muted">
             <span aria-hidden className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            Working
+            {label}
           </div>
         )}
         <Steps steps={live.steps} />

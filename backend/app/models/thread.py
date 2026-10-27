@@ -69,7 +69,13 @@ class Thread(Base):
     is_archived: Mapped[bool] = mapped_column(default=False)
 
     # Relationships
-    messages: Mapped[list[ThreadMessage]] = relationship("ThreadMessage", back_populates="thread", cascade="all, delete-orphan")
+    # Oldest first. Without an ORDER BY the database may return rows in any order - and a message
+    # that was updated after it was written (a reply whose text is filled in when it is whole, a
+    # run's card as it settles) is exactly the row Postgres is free to return out of place.
+    messages: Mapped[list[ThreadMessage]] = relationship(
+        "ThreadMessage", back_populates="thread", cascade="all, delete-orphan",
+        order_by="ThreadMessage.created_at",
+    )
     pending_actions: Mapped[list[PendingAction]] = relationship("PendingAction", back_populates="thread", cascade="all, delete-orphan")
 
 

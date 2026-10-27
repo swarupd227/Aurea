@@ -17,6 +17,7 @@ from app.core.security import STAFF_ROLES, get_current_user, staff_user, require
 from app.models.governance import AutonomyChange, LedgerEntry, SurveillanceFlag
 from app.models.identity import User
 from app.models.tenant import Firm
+from app.provenance import views
 from app.provenance.evaluation import evaluate_firm, latest_evaluations
 from app.provenance.ledger import append_entry, verify_chain
 
@@ -64,22 +65,7 @@ async def compliance_assessments(
 async def ledger(
     limit: int = 100, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    entries = (
-        await db.execute(
-            select(LedgerEntry).where(LedgerEntry.firm_id == firm.id)
-            .order_by(LedgerEntry.seq.desc()).limit(limit)
-        )
-    ).scalars().all()
-    return [
-        {
-            "seq": e.seq, "event_type": e.event_type, "agent_key": e.agent_key,
-            "actor": e.actor, "entry_hash": e.entry_hash, "prev_hash": e.prev_hash,
-            "content": e.content, "created_at": e.created_at.isoformat() if e.created_at else None,
-            "recommendation_id": str(e.recommendation_id) if e.recommendation_id else None,
-        }
-        for e in entries
-    ]
-
+    return await views.recent_ledger(db, firm.id, limit)
 
 @router.get("/ledger/verify")
 async def verify(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
@@ -104,19 +90,7 @@ async def run_evaluation(
 
 @router.get("/autonomy-changes")
 async def autonomy_changes(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    rows = (
-        await db.execute(
-            select(AutonomyChange).where(AutonomyChange.firm_id == firm.id)
-            .order_by(AutonomyChange.created_at.desc()).limit(50)
-        )
-    ).scalars().all()
-    return [
-        {"agent_key": c.agent_key, "from_tier": c.from_tier, "to_tier": c.to_tier,
-         "paused": c.paused, "automatic": c.automatic, "reason": c.reason,
-         "created_at": c.created_at.isoformat() if c.created_at else None}
-        for c in rows
-    ]
-
+    return await views.autonomy_changes(db, firm.id)
 
 class ResolveIn(BaseModel):
     resolution_note: str | None = None
@@ -324,24 +298,4 @@ async def generate_compliance_report(
 
 @router.get("/surveillance")
 async def surveillance(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    flags = (
-        await db.execute(
-            select(SurveillanceFlag).where(SurveillanceFlag.firm_id == firm.id)
-            .order_by(SurveillanceFlag.created_at.desc()).limit(200)
-        )
-    ).scalars().all()
-    return [
-        {
-            "id": str(f.id), "severity": f.severity, "category": f.category, "finding": f.finding,
-            "target_agent_key": f.target_agent_key, "resolved": f.resolved,
-            "auto_paused_agent": f.auto_paused_agent,
-            "recommendation_id": str(f.recommendation_id) if f.recommendation_id else None,
-            "created_at": f.created_at.isoformat() if f.created_at else None,
-            "resolution_note": f.resolution_note, "resolved_by": f.resolved_by,
-            "resolved_at": f.resolved_at.isoformat() if f.resolved_at else None,
-            "escalated": f.escalated, "escalated_to": f.escalated_to,
-            "escalated_at": f.escalated_at.isoformat() if f.escalated_at else None,
-            "escalation_note": f.escalation_note,
-        }
-        for f in flags
-    ]
+    return await views.surveillance_flags(db, firm.id)

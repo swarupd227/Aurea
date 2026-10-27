@@ -148,14 +148,16 @@ Humans keep the gates, and an agent never crosses one on its own:
 |---|---|---|
 | 0 | Trade decision rights, exactly-once decisions, firm-scoped reads, client document scoping, stable test ids, this document | Done |
 | 1 | Visual system: dark default, one yellow accent, ok/warn/crit/info, palette cleanup, honest motion | Partly: dark is pinned on `<html>` and the workspace is on the tokens; most classic pages still use retired `navy-*` / `gold` classes |
-| 2 | Tool catalogue, tool-capable model gateway, thread persistence, transcript validation | Done — `core/tools.py` (35 tools), `llm/gateway.py`, `llm/executors.py` |
-| 3 | Workspace: threads, rail, messages with Sources and suggestions, Confirm / Not now, ⌘K | Done, except the right-hand detail pane ("Open full view") |
-| 4 | Runs narrate into threads; `run_agent` and the streaming path merged; proposal supersession | Not started — agent runs still start from the Cockpit / Delegate bar, not from a thread |
+| 2 | Tool catalogue, tool-capable model gateway, thread persistence, transcript validation | Done — `core/tools.py` (44 tools), `llm/gateway.py`, `llm/executors.py` |
+| 3 | Workspace: threads, rail, messages with Sources and suggestions, Confirm / Not now, ⌘K | Done, except the right-hand detail pane ("Open full view"). Suggestions under a reply are derived from the tools the turn used and the role's tools; compliance's Needs-you lists only the proposals where its veto is the control; a reply keeps being written, and lands on the thread, if the browser leaves mid-stream (the generation runs in a task of its own; the reload shows "Astra is still replying" until it is whole. In-process, so a restart mid-reply loses that reply, and only the replica running it can say it is working) |
+| 4 | Runs narrate into threads; `run_agent` and the streaming path merged; proposal supersession | Mostly: `run_agent` starts a run from a sentence through the Delegate bar's own streaming run (`atlas/streaming.stream_run`), behind a Confirm card that names the agent, what it will do and its tier; the run's card is on the thread from the moment it starts and the agent settles it with a message. Not done: pause / resume (the kill switch is only an administrator route, no domain function to wrap), proposal supersession, and retiring the Cockpit's Delegate bar (it is now held to a proposal at Tier 3 for book- and cash-moving agents, like a conversation run) |
 | 5 | Pages become artifact views: prose out of cards, page-scoped conversations, Ask and Canvas merged | Started — a docked conversation on every staff page, role-pinned views; classic cards still carry prose, Ask-your-book (`studio/ask`) still stuffs a book snapshot into a prompt |
 | 6 | The rules as tests, run in CI | Started — decision rights, tenant scope and test-id checks exist |
 
 Staff now land in the conversation. Pages remain, at the same URLs, as views the conversation and the
-sidebar open. What is still page-first: onboarding, meetings, reports, messages, tasks, estate, tax,
-behavioural finance, regulatory countdown, agent history, workforce, skills, analytics, capacity, book
-integration and every administrator tab have no conversation tool yet. Each is a tool to add
-(see "Extending it"), not a page to redesign.
+sidebar open. Agent history, capacity, analytics, onboarding cases and provenance can now be asked for
+in a sentence (`read_agent_history`, `read_capacity`, `read_analytics`, `read_onboarding_cases`,
+`read_provenance`): each is a thin tool over the function its page's route calls, gated to that page's
+nav roles. What is still page-first: meetings, reports, messages, tasks, estate, tax, behavioural
+finance, regulatory countdown, skills, book integration and every administrator tab have no
+conversation tool yet. Each is a tool to add (see "Extending it"), not a page to redesign.

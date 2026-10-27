@@ -1,16 +1,18 @@
 import { Markdown } from "./Markdown";
 import { ConfirmationCard } from "./ConfirmationCard";
 import { ProofStrip } from "./ProofStrip";
-import { ArtifactRenderer } from "./artifacts/ArtifactRenderer";
+import { ArtifactRenderer, MessageCardRenderer } from "./artifacts/ArtifactRenderer";
 import type { Message } from "../types";
 
-function AstraMark() {
+function Mark({ letter, working }: { letter: string; working: boolean }) {
   return (
     <div
       aria-hidden
-      className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-accent font-mono text-[11px] font-bold text-black"
+      className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-accent font-mono text-[11px] font-bold text-black ${
+        working ? "agent-working" : ""
+      }`}
     >
-      A
+      {letter}
     </div>
   );
 }
@@ -21,7 +23,7 @@ export function MessageView({
   onReject,
 }: {
   message: Message;
-  onConfirm: (id: string) => Promise<void>;
+  onConfirm: (id: string, seenTier?: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
 }) {
   if (message.role === "user") {
@@ -34,11 +36,23 @@ export function MessageView({
     );
   }
 
+  // A message from an agent (a run settling) carries the agent's name; Astra's carries none.
+  const isAgent = message.role === "agent";
+  const agentName: string | null = isAgent
+    ? message.card?.data?.agent_name ?? (message.speaking_agent ?? "").replace(/_/g, " ")
+    : null;
+  const working = message.card?.kind === "agent_run" && message.card.data?.status === "running";
+
   return (
-    <div className="flex gap-3">
-      <AstraMark />
+    <div className="flex gap-3" data-testid={isAgent ? "agent-message" : undefined}>
+      <Mark letter={(agentName || "A").charAt(0).toUpperCase()} working={working} />
       <div className="min-w-0 flex-1 space-y-3">
+        {agentName && (
+          <div className="font-mono text-[11px] uppercase tracking-wider text-ink-muted">{agentName}</div>
+        )}
         {message.text && <Markdown text={message.text} className="text-sm text-ink" />}
+
+        {message.card && <MessageCardRenderer card={message.card} />}
 
         {message.artifacts.map((a, i) => (
           <ArtifactRenderer key={i} artifact={a} />

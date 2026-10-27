@@ -89,6 +89,8 @@ _TOOLS = [
      "Records a manager's stated value for a private holding - revalues every holding of it, which changes client balances and the fees charged on them."),
     ("run_billing", "Prepare Billing Run (tool)", "tool", "Head of Operations", "medium",
      "Has the billing agent draft a run for approval; nothing is issued or taken until it is approved."),
+    ("run_agent", "Run Agent (tool)", "tool", "Head of Advice", "medium",
+     "Starts an agent from a sentence after a confirmation that names its autonomy tier. The agent proposes and never approves its own proposal; an agent that would move a client's book or cash stops at a proposal whatever its tier."),
 ]
 
 

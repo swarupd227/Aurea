@@ -155,7 +155,9 @@ export function Rail({
                     data-testid="needs-you-proposal"
                     onClick={() =>
                       onAsk(
-                        `Walk me through the proposal "${p.title}"${p.subject_label ? ` for ${p.subject_label}` : ""}, and what it would do if I approve it.`
+                        `Walk me through the proposal "${p.title}"${p.subject_label ? ` for ${p.subject_label}` : ""}, and ${
+                          p.action === "veto" ? "whether I should dismiss it" : "what it would do if I approve it"
+                        }.`
                       )
                     }
                     title={p.title}

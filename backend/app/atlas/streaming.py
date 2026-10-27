@@ -49,9 +49,13 @@ def _sense_summary(sensed: dict) -> str:
 
 async def stream_run(
     session: AsyncSession, *, firm: Firm, agent_key: AgentKey, subject: Subject,
-    mandate_type: MandateType | None = None,
+    mandate_type: MandateType | None = None, require_human: bool = False,
 ):
-    """Async generator yielding event dicts across the agent's loop."""
+    """Async generator yielding event dicts across the agent's loop.
+
+    `require_human` holds every draft as a proposal for a human to decide, even at Tier 3. The
+    Cockpit leaves it off; a run started from a conversation turns it on for an agent that moves
+    a client's book or cash (core.agent_runs.forced_to_proposal)."""
     agent = get_agent(agent_key)
     name = runtime.agent_label(agent_key)
     if agent is None:
@@ -146,7 +150,7 @@ async def stream_run(
                                   actor="agent", content=runtime._ledger_content(rec, tier, "stream"))
         flags = await surveillance.review_recommendation(session, rec)
         total_flags += len(flags or [])
-        if policy.requires_human_checkpoint(tier) or require_all:
+        if policy.requires_human_checkpoint(tier) or require_all or require_human:
             pending = True
             await activity.emit(session, firm_id=firm.id, agent_key=agent_key, kind=ActivityKind.PROPOSED,
                                 summary=f"{name}: {rec.title}", subject_label=rec.subject_label,
