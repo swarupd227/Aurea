@@ -74,6 +74,7 @@ class ToolExecutors:
             "search_holdings": self.search_holdings,
             "read_recommendations": self.read_recommendations,
             "read_agents": self.read_agents,
+            "open_view": self.open_view,  # outside the gateway's turn no id is grounded, so only id-free views open
             "run_agent": self.run_agent,
             "read_agent_history": self.read_agent_history,
             "read_capacity": self.read_capacity,
@@ -947,6 +948,46 @@ class ToolExecutors:
         if firm is None:
             raise ExecutorError("Firm not found.")
         return firm
+
+    async def open_view(self, inputs: dict[str, Any], turn: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """Name a view for the workspace to open beside the conversation. It reads no figures and
+        returns none: the view loads its own data through its page's routes. An id it is given must
+        appear in a result of a tool called earlier in the same turn (`turn`, which the gateway
+        passes; any other caller passes none, so every id is refused) and must be the caller's
+        firm's - an id from the model's memory is not trusted on its own."""
+        import json
+
+        from app.core.tools import OPEN_VIEWS
+        from app.models.governance import Recommendation
+
+        view = str(inputs.get("view") or "").strip().lower()
+        spec = OPEN_VIEWS.get(view)
+        if spec is None:
+            raise ExecutorError(f"There is no view called '{view}'. Views: {', '.join(OPEN_VIEWS)}.")
+        route, label, roles = spec
+        if self.role != UserRole.ADMIN and self.role not in roles:
+            raise ExecutorError(f"The {label} view is not one this role opens.")
+
+        seen = json.dumps([t.get("result") for t in (turn or [])], default=str)
+
+        async def grounded(field: str, model) -> uuid.UUID:
+            value = _parse_uuid(inputs.get(field) or "", field)
+            if str(value) not in seen:
+                raise ExecutorError(
+                    f"{field} {value} did not come from a tool called this turn - look it up first "
+                    f"({'search_households' if model is Household else 'read_recommendations'}).")
+            owned = (await self.session.execute(
+                select(model.id).where(model.id == value, model.firm_id == self.firm_id))).scalar_one_or_none()
+            if owned is None:
+                raise ExecutorError(f"{field} {value} not found or access denied")
+            return value
+
+        if view == "client":
+            route = f"{route}/{await grounded('household_id', Household)}"
+        elif view == "recommendations" and inputs.get("recommendation_id"):
+            route = f"{route}?rec={await grounded('recommendation_id', Recommendation)}"
+
+        return {"view": route, "kind": view, "message": f"The {label} view is open beside the conversation."}
 
     async def read_agent_history(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Past agent runs, newest first - the Agent history page's read (atlas.history)."""

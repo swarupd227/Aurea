@@ -257,7 +257,7 @@ class Gateway:
                     # can decide the next step (another tool, or the final answer).
                     yield {"type": "tool_start", "tool_key": tool_key}
                     try:
-                        result = await self._execute_tool(tool_key, inputs)
+                        result = await self._execute_tool(tool_key, inputs, turn=used_tools)
                         tool_call.status = ToolCallStatus.DONE
                         tool_call.result = result
                         tool_call.completed_at = datetime.utcnow()
@@ -542,12 +542,17 @@ class Gateway:
         await self.session.commit()
         return {"status": "failed", "tool_key": "run_agent", "message_id": str(message_id), "error": reason}
 
-    async def _execute_tool(self, tool_key: str, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Execute a tool and return its result."""
+    async def _execute_tool(
+        self, tool_key: str, inputs: dict[str, Any], turn: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Execute a tool and return its result. `turn` is what this turn's earlier tools returned:
+        open_view takes an id only if one of them returned it (rule 2 - nothing from memory)."""
 
         tool = get_tool(tool_key)
         if not tool:
             raise GatewayError(f"Tool '{tool_key}' not found")
 
         executors = ToolExecutors(self.session, self.user_id, self.role, self.firm_id)
+        if tool_key == "open_view":
+            return await executors.open_view(inputs, turn=turn or [])
         return await executors.execute(tool_key, inputs)
