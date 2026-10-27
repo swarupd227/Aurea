@@ -89,6 +89,7 @@ export function roleStarters(role: string, ctx: SuggestionContext): Suggestion[]
         { label: "Prepare billing run", prompt: "Prepare this quarter's billing run." },
         { label: "Billing exceptions", prompt: "What's the billing status, and which bills are held or unpaid?" },
         { label: "Corporate actions", prompt: "Which corporate actions still need processing?" },
+        { label: "Price freshness", prompt: "How fresh are my prices, and which ones can't be trusted?" },
         ONBOARDING,
         WAITING,
       ];
@@ -142,6 +143,14 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Held bills", prompt: "Which bills are held, and why?" },
         h1 ? { label: `Why ${short(h1)}'s bill`, prompt: `Why was ${the(h1)} billed what it was?` } : { label: "Explain a bill", prompt: "Explain a household's latest bill." },
       ];
+    case "/studio/prices":
+      return [
+        { label: "How fresh are my prices", prompt: "How fresh are my prices, and which ones can't be trusted?" },
+        { label: "Fetch prices now", prompt: "Fetch prices now." },
+        { label: "Failed symbols", prompt: "Did the last price run fail for any symbol, and why?" },
+      ];
+    case "/studio/valuations":
+      return [{ label: "Private valuations", prompt: "What are the private holdings carried at, and which are overdue?" }, { label: "Price freshness", prompt: "How fresh are my prices?" }];
     case "/studio/clients":
       return [view(h1), perf(h1), washSale(h2 ?? h1)];
     case "/studio/analytics":

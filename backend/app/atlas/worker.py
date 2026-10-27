@@ -13,6 +13,7 @@ from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
 
 from app.agents import schedules as agent_schedules
+from app.aurea_core import price_freshness
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
 
@@ -359,10 +360,12 @@ async def main() -> None:
     #   06:00 UTC = 19:00 NZDT / 18:00 NZST - after NZX closes (16:45 NZ time).
     #   22:00 UTC = 18:00 EDT / 17:00 EST    - an hour or more after the US close.
     # Prices are data, not decisions, so this runs without anyone asking; every run is recorded.
-    scheduler.add_job(_refresh_market_data, CronTrigger(day_of_week="mon-fri", hour=6, minute=0),
-                      id="market_nz")
-    scheduler.add_job(_refresh_market_data, CronTrigger(day_of_week="mon-fri", hour=22, minute=0),
-                      id="market_us")
+    # The times live in aurea_core.price_freshness.SCHEDULE, so what the Prices view says is
+    # next is read from the same place as what the worker does.
+    for hour, minute, _why in price_freshness.SCHEDULE:
+        scheduler.add_job(_refresh_market_data,
+                          CronTrigger(day_of_week=price_freshness.SCHEDULE_DAYS, hour=hour, minute=minute),
+                          id=f"market_{hour:02d}{minute:02d}")
     # Drift is no longer registered here — it is scheduled from AgentConfig like every
     # other scheduled agent, at the same 6-hourly cadence (see agents/schedules.py). One
     # mechanism rather than two, and its cadence is now changeable in Admin.

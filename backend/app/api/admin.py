@@ -1119,6 +1119,9 @@ async def get_data_quality(
         if hh_id:
             mandates_by_hh.setdefault(hh_id, []).append(m)
 
+    from app.aurea_core import price_freshness
+    price_by_mandate = await price_freshness.statuses_by_mandate(db, firm.id)
+
     now = utcnow()
     last_sync_raw = max((c.last_synced_at for c in connectors if c.last_synced_at), default=None)
     if last_sync_raw is not None and last_sync_raw.tzinfo is None:
@@ -1150,9 +1153,23 @@ async def get_data_quality(
 
         total_fields = 4 if has_persons else 2
         completeness = round(1 - len(missing) / total_fields, 2)
-        if len(missing) == 0 and (days_since_sync is None or days_since_sync < 3):
+
+        # Freshness is read from the prices this household's holdings actually rest on, not from
+        # when a connector last ran: a feed can run daily and still leave one symbol months old,
+        # and a placeholder price is untrustworthy however recently the feed ran.
+        held = {}
+        for m in mands:
+            for s in price_by_mandate.get(m.id, []):
+                held[s["symbol"]] = s
+        untrusted = sorted(s["symbol"] for s in held.values() if s["status"] in ("missing", "synthetic", "stale"))
+        ageing = any(s["status"] == "ageing" for s in held.values())
+        ages = [s["age_days"] for s in held.values() if s["age_days"] is not None]
+        oldest = max(ages) if ages else None
+        stalest = next((s["symbol"] for s in held.values() if s["age_days"] == oldest), None) if ages else None
+
+        if len(missing) == 0 and not untrusted and not ageing:
             health = "green"
-        elif len(missing) <= 2 and (days_since_sync is None or days_since_sync < 7):
+        elif len(missing) <= 2 and not untrusted:
             health = "amber"
         else:
             health = "red"
@@ -1161,6 +1178,7 @@ async def get_data_quality(
             "household_id": str(hh.id), "name": hh.name,
             "completeness": completeness, "missing_fields": missing,
             "missing_count": len(missing), "days_since_sync": days_since_sync,
+            "price_age_days": oldest, "stalest_symbol": stalest, "untrusted_prices": untrusted,
             "health": health, "mandate_count": len(mands), "person_count": len(people),
         })
 
@@ -1175,51 +1193,76 @@ async def get_data_quality(
 
 
 # ── Agent schedules ───────────────────────────────────────────────────────────
+# What the worker actually runs: one job per (firm, agent) from AgentConfig.schedule_cron, picked up
+# within 15 minutes of a change (atlas/worker.py `_sync_agent_schedules`), and the price fetch,
+# which runs at the fixed times in aurea_core.price_freshness.SCHEDULE. This used to list three
+# "intervals in hours" that nothing read, so editing one only changed a number on this page.
 
-_SCHED_META: dict[str, dict] = {
-    "drift_rebalancing":   {"label": "Drift & Rebalancing",    "default_hours": 6.0},
-    "conduct_surveillance": {"label": "Conduct Surveillance",   "default_hours": 12.0},
-    "market_data":          {"label": "Market Data Refresh",    "default_hours": 1.0},
-}
+MARKET_DATA_KEY = "market_data"
+SCHEDULE_PICKED_UP = "within 15 minutes"
 
 
 @router.get("/schedules")
 async def get_schedules(
     user: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    """Schedulable agent jobs — current intervals, last-run metadata, run counts."""
+    """Every job the worker runs on a timer for this firm: the agents' cadences and the price fetch."""
+    from app.agents import schedules as agent_schedules
+    from app.agents.catalogue import CATALOGUE
+    from app.aurea_core import price_freshness
+    from app.models.connectors import ConnectorSync
+
     configs = {
-        c.agent_key: c for c in (await db.execute(
+        str(c.agent_key): c for c in (await db.execute(
             select(AgentConfig).where(AgentConfig.firm_id == firm.id)
         )).scalars().all()
     }
     results = []
-    for key, meta in _SCHED_META.items():
-        cfg = configs.get(key)
-        interval = float((cfg.config or {}).get("schedule_hours", meta["default_hours"])) if cfg else meta["default_hours"]
+    for key, cfg in configs.items():
+        if not cfg.schedule_cron and agent_schedules.default_for(key) is None:
+            continue
+        default = agent_schedules.default_for(key)
         run_count = (await db.execute(
-            select(func.count()).select_from(AgentRun).where(
-                AgentRun.firm_id == firm.id, AgentRun.agent_key == key
-            )
+            select(func.count()).select_from(AgentRun).where(AgentRun.firm_id == firm.id, AgentRun.agent_key == key)
         )).scalar() or 0
         last = (await db.execute(
             select(AgentRun).where(AgentRun.firm_id == firm.id, AgentRun.agent_key == key)
             .order_by(AgentRun.started_at.desc()).limit(1)
         )).scalar_one_or_none()
         results.append({
-            "agent_key": key, "label": meta["label"],
-            "interval_hours": interval, "default_hours": meta["default_hours"],
-            "last_run_at":     last.started_at.isoformat() if last else None,
-            "last_run_status": last.status if last else None,
-            "run_count": run_count,
-            "enabled": cfg.enabled if cfg else True,
-            "paused":  cfg.paused  if cfg else False,
+            "agent_key": key, "label": (CATALOGUE.get(key) or {}).get("name") or key.replace("_", " ").title(),
+            "cron": cfg.schedule_cron, "default_cron": default[0] if default else None,
+            "why": default[1] if default else None, "fixed": False,
+            "last_run_at": last.started_at.isoformat() if last and last.started_at else None,
+            "last_run_status": last.status if last else None, "run_count": run_count,
+            "enabled": bool(cfg.enabled and cfg.schedule_enabled), "paused": bool(cfg.paused),
         })
+    results.sort(key=lambda r: r["label"])
+
+    conn = await price_freshness.market_connector(db, firm.id)
+    last_sync = None
+    n_sync = 0
+    if conn is not None:
+        last_sync = (await db.execute(
+            select(ConnectorSync).where(ConnectorSync.connector_id == conn.id)
+            .order_by(ConnectorSync.started_at.desc()).limit(1))).scalars().first()
+        n_sync = (await db.execute(
+            select(func.count()).select_from(ConnectorSync).where(ConnectorSync.connector_id == conn.id))).scalar() or 0
+    times = " and ".join(f"{h:02d}:{m:02d}" for h, m, _ in price_freshness.SCHEDULE)
+    results.insert(0, {
+        "agent_key": MARKET_DATA_KEY, "label": "Market prices", "cron": f"Mon-Fri {times} UTC",
+        "default_cron": None, "why": "Just after the NZX and US closes. Fixed: the worker builds these times from "
+                                     "one definition, so they are changed in code, not here.",
+        "fixed": True,
+        "last_run_at": last_sync.started_at.isoformat() if last_sync and last_sync.started_at else None,
+        "last_run_status": last_sync.status if last_sync else None, "run_count": n_sync,
+        "enabled": bool(conn and not conn.use_mock), "paused": False,
+    })
     return results
 
 
 class ScheduleUpdate(BaseModel):
-    interval_hours: float | None = None
+    cron: str | None = None
     enabled: bool | None = None
 
 
@@ -1228,30 +1271,39 @@ async def update_schedule(
     agent_key: str, body: ScheduleUpdate,
     actor: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    if agent_key not in _SCHED_META:
+    from apscheduler.triggers.cron import CronTrigger
+
+    from app.agents import schedules as agent_schedules
+
+    if agent_key == MARKET_DATA_KEY:
+        raise HTTPException(409, "Prices are fetched at fixed times just after the market closes; "
+                                 "switch the feed on or off under Connectors.")
+    try:
+        key = AgentKey(agent_key)
+    except ValueError:
         raise HTTPException(404, "Unknown schedule key.")
-    if body.interval_hours is not None and not (0.25 <= body.interval_hours <= 168):
-        raise HTTPException(400, "interval_hours must be between 0.25 and 168.")
+    cron = body.cron.strip() if body.cron is not None else None
+    if cron is not None:
+        try:
+            CronTrigger.from_crontab(agent_schedules.normalise_cron(cron))
+        except ValueError as exc:
+            raise HTTPException(422, f"'{cron}' is not a valid 5-field cron expression "
+                                     f"(minute hour day-of-month month weekday): {exc}")
     cfg = (await db.execute(
-        select(AgentConfig).where(
-            AgentConfig.firm_id == firm.id, AgentConfig.agent_key == agent_key
-        )
+        select(AgentConfig).where(AgentConfig.firm_id == firm.id, AgentConfig.agent_key == key)
     )).scalar_one_or_none()
     if not cfg:
-        cfg = AgentConfig(firm_id=firm.id, agent_key=agent_key, config={})
+        cfg = AgentConfig(firm_id=firm.id, agent_key=key)
         db.add(cfg)
-    config = dict(cfg.config or {})
-    if body.interval_hours is not None:
-        config["schedule_hours"] = body.interval_hours
-    cfg.config = config
+    if cron is not None:
+        cfg.schedule_cron = cron
     if body.enabled is not None:
-        cfg.enabled = body.enabled
+        cfg.schedule_enabled = body.enabled
     _audit_sync(db, firm.id, actor, "schedule.updated", subject=agent_key,
-                detail={"interval_hours": config.get("schedule_hours")})
-    return {
-        "ok": True, "agent_key": agent_key,
-        "interval_hours": config.get("schedule_hours", _SCHED_META[agent_key]["default_hours"]),
-    }
+                detail={"cron": cfg.schedule_cron, "enabled": cfg.schedule_enabled})
+    await db.flush()
+    return {"ok": True, "agent_key": agent_key, "cron": cfg.schedule_cron,
+            "enabled": bool(cfg.schedule_enabled), "takes_effect": SCHEDULE_PICKED_UP}
 
 
 # ── Force-logout ──────────────────────────────────────────────────────────────

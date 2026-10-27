@@ -87,6 +87,8 @@ _TOOLS = [
      "Offsets an issued invoice in full and returns any fee already taken to the client's cash."),
     ("record_valuation", "Record Valuation (tool)", "tool", "Head of Operations", "high",
      "Records a manager's stated value for a private holding - revalues every holding of it, which changes client balances and the fees charged on them."),
+    ("refresh_prices", "Refresh Prices (tool)", "tool", "Head of Operations", "medium",
+     "Fetches market prices on demand and revalues the holdings they change, which changes client balances and the fees charged on them. Confirm-gated and refused within ten minutes of the last fetch."),
     ("run_billing", "Prepare Billing Run (tool)", "tool", "Head of Operations", "medium",
      "Has the billing agent draft a run for approval; nothing is issued or taken until it is approved."),
     ("run_agent", "Run Agent (tool)", "tool", "Head of Advice", "medium",

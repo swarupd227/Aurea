@@ -214,6 +214,32 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM},
     ),
 
+    "read_price_freshness": Tool(
+        key="read_price_freshness",
+        name="Read Price Freshness",
+        speaking_agent="astra",
+        description="How current the prices under the book are, instrument by instrument: the date and basis of each held instrument's latest price (market quote, stated valuation, or a placeholder), its age against the limit that applies, and how much of the book rests on a price that is missing, a placeholder or stale. Also the price feed's own record: whether it is on, when it last ran, which symbols failed and why, and when it runs next. Use it for 'are my prices up to date' or 'why is this valuation old'.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Held instruments with price age and status, a summary, and the feed's last and next run"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "refresh_prices": Tool(
+        key="refresh_prices",
+        name="Refresh Prices",
+        speaking_agent="astra",
+        description="Fetch prices from the market-data provider now, instead of waiting for the next scheduled run, and revalue the holdings they change. Refused if the feed is switched off or prices were fetched in the last ten minutes. It cannot give a private fund a price - that needs a stated valuation (record_valuation).",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Fetch prices now? Holdings are revalued at the new prices, which changes client balances and the fees charged on them.",
+        inputs=[],
+        output=ToolOutput("object", "What the run fetched, what failed and why, and the holdings revalued"),
+        roles_required={UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

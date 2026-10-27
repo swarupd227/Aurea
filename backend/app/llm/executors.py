@@ -59,6 +59,8 @@ class ToolExecutors:
             "read_billing": self.read_billing,
             "read_private_valuations": self.read_private_valuations,
             "record_valuation": self.record_valuation,
+            "read_price_freshness": self.read_price_freshness,
+            "refresh_prices": self.refresh_prices,
             "explain_invoice": self.explain_invoice,
             "run_billing": self.run_billing,
             "credit_invoice": self.credit_invoice,
@@ -281,6 +283,45 @@ class ToolExecutors:
             f"Recorded {inst.symbol} at {result['unit_value']:,.4f} as at {result['as_of']}{move}, from "
             f"{result['source_document']}. {result['holdings_revalued']} holding(s) revalued, "
             f"{result['value_before']:,.2f} to {result['value_after']:,.2f}.")
+        return result
+
+    async def read_price_freshness(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import price_freshness
+
+        result = await price_freshness.price_freshness(self.session, self.firm_id)
+        s = result["summary"]
+        bad = s["missing"] + s["synthetic"] + s["stale"]
+        feed = result["feed"]
+        parts = [f"{s['total']} held instrument(s): {s['current']} current, {s['ageing']} ageing, {bad} not trustworthy"]
+        if s["share_not_current"]:
+            parts.append(f"{s['share_not_current']:.0%} of the book's value rests on those")
+        if not feed["live"]:
+            parts.append("the live feed is switched off")
+        elif feed["last_run"] and feed["last_run"]["failed"]:
+            parts.append(f"the last run failed for {len(feed['last_run']['failed'])} symbol(s)")
+        result["message"] = "; ".join(parts) + "."
+        return result
+
+    async def refresh_prices(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import price_freshness
+
+        # The gateway checks the catalogue's roles; this re-checks, as for the other tools that
+        # revalue holdings.
+        if self.role not in (UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN):
+            raise ExecutorError("Fetching prices revalues holdings, which changes client balances and fees, "
+                                "so only operations, the portfolio team or an administrator may do it.")
+        try:
+            result = await price_freshness.refresh_prices(self.session, self.firm_id)
+        except price_freshness.RefreshRefused as exc:
+            raise ExecutorError(str(exc))
+        if result["status"] == "error":
+            result["message"] = f"The fetch failed: {result.get('error') or 'no prices could be fetched'}."
+        else:
+            fail = f"; {len(result['failed'])} symbol(s) failed" if result["failed"] else ""
+            rv = (f"; {result['revalued']['holdings']} holding(s) revalued" if result["revalued"]
+                  else "; nothing needed revaluing")
+            result["message"] = (f"Fetched {result['resolved']} of {result['instruments']} instrument(s): "
+                                 f"{result['inserted']} new price(s), {result['updated']} updated{fail}{rv}.")
         return result
 
     async def read_billing(self, inputs: dict[str, Any]) -> dict[str, Any]:

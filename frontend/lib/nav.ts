@@ -7,7 +7,7 @@
 // the palette. Routes here are stable: never rename or remove one.
 import {
   LayoutDashboard, Users, ClipboardCheck, MessageSquareText, ShieldCheck, Sparkles, Settings,
-  PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare, MessageSquare, Gauge,
+  PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare, MessageSquare, Gauge, Activity,
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
   Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2,
 } from "lucide-react";
@@ -65,6 +65,7 @@ export const VIEWS: View[] = [
   { href: "/studio/onboarding", label: "Onboarding", icon: UserPlus, roles: [O, C, A], intent: "operate", keywords: ["kyc", "aml", "cases", "new client"] },
   { href: "/studio/book-integration", label: "Book integration", icon: GitMerge, roles: [O], intent: "operate", keywords: ["import", "acquire", "book scan"] },
   { href: "/studio/billing", label: "Billing", icon: Banknote, roles: [A, C, O, B], intent: "operate", keywords: ["fees", "invoices", "run", "revenue"] },
+  { href: "/studio/prices", label: "Prices", icon: Activity, roles: [A, P, PT, R, C, O, B], intent: "operate", keywords: ["freshness", "stale", "quote", "feed", "market data", "refresh"] },
   { href: "/studio/valuations", label: "Valuations", icon: Landmark, roles: [PT, O, C, B], intent: "operate", keywords: ["private", "nav", "statement", "fund", "stated value"] },
   { href: "/studio/corporate-actions", label: "Corporate actions", icon: Repeat, roles: [O, C], intent: "operate", keywords: ["splits", "dividends", "entitlements"] },
   { href: "/studio/composites", label: "Composites", icon: LineChart, roles: [A, PT, R, C], intent: "operate", keywords: ["gips", "performance"] },

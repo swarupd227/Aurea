@@ -9,6 +9,7 @@ import { WashSaleCalendarCard } from "./WashSaleCalendarCard";
 import { PerformanceCard } from "./PerformanceCard";
 import { BillingCard } from "./BillingCard";
 import { ValuationCard } from "./ValuationCard";
+import { PriceFreshnessCard } from "./PriceFreshnessCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
@@ -83,6 +84,12 @@ export function artifactCard(artifact: Artifact) {
       case "record_valuation":
         if (typeof artifact.result?.unit_value !== "number") return null;
         return <ValuationCard result={artifact.result as any} />;
+      case "read_price_freshness":
+        if (!Array.isArray(artifact.result?.instruments)) return null;
+        return <PriceFreshnessCard result={artifact.result as any} />;
+      case "refresh_prices":
+        if (typeof artifact.result?.resolved !== "number") return null;
+        return <PriceFreshnessCard result={artifact.result as any} />;
       case "read_billing":
       case "run_billing":
       case "credit_invoice":

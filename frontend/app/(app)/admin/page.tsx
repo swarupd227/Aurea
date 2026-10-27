@@ -2061,11 +2061,10 @@ function DataQualityTab() {
         ))}
       </div>
 
-      {data.days_since_sync !== null && (
-        <div className="text-xs text-ink-muted">
-          Last connector sync: <span className="font-medium text-ink">{data.days_since_sync}d ago</span>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+        {data.days_since_sync !== null && <span className="chip">Last feed run {data.days_since_sync}d ago</span>}
+        <a href="/studio/prices" className="chip text-navy-600 hover:underline" data-testid="dq-prices-link">Prices by instrument</a>
+      </div>
 
       {/* Household table */}
       <Card className="overflow-hidden">
@@ -2077,6 +2076,7 @@ function DataQualityTab() {
                 <th className="text-left px-4 py-2.5">Health</th>
                 <th className="text-left px-4 py-2.5">Completeness</th>
                 <th className="text-left px-4 py-2.5">Missing fields</th>
+                <th className="text-left px-4 py-2.5">Prices</th>
                 <th className="text-left px-4 py-2.5">Mandates</th>
                 <th className="text-left px-4 py-2.5">Members</th>
               </tr>
@@ -2108,6 +2108,17 @@ function DataQualityTab() {
                       <span className="text-xs text-red-600">{hh.missing_fields.join(", ")}</span>
                     )}
                   </td>
+                  <td className="px-4 py-3" data-testid="dq-prices">
+                    {(hh.untrusted_prices ?? []).length > 0 ? (
+                      <span className="text-xs text-red-600" title="Held at a price that is missing, a placeholder, or past its limit">
+                        {hh.untrusted_prices.join(", ")}
+                      </span>
+                    ) : hh.price_age_days != null ? (
+                      <span className="text-xs text-ink-muted">{hh.price_age_days}d · {hh.stalest_symbol}</span>
+                    ) : (
+                      <span className="text-xs text-ink-muted">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-xs text-ink-muted">{hh.mandate_count}</td>
                   <td className="px-4 py-3 text-xs text-ink-muted">{hh.person_count}</td>
                 </tr>
@@ -2124,8 +2135,9 @@ function DataQualityTab() {
 
 function SchedulesTab() {
   const { data, loading, error, refetch } = useApi<any[]>("/api/admin/schedules");
-  const [editing, setEditing] = useState<{ key: string; hours: number } | null>(null);
+  const [editing, setEditing] = useState<{ key: string; cron: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
   if (loading) return <Spinner />;
   if (error || !data) return <div className="text-sm text-red-600 p-4">{error || "Failed to load"}</div>;
@@ -2133,21 +2145,27 @@ function SchedulesTab() {
   async function saveSchedule() {
     if (!editing) return;
     setSaving(true);
+    setMsg(null);
     try {
-      await api(`/api/admin/schedules/${editing.key}`, { method: "PATCH", body: { interval_hours: editing.hours } });
+      const r = await api<any>(`/api/admin/schedules/${editing.key}`, { method: "PATCH", body: { cron: editing.cron } });
+      setMsg(`Saved. The worker picks it up ${r.takes_effect}.`);
       setEditing(null);
       refetch();
     } catch (e: any) {
-      alert(e.message);
+      setMsg(e.message);
     } finally {
       setSaving(false);
     }
   }
 
-  function fmtHours(h: number) {
-    if (h < 1) return `${Math.round(h * 60)}m`;
-    if (h === 1) return "1 hr";
-    return `${h} hrs`;
+  async function toggle(s: any) {
+    setMsg(null);
+    try {
+      await api(`/api/admin/schedules/${s.agent_key}`, { method: "PATCH", body: { enabled: !s.enabled } });
+      refetch();
+    } catch (e: any) {
+      setMsg(e.message);
+    }
   }
 
   function fmtDate(iso: string | null) {
@@ -2158,17 +2176,19 @@ function SchedulesTab() {
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-ink-muted">
-        Configure how often each background agent job runs. Changes take effect on the next worker restart.
-      </p>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+        <span className="chip">UTC · 5-field cron · picked up within 15 minutes</span>
+        <span className="chip">prices are fixed - changed in code</span>
+        {msg && <span className="chip text-ink" role="status">{msg}</span>}
+      </div>
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" data-testid="schedules-table">
             <thead>
               <tr className="border-b border-border bg-surface-2 text-xs text-ink-muted uppercase tracking-wide">
-                <th className="text-left px-4 py-2.5">Agent job</th>
-                <th className="text-left px-4 py-2.5">Current interval</th>
+                <th className="text-left px-4 py-2.5">Job</th>
+                <th className="text-left px-4 py-2.5">Runs</th>
                 <th className="text-left px-4 py-2.5">Default</th>
                 <th className="text-left px-4 py-2.5">Last run</th>
                 <th className="text-left px-4 py-2.5">Run count</th>
@@ -2178,28 +2198,28 @@ function SchedulesTab() {
             </thead>
             <tbody className="divide-y divide-border">
               {data.map((s: any) => (
-                <tr key={s.agent_key} className="hover:bg-surface-2/50">
+                <tr key={s.agent_key} className="hover:bg-surface-2/50" title={s.why ?? undefined}>
                   <td className="px-4 py-3 font-medium text-ink">{s.label}</td>
                   <td className="px-4 py-3">
                     {editing?.key === s.agent_key ? (
                       <div className="flex items-center gap-2">
                         <input
-                          type="number" min={0.25} max={168} step={0.25}
-                          value={editing.hours}
-                          onChange={(e) => setEditing({ ...editing, hours: Number(e.target.value) })}
-                          className="input w-20 py-1 text-sm"
+                          value={editing.cron}
+                          onChange={(e) => setEditing({ ...editing, cron: e.target.value })}
+                          className="input w-40 py-1 text-sm font-mono"
+                          placeholder="45 2 * * *"
+                          aria-label="Cron expression"
                         />
-                        <span className="text-xs text-ink-muted">hrs</span>
                         <button onClick={saveSchedule} disabled={saving} className="btn-primary text-xs py-1 px-2">
                           {saving ? "…" : "Save"}
                         </button>
                         <button onClick={() => setEditing(null)} className="btn-outline text-xs py-1 px-2">Cancel</button>
                       </div>
                     ) : (
-                      <span className="font-mono text-ink">{fmtHours(s.interval_hours)}</span>
+                      <span className="font-mono text-ink">{s.cron ?? "—"}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs text-ink-muted">{fmtHours(s.default_hours)}</td>
+                  <td className="px-4 py-3 text-xs font-mono text-ink-muted">{s.default_cron ?? "—"}</td>
                   <td className="px-4 py-3 text-xs text-ink-muted">{fmtDate(s.last_run_at)}</td>
                   <td className="px-4 py-3 text-xs text-ink-muted">{s.run_count.toLocaleString()}</td>
                   <td className="px-4 py-3">
@@ -2208,17 +2228,24 @@ function SchedulesTab() {
                     ) : s.enabled ? (
                       <span className="text-xs text-emerald-600 font-medium">Active</span>
                     ) : (
-                      <span className="text-xs text-ink-muted">Disabled</span>
+                      <span className="text-xs text-ink-muted">Off</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    {editing?.key !== s.agent_key && (
-                      <button
-                        onClick={() => setEditing({ key: s.agent_key, hours: s.interval_hours })}
-                        className="text-navy-600 hover:text-navy-800 text-xs font-medium"
-                      >
-                        Edit
-                      </button>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {s.fixed ? (
+                      <span className="text-xs text-ink-muted">fixed</span>
+                    ) : editing?.key !== s.agent_key && (
+                      <>
+                        <button
+                          onClick={() => setEditing({ key: s.agent_key, cron: s.cron ?? s.default_cron ?? "" })}
+                          className="text-navy-600 hover:text-navy-800 text-xs font-medium mr-3"
+                        >
+                          Edit
+                        </button>
+                        <button onClick={() => toggle(s)} className="text-navy-600 hover:text-navy-800 text-xs font-medium">
+                          {s.enabled ? "Turn off" : "Turn on"}
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>
