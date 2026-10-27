@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.pricing import month_end_points, price_basis
 from app.core.db import utcnow
+from app.models.enums import AssetClass
 from app.models.graph import Account, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import (
     Holding, Instrument, ModelPortfolio, Price, TaxLot, Transaction,
@@ -366,10 +367,77 @@ async def household_account_ids(session: AsyncSession, household_id: uuid.UUID, 
     )).scalars().all()]
 
 
+# ── Benchmarks ────────────────────────────────────────────────────────────────
+# A benchmark is one symbol ("SPY") or a fixed-weight blend ("SPY:0.7,AGG:0.3"). A blend's return
+# is the weighted sum of its parts' returns over the window: weights set at the start and not
+# rebalanced - the same arithmetic as holding the parts from the start date.
+
+GROWTH_PROXY, DEFENSIVE_PROXY = "SPY", "AGG"
+_DEFENSIVE = {AssetClass.FIXED_INCOME.value, AssetClass.CASH.value}
+
+
+def parse_benchmark(spec: str | None) -> list[tuple[str, float]]:
+    if not spec:
+        return []
+    parts = []
+    for piece in spec.split(","):
+        sym, _, w = piece.strip().partition(":")
+        if sym:
+            parts.append((sym.strip(), float(w) if w else 1.0))
+    total = sum(w for _, w in parts)
+    return [(s, w / total) for s, w in parts] if total > 0 else []
+
+
+def format_benchmark(parts: list[tuple[str, float]]) -> str | None:
+    """Merge, round to whole per cent and write a spec back; one part is just its symbol."""
+    merged: dict[str, float] = defaultdict(float)
+    for sym, w in parts:
+        merged[sym] += w
+    total = sum(merged.values())
+    if total <= 0:
+        return None
+    pcts = {s: round(100 * w / total) for s, w in merged.items() if round(100 * w / total) > 0}
+    if len(pcts) == 1:
+        return next(iter(pcts))
+    return ",".join(f"{s}:{p / 100:g}" for s, p in sorted(pcts.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def benchmark_label(spec: str | None) -> str | None:
+    """How people read a benchmark: "70% SPY / 30% AGG", or just "SPY"."""
+    parts = parse_benchmark(spec)
+    if len(parts) <= 1:
+        return parts[0][0] if parts else None
+    return " / ".join(f"{round(w * 100)}% {s}" for s, w in parts)
+
+
+def blend_for_targets(targets) -> str | None:
+    """A model's benchmark from its own targets: its defensive share (fixed income, cash) against a
+    bond index, everything else against an equity index - so a 50/30/10/10 model is compared with
+    70% SPY / 30% AGG, not with bonds alone."""
+    total = sum(float(t.target_weight) for t in targets)
+    if total <= 0:
+        return None
+    defensive = sum(float(t.target_weight) for t in targets if str(t.asset_class) in _DEFENSIVE) / total
+    return format_benchmark([(GROWTH_PROXY, 1 - defensive), (DEFENSIVE_PROXY, defensive)])
+
+
 async def benchmark_return(
     session: AsyncSession, firm_id: uuid.UUID, symbol: str | None, start: str | None, end: str | None
 ) -> float | None:
-    """The benchmark's return over exactly the window the portfolio was measured on."""
+    """The benchmark's return over exactly the window the portfolio was measured on. A blend
+    with any part unpriced has no return - it is not quietly measured on the parts that are."""
+    parts = parse_benchmark(symbol)
+    if len(parts) > 1:
+        returns = [await _symbol_return(session, firm_id, s, start, end) for s, _ in parts]
+        if any(r is None for r in returns):
+            return None
+        return round(sum(w * r for (_, w), r in zip(parts, returns)), 4)
+    return await _symbol_return(session, firm_id, parts[0][0] if parts else None, start, end)
+
+
+async def _symbol_return(
+    session: AsyncSession, firm_id: uuid.UUID, symbol: str | None, start: str | None, end: str | None
+) -> float | None:
     if not symbol or not start or not end:
         return None
     inst = (await session.execute(
@@ -397,15 +465,23 @@ async def benchmark_return(
     return round(p1 / p0 - 1.0, 4)
 
 
-async def _benchmark_symbol_for(session: AsyncSession, mandate_ids: list[uuid.UUID]) -> str | None:
-    if not mandate_ids:
-        return None
-    for m in (await session.execute(select(Mandate).where(Mandate.id.in_(mandate_ids)))).scalars().all():
-        if m.model_portfolio_id:
-            model = await session.get(ModelPortfolio, m.model_portfolio_id)
-            if model and model.benchmark_symbol:
-                return model.benchmark_symbol
-    return None
+async def _household_benchmark(session: AsyncSession, accounts: list[Account]) -> str | None:
+    """Each account is held to its own model's benchmark, weighted by what the account is worth
+    today. A household with a balanced trust and a growth joint account is compared with the mix
+    of the two, not with whichever mandate happened to be read first."""
+    parts: list[tuple[str, float]] = []
+    for acc in accounts:
+        if not acc.mandate_id:
+            continue
+        mandate = await session.get(Mandate, acc.mandate_id)
+        model = await session.get(ModelPortfolio, mandate.model_portfolio_id) if mandate and mandate.model_portfolio_id else None
+        if not model or not model.benchmark_symbol:
+            continue
+        value = sum(_f(h.market_value) or 0.0 for h in (await session.execute(
+            select(Holding).where(Holding.account_id == acc.id))).scalars().all())
+        if value > 0:
+            parts += [(s, w * value) for s, w in parse_benchmark(model.benchmark_symbol)]
+    return format_benchmark(parts) if parts else None
 
 
 async def household_performance(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict | None:
@@ -414,13 +490,14 @@ async def household_performance(session: AsyncSession, household_id: uuid.UUID, 
         return None
     household = await session.get(Household, household_id)
     result = await performance_for_accounts(session, account_ids, firm_id=firm_id)
-    mandate_ids = [a.mandate_id for a in (await session.execute(
-        select(Account).where(Account.id.in_(account_ids)))).scalars().all() if a.mandate_id] if account_ids else []
-    symbol = await _benchmark_symbol_for(session, mandate_ids)
+    accounts = (await session.execute(
+        select(Account).where(Account.id.in_(account_ids)))).scalars().all() if account_ids else []
+    symbol = await _household_benchmark(session, accounts)
     bm = await benchmark_return(session, firm_id, symbol, result["start"], result["end"])
     result.update({
         "household_id": str(household_id), "household_name": household.name,
         "accounts": len(account_ids), "benchmark_symbol": symbol if bm is not None else None,
+        "benchmark_label": benchmark_label(symbol) if bm is not None else None,
         "benchmark_return": bm,
         "alpha": round(result["twr"] - bm, 4) if (bm is not None and result["twr"] is not None) else None,
     })

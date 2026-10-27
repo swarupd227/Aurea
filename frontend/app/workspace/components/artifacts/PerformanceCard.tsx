@@ -31,6 +31,8 @@ interface PerformancePayload {
   periods: Period[];
   attribution: Attribution[];
   benchmark_symbol: string | null;
+  /** "70% SPY / 30% AGG" for a blend; older results carry only the symbol. */
+  benchmark_label?: string | null;
   benchmark_return: number | null;
   alpha: number | null;
   disclosures: Disclosures;
@@ -94,7 +96,7 @@ export function PerformanceCard({ result }: { result: PerformancePayload }) {
             <Stat k="Time-weighted" v={pct(result.twr, true)} cls={tone(result.twr)} />
             <Stat k="Money-weighted" v={pct(result.mwr?.period, true)} cls={tone(result.mwr?.period)} />
             {result.benchmark_symbol && (
-              <Stat k={`Benchmark · ${result.benchmark_symbol}`} v={pct(result.benchmark_return, true)} cls={tone(result.benchmark_return)} />
+              <Stat k={`Benchmark · ${result.benchmark_label ?? result.benchmark_symbol}`} v={pct(result.benchmark_return, true)} cls={tone(result.benchmark_return)} />
             )}
             {result.alpha !== null && <Stat k="Alpha" v={pct(result.alpha, true)} cls={tone(result.alpha)} />}
           </div>

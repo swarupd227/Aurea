@@ -168,6 +168,10 @@ async def run_agent(
                 content=_ledger_content(rec, tier, trigger),
             )
             await surveillance.review_recommendation(session, rec)
+            # A run a person started replaces its own earlier open proposal. A revision already
+            # closes the one it revises, with its own note (api/studio.revise).
+            if pools is None and agent.refreshes_open_proposals and trigger != "revise":
+                await proposals.supersede_earlier(session, rec, run_id=run.id)
 
             if policy.requires_human_checkpoint(tier) or require_all or require_human:
                 pending = True

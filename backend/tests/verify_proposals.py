@@ -184,7 +184,7 @@ async def main() -> None:
             await s.commit()
         check("two runs, two proposals", await count(s, firm, P, AgentKey.BILLING), 2)
 
-        print("\n=== an agent that is not scheduled raises one per run ===")
+        print("\n=== a run a person asks for replaces its own earlier proposal ===")
         class Manual(Stand):
             key = AgentKey.MEETING_PREP
             scheduled = False
@@ -193,10 +193,23 @@ async def main() -> None:
         registry[AgentKey.MEETING_PREP] = m
         m.think = lambda ctx, sensed: _async([RecommendationDraft(
             title="Meeting brief — Q4 review", summary="s", subject=Subject("household", hh, "Chen"))])
+        ids = []
         for _ in range(2):
-            await runtime.run_agent(s, firm=firm, agent_key=AgentKey.MEETING_PREP)
+            r = await runtime.run_agent(s, firm=firm, agent_key=AgentKey.MEETING_PREP)
             await s.commit()
-        check("two runs, two proposals", await count(s, firm, P, AgentKey.MEETING_PREP), 2)
+            ids.append((await s.execute(select(Recommendation.id).where(Recommendation.run_id == r.id))).scalar_one())
+        check("two runs, one brief to decide", await count(s, firm, P, AgentKey.MEETING_PREP), 1)
+        first = await s.get(Recommendation, ids[0])
+        check("the earlier brief is closed, not deleted", first.status, RecommendationStatus.EXPIRED)
+        check("and says what replaced it", str(ids[1]) in (first.decision_note or ""), True)
+        check("the open one is the newer", (await s.get(Recommendation, ids[1])).status, P)
+        check("its closure is on the ledger", await ledger_count(s, firm, "recommendation_expired") >= 1, True)
+
+        m.think = lambda ctx, sensed: _async([RecommendationDraft(
+            title="Meeting brief — Q4 review", summary="s", subject=Subject("household", uuid.uuid4(), "Wu"))])
+        await runtime.run_agent(s, firm=firm, agent_key=AgentKey.MEETING_PREP)
+        await s.commit()
+        check("a brief for another household leaves Chen's alone", await count(s, firm, P, AgentKey.MEETING_PREP), 2)
 
     print("\n=== the backfill closes duplicates already in the queue ===")
     async with Session() as s:

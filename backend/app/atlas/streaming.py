@@ -7,7 +7,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.atlas import activity, runtime
+from app.atlas import activity, proposals, runtime
 from app.atlas.base import AgentContext, Subject
 from app.atlas.registry import get_agent
 from app.core.db import utcnow
@@ -150,6 +150,8 @@ async def stream_run(
                                   actor="agent", content=runtime._ledger_content(rec, tier, "stream"))
         flags = await surveillance.review_recommendation(session, rec)
         total_flags += len(flags or [])
+        if agent.refreshes_open_proposals:   # a person asked for this run: it replaces its own earlier proposal
+            await proposals.supersede_earlier(session, rec, run_id=run.id)
         if policy.requires_human_checkpoint(tier) or require_all or require_human:
             pending = True
             await activity.emit(session, firm_id=firm.id, agent_key=agent_key, kind=ActivityKind.PROPOSED,

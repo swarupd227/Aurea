@@ -6,8 +6,10 @@ proposal; this clears what had already piled up. For each subject it keeps the p
 the newest run and expires the older ones, and the ledger records each expiry and which
 proposal replaced it. Nobody's decision is overwritten: only PROPOSED rows are touched.
 
-Limited to agents that run on a schedule. A proposal someone already decided is left alone.
-Idempotent: a second run finds nothing to close.
+Covers every agent that keeps one open proposal per subject - scheduled runs refresh it, and a
+run a person asks for replaces it - so it also clears a brief prepared twice by hand. Agents
+whose every run stands alone (billing) are left out. A proposal someone already decided is left
+alone. Idempotent: a second run finds nothing to close.
 
     python -m seed.proposals_backfill
 """
@@ -27,10 +29,10 @@ log = get_logger("aurea.seed.proposals_backfill")
 
 
 async def backfill() -> None:
-    scheduled = {k for k, a in build_registry().items() if a.scheduled and a.refreshes_open_proposals}
+    one_per_subject = {k for k, a in build_registry().items() if a.refreshes_open_proposals}
     async with SessionLocal() as s:
         for firm in (await s.execute(select(Firm))).scalars().all():
-            report = await proposals.collapse_open_duplicates(s, firm_id=firm.id, agent_keys=scheduled)
+            report = await proposals.collapse_open_duplicates(s, firm_id=firm.id, agent_keys=one_per_subject)
             await s.commit()
             log.info("proposals_collapsed", firm=firm.slug, **{k: v for k, v in report.items() if k != "by_agent"})
             print(f"\n{firm.slug}: {report['open_before']} open proposal(s) -> {report['kept']} kept, "

@@ -111,6 +111,20 @@ async def refresh(
     )
 
 
+async def supersede_earlier(
+    session: AsyncSession, rec: Recommendation, *, run_id: uuid.UUID,
+) -> list[str]:
+    """A run a person asked for stands on its own: its new proposal replaces any still-open one
+    from an earlier run about the same thing, instead of sitting beside it ("prepare a meeting
+    brief" twice should leave one brief to decide, the newer). Returns the ids it closed."""
+    same = (await open_from_earlier_runs(
+        session, firm_id=rec.firm_id, agent_key=rec.agent_key, run_id=run_id)).get(rec_identity(rec), [])
+    for old in same:
+        await expire(session, old, run_id=run_id,
+                     reason=f"Superseded by a newer proposal for the same subject ({rec.id}).")
+    return [str(old.id) for old in same]
+
+
 def newest_run_only(recs: list[Recommendation]) -> tuple[list[Recommendation], list[Recommendation]]:
     """Split one identity's open proposals (newest first) into those from the latest run and
     those from earlier runs. An agent may raise several proposals about one subject in a

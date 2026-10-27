@@ -242,6 +242,38 @@ async def run() -> None:
                   await performance.household_performance(s, hh.id, firm_id=uuid.uuid4()), None)
             check("a household with no accounts has no return, not zero",
                   (await performance.performance_for_accounts(s, [], firm_id=firm.id))["twr"], None)
+
+            print("\n=== A household on two models is compared with the mix of both ===")
+            await instrument("BOND", "fixed_income", [(D1, 100), (D2, 100), (D3, 100)])
+            bonds = ModelPortfolio(id=uuid.uuid4(), firm_id=firm.id, name="Bonds", drift_band=0.05,
+                                   benchmark_symbol="BOND")
+            s.add(bonds)
+            await s.flush()
+            m2 = Mandate(id=uuid.uuid4(), firm_id=firm.id, person_id=owner.id, name="HH bonds",
+                         mandate_type="advisory", model_portfolio_id=bonds.id)
+            s.add(m2)
+            await s.flush()
+            hb = await account("HH bond account", m2)
+            hbi = await instrument("HBI", "fixed_income", [(D1, 100), (D2, 100), (D3, 100)])
+            await hold(hb, hbi, 12.1, 1210)        # worth the same as the equity account
+            await s.flush()
+            r = await performance.household_performance(s, hh.id, firm_id=firm.id)
+            check("benchmark is each model's, weighted by account value", r["benchmark_symbol"], "BENCH:0.5,BOND:0.5")
+            check("and reads as a mix", r["benchmark_label"], "50% BENCH / 50% BOND")
+            check("its return is the weighted parts: half of +10%", r["benchmark_return"], 0.05)
+
+            print("\n=== Benchmarks from a model's own targets ===")
+            T = lambda ac, w: type("T", (), {"asset_class": ac, "target_weight": w})()  # noqa: E731
+            balanced = [T("equity", 0.5), T("fixed_income", 0.3), T("alternatives", 0.1), T("property", 0.1)]
+            growth = [T("equity", 0.75), T("fixed_income", 0.15), T("alternatives", 0.1)]
+            check("balanced 50/30/10/10 is 70% equity index, 30% bonds",
+                  performance.blend_for_targets(balanced), "SPY:0.7,AGG:0.3")
+            check("growth 75/15/10 is 85/15", performance.blend_for_targets(growth), "SPY:0.85,AGG:0.15")
+            check("an all-equity model is the equity index alone",
+                  performance.blend_for_targets([T("equity", 1.0)]), "SPY")
+            check("a single symbol still parses", performance.parse_benchmark("SPY"), [("SPY", 1.0)])
+            check("a blend with an unpriced part has no return, not a partial one",
+                  await performance.benchmark_return(s, firm.id, "BENCH:0.5,NOPE:0.5", r["start"], r["end"]), None)
     finally:
         await db.dispose()  # otherwise the process hangs on the open pool at exit
 
