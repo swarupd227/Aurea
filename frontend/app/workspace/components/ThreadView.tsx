@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, PanelRight, X } from "lucide-react";
+import { contextPrefix, useWorkspaceOptional } from "../context";
 import { Composer, type ComposerInsert } from "./Composer";
 import { MessageView } from "./MessageView";
 import { LiveMessage } from "./LiveMessage";
@@ -39,6 +40,16 @@ export function ThreadView({
   mentionables: Mentionable[];
   composerInsert: ComposerInsert | null;
 }) {
+  const ws = useWorkspaceOptional();
+  const chip = ws?.contextChip ?? null;
+  // "Ask about this" names the open view (route and id, never its data) in front of the message;
+  // Astra still calls a tool before it states anything about it.
+  const send = (text: string) => {
+    if (chip) {
+      onSend(`${contextPrefix(chip)} ${text}`);
+      ws?.setContextChip(null);
+    } else onSend(text);
+  };
   const streaming = live !== null;
   const role = typeof window !== "undefined" ? getUser()?.role ?? "" : "";
   const ctx = useSuggestionContext();
@@ -90,7 +101,7 @@ export function ThreadView({
           )}
 
           {messages.map((m) => (
-            <MessageView key={m.id} message={m} onConfirm={onConfirm} onReject={onReject} />
+            <MessageView key={m.id} message={m} onConfirm={onConfirm} onReject={onReject} onOpenView={ws?.openView} />
           ))}
 
           {pendingUser && (
@@ -135,9 +146,33 @@ export function ThreadView({
               ))}
             </div>
           )}
+          {chip && (
+            <div className="flex items-center gap-2" data-testid="composer-context">
+              <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-surface py-0.5 pl-2.5 pr-1 text-xs text-ink-soft">
+                <PanelRight className="h-3 w-3 shrink-0 text-ink-muted" aria-hidden />
+                <button
+                  type="button"
+                  onClick={() => ws?.openView(chip.route)}
+                  className="min-w-0 truncate hover:text-ink"
+                  title={chip.route}
+                >
+                  {chip.label}
+                  {chip.id && <span className="ml-1 font-mono text-[10px] text-ink-muted">{chip.id.slice(0, 8)}</span>}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => ws?.setContextChip(null)}
+                  aria-label="Remove the view from this message"
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-ink-muted hover:bg-border-soft hover:text-ink"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            </div>
+          )}
           <Composer
             disabled={streaming || waiting || awaitingReply}
-            onSend={onSend}
+            onSend={send}
             mentionables={mentionables}
             insert={composerInsert}
             placeholder={

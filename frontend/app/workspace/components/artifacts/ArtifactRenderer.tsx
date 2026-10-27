@@ -45,6 +45,12 @@ export function MessageCardRenderer({ card }: { card: MessageCard }) {
  * crashing the message.
  */
 export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
+  return artifactCard(artifact);
+}
+
+/** The card for one tool result, or null when there is none - so a message can tell which of its
+ * results drew a card (and put an "Open" on it) and which did not. */
+export function artifactCard(artifact: Artifact) {
   try {
     switch (artifact.tool_key) {
       case "read_portfolio":

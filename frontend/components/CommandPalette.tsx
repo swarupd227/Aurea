@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { CornerDownLeft, MessageSquarePlus, Search } from "lucide-react";
 import { api, getUser } from "@/lib/api";
 import { viewsForRole } from "@/lib/nav";
+import { matchPaneView } from "@/lib/paneViews";
+import { useWorkspaceOptional } from "@/app/workspace/context";
 import { roleStarters, useSuggestionContext } from "@/lib/suggestions";
 import { fetchThreads } from "@/app/workspace/api";
 import { startConversation } from "@/app/workspace/lib/start";
@@ -24,6 +26,7 @@ interface Item {
  * clients are the fallbacks. Opened from the rail or the shell by the "astra:open-palette" event. */
 export function CommandPalette() {
   const router = useRouter();
+  const ws = useWorkspaceOptional();
   const ctx = useSuggestionContext();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -68,14 +71,20 @@ export function CommandPalette() {
   const isSentence = words >= 3 || q.endsWith("?");
 
   const items = useMemo<Item[]>(() => {
+    // From the workspace a pane view opens beside the conversation and a conversation opens with
+    // the pane left as it is; from a classic page everything is a page, as before.
     const go = (path: string) => () => {
-      router.push(path);
       setOpen(false);
+      const thread = /^\/workspace\/([^/?]+)$/.exec(path);
+      if (ws && thread) ws.goThread(thread[1]);
+      else if (ws && matchPaneView(path, role)) ws.openView(path);
+      else router.push(path);
     };
     const ask = (text: string) => async () => {
       setOpen(false);
       try {
-        router.push(await startConversation(text));
+        if (ws) await ws.askAstra(text);
+        else router.push(await startConversation(text));
       } catch {
         // The palette is closed; the workspace home still shows its own error state on retry.
         router.push("/workspace");
@@ -113,7 +122,7 @@ export function CommandPalette() {
     // A word or two that names somewhere to go: go there first, Astra second.
     const navFirst = !!q && !isSentence && nav.length > 0;
     return navFirst ? [...nav, ...askItems, ...convs] : [...askItems, ...nav, ...convs];
-  }, [q, query, role, ctx, households, threads, isSentence, router]);
+  }, [q, query, role, ctx, households, threads, isSentence, router, ws]);
 
   if (!open) return null;
 
