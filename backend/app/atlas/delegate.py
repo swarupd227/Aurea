@@ -21,6 +21,22 @@ INTENTS = [
 ]
 
 
+async def managed_mandates(session: AsyncSession, firm_id: uuid.UUID, household_id: uuid.UUID) -> list[Mandate]:
+    """A household's managed mandates (those with a model portfolio), discretionary first.
+
+    The one place that decides which mandate a "rebalance this household" request means, shared
+    by the Delegate bar and by run_agent in the conversation."""
+    mandates = (
+        await session.execute(
+            select(Mandate).where(
+                Mandate.firm_id == firm_id, Mandate.model_portfolio_id.isnot(None),
+                (Mandate.person_id.in_(select(Person.id).where(Person.household_id == household_id)))
+                | (Mandate.entity_id.in_(select(LegalEntity.id).where(LegalEntity.household_id == household_id))))
+        )
+    ).scalars().all()
+    return sorted(mandates, key=lambda m: 0 if m.mandate_type == MandateType.DISCRETIONARY else 1)
+
+
 async def interpret(session: AsyncSession, firm_id: uuid.UUID, text: str) -> dict:
     t = (text or "").lower()
 
@@ -51,15 +67,7 @@ async def interpret(session: AsyncSession, firm_id: uuid.UUID, text: str) -> dic
         subject_label = matched["name"]
         if scope == "mandate":
             # Find a managed mandate under this household (prefer discretionary).
-            mandates = (
-                await session.execute(
-                    select(Mandate).where(
-                        Mandate.firm_id == firm_id, Mandate.model_portfolio_id.isnot(None),
-                        (Mandate.person_id.in_(select(Person.id).where(Person.household_id == hid)))
-                        | (Mandate.entity_id.in_(select(LegalEntity.id).where(LegalEntity.household_id == hid))))
-                )
-            ).scalars().all()
-            mandates.sort(key=lambda m: 0 if m.mandate_type == MandateType.DISCRETIONARY else 1)
+            mandates = await managed_mandates(session, firm_id, hid)
             if mandates:
                 m = mandates[0]
                 subject_type, subject_id, subject_label = "mandate", m.id, m.name

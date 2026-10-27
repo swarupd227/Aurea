@@ -18,6 +18,7 @@ exactly-once execution of state-changing tools.
 """
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from datetime import datetime, timedelta
@@ -32,7 +33,8 @@ from app.models.thread import (
     Thread, ThreadMessage, MessageRole, ToolCall, ToolCallStatus,
     PendingAction, PendingActionStatus,
 )
-from app.llm.executors import ToolExecutors
+from app.atlas import narration
+from app.llm.executors import ExecutorError, ToolExecutors
 from app.llm.service import llm_service
 
 # A tool round-trip (Claude's tool_use -> our result -> Claude again) this many times
@@ -68,8 +70,8 @@ answering well takes two or three steps (look up a household, then check a manda
 owns, then answer), just do them in sequence rather than stopping to ask the user to
 continue. Once you have what you need, answer in prose; don't narrate empty tool calls.
 
-State-changing tools (deciding a recommendation, executing orders, updating a goal) always
-pause for the user's explicit confirmation before anything happens — that pause is handled
+State-changing tools (deciding a recommendation, executing orders, updating a goal, running
+an agent) always pause for the user's explicit confirmation before anything happens — that pause is handled
 for you automatically when you call the tool, so call it as soon as you have what you need
 rather than asking the user to confirm in words first. A state-changing tool call always
 ends your turn (there is no result to continue from, since nothing happens until the user
@@ -201,6 +203,27 @@ class Gateway:
                     await self.session.flush()
 
                     if tool.change_state == ToolChangeState.PAUSE_FOR_CONFIRMATION:
+                        # A confirmation that would only fail is not worth showing. Starting a run
+                        # is checked now - agent, subject, role, kill switch - and refused with its
+                        # reason, which goes back to the model like any failed tool so it can
+                        # explain it. The same check, and the tier, are read again at confirmation.
+                        preview = None
+                        if tool_key == "run_agent":
+                            try:
+                                preview = await ToolExecutors(
+                                    self.session, self.user_id, self.role, self.firm_id,
+                                ).preview_run_agent(inputs, record_refusal=True)
+                            except Exception as e:
+                                tool_call.status = ToolCallStatus.FAILED
+                                tool_call.error = str(e)
+                                tool_call.completed_at = datetime.utcnow()
+                                yield {"type": "tool_result", "tool_key": tool_key, "ok": False}
+                                tool_result_blocks.append({
+                                    "type": "tool_result", "tool_use_id": tool_use["id"],
+                                    "content": f"Error: {e}", "is_error": True,
+                                })
+                                continue
+
                         # Nothing left to chain: a state change can't happen until the
                         # user confirms, so there is no result yet to hand back to
                         # Claude. Any further tool_uses this round are dropped — the
@@ -222,6 +245,7 @@ class Gateway:
                             "pending_action_id": str(pending.id),
                             "tool_key": tool_key,
                             "confirmation_text": pending.confirmation_text,
+                            **({"preview": preview} if preview else {}),
                         }
                         return
 
@@ -295,6 +319,8 @@ class Gateway:
 
         messages: list[dict[str, Any]] = []
         for msg in recent_messages:
+            if not (msg.text or "").strip():
+                continue    # a run's card while it is still running has no words yet
             role = "user" if msg.role == MessageRole.USER else "assistant"
             if messages and messages[-1]["role"] == role:
                 messages[-1]["content"] = f"{messages[-1]['content']}\n\n{msg.text}"
@@ -328,20 +354,40 @@ class Gateway:
         self,
         pending_action_id: uuid.UUID,
         confirmed: bool = True,
+        *,
+        seen_tier: str | None = None,
     ) -> dict[str, Any]:
         """
         Confirm or reject a pending state-changing action.
 
-        If confirmed, executes the tool and marks it done.
-        If rejected, marks as rejected and returns error.
+        The pending row is locked and its status re-read under the lock, so the first confirmation
+        takes it and any other finds it already taken: the action runs at most once. The claim is
+        committed before the tool runs, which is what makes "at most once" hold even if the tool
+        then fails - a failed action is not silently retried by a second click.
+
+        A confirmation belongs to the person it was put to, in the firm whose thread it is in.
+
+        `seen_tier` is the autonomy tier the user was shown on a run's card. If the firm's policy
+        has changed since, nothing is started and the user is told to look again.
         """
 
-        pending = await self.session.get(PendingAction, pending_action_id)
-        if not pending:
+        pending = (await self.session.execute(
+            select(PendingAction).where(PendingAction.id == pending_action_id)
+            .with_for_update().execution_options(populate_existing=True)
+        )).scalar_one_or_none()
+        thread = await self.session.get(Thread, pending.thread_id) if pending else None
+        if not pending or not thread or thread.firm_id != self.firm_id:
             raise GatewayError(f"Pending action {pending_action_id} not found")
+        if pending.requires_user_id != self.user_id:
+            raise GatewayError("This confirmation was put to someone else")
 
         if pending.status != PendingActionStatus.AWAITING_CONFIRMATION:
             raise GatewayError(f"Pending action is already {pending.status.value}")
+
+        if pending.expires_at and datetime.utcnow() > pending.expires_at:
+            pending.status = PendingActionStatus.EXPIRED
+            await self.session.commit()
+            raise GatewayError("This confirmation has expired. Ask again to get a fresh one.")
 
         if not confirmed:
             pending.status = PendingActionStatus.REJECTED
@@ -352,27 +398,138 @@ class Gateway:
         if not tool_call:
             raise GatewayError("Tool call not found")
 
-        try:
-            result = await self._execute_tool(tool_call.tool_key, tool_call.inputs)
-            tool_call.status = ToolCallStatus.DONE
-            tool_call.result = result
-            tool_call.completed_at = datetime.utcnow()
-            pending.status = PendingActionStatus.CONFIRMED
-            pending.confirmed_at = datetime.utcnow()
-            await self.session.commit()
+        # The role is checked again: it may have changed since the card was shown.
+        is_valid, error_msg = validate_tool_call(self.role, tool_call.tool_key, tool_call.inputs or {})
+        if not is_valid:
+            raise GatewayError(error_msg)
 
-            return {
-                "status": "confirmed",
-                "tool_key": tool_call.tool_key,
-                "result": result,
-            }
+        if tool_call.tool_key == "run_agent":
+            return await self._confirm_run(pending, tool_call, thread, seen_tier)
+
+        pending.status = PendingActionStatus.CONFIRMED
+        pending.confirmed_at = datetime.utcnow()
+        tool_call.status = ToolCallStatus.RUNNING
+        tool_call.started_at = datetime.utcnow()
+        await self.session.commit()          # the claim is durable before anything happens
+
+        pending_id, tool_call_id, tool_key = pending.id, tool_call.id, tool_call.tool_key
+        try:
+            result = await self._execute_tool(tool_key, tool_call.inputs)
         except Exception as e:
+            await self.session.rollback()    # whatever the tool half-did is discarded
+            tool_call = await self._fresh(ToolCall, tool_call_id)
             tool_call.status = ToolCallStatus.FAILED
             tool_call.error = str(e)
             tool_call.completed_at = datetime.utcnow()
             await self.session.commit()
-
             raise GatewayError(f"Tool execution failed: {e}")
+
+        tool_call = await self._fresh(ToolCall, tool_call_id)
+        tool_call.status = ToolCallStatus.DONE
+        tool_call.result = result
+        tool_call.completed_at = datetime.utcnow()
+        await self.session.commit()
+        return {"status": "confirmed", "tool_key": tool_key, "result": result}
+
+    async def _fresh(self, model, row_id):
+        """A row re-read from the database, for use after a rollback expired what we held."""
+        return (await self.session.execute(
+            select(model).where(model.id == row_id).execution_options(populate_existing=True)
+        )).scalar_one()
+
+    async def _confirm_run(
+        self, pending: PendingAction, tool_call: ToolCall, thread: Thread, seen_tier: str | None,
+    ) -> dict[str, Any]:
+        """Confirm a run: claim the pause, publish the run's card to the thread, run it, settle.
+
+        Confirming starts the run and nothing else - it approves nothing the agent proposes, and
+        it does not touch the autonomy tier (three controls, never merged). The card is committed
+        before the agent starts, so the thread shows the run beginning; it is committed again as
+        each beat lands and once more when the agent settles it with a message of its own."""
+        inputs = tool_call.inputs or {}
+        executors = ToolExecutors(self.session, self.user_id, self.role, self.firm_id)
+        try:
+            preview = await executors.preview_run_agent(inputs)
+        except ExecutorError as exc:
+            # Nothing started, so the confirmation stays open: the user can look again or decline.
+            raise GatewayError(str(exc))
+        shown = preview["autonomy"]["tier"]
+        if seen_tier is not None and str(seen_tier) != str(shown):
+            raise GatewayError(
+                f"The autonomy tier for {preview['agent_name']} changed from {seen_tier} to {shown} "
+                "since this was shown, so nothing was started. Review the confirmation and try again."
+            )
+
+        pending.status = PendingActionStatus.CONFIRMED
+        pending.confirmed_at = datetime.utcnow()
+        tool_call.status = ToolCallStatus.RUNNING
+        tool_call.started_at = datetime.utcnow()
+        card = narration.new_card(preview)
+        message = ThreadMessage(
+            thread_id=thread.id, role=MessageRole.AGENT, speaking_agent=preview["agent_key"], text="",
+            card_kind=narration.CARD_KIND, card_data=copy.deepcopy(card), suggestions=[],
+        )
+        self.session.add(message)
+        await self.session.flush()
+        message_id, tool_call_id = message.id, tool_call.id
+        await self.session.commit()           # claimed, and the run's card is on the thread
+
+        latest = {"card": card}
+
+        async def publish(updated: dict[str, Any]) -> None:
+            latest["card"] = copy.deepcopy(updated)
+            row = await self._fresh(ThreadMessage, message_id)
+            row.card_data = copy.deepcopy(updated)
+            await self.session.commit()
+
+        runner = ToolExecutors(self.session, self.user_id, self.role, self.firm_id, on_card=publish)
+        try:
+            result = await runner.execute("run_agent", inputs)
+        except Exception as exc:
+            await self.session.rollback()
+            return await self._settle_failed_run(message_id, tool_call_id, latest["card"], str(exc))
+
+        row = await self._fresh(ThreadMessage, message_id)
+        row.card_data = copy.deepcopy(result["card"])
+        row.text = result["message"]
+        row.suggestions = result.get("suggestions") or []
+        done = await self._fresh(ToolCall, tool_call_id)
+        done.status = ToolCallStatus.DONE
+        done.result = {k: v for k, v in result.items() if k != "card"}
+        done.completed_at = datetime.utcnow()
+        await self.session.commit()
+        return {"status": "confirmed", "tool_key": "run_agent", "message_id": str(message_id),
+                "result": done.result}
+
+    async def _settle_failed_run(
+        self, message_id: uuid.UUID, tool_call_id: uuid.UUID, card: dict[str, Any], reason: str,
+    ) -> dict[str, Any]:
+        """The run failed after it was claimed: say so on its card and in the agent's own words, and
+        close the run row if one was opened. The confirmation is spent - ask again to retry."""
+        from app.models.enums import AgentRunStatus
+        from app.models.governance import AgentRun
+
+        if card.get("run_id"):
+            try:
+                run = await self.session.get(AgentRun, uuid.UUID(str(card["run_id"])))
+            except ValueError:
+                run = None
+            if run is not None and run.firm_id == self.firm_id and run.status != AgentRunStatus.COMPLETED:
+                run.status = AgentRunStatus.FAILED
+                run.error = reason
+                run.finished_at = datetime.utcnow()
+        reason = reason.removeprefix("Tool 'run_agent' failed: ")
+        narration.settle(card, status="failed", error=reason)
+        row = await self._fresh(ThreadMessage, message_id)
+        row.card_data = copy.deepcopy(card)
+        row.text = narration.sentence(card)
+        row.suggestions = narration.follow_ups(card)
+        failed = await self._fresh(ToolCall, tool_call_id)
+        failed.status = ToolCallStatus.FAILED
+        failed.error = reason
+        failed.completed_at = datetime.utcnow()
+        await self.session.commit()
+        return {"status": "failed", "tool_key": "run_agent", "message_id": str(message_id), "error": reason}
 
     async def _execute_tool(self, tool_key: str, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool and return its result."""

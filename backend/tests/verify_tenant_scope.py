@@ -164,6 +164,63 @@ async def vault_behaviour() -> None:
     await engine.dispose()
 
 
+async def run_agent_behaviour() -> None:
+    """A model-supplied household or mandate id from another firm cannot be run an agent on."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    import app.models  # noqa: F401
+    from app.core.db import Base
+    from app.llm.executors import ExecutorError, ToolExecutors
+    from app.models.enums import UserRole
+    from app.models.graph import Household, Mandate, Person
+    from app.models.tenant import Firm
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    tables = [Base.metadata.tables[n] for n in
+              ("firm", "household", "person", "legal_entity", "mandate", "agent_config", "autonomy_policy")]
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with Session() as s:
+        mine = Firm(id=uuid.uuid4(), name="Mine", slug="mine")
+        theirs = Firm(id=uuid.uuid4(), name="Theirs", slug="theirs")
+        s.add_all([mine, theirs])
+        await s.flush()
+        hh = Household(id=uuid.uuid4(), firm_id=theirs.id, name="Their Client")
+        s.add(hh)
+        await s.flush()
+        p = Person(id=uuid.uuid4(), firm_id=theirs.id, household_id=hh.id, full_name="T", kyc={}, profile={})
+        s.add(p)
+        await s.flush()
+        m = Mandate(id=uuid.uuid4(), firm_id=theirs.id, person_id=p.id, name="Theirs", mandate_type="discretionary",
+                    is_active=True, model_portfolio_id=uuid.uuid4())
+        s.add(m)
+        await s.commit()
+
+        for agent, inputs, label in (
+            ("next_best_action", {"household_id": str(hh.id)}, "household"),
+            ("drift_rebalancing", {"mandate_id": str(m.id)}, "mandate"),
+            ("drift_rebalancing", {"household_id": str(hh.id)}, "household for a mandate agent"),
+        ):
+            # Its own firm can start the agent on it; another firm reads it as not found.
+            own = ToolExecutors(s, uuid.uuid4(), UserRole.ADVISER, theirs.id)
+            try:
+                await own._resolve_run({"agent_key": agent, **inputs})
+                resolved = True
+            except ExecutorError as exc:
+                resolved = str(exc)
+            check(f"run_agent: its own firm resolves the {label}", resolved, True)
+            ex = ToolExecutors(s, uuid.uuid4(), UserRole.ADVISER, mine.id)
+            try:
+                await ex._resolve_run({"agent_key": agent, **inputs})
+                refused = "resolved"
+            except ExecutorError as exc:
+                refused = "not found" in str(exc)
+            check(f"run_agent: another firm's {label} reads as not found", refused, True)
+    await engine.dispose()
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[1] / "app"
 
@@ -184,6 +241,9 @@ def main() -> int:
 
     print("\n=== client documents stay with their own household ===")
     asyncio.run(vault_behaviour())
+
+    print("\n=== starting an agent never reaches another firm's client ===")
+    asyncio.run(run_agent_behaviour())
 
     print(f"\n{'=' * 64}\n{len(PASS)} passed, {len(FAIL)} failed")
     for f in FAIL:

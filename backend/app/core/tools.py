@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from app.core import agent_runs
 from app.models.enums import UserRole
 
 
@@ -383,7 +384,49 @@ TOOLS: dict[str, Tool] = {
                        UserRole.BRANCH_LEADER, UserRole.ADMIN},
     ),
 
+    "read_agents": Tool(
+        key="read_agents",
+        name="Read Agents",
+        speaking_agent="astra",
+        description="The firm's agents: each one's stage, the autonomy tier it runs at, whether it is paused or disabled (and why), how many runs it has made and proposals it has put forward, what it did last, and whether the caller's role may start it from a conversation. Use it to answer 'what agents can I run' and to find an agent_key before running one.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("runnable_only", "string", "true to list only the agents this role may start from a conversation", required=False),
+        ],
+        output=ToolOutput("object", "Agents with tier, status, paused reason, run counts and can_run"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.RESEARCH_CIO, UserRole.COMPLIANCE, UserRole.OPERATIONS,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
     # ─── State-changing tools (require confirmation)
+
+    "run_agent": Tool(
+        key="run_agent",
+        name="Run Agent",
+        speaking_agent="astra",
+        description=(
+            "Start one agent on a client or mandate, or across the book. The agent senses, reasons, checks and then PROPOSES; "
+            "it never approves its own proposal, and an agent that would move a client's book or cash always stops at a "
+            "proposal for a human to decide. Whether it may act on its own is the autonomy tier the firm set, shown on the "
+            "confirmation. Give the agent_key (call read_agents if unsure) and, where the agent works on one client, the "
+            "household_id (find it with search_households) or mandate_id - never guess an id. Agents you can start: "
+            + ", ".join(agent_runs.conversation_agent_keys()) + "."
+        ),
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation=(
+            "Start this agent run? Confirming only starts it - it is not an approval of anything the agent proposes, "
+            "and it does not change the agent's autonomy tier."
+        ),
+        inputs=[
+            ToolInput("agent_key", "string", "Which agent to run, e.g. drift_rebalancing or next_best_action", required=True),
+            ToolInput("household_id", "uuid", "The household the run is about (from search_households)", required=False),
+            ToolInput("mandate_id", "uuid", "The mandate the run is about (drift_rebalancing works on a mandate)", required=False),
+        ],
+        output=ToolOutput("object", "The run's beats, any proposals it put forward, and the tier it ran at"),
+        roles_required=set(agent_runs.ANY_RUN_ROLES),
+    ),
 
     "decide_recommendation": Tool(
         key="decide_recommendation",

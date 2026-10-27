@@ -45,6 +45,7 @@ const the = (h: string) => (/^the\s/i.test(h) ? `the${h.slice(3)}` : `the ${h}`)
 const short = (h: string) => h.replace(/^the\s+/i, "");
 
 const WAITING: Suggestion = { label: "What's waiting on me", prompt: "What proposals are waiting for my decision?" };
+const AGENTS: Suggestion = { label: "Which agents can I run", prompt: "Which agents can I run?" };
 
 function perf(h?: string): Suggestion {
   return h
@@ -69,11 +70,11 @@ export function roleStarters(role: string, ctx: SuggestionContext): Suggestion[]
   const [h1, h2] = ctx.households;
   switch (role) {
     case "adviser":
-      return [WAITING, perf(h1), washSale(h2 ?? h1), { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }];
+      return [WAITING, perf(h1), washSale(h2 ?? h1), AGENTS];
     case "paraplanner":
-      return [view(h1), { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }, { label: "Growth pipeline", prompt: "Show me the CRM growth pipeline." }, WAITING];
+      return [view(h1), { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }, AGENTS, WAITING];
     case "portfolio_team":
-      return [WAITING, { label: "Composites", prompt: "How are the composites performing?" }, { label: "Firm definition", prompt: "Does the firm definition check come back clean?" }, view(h1)];
+      return [WAITING, { label: "Composites", prompt: "How are the composites performing?" }, AGENTS, view(h1)];
     case "research_cio":
       return [{ label: "Composites", prompt: "How are the composites performing?" }, { label: "Firm definition", prompt: "Does the firm definition check come back clean?" }, perf(h1), WAITING];
     case "compliance":
@@ -89,6 +90,7 @@ export function roleStarters(role: string, ctx: SuggestionContext): Suggestion[]
       return [
         { label: "Billing status", prompt: "Is a billing run waiting for approval, and what are the exceptions?" },
         { label: "Prepare billing run", prompt: "Prepare this quarter's billing run." },
+        AGENTS,
         WAITING,
       ];
     case "admin":
@@ -113,7 +115,9 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
   const route = pathname.replace(/\/$/, "");
   switch (route) {
     case "/studio":
-      return [WAITING, perf(h1), washSale(h2 ?? h1)];
+      return [WAITING, { label: "Scan the book", prompt: "Have the next-best-action agent scan the book for opportunities." }, AGENTS, perf(h1)];
+    case "/studio/workforce":
+      return [AGENTS, WAITING];
     case "/studio/review":
       return [
         { label: "What's waiting on me", prompt: "What proposals are waiting for my decision, most urgent first?" },

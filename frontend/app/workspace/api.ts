@@ -79,12 +79,15 @@ export async function sendMessageStream(
   }
 }
 
+/** `seenTier` is the autonomy tier the confirmation showed for a run; the server refuses if the
+ * firm's policy has changed since, rather than start the run at a tier the user did not see. */
 export async function confirmPendingAction(
   pendingActionId: string,
-  confirmed: boolean
+  confirmed: boolean,
+  seenTier?: string
 ): Promise<any> {
   return api(`/api/threads/pending-actions/${pendingActionId}/confirm`, {
-    body: { confirmed },
+    body: seenTier ? { confirmed, seen_tier: seenTier } : { confirmed },
   });
 }
 

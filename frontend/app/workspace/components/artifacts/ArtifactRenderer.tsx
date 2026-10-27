@@ -17,7 +17,22 @@ import { CompositesCard } from "./CompositesCard";
 import { CompositeReportCard } from "./CompositeReportCard";
 import { FirmDefinitionCheckCard } from "./FirmDefinitionCheckCard";
 import { RecommendationsCard } from "./RecommendationsCard";
-import type { Artifact } from "../../types";
+import { AgentsCard } from "./AgentsCard";
+import { AgentRunCard, isAgentRunData } from "./AgentRunCard";
+import type { Artifact, MessageCard } from "../../types";
+
+/**
+ * A card that belongs to a message itself, not to a tool call - today, a run narrated into the
+ * thread by the agent that ran it. Same defensive rule: a shape that does not match renders nothing.
+ */
+export function MessageCardRenderer({ card }: { card: MessageCard }) {
+  try {
+    if (card.kind === "agent_run" && isAgentRunData(card.data)) return <AgentRunCard data={card.data} />;
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * One artifact per completed tool call. A tool_key without a card here renders
@@ -88,6 +103,9 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
       case "read_recommendations":
         if (!Array.isArray(artifact.result?.recommendations)) return null;
         return <RecommendationsCard result={artifact.result as any} />;
+      case "read_agents":
+        if (!Array.isArray(artifact.result?.agents)) return null;
+        return <AgentsCard result={artifact.result as any} />;
       case "read_firm_definition_check":
         if (typeof artifact.result?.clean !== "boolean") return null;
         return <FirmDefinitionCheckCard result={artifact.result as any} />;

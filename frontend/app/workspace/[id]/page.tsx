@@ -63,14 +63,35 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, thread]);
 
-  const handleConfirm = async (pendingActionId: string) => {
+  // A confirmed run is on the thread from the moment it starts (the server publishes its card
+  // before the agent runs) and settles when it finishes. Look again while that is happening - a
+  // run can also be mid-way when this page is opened.
+  const [confirming, setConfirming] = useState(false);
+  const running = thread?.messages.some((m) => m.card?.kind === "agent_run" && m.card.data?.status === "running");
+  useEffect(() => {
+    if (!running && !confirming) return;
+    const timer = setInterval(() => {
+      reload().catch(() => {});
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [running, confirming, reload]);
+  useEffect(() => {
+    if (!running) refetchThreads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running]);
+
+  const handleConfirm = async (pendingActionId: string, seenTier?: string) => {
     setError(null);
+    setConfirming(true);
     try {
-      await confirmPendingAction(pendingActionId, true);
+      await confirmPendingAction(pendingActionId, true, seenTier);
       await reload();
       refetchThreads();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to confirm action");
+      await reload().catch(() => {}); // the card may now show a different tier, or no longer be open
+    } finally {
+      setConfirming(false);
     }
   };
 

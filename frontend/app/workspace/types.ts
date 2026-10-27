@@ -1,8 +1,29 @@
+/** What confirming a run would start. Read from live policy by the server, never typed by the
+ * model: the three controls are separate fields because they are separate decisions. */
+export interface RunPreview {
+  agent_key: string;
+  agent_name: string;
+  stage: string | null;
+  does: string | null;
+  subject_label: string | null;
+  confirms: "start_only";
+  autonomy: { tier: string; label: string; acts_on_its_own: boolean; held_to_proposal: boolean };
+  decision: { roles: string[]; any_staff: boolean; you_may_decide: boolean };
+}
+
 export interface PendingActionRef {
   id: string;
   tool_key: string;
   confirmation_text: string;
   decision: "confirmed" | "declined" | null;
+  /** Present for a run: either its preview, or the reason it can no longer be confirmed. */
+  preview?: (RunPreview & { unavailable?: undefined }) | { unavailable: string } | null;
+}
+
+/** A card that belongs to a message rather than to one of its tool calls: a run, narrated. */
+export interface MessageCard {
+  kind: string;
+  data: Record<string, any>;
 }
 
 export interface Artifact {
@@ -18,6 +39,7 @@ export interface Message {
   sources: string[];
   artifacts: Artifact[];
   pending_action: PendingActionRef | null;
+  card?: MessageCard | null;
   suggestions: string[];
   created_at: string;
 }
@@ -97,6 +119,6 @@ export type StreamEvent =
   | { type: "token"; text: string }
   | { type: "tool_start"; tool_key: string }
   | { type: "tool_result"; tool_key: string; ok: boolean }
-  | { type: "pending_action"; pending_action_id: string; tool_key: string; confirmation_text: string }
+  | { type: "pending_action"; pending_action_id: string; tool_key: string; confirmation_text: string; preview?: RunPreview }
   | { type: "done"; message_id: string }
   | { type: "error"; message: string };

@@ -31,7 +31,7 @@ export function ThreadView({
   error: string | null;
   hasThread: boolean;
   onSend: (text: string) => void;
-  onConfirm: (id: string) => Promise<void>;
+  onConfirm: (id: string, seenTier?: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
   mentionables: Mentionable[];
   composerInsert: ComposerInsert | null;
@@ -47,7 +47,7 @@ export function ThreadView({
 
   const waiting = status === "awaiting_confirmation";
   const last = messages[messages.length - 1];
-  const suggestions = !streaming && !waiting && last?.role === "astra" ? last.suggestions : [];
+  const suggestions = !streaming && !waiting && last && last.role !== "user" ? last.suggestions : [];
   const empty = messages.length === 0 && !streaming;
 
   return (

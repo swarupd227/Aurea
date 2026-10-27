@@ -7,6 +7,7 @@ we don't have data for is left out rather than faked.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 
@@ -16,10 +17,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.db import get_db
+from app.atlas import narration
+from app.core.db import SessionLocal, get_db
 from app.core.decision_rights import roles_for
+from app.core.logging import get_logger
 from app.core.security import get_current_user
 from app.core.tools import tools_for_role
+from app.llm.executors import ExecutorError, ToolExecutors
 from app.llm.gateway import Gateway, GatewayError
 from app.models.enums import RecommendationStatus, UserRole
 from app.models.governance import Recommendation
@@ -30,9 +34,23 @@ from app.models.thread import (
 )
 
 router = APIRouter(prefix="/api/threads", tags=["threads"])
+log = get_logger("aurea.threads")
+
+# Work that must outlive the request that started it (see confirm_pending_action). Held here so
+# the event loop does not drop a task nobody is awaiting any more.
+_DETACHED: set[asyncio.Future] = set()
 
 
-def _serialize_message(m: ThreadMessage, pending_by_tool_call: dict[uuid.UUID, PendingAction]) -> dict:
+def _forget(task: asyncio.Future) -> None:
+    _DETACHED.discard(task)
+    if not task.cancelled() and task.exception() is not None and not isinstance(task.exception(), GatewayError):
+        log.error("detached_task_failed", error=str(task.exception()))
+
+
+def _serialize_message(
+    m: ThreadMessage, pending_by_tool_call: dict[uuid.UUID, PendingAction],
+    previews: dict[uuid.UUID, dict] | None = None,
+) -> dict:
     done_calls = [tc for tc in m.tool_calls if tc.status == ToolCallStatus.DONE]
     sources = sorted({tc.tool_key for tc in done_calls})
     # One artifact per completed tool call, in call order — the frontend picks a
@@ -57,7 +75,15 @@ def _serialize_message(m: ThreadMessage, pending_by_tool_call: dict[uuid.UUID, P
                 else "declined" if pending.status == PendingActionStatus.REJECTED
                 else None
             ),
+            # What confirming would start, read from live policy; only a run has one.
+            "preview": (previews or {}).get(pending.id),
         } if pending else None,
+        # A run's card lives on the message of the agent that ran it, so it is served as the
+        # message's own card rather than as a tool's artifact.
+        "card": (
+            {"kind": m.card_kind, "data": narration.as_served(m.card_data)}
+            if m.card_kind and m.card_data else None
+        ),
         "suggestions": m.suggestions or [],
         "created_at": m.created_at.isoformat(),
     }
@@ -121,10 +147,23 @@ async def confirm_pending_action(
     """Confirm or reject a pending state-changing action."""
 
     confirmed = confirm.get("confirmed", False)
-    gateway = Gateway(session, user.id, user.role, user.firm_id)
+    seen_tier = confirm.get("seen_tier")
+    user_id, role, firm_id = user.id, user.role, user.firm_id
+
+    # The confirmation runs as its own task on its own session, and the request only waits for it.
+    # A user who closes the tab or navigates away mid-run has still confirmed: the action finishes
+    # and settles on the thread rather than being cancelled half way with the connection.
+    async def settle() -> dict:
+        async with SessionLocal() as own:
+            return await Gateway(own, user_id, role, firm_id).confirm_pending_action(
+                pending_action_id, confirmed, seen_tier=seen_tier)
+
+    task = asyncio.ensure_future(settle())
+    _DETACHED.add(task)
+    task.add_done_callback(_forget)
 
     try:
-        result = await gateway.confirm_pending_action(pending_action_id, confirmed)
+        result = await asyncio.shield(task)
         return {
             "pending_action_id": str(pending_action_id),
             **result,
@@ -389,6 +428,21 @@ async def get_thread(
 
     status = "awaiting_confirmation" if pending_by_tool_call else "idle"
 
+    # A run's confirmation shows what it would start - agent, subject, the tier it resolves to
+    # now - read from live policy each time, so the card cannot be stale about the tier.
+    previews: dict[uuid.UUID, dict] = {}
+    for m in thread.messages:
+        for tc in m.tool_calls:
+            pending = pending_by_tool_call.get(tc.id)
+            if pending is not None and tc.tool_key == "run_agent":
+                try:
+                    previews[pending.id] = await ToolExecutors(
+                        session, user.id, user.role, user.firm_id,
+                    ).preview_run_agent(tc.inputs or {})
+                except ExecutorError as exc:
+                    # Say why it can no longer be confirmed rather than showing a stale card.
+                    previews[pending.id] = {"unavailable": str(exc)}
+
     return {
         "id": str(thread.id),
         "kind": thread.kind.value,
@@ -396,5 +450,5 @@ async def get_thread(
         "title": thread.title,
         "status": status,
         "created_at": thread.created_at.isoformat(),
-        "messages": [_serialize_message(m, pending_by_tool_call) for m in thread.messages],
+        "messages": [_serialize_message(m, pending_by_tool_call, previews) for m in thread.messages],
     }
