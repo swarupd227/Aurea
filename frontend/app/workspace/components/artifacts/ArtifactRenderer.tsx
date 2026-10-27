@@ -19,6 +19,9 @@ import { FirmDefinitionCheckCard } from "./FirmDefinitionCheckCard";
 import { RecommendationsCard } from "./RecommendationsCard";
 import { AgentsCard } from "./AgentsCard";
 import { AgentRunCard, isAgentRunData } from "./AgentRunCard";
+import {
+  AgentHistoryCard, AnalyticsCard, CapacityCard, OnboardingCasesCard, ProvenanceCard,
+} from "./PageReadCards";
 import type { Artifact, MessageCard } from "../../types";
 
 /**
@@ -103,6 +106,21 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
       case "read_recommendations":
         if (!Array.isArray(artifact.result?.recommendations)) return null;
         return <RecommendationsCard result={artifact.result as any} />;
+      case "read_agent_history":
+        if (!Array.isArray(artifact.result?.runs) || typeof artifact.result?.by_status !== "object") return null;
+        return <AgentHistoryCard result={artifact.result as any} />;
+      case "read_capacity":
+        if (typeof artifact.result?.total_agent_runs !== "number" || !artifact.result?.estimate || !artifact.result?.recommendations_by_status) return null;
+        return <CapacityCard result={artifact.result as any} />;
+      case "read_analytics":
+        if (!artifact.result?.headline || typeof artifact.result.headline !== "object") return null;
+        return <AnalyticsCard result={{ bases: {}, currency: "", ...artifact.result } as any} />;
+      case "read_onboarding_cases":
+        if (!Array.isArray(artifact.result?.cases) || !artifact.result?.summary || !artifact.result.cases.every((c: any) => Array.isArray(c?.tracks))) return null;
+        return <OnboardingCasesCard result={artifact.result as any} />;
+      case "read_provenance":
+        if (typeof artifact.result?.ledger?.valid !== "boolean" || !Array.isArray(artifact.result?.surveillance?.flags) || !artifact.result?.surveillance?.by_severity || !Array.isArray(artifact.result?.evaluations) || !Array.isArray(artifact.result?.autonomy_changes)) return null;
+        return <ProvenanceCard result={artifact.result as any} />;
       case "read_agents":
         if (!Array.isArray(artifact.result?.agents)) return null;
         return <AgentsCard result={artifact.result as any} />;

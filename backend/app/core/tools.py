@@ -400,6 +400,78 @@ TOOLS: dict[str, Tool] = {
                        UserRole.BRANCH_LEADER, UserRole.ADMIN},
     ),
 
+    # ─── Reads that stand in for pages. Roles mirror frontend/lib/nav.ts for the page each replaces
+    # (administrators see every view), so a conversation never shows a role what its sidebar hides.
+
+    "read_agent_history": Tool(
+        key="read_agent_history",
+        name="Read Agent History",
+        speaking_agent="astra",
+        description="Past agent runs, newest first: which agent, its status, the autonomy tier it ran at, how it was triggered and when - optionally for one agent or one status. Use it for 'what has the drift agent been doing' or 'did any run fail'.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("agent_key", "string", "Only runs of this agent (e.g. drift_rebalancing)", required=False),
+            ToolInput("status", "string", "Only runs with this status, e.g. completed, awaiting_approval, failed", required=False),
+            ToolInput("limit", "number", "Max runs to return (default 20, at most 50)", required=False),
+        ],
+        output=ToolOutput("object", "Runs with agent name, status, tier, trigger and time, and a count by status"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "read_capacity": Tool(
+        key="read_capacity",
+        name="Read Capacity",
+        speaking_agent="astra",
+        description="Capacity and outcomes: agent runs made, proposals by status, decisions taken, and the hours the agents have reclaimed. The hours are an estimate at a fixed number of minutes per run or decision - the result says so; never present it as measured.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Runs, proposals by status, decisions, open items and the estimated hours with its basis"),
+        roles_required={UserRole.BRANCH_LEADER, UserRole.ADVISER, UserRole.ADMIN},
+    ),
+
+    "read_analytics": Tool(
+        key="read_analytics",
+        name="Read Analytics",
+        speaking_agent="astra",
+        description="The firm's headline analytics: assets under management, households, wallet share and consolidation opportunity, total return, mandates outside tolerance, goals on track, high attrition risk, fee revenue and margin, data-quality score and whether the decision ledger verifies. A figure that could not be measured comes back empty rather than zero.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Headline figures across the five analytics layers"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.RESEARCH_CIO,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "read_onboarding_cases": Tool(
+        key="read_onboarding_cases",
+        name="Read Onboarding Cases",
+        speaking_agent="astra",
+        description="The onboarding board: each case's status, its four parallel tracks (agreements, account, financial crime, funding) and which are blocked, who owns the next step, SLA status, NIGO flag, readiness score and AML/EDD/CIP position. Open cases by default; ask for all to include approved and rejected.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("status", "string", "open (default) or all", required=False),
+            ToolInput("limit", "number", "Max cases to return (default 25, at most 50)", required=False),
+        ],
+        output=ToolOutput("object", "Cases with tracks and position, and a summary of the board"),
+        roles_required={UserRole.OPERATIONS, UserRole.COMPLIANCE, UserRole.ADVISER, UserRole.ADMIN},
+    ),
+
+    "read_provenance": Tool(
+        key="read_provenance",
+        name="Read Provenance",
+        speaking_agent="astra",
+        description="The governance record: whether the decision ledger's hash chain is intact, the latest ledger entries, open conduct-surveillance flags by severity (and which paused an agent), each agent's latest quality score, and recent autonomy-tier changes.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Ledger integrity, surveillance flags, agent evaluations and autonomy changes"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
     # ─── State-changing tools (require confirmation)
 
     "run_agent": Tool(

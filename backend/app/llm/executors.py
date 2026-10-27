@@ -75,6 +75,11 @@ class ToolExecutors:
             "read_recommendations": self.read_recommendations,
             "read_agents": self.read_agents,
             "run_agent": self.run_agent,
+            "read_agent_history": self.read_agent_history,
+            "read_capacity": self.read_capacity,
+            "read_analytics": self.read_analytics,
+            "read_onboarding_cases": self.read_onboarding_cases,
+            "read_provenance": self.read_provenance,
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
             "update_goal": self.update_goal,
@@ -924,6 +929,171 @@ class ToolExecutors:
             "run_id": card["run_id"], "recommendation_ids": rec_ids,
             "autonomous": bool(outcome.get("autonomous")) and status == "acted",
             "card": card, "message": text, "suggestions": narration.follow_ups(card),
+        }
+
+    # ── Reads that stand in for pages: each wraps the function the page's route calls ─────────
+
+    @staticmethod
+    def _limit(value: Any, default: int, top: int) -> int:
+        try:
+            return max(1, min(int(value or default), top))
+        except (TypeError, ValueError):
+            return default
+
+    async def _firm(self):
+        from app.models.tenant import Firm
+
+        firm = await self.session.get(Firm, self.firm_id)
+        if firm is None:
+            raise ExecutorError("Firm not found.")
+        return firm
+
+    async def read_agent_history(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Past agent runs, newest first - the Agent history page's read (atlas.history)."""
+        from collections import Counter
+
+        from app.agents.catalogue import CATALOGUE
+        from app.atlas import history
+        from app.models.enums import AgentKey
+
+        agent_key = str(inputs.get("agent_key") or "").strip() or None
+        if agent_key:
+            try:
+                agent_key = AgentKey(agent_key).value
+            except ValueError:
+                raise ExecutorError(f"There is no agent called '{agent_key}'.")
+        status = str(inputs.get("status") or "").strip() or None
+        rows = await history.run_history(
+            self.session, self.firm_id, agent_key=agent_key, status=status,
+            limit=self._limit(inputs.get("limit"), 20, 50))
+        for r in rows:
+            meta = CATALOGUE.get(r["agent_key"]) or {}
+            r["agent_name"] = meta.get("name") or str(r["agent_key"]).replace("_", " ").title()
+        by_status = dict(Counter(str(r["status"]) for r in rows))
+        scope = f" for {rows[0]['agent_name']}" if agent_key and rows else ""
+        return {
+            "runs": rows, "shown": len(rows), "by_status": by_status,
+            "filters": {"agent_key": agent_key, "status": status},
+            "message": f"{len(rows)} most recent run(s){scope}." if rows else "No agent runs match.",
+        }
+
+    async def read_capacity(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Capacity & outcomes - the Capacity page's read (atlas.history). The hours figure is an
+        estimate and is returned with its basis."""
+        from app.atlas import history
+
+        out = await history.capacity_outcomes(self.session, self.firm_id)
+        out["estimate"] = {"minutes_per_item": history.MINUTES_PER_ITEM, "measured": False}
+        out["message"] = (
+            f"{out['total_agent_runs']} agent run(s) and {out['decisions_made']} decision(s); "
+            f"{out['open_items']} proposal(s) still open. About {out['estimated_hours_reclaimed']} hours "
+            f"reclaimed - an estimate at {history.MINUTES_PER_ITEM} minutes per run or decision, not a measurement."
+        )
+        return out
+
+    async def read_analytics(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The Analytics page's headline figures (aurea_core.analytics.overview)."""
+        from app.aurea_core.analytics import overview
+
+        firm = await self._firm()
+        full = await overview.compute_all(self.session, self.firm_id)
+        h = full["headline"]
+        bits = []
+        if h.get("firm_aum") is not None:
+            bits.append(f"AUM {h['firm_aum']:,.0f} {firm.base_currency}")
+        bits.append(f"{h.get('clients', 0)} client household(s)")
+        if h.get("data_quality_score") is not None:
+            bits.append(f"data quality {h['data_quality_score']}")
+        if h.get("drift_breaches"):
+            bits.append(f"{h['drift_breaches']} mandate(s) outside tolerance")
+        # What each figure rests on, so no surface shows an estimate or a client's own declaration bare.
+        fee_basis = (full["practice"].get("fee_margin") or {}).get("fee_revenue_basis") or "estimate"
+        bases = {"fee_revenue": fee_basis, "firm_margin": "estimate (built on estimated revenue)",
+                 "firm_wallet_share": "declared", "consolidation_opportunity": "declared"}
+        return {"headline": h, "bases": bases, "currency": firm.base_currency,
+                "message": "Headline figures: " + "; ".join(bits) + "."}
+
+    async def read_onboarding_cases(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The onboarding board - cases with their four derived tracks (api.onboarding.cases_overview)."""
+        from collections import Counter
+
+        from app.api.onboarding import cases_overview
+
+        firm = await self._firm()
+        want = str(inputs.get("status") or "open").lower()
+        cases = await cases_overview(self.session, firm)
+        rows = []
+        for c in cases:
+            t = c["tracks"]
+            rows.append({
+                "id": c["id"], "prospect_name": c["prospect_name"], "status": c["status"],
+                "segment": c["segment"], "registration_type": c["registration_type"],
+                "sla_status": c["sla_status"], "nigo_flag": bool(c["nigo_flag"]),
+                "readiness_score": c["readiness_score"], "aml_risk_tier": c["aml_risk_tier"],
+                "edd_status": c["edd_status"], "cip_status": c["cip_status"],
+                "position": t["position"], "owner": t["owner"], "ready_to_activate": t["ready_to_activate"],
+                "blocked_tracks": t["blocked_tracks"],
+                "tracks": [{"code": x["code"], "label": x["label"], "state": x["state"]} for x in t["tracks"]],
+            })
+        total = len(rows)
+        is_open = lambda r: r["status"] not in ("approved", "rejected")  # noqa: E731
+        shown = [r for r in rows if is_open(r)] if want != "all" else rows
+        limit = self._limit(inputs.get("limit"), 25, 50)
+        summary = {
+            "total": total, "open": sum(1 for r in rows if is_open(r)),
+            "by_status": dict(Counter(r["status"] for r in rows)),
+            "sla_breached": sum(1 for r in rows if is_open(r) and r["sla_status"] == "breached"),
+            "blocked": sum(1 for r in rows if is_open(r) and r["blocked_tracks"]),
+            "ready_to_activate": sum(1 for r in rows if is_open(r) and r["ready_to_activate"]),
+        }
+        return {
+            "cases": shown[:limit], "shown": min(len(shown), limit), "scope": "all" if want == "all" else "open",
+            "summary": summary,
+            "message": (f"{summary['open']} open onboarding case(s) of {total}; {summary['blocked']} blocked, "
+                        f"{summary['sla_breached']} past their SLA, {summary['ready_to_activate']} ready to activate."),
+        }
+
+    async def read_provenance(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The Provenance page in brief: ledger integrity, open surveillance flags, agent quality and
+        recent autonomy changes (provenance.ledger / evaluation / views)."""
+        from app.agents.catalogue import CATALOGUE
+        from app.provenance import ledger, views
+        from app.provenance.evaluation import latest_evaluations
+
+        def name(key: str) -> str:
+            return (CATALOGUE.get(key) or {}).get("name") or str(key).replace("_", " ").title()
+
+        chain = await ledger.verify_chain(self.session, self.firm_id)
+        recent = [
+            {"seq": e["seq"], "event_type": e["event_type"], "agent_name": name(e["agent_key"]) if e["agent_key"] else None,
+             "actor": e["actor"], "created_at": e["created_at"]}
+            for e in await views.recent_ledger(self.session, self.firm_id, 8)
+        ]
+        flags = await views.surveillance_flags(self.session, self.firm_id)
+        open_flags = [f for f in flags if not f["resolved"]]
+        by_severity: dict[str, int] = {}
+        for f in open_flags:
+            by_severity[str(f["severity"])] = by_severity.get(str(f["severity"]), 0) + 1
+        evaluations = [
+            {"agent_key": e["agent_key"], "agent_name": name(e["agent_key"]), "quality_score": e["quality_score"],
+             "grade": e["grade"], "sample_size": e["sample_size"]}
+            for e in await latest_evaluations(self.session, self.firm_id)
+        ]
+        changes = [{**c, "agent_name": name(c["agent_key"])} for c in await views.autonomy_changes(self.session, self.firm_id, 5)]
+        integrity = (f"The ledger's hash chain is intact over {chain['count']} entries."
+                     if chain["valid"] else f"The ledger's hash chain is BROKEN at entry {chain['broken_at_seq']}.")
+        return {
+            "ledger": {**chain, "recent": recent},
+            "surveillance": {
+                "open": len(open_flags), "by_severity": by_severity,
+                "flags": [{"id": f["id"], "severity": f["severity"], "category": f["category"],
+                           "finding": f["finding"], "target_agent_name": name(f["target_agent_key"]) if f["target_agent_key"] else None,
+                           "auto_paused_agent": f["auto_paused_agent"], "escalated": f["escalated"],
+                           "created_at": f["created_at"]} for f in open_flags[:6]],
+            },
+            "evaluations": evaluations,
+            "autonomy_changes": changes,
+            "message": f"{integrity} {len(open_flags)} open surveillance flag(s). {len(evaluations)} agent(s) scored.",
         }
 
     async def search_holdings(self, inputs: dict[str, Any]) -> dict[str, Any]:

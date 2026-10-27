@@ -46,6 +46,11 @@ const short = (h: string) => h.replace(/^the\s+/i, "");
 
 const WAITING: Suggestion = { label: "What's waiting on me", prompt: "What proposals are waiting for my decision?" };
 const AGENTS: Suggestion = { label: "Which agents can I run", prompt: "Which agents can I run?" };
+const RUNS: Suggestion = { label: "Recent agent runs", prompt: "Show me the most recent agent runs and whether any failed." };
+const CAPACITY: Suggestion = { label: "Capacity", prompt: "How much capacity have the agents reclaimed, and what is still open?" };
+const ANALYTICS: Suggestion = { label: "Headline analytics", prompt: "Give me the firm's headline analytics." };
+const ONBOARDING: Suggestion = { label: "Onboarding cases", prompt: "Which onboarding cases are blocked or past their SLA?" };
+const PROVENANCE: Suggestion = { label: "Ledger and flags", prompt: "Is the decision ledger intact, and are any surveillance flags open?" };
 
 function perf(h?: string): Suggestion {
   return h
@@ -74,22 +79,25 @@ export function roleStarters(role: string, ctx: SuggestionContext): Suggestion[]
     case "paraplanner":
       return [view(h1), { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }, AGENTS, WAITING];
     case "portfolio_team":
-      return [WAITING, { label: "Composites", prompt: "How are the composites performing?" }, AGENTS, view(h1)];
+      return [WAITING, { label: "Composites", prompt: "How are the composites performing?" }, ANALYTICS, AGENTS];
     case "research_cio":
-      return [{ label: "Composites", prompt: "How are the composites performing?" }, { label: "Firm definition", prompt: "Does the firm definition check come back clean?" }, perf(h1), WAITING];
+      return [{ label: "Composites", prompt: "How are the composites performing?" }, ANALYTICS, { label: "Firm definition", prompt: "Does the firm definition check come back clean?" }, perf(h1), WAITING];
     case "compliance":
-      return [{ label: "Compliance program", prompt: "Show me the compliance program and any open conflicts." }, { label: "AI governance", prompt: "Summarise AI governance: what is overdue for review?" }, { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }, WAITING];
+      return [PROVENANCE, { label: "Compliance program", prompt: "Show me the compliance program and any open conflicts." }, { label: "AI governance", prompt: "Summarise AI governance: what is overdue for review?" }, ONBOARDING, WAITING];
     case "operations":
       return [
         { label: "Prepare billing run", prompt: "Prepare this quarter's billing run." },
         { label: "Billing exceptions", prompt: "What's the billing status, and which bills are held or unpaid?" },
         { label: "Corporate actions", prompt: "Which corporate actions still need processing?" },
+        ONBOARDING,
         WAITING,
       ];
     case "branch_leader":
       return [
+        CAPACITY,
         { label: "Billing status", prompt: "Is a billing run waiting for approval, and what are the exceptions?" },
         { label: "Prepare billing run", prompt: "Prepare this quarter's billing run." },
+        PROVENANCE,
         AGENTS,
         WAITING,
       ];
@@ -117,7 +125,11 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
     case "/studio":
       return [WAITING, { label: "Scan the book", prompt: "Have the next-best-action agent scan the book for opportunities." }, AGENTS, perf(h1)];
     case "/studio/workforce":
-      return [AGENTS, WAITING];
+      return [AGENTS, RUNS, WAITING];
+    case "/studio/agent-history":
+      return [RUNS, { label: "Failed runs", prompt: "Did any agent run fail recently?" }, AGENTS];
+    case "/studio/capacity":
+      return [CAPACITY, RUNS, WAITING];
     case "/studio/review":
       return [
         { label: "What's waiting on me", prompt: "What proposals are waiting for my decision, most urgent first?" },
@@ -132,8 +144,9 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
       ];
     case "/studio/clients":
       return [view(h1), perf(h1), washSale(h2 ?? h1)];
-    case "/studio/composites":
     case "/studio/analytics":
+      return [ANALYTICS, { label: "Composites", prompt: "How are the composites performing?" }, { label: "Firm definition", prompt: "Does the firm definition check come back clean?" }];
+    case "/studio/composites":
       return [{ label: "Composites", prompt: "How are the composites performing?" }, { label: "Firm definition", prompt: "Does the firm definition check come back clean?" }];
     case "/studio/pipeline":
       return [{ label: "Growth pipeline", prompt: "Show me the CRM growth pipeline." }];
@@ -146,9 +159,11 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
     case "/studio/family":
       return [view(h1), washSale(h1)];
     case "/provenance":
+      return [PROVENANCE, RUNS, { label: "Compliance program", prompt: "Show me the compliance program and any open conflicts." }, { label: "AI governance", prompt: "Summarise AI governance: what is overdue for review?" }];
     case "/admin/regulatory":
       return [{ label: "Compliance program", prompt: "Show me the compliance program and any open conflicts." }, { label: "AI governance", prompt: "Summarise AI governance: what is overdue for review?" }];
     case "/studio/onboarding":
+      return [ONBOARDING, WAITING, { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }];
     case "/studio/book-integration":
       return [WAITING, { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }];
     default:

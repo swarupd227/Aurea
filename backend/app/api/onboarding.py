@@ -85,8 +85,9 @@ def _sla_status(case: OnboardingCase) -> str:
     if not case.created_at or case.status in ("approved", "rejected"):
         return "n/a"
     from app.core.db import utcnow
-    from datetime import timedelta
-    elapsed = (utcnow() - case.created_at).days
+    from datetime import timedelta, timezone
+    created = case.created_at if case.created_at.tzinfo else case.created_at.replace(tzinfo=timezone.utc)
+    elapsed = (utcnow() - created).days
     sla = getattr(case, "sla_days", 30) or 30
     if elapsed >= sla:
         return "breached"
@@ -222,8 +223,9 @@ def _case_dict(
     return d
 
 
-@router.get("/cases")
-async def list_cases(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+async def cases_overview(db: AsyncSession, firm: Firm) -> list[dict]:
+    """Every onboarding case for the firm, newest first, each with its derived tracks. The
+    board's read, shared with the conversation's `read_onboarding_cases` tool."""
     rows = (
         await db.execute(select(OnboardingCase).where(OnboardingCase.firm_id == firm.id)
                          .order_by(OnboardingCase.created_at.desc()))
@@ -236,6 +238,11 @@ async def list_cases(firm: Firm = Depends(current_firm), db: AsyncSession = Depe
         d["tracks"] = await _tracks_for(db, firm, c)
         out.append(d)
     return out
+
+
+@router.get("/cases")
+async def list_cases(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    return await cases_overview(db, firm)
 
 
 @router.post("/cases")
