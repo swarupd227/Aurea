@@ -68,13 +68,23 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   // run can also be mid-way when this page is opened.
   const [confirming, setConfirming] = useState(false);
   const running = thread?.messages.some((m) => m.card?.kind === "agent_run" && m.card.data?.status === "running");
+  // The reply to the last question may still be being written: the server finishes a turn even if the
+  // browser that asked has left, so coming back mid-reply shows the question and waits for the answer.
+  // `working` is exact for the replica running the turn; a question asked in the last two minutes with
+  // no answer yet is also looked at again, because another replica cannot say.
+  const last = thread?.messages[thread.messages.length - 1];
+  const askedAt = last
+    ? Date.parse(/(Z|[+-]\d\d:?\d\d)$/.test(last.created_at) ? last.created_at : `${last.created_at}Z`)
+    : NaN;
+  const awaitingReply =
+    live === null && !!thread && (!!thread.working || (last?.role === "user" && Date.now() - askedAt < 120_000));
   useEffect(() => {
-    if (!running && !confirming) return;
+    if (!running && !confirming && !awaitingReply) return;
     const timer = setInterval(() => {
       reload().catch(() => {});
     }, 1500);
     return () => clearInterval(timer);
-  }, [running, confirming, reload]);
+  }, [running, confirming, awaitingReply, reload]);
   useEffect(() => {
     if (!running) refetchThreads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,6 +138,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       status={thread.status}
       live={live}
       pendingUser={pendingUser}
+      awaitingReply={awaitingReply}
       error={error}
       hasThread
       onSend={handleSend}

@@ -37,8 +37,11 @@ export default function PageAsk() {
     fetchMentionables().then((d) => setMentionables(d.mentionables)).catch(() => {});
   }, []);
 
-  // A page change starts a fresh conversation about the new page; the old one stays in Astra.
+  // A page change starts a fresh conversation about the new page; the old one stays in Astra. A reply still
+  // being written for the old page finishes on the server and lands in that thread, not on this page.
+  const pathRef = useRef(pathname);
   useEffect(() => {
+    pathRef.current = pathname;
     setThread(null);
     setOpen(false);
     setError(null);
@@ -54,13 +57,14 @@ export default function PageAsk() {
       setOpen(true);
       setPendingUser(text);
       setLive({ text: "", steps: [] });
+      const startedOn = pathRef.current;
       try {
         const id = thread?.id ?? (await createThread({ kind: "ask_astra", title: text.slice(0, 60) })).id;
         await sendMessageStream(id, text, (event) => {
           if (event.type === "error") setError(event.message);
           else setLive((prev) => reduceLive(prev, event));
         });
-        setThread(await fetchThread(id));
+        if (pathRef.current === startedOn) setThread(await fetchThread(id));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to reach Astra");
       } finally {

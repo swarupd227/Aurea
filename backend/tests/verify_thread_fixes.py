@@ -218,10 +218,76 @@ async def routes(Session) -> None:
         check("and do not re-offer the roster", "Which agents can I run?" in reply.suggestions, False)
 
 
+async def navigating_away(Session) -> None:
+    """(c) A browser that closes its connection mid-reply does not take the reply with it."""
+    from app.api import threads as T
+    from app.llm import turns
+
+    T.SessionLocal = Session
+    async with Session() as s:
+        firm = Firm(id=uuid.uuid4(), name="Away", slug="away")
+        s.add(firm)
+        await s.flush()
+        adviser = User(id=uuid.uuid4(), firm_id=firm.id, email="a@x", full_name="A", hashed_password="x", role=R.ADVISER)
+        s.add(adviser)
+        thread = Thread(firm_id=firm.id, kind=ThreadKind.ASK_ASTRA, created_by_user_id=adviser.id, title="away")
+        s.add(thread)
+        await s.commit()
+        thread_id = thread.id
+
+        async def slow(**_kw):
+            yield {"type": "text", "text": "The Chen Family is "}
+            await asyncio.sleep(0.4)
+            yield {"type": "text", "text": "on track."}
+            yield {"type": "done", "tool_uses": [], "content_blocks": []}
+
+        async def peek():
+            async with Session() as p:
+                msgs = (await p.execute(select(ThreadMessage).where(ThreadMessage.thread_id == thread_id)
+                                        .order_by(ThreadMessage.created_at))).scalars().all()
+                return [(m.role.value, m.text) for m in msgs]
+
+        print("\n=== (c) the reply survives the browser leaving ===")
+        gw_mod.llm_service.stream = slow
+        response = await T.send_message(thread_id, {"text": "How is the Chen Family?"}, user=adviser, session=s)
+        first = await response.body_iterator.__anext__()           # the first token reaches the browser...
+        check("a token was streamed", "The Chen Family is" in first, True)
+        await response.body_iterator.aclose()                      # ...and then the browser navigates away
+        check("the turn is marked as running on the server", turns.is_active(thread_id), True)
+        mid = await T.get_thread(thread_id, user=adviser, session=s)
+        check("a reload mid-reply says the reply is being written", mid["working"], True)
+        check("and shows the question already", [m["text"] for m in mid["messages"]], ["How is the Chen Family?"])
+
+        for _ in range(40):
+            await asyncio.sleep(0.1)
+            if not turns.is_active(thread_id):
+                break
+        check("the turn finished without a listener", turns.is_active(thread_id), False)
+        check("the whole reply is on the thread, not the first chunk",
+              await peek(), [("user", "How is the Chen Family?"), ("astra", "The Chen Family is on track.")])
+        async with Session() as fresh:                            # a reload is a new request, a new session
+            done = await T.get_thread(thread_id, user=adviser, session=fresh)
+        check("a reload afterwards is not 'working'", done["working"], False)
+        check("and carries follow-ups for the role", len(done["messages"][-1]["suggestions"]) >= 1, True)
+
+        print("\n=== (c) a turn that fails still leaves a trace on the thread ===")
+        async def broken(**_kw):
+            raise RuntimeError("upstream unavailable")
+            yield  # pragma: no cover
+        gw_mod.llm_service.stream = broken
+        response = await T.send_message(thread_id, {"text": "And the Wu Family?"}, user=adviser, session=s)
+        events = [e async for e in response.body_iterator]
+        check("the browser is told", any('"type": "error"' in e for e in events), True)
+        last2 = (await peek())[-2:]
+        check("the question is on the thread", last2[0], ("user", "And the Wu Family?"))
+        check("and so is what happened to it", last2[1][0] == "astra" and "error" in last2[1][1], True)
+        check("no turn is left marked running", turns.is_active(thread_id), False)
+
 def main() -> int:
     queue_rights()
     suggestions()
     asyncio.run(with_db(routes))
+    asyncio.run(with_db(navigating_away))
     print(f"\n{'=' * 64}\n{len(PASS)} passed, {len(FAIL)} failed")
     for f in FAIL:
         print(f"  FAILED: {f}")

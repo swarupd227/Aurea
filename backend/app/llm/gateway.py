@@ -127,7 +127,9 @@ class Gateway:
 
         user_msg = ThreadMessage(thread_id=thread_id, role=MessageRole.USER, text=text)
         self.session.add(user_msg)
-        await self.session.flush()
+        # Committed at once: the question is on the thread however the turn ends, including a browser
+        # that closes the connection mid-reply. The reply is committed when it is whole.
+        await self.session.commit()
 
         messages = await self._build_messages(thread_id)
         accumulated_text: list[str] = []
@@ -286,6 +288,12 @@ class Gateway:
                 )
         except Exception as e:  # pragma: no cover - network dependent
             await self.session.rollback()
+            # Said on the thread as well as on the wire, so a reload shows what happened to the question.
+            self.session.add(ThreadMessage(
+                thread_id=thread_id, role=MessageRole.ASTRA, suggestions=[],
+                text=f"I hit an error talking to the model: {e}",
+            ))
+            await self.session.commit()
             yield {"type": "error", "message": f"I hit an error talking to the model: {e}"}
             return
 

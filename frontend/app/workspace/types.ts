@@ -56,6 +56,8 @@ export interface ThreadSummary {
 }
 
 export interface ThreadDetail extends ThreadSummary {
+  /** A reply is being written to this thread right now (the server keeps going if the browser leaves). */
+  working?: boolean;
   messages: Message[];
 }
 
