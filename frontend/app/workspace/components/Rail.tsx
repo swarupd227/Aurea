@@ -48,6 +48,7 @@ export function Rail({
   const [agents, setAgents] = useState<Mentionable[]>([]);
   const [shortcutLabel, setShortcutLabel] = useState("Ctrl K");
   const [user, setUser] = useState<any>(null);
+  const [showAllThreads, setShowAllThreads] = useState(false);
 
   useEffect(() => {
     setUser(getUser());
@@ -65,6 +66,9 @@ export function Rail({
   const pinned = pinnedViews(role);
   const more = moreViews(role);
 
+  // The newest few are enough on the rail; the rest are one palette search away.
+  const RECENT = 8;
+  const shownThreads = showAllThreads ? threads : threads.slice(0, RECENT);
   const waitingThreads = threads.filter((t) => t.status === "awaiting_confirmation");
   const items = needsYou?.needs_decision ?? [];
   const proposals = needsYou?.proposals ?? [];
@@ -190,7 +194,7 @@ export function Rail({
             <p className="px-2 text-xs text-ink-muted">None yet.</p>
           ) : (
             <ul className="space-y-0.5">
-              {threads.map((t) => (
+              {shownThreads.map((t) => (
                 <li key={t.id}>
                   <button
                     type="button"
@@ -207,28 +211,18 @@ export function Rail({
                   </button>
                 </li>
               ))}
-            </ul>
-          )}
-        </Section>
-
-        <Section title="Your agents">
-          {agents.length === 0 ? (
-            <p className="px-2 text-xs text-ink-muted">No agents you can run yet.</p>
-          ) : (
-            <ul className="space-y-0.5">
-              {agents.slice(0, 8).map((a) => (
-                <li key={a.id}>
+              {threads.length > RECENT && (
+                <li>
                   <button
                     type="button"
-                    onClick={() => onMention(a.name)}
-                    title={`Mention @${a.name} in your message`}
-                    className={`${rowBase} text-ink-soft hover:bg-border-soft/60`}
+                    onClick={() => setShowAllThreads((v) => !v)}
+                    data-testid="rail-all-conversations"
+                    className={`${rowBase} text-xs text-ink-muted hover:bg-border-soft/60 hover:text-ink`}
                   >
-                    <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" />
-                    <span className="truncate">{a.name}</span>
+                    {showAllThreads ? "Show fewer" : `All ${threads.length} conversations`}
                   </button>
                 </li>
-              ))}
+              )}
             </ul>
           )}
         </Section>
@@ -283,6 +277,28 @@ export function Rail({
             </details>
           )}
         </Section>
+        <Section title="Your agents">
+          {agents.length === 0 ? (
+            <p className="px-2 text-xs text-ink-muted">No agents you can run yet.</p>
+          ) : (
+            <ul className="space-y-0.5">
+              {agents.slice(0, 8).map((a) => (
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => onMention(a.name)}
+                    title={`Mention @${a.name} in your message`}
+                    className={`${rowBase} text-ink-soft hover:bg-border-soft/60`}
+                  >
+                    <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" />
+                    <span className="truncate">{a.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+
       </div>
 
       <div className="shrink-0 space-y-0.5 border-t border-border p-2">
