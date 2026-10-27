@@ -30,6 +30,8 @@ class BillingAgent(BaseAgent):
     lifecycle_stage = "manage_optimise"
     default_tier = AutonomyTier.TIER_2
     scheduled = True
+    # Each proposal is a distinct run for a period, tied to its own BillingRun rows.
+    refreshes_open_proposals = False
 
     async def sense(self, ctx: AgentContext) -> dict:
         waiting = await billing_run.open_run(ctx.session, ctx.firm.id)

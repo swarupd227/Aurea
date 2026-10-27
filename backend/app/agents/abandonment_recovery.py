@@ -52,6 +52,8 @@ class AbandonmentRecoveryAgent(BaseAgent):
     lifecycle_stage = "acquire_onboard"
     default_tier = AutonomyTier.TIER_1
     scheduled = True
+    # A case that was approved, rejected or moved again is no longer stalled; its nudge goes.
+    expires_unraised = True
 
     async def sense(self, ctx: AgentContext) -> dict:
         s = ctx.session

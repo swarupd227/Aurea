@@ -29,6 +29,11 @@ pages are artifact views the agents open. Full guideline, including what is buil
   `require_roles(*STAFF_ROLES)` on a decision route.
 - **Exactly-once decisions.** `runtime.decide` and `runtime.rollback` lock the recommendation and re-read
   its status. Callers must not re-implement the check instead.
+- **One open proposal per subject.** A scheduled agent that finds the same thing again refreshes its open
+  proposal instead of raising another; `run_agent` does this through `atlas/proposals.py`, so an agent
+  must not dedupe for itself. Identity is agent + subject + title with its numbers stripped, so put
+  changing numbers in the title and anything that makes a finding distinct in the words. An agent whose
+  every run is its own event sets `refreshes_open_proposals = False`.
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
@@ -42,7 +47,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

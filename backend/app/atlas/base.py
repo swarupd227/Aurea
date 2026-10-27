@@ -54,6 +54,12 @@ class BaseAgent:
     default_tier: AutonomyTier = AutonomyTier.TIER_1
     # Whether this agent runs on a schedule (monitoring) vs on demand.
     scheduled: bool = False
+    # A scheduled agent that finds the same thing again updates its open proposal instead of
+    # raising another (atlas/proposals.py). False for an agent whose every run is its own
+    # event, such as a billing run for a new period.
+    refreshes_open_proposals: bool = True
+    # A full-book scan that stops finding a condition closes the proposal it raised for it.
+    expires_unraised: bool = False
 
     async def sense(self, ctx: AgentContext) -> dict:
         """Gather signals from the client brain. Returns a JSON-able 'sensed' state."""

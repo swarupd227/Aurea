@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.catalogue import CATALOGUE
-from app.atlas import activity
+from app.atlas import activity, proposals
 from app.atlas.base import AgentContext, Subject
 from app.atlas.registry import get_agent
 from app.core.db import utcnow
@@ -113,7 +113,31 @@ async def run_agent(
         from app.core import foundation
         require_all = bool((await foundation.for_agent(session, firm, agent_key)).get("require_approval_everywhere"))
         pending = False
+
+        # A scheduled agent that finds what it found last time updates the open proposal
+        # rather than raising another (atlas/proposals.py).
+        pools: dict | None = None
+        refreshed: list[str] = []
+        if (agent.scheduled and agent.refreshes_open_proposals and drafts) or agent.expires_unraised:
+            pools = {}
+            for ident, recs in (await proposals.open_from_earlier_runs(
+                    session, firm_id=firm.id, agent_key=agent_key, run_id=run.id)).items():
+                latest, older = proposals.newest_run_only(recs)
+                pools[ident] = latest
+                for rec in older:
+                    await proposals.expire(session, rec, run_id=run.id,
+                                           reason=f"Superseded by a newer proposal for the same subject ({latest[0].id}).")
+
         for d in drafts:
+            if pools is not None:
+                ident = proposals.identity(
+                    agent_key, d.subject.type or subject.type, d.subject.id or subject.id,
+                    d.subject.label or subject.label, d.title)
+                if pools.get(ident):
+                    open_rec = pools[ident].pop(0)
+                    await proposals.refresh(session, open_rec, d, run_id=run.id, trigger=trigger)
+                    refreshed.append(str(open_rec.id))
+                    continue
             rec = Recommendation(
                 firm_id=firm.id,
                 run_id=run.id,
@@ -159,10 +183,24 @@ async def run_agent(
                     meta={"recommendation_id": str(rec.id), "tier": tier},
                 )
 
-        if not drafts:
+        closed = 0
+        if pools is not None and agent.expires_unraised and subject.id is None:
+            # A scan of the whole book that no longer finds a condition has resolved it.
+            for left in pools.values():
+                for rec in left:
+                    await proposals.expire(session, rec, run_id=run.id,
+                                           reason="No longer found when the book was last checked.")
+                    closed += 1
+        if refreshed or closed:
+            run.context = {**(run.context or {}), "refreshed": refreshed, "closed": closed}
+
+        if not drafts or (refreshed and not pending):
+            note = (f"{len(refreshed)} open proposal(s) brought up to date"
+                    + (f", {closed} closed as resolved" if closed else "")) if (refreshed or closed) \
+                else "nothing to surface"
             await activity.emit(
                 session, firm_id=firm.id, agent_key=agent_key, kind=ActivityKind.WATCHING,
-                summary=f"{agent_label(agent_key)} checked {subject.label or 'the book'} — nothing to surface",
+                summary=f"{agent_label(agent_key)} checked {subject.label or 'the book'} — {note}",
                 subject_label=subject.label,
             )
 
