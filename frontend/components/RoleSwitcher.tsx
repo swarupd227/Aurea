@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Repeat, Check } from "lucide-react";
 import { api, getUser, login } from "@/lib/api";
+import { roleLanding } from "@/lib/roles";
 
 export default function RoleSwitcher() {
   const [open, setOpen] = useState(false);
@@ -22,7 +23,8 @@ export default function RoleSwitcher() {
     setBusy(p.email);
     try {
       await login(p.email, "aurea");
-      window.location.href = p.default_path;
+      // Staff land in the conversation; admins and clients keep the page the persona catalogue names.
+      window.location.href = ["admin", "superadmin", "client"].includes(p.role) ? p.default_path : roleLanding(p.role);
     } catch {
       setBusy(null);
     }

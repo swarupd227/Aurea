@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { confirmPendingAction, fetchMentionables, fetchThread, sendMessageStream } from "../api";
 import { useWorkspace } from "../context";
 import { ThreadView } from "../components/ThreadView";
+import { reduceLive } from "../lib/live";
+import { takeFirstMessage } from "../lib/start";
 import type { LiveTurn, Mentionable, ThreadDetail } from "../types";
 
 export default function ThreadPage({ params }: { params: { id: string } }) {
@@ -12,6 +14,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const [mentionables, setMentionables] = useState<Mentionable[]>([]);
   const [loading, setLoading] = useState(true);
   const [live, setLive] = useState<LiveTurn | null>(null);
+  const [pendingUser, setPendingUser] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -29,26 +32,12 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
 
   const handleSend = async (text: string) => {
     setError(null);
+    setPendingUser(text);
     setLive({ text: "", steps: [] });
     try {
       await sendMessageStream(params.id, text, (event) => {
-        if (event.type === "token") {
-          setLive((prev) => ({ text: (prev?.text ?? "") + event.text, steps: prev?.steps ?? [] }));
-        } else if (event.type === "tool_start") {
-          setLive((prev) => ({
-            text: prev?.text ?? "",
-            steps: [...(prev?.steps ?? []), { tool_key: event.tool_key, state: "running" }],
-          }));
-        } else if (event.type === "tool_result") {
-          setLive((prev) => ({
-            text: prev?.text ?? "",
-            steps: (prev?.steps ?? []).map((s) =>
-              s.tool_key === event.tool_key ? { ...s, state: event.ok ? "ok" : "failed" } : s
-            ),
-          }));
-        } else if (event.type === "error") {
-          setError(event.message);
-        }
+        if (event.type === "error") setError(event.message);
+        else setLive((prev) => reduceLive(prev, event));
         // "done" and "pending_action" just end the stream; the reload() below
         // fetches the authoritative persisted state rather than reconstructing
         // it from stream events.
@@ -59,8 +48,20 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setLive(null);
+      setPendingUser(null);
     }
   };
+
+  // A conversation started from the home composer, the palette or a Needs-you row arrives with
+  // its first sentence waiting; send it once the thread has loaded so the turn streams in view.
+  const sent = useRef(false);
+  useEffect(() => {
+    if (loading || !thread || sent.current) return;
+    sent.current = true;
+    const first = takeFirstMessage(params.id);
+    if (first && thread.messages.length === 0) void handleSend(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, thread]);
 
   const handleConfirm = async (pendingActionId: string) => {
     setError(null);
@@ -105,6 +106,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       messages={thread.messages}
       status={thread.status}
       live={live}
+      pendingUser={pendingUser}
       error={error}
       hasThread
       onSend={handleSend}

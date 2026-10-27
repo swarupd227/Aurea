@@ -17,9 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.db import get_db
+from app.core.decision_rights import roles_for
 from app.core.security import get_current_user
 from app.core.tools import tools_for_role
 from app.llm.gateway import Gateway, GatewayError
+from app.models.enums import RecommendationStatus, UserRole
+from app.models.governance import Recommendation
 from app.models.identity import User
 from app.models.thread import (
     Thread, ThreadKind, ThreadMessage, ToolCall, ToolCallStatus,
@@ -170,6 +173,26 @@ async def create_thread(
     }
 
 
+async def _my_open_proposals(session: AsyncSession, user: User) -> list[Recommendation]:
+    """Open agent proposals this role may decide, most urgent first.
+
+    The rights come from decision_rights - the same source the decide route and the executor
+    use - so the rail never offers a decision the server would refuse. Admins configure the
+    platform and hold no proposals to decide.
+    """
+    if user.role in (UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.CLIENT):
+        return []
+    role = UserRole(user.role)
+    recs = (await session.execute(
+        select(Recommendation)
+        .where(Recommendation.firm_id == user.firm_id,
+               Recommendation.status == RecommendationStatus.PROPOSED)
+        .order_by(Recommendation.priority.asc(), Recommendation.created_at.desc())
+        .limit(200)
+    )).scalars().all()
+    return [r for r in recs if role in roles_for(r.agent_key, "approve")]
+
+
 @router.get("/needs-you")
 async def needs_you(
     user: User = Depends(get_current_user),
@@ -203,9 +226,25 @@ async def needs_you(
         for pending, thread, tool_call in rows
     ]
 
+    mine = await _my_open_proposals(session, user)
+    proposals_count = len(mine)
+    proposals = [
+        {
+            "id": str(r.id),
+            "title": r.title,
+            "agent_key": str(r.agent_key),
+            "subject_label": r.subject_label,
+            "priority": r.priority,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in mine[:8]
+    ]
+
     return {
         "needs_decision_count": len(items),
         "needs_decision": items,
+        "proposals_count": proposals_count,
+        "proposals": proposals,
     }
 
 
@@ -225,7 +264,7 @@ async def briefing(
             Thread.firm_id == user.firm_id,
         )
     )
-    needs_count = (await session.execute(needs_stmt)).scalar_one()
+    needs_count = (await session.execute(needs_stmt)).scalar_one() + len(await _my_open_proposals(session, user))
 
     threads_stmt = select(func.count(Thread.id)).where(Thread.firm_id == user.firm_id)
     threads_count = (await session.execute(threads_stmt)).scalar_one()

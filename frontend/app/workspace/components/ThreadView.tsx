@@ -6,13 +6,15 @@ import { Composer, type ComposerInsert } from "./Composer";
 import { MessageView } from "./MessageView";
 import { LiveMessage } from "./LiveMessage";
 import { Briefing } from "./Briefing";
-import { STARTERS } from "../lib/prompts";
+import { getUser } from "@/lib/api";
+import { roleStarters, useSuggestionContext } from "@/lib/suggestions";
 import type { LiveTurn, Message, Mentionable, ThreadStatus } from "../types";
 
 export function ThreadView({
   messages,
   status,
   live,
+  pendingUser = null,
   error,
   hasThread,
   onSend,
@@ -24,6 +26,8 @@ export function ThreadView({
   messages: Message[];
   status: ThreadStatus;
   live: LiveTurn | null;
+  /** The sentence just sent, shown at once while the turn streams in. */
+  pendingUser?: string | null;
   error: string | null;
   hasThread: boolean;
   onSend: (text: string) => void;
@@ -33,6 +37,9 @@ export function ThreadView({
   composerInsert: ComposerInsert | null;
 }) {
   const streaming = live !== null;
+  const role = typeof window !== "undefined" ? getUser()?.role ?? "" : "";
+  const ctx = useSuggestionContext();
+  const starters = roleStarters(role, ctx);
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
@@ -58,17 +65,23 @@ export function ThreadView({
                 answer shows what tools it used.
               </p>
               <Briefing onSend={onSend} />
-              <div className="mt-6 grid gap-2 sm:grid-cols-2">
-                {STARTERS.map((s) => (
-                  <button
-                    key={s.label}
-                    type="button"
-                    onClick={() => onSend(s.prompt)}
-                    className="rounded-lg border border-border bg-surface px-3 py-2.5 text-left text-sm text-ink hover:border-accent/60 transition-colors"
-                  >
-                    {s.label}
-                  </button>
-                ))}
+              <div className="mt-6" data-testid="workspace-starters">
+                <h2 className="font-mono text-[11px] uppercase tracking-wider text-ink-muted">Try saying</h2>
+                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {starters.map((s) => (
+                    <li key={s.prompt}>
+                      <button
+                        type="button"
+                        onClick={() => onSend(s.prompt)}
+                        className="h-full w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-left text-sm text-ink hover:border-accent/60 transition-colors"
+                      >
+                        <span className="text-ink-muted">&ldquo;</span>
+                        {s.prompt}
+                        <span className="text-ink-muted">&rdquo;</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}
@@ -76,6 +89,14 @@ export function ThreadView({
           {messages.map((m) => (
             <MessageView key={m.id} message={m} onConfirm={onConfirm} onReject={onReject} />
           ))}
+
+          {pendingUser && (
+            <div className="flex justify-end">
+              <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent/15 border border-accent/20 px-3.5 py-2 text-sm text-ink">
+                {pendingUser}
+              </div>
+            </div>
+          )}
 
           {live && <LiveMessage live={live} />}
 

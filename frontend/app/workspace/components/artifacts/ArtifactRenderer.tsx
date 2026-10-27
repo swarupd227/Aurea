@@ -15,6 +15,7 @@ import { AIGovernanceCard } from "./AIGovernanceCard";
 import { CompositesCard } from "./CompositesCard";
 import { CompositeReportCard } from "./CompositeReportCard";
 import { FirmDefinitionCheckCard } from "./FirmDefinitionCheckCard";
+import { RecommendationsCard } from "./RecommendationsCard";
 import type { Artifact } from "../../types";
 
 /**
@@ -77,6 +78,9 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
       case "read_composite_report":
         if (!artifact.result?.ex_post_std_dev) return null;
         return <CompositeReportCard result={artifact.result as any} />;
+      case "read_recommendations":
+        if (!Array.isArray(artifact.result?.recommendations)) return null;
+        return <RecommendationsCard result={artifact.result as any} />;
       case "read_firm_definition_check":
         if (typeof artifact.result?.clean !== "boolean") return null;
         return <FirmDefinitionCheckCard result={artifact.result as any} />;

@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createThread, fetchThreads, sendMessageStream } from "./api";
+import { fetchThreads } from "./api";
+import { startConversation } from "./lib/start";
 import type { ComposerInsert } from "./components/Composer";
 import type { ThreadSummary } from "./types";
 
@@ -11,9 +12,8 @@ interface WorkspaceContextValue {
   refetchThreads: () => void;
   composerInsert: ComposerInsert | null;
   mention: (name: string) => void;
-  /** Create a thread, send `text` as the opening message, and navigate to it —
-   * the same flow the home page's composer uses, shared here so the command
-   * palette's "Ask Astra …" can do the identical thing from anywhere. */
+  /** Create a thread, open it, and have its page send `text` as the opening message — the same
+   * flow the home composer and the command palette's "Ask Astra …" share. */
   askAstra: (text: string) => Promise<void>;
 }
 
@@ -40,14 +40,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const askAstra = useCallback(
     async (text: string) => {
-      const thread = await createThread({ kind: "ask_astra", title: text.slice(0, 60) });
-      router.push(`/workspace/${thread.id}`);
-      refetchThreads();
-      // Streamed in the background — the thread page picks up the persisted
-      // result on load. Errors here aren't surfaced (there's no composer bound
-      // to this call to show them in); a failed first message just leaves the
-      // thread empty, which the thread page's own empty state already handles.
-      await sendMessageStream(thread.id, text, () => {}).catch(() => {});
+      // The thread page sends the first message so the turn streams in view.
+      const path = await startConversation(text);
+      router.push(path);
       refetchThreads();
     },
     [router, refetchThreads]

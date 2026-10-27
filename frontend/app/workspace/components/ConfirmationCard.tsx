@@ -59,7 +59,7 @@ export function ConfirmationCard({
               type="button"
               onClick={() => act(onConfirm)}
               disabled={busy}
-              className="bg-accent text-ink px-3 py-1.5 rounded font-medium text-sm hover:bg-yellow-400 disabled:opacity-50 transition-colors"
+              className="bg-accent text-black px-3 py-1.5 rounded font-medium text-sm hover:bg-yellow-400 disabled:opacity-50 transition-colors"
             >
               Confirm
             </button>

@@ -46,9 +46,21 @@ export interface NeedsYouItem {
   created_at: string;
 }
 
+/** An open agent proposal this role may decide (the server applies decision rights). */
+export interface NeedsYouProposal {
+  id: string;
+  title: string;
+  agent_key: string;
+  subject_label: string | null;
+  priority: number;
+  created_at: string | null;
+}
+
 export interface NeedsYou {
   needs_decision_count: number;
   needs_decision: NeedsYouItem[];
+  proposals_count?: number;
+  proposals?: NeedsYouProposal[];
 }
 
 export interface BriefingRow {

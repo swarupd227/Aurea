@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.graph import household_brain
@@ -67,6 +67,7 @@ class ToolExecutors:
             "read_beneficiary_audit": self.read_beneficiary_audit,
             "read_portfolio": self.read_portfolio,
             "search_holdings": self.search_holdings,
+            "read_recommendations": self.read_recommendations,
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
             "update_goal": self.update_goal,
@@ -584,6 +585,56 @@ class ToolExecutors:
             "total_value": total_value,
             "pricing": {"real": real_priced, "synthetic": synthetic_priced},
             "message": f"{mandate.name}: {len(holdings)} holding(s), cash {cash:,.2f}, total value {total_value:,.2f}",
+        }
+
+    async def read_recommendations(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The proposals waiting for a decision, firm-scoped, with whether this role may decide
+        each one. The answer comes from decision_rights, the same source decide_recommendation
+        re-checks, so the card never offers a decision the server would refuse."""
+        from app.core import decision_rights
+        from app.models.enums import RecommendationStatus
+        from app.models.governance import Recommendation
+
+        status = str(inputs.get("status") or "open").lower()
+        try:
+            limit = max(1, min(int(inputs.get("limit") or 20), 50))
+        except (TypeError, ValueError):
+            limit = 20
+        subject = str(inputs.get("subject") or "").strip()
+
+        stmt = select(Recommendation).where(Recommendation.firm_id == self.firm_id)
+        if status != "all":
+            stmt = stmt.where(Recommendation.status == RecommendationStatus.PROPOSED)
+        if subject:
+            stmt = stmt.where(Recommendation.subject_label.ilike(f"%{subject}%"))
+        total = (await self.session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+        recs = (await self.session.execute(
+            stmt.order_by(Recommendation.priority.asc(), Recommendation.created_at.desc()).limit(limit)
+        )).scalars().all()
+
+        role = UserRole(self.role)
+        rows = [
+            {
+                "id": str(r.id),
+                "title": r.title,
+                "agent_key": str(r.agent_key),
+                "subject_label": r.subject_label,
+                "status": str(r.status),
+                "priority": r.priority,
+                "confidence": r.confidence,
+                "tier": str(r.tier),
+                "can_decide": role in decision_rights.roles_for(r.agent_key, "approve"),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in recs
+        ]
+        waiting = "waiting for a decision" if status != "all" else "on file"
+        shown = f" (showing {len(rows)})" if total > len(rows) else ""
+        return {
+            "status": "all" if status == "all" else "open",
+            "total": total,
+            "recommendations": rows,
+            "message": f"{total} proposal(s) {waiting}{shown}.",
         }
 
     async def search_holdings(self, inputs: dict[str, Any]) -> dict[str, Any]:

@@ -22,12 +22,15 @@ export function Composer({
   placeholder,
   mentionables = [],
   insert = null,
+  testId,
 }: {
   disabled: boolean;
   onSend: (text: string) => void;
   placeholder: string;
   mentionables?: Mentionable[];
   insert?: ComposerInsert | null;
+  /** data-testid for the input; the send button gets "<testId>-send". */
+  testId?: string;
 }) {
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
@@ -164,6 +167,7 @@ export function Composer({
         }}
         placeholder={placeholder}
         aria-label="Message Astra"
+        data-testid={testId}
         disabled={disabled}
         className="max-h-[200px] min-h-[36px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-ink outline-none placeholder:text-ink-muted disabled:opacity-50"
       />
@@ -171,7 +175,8 @@ export function Composer({
         type="submit"
         disabled={disabled || !text.trim()}
         aria-label="Send"
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-accent text-ink hover:bg-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        data-testid={testId ? `${testId}-send` : undefined}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-accent text-black hover:bg-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <ArrowUp className="h-4 w-4" />
       </button>
