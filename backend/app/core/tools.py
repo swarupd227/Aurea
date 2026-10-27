@@ -240,6 +240,53 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
     ),
 
+    "read_reconciliation": Tool(
+        key="read_reconciliation",
+        name="Read Reconciliation",
+        speaking_agent="astra",
+        description="Whether the book agrees with what the custodians say each account holds: every account's reconciliation state (reconciled, has breaks, statement out of date, or no statement on file) and the open breaks - the instrument or cash, the book's figure against the custodian's, the likely cause with the records behind it, and what would clear it. Use it for 'do we reconcile', 'what breaks are open' or 'which accounts have no custodian statement'. It reports; it never changes the book.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Accounts with their reconciliation state, the open breaks, and a summary"),
+        roles_required={UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "import_custody_statement": Tool(
+        key="import_custody_statement",
+        name="Import Custody Statement",
+        speaking_agent="astra",
+        description="Record a custodian's statement for one account - its positions as symbol and quantity, and its cash if it shows one - and compare it with the book as the book stood on the statement's date. Opens a break for each disagreement and clears the ones that no longer show. Needs the statement's source document. It does not change holdings or cash. Use only figures from a real statement the user gives you; never fill in or estimate positions.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this statement and compare it with the book? Nothing in the book changes; breaks are opened for any differences.",
+        inputs=[
+            ToolInput("account_id", "uuid", "The account the statement is for", required=True),
+            ToolInput("as_of", "string", "The date the statement is struck as at (YYYY-MM-DD)", required=True),
+            ToolInput("positions", "list[object]", "The statement's positions, each {symbol, quantity}", required=True),
+            ToolInput("cash_balance", "number", "The statement's cash balance, if it shows one", required=False),
+            ToolInput("source_document", "string", "The statement it comes from - name, date and custodian", required=True),
+        ],
+        output=ToolOutput("object", "Positions compared and matched, cash result, and breaks opened, refreshed and cleared"),
+        roles_required={UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM},
+    ),
+
+    "resolve_recon_break": Tool(
+        key="resolve_recon_break",
+        name="Resolve Reconciliation Break",
+        speaking_agent="astra",
+        description="Move a reconciliation break on: 'explained' (the likely cause is accepted and it is waiting to clear), 'escalated' (taken to the custodian), 'dismissed' (set aside, with a reason), or 'resolved' (fixed elsewhere, with a reason). It records the decision and who made it; it does not change holdings or cash. A break clears itself when a later statement no longer shows it.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this decision on the break? It is kept with your name; holdings and cash are not changed.",
+        inputs=[
+            ToolInput("break_id", "uuid", "The break, from read_reconciliation", required=True),
+            ToolInput("action", "string", "One of: explained, escalated, dismissed, resolved", required=True),
+            ToolInput("note", "string", "Why - required to dismiss or resolve", required=False),
+        ],
+        output=ToolOutput("object", "The break's new status"),
+        roles_required={UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

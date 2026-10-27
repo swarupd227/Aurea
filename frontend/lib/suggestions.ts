@@ -149,6 +149,12 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Fetch prices now", prompt: "Fetch prices now." },
         { label: "Failed symbols", prompt: "Did the last price run fail for any symbol, and why?" },
       ];
+    case "/studio/reconciliation":
+      return [
+        { label: "Do we reconcile", prompt: "Do we reconcile against the custodians? Which accounts have breaks or no statement?" },
+        { label: "Open breaks", prompt: "What reconciliation breaks are open, and what is the likely cause of each?" },
+        { label: "No statement", prompt: "Which accounts have no custodian statement on file?" },
+      ];
     case "/studio/valuations":
       return [{ label: "Private valuations", prompt: "What are the private holdings carried at, and which are overdue?" }, { label: "Price freshness", prompt: "How fresh are my prices?" }];
     case "/studio/clients":

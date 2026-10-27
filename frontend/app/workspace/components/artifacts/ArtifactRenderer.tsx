@@ -10,6 +10,7 @@ import { PerformanceCard } from "./PerformanceCard";
 import { BillingCard } from "./BillingCard";
 import { ValuationCard } from "./ValuationCard";
 import { PriceFreshnessCard } from "./PriceFreshnessCard";
+import { ReconciliationCard } from "./ReconciliationCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
@@ -90,6 +91,15 @@ export function artifactCard(artifact: Artifact) {
       case "refresh_prices":
         if (typeof artifact.result?.resolved !== "number") return null;
         return <PriceFreshnessCard result={artifact.result as any} />;
+      case "read_reconciliation":
+        if (!Array.isArray(artifact.result?.accounts) || !Array.isArray(artifact.result?.breaks)) return null;
+        return <ReconciliationCard result={artifact.result as any} />;
+      case "import_custody_statement":
+        if (typeof artifact.result?.positions_compared !== "number") return null;
+        return <ReconciliationCard result={artifact.result as any} />;
+      case "resolve_recon_break":
+        if (typeof artifact.result?.status !== "string" || typeof artifact.result?.was !== "string") return null;
+        return <ReconciliationCard result={artifact.result as any} />;
       case "read_billing":
       case "run_billing":
       case "credit_invoice":

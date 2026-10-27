@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Users, ClipboardCheck, MessageSquareText, ShieldCheck, Sparkles, Settings,
   PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare, MessageSquare, Gauge, Activity,
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
-  Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2,
+  Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2, ArrowLeftRight,
 } from "lucide-react";
 
 export type ViewIntent = "decide" | "clients" | "operate" | "govern" | "configure" | "platform";
@@ -66,6 +66,7 @@ export const VIEWS: View[] = [
   { href: "/studio/book-integration", label: "Book integration", icon: GitMerge, roles: [O], intent: "operate", keywords: ["import", "acquire", "book scan"] },
   { href: "/studio/billing", label: "Billing", icon: Banknote, roles: [A, C, O, B], intent: "operate", keywords: ["fees", "invoices", "run", "revenue"] },
   { href: "/studio/prices", label: "Prices", icon: Activity, roles: [A, P, PT, R, C, O, B], intent: "operate", keywords: ["freshness", "stale", "quote", "feed", "market data", "refresh"] },
+  { href: "/studio/reconciliation", label: "Reconciliation", icon: ArrowLeftRight, roles: [PT, O, C, B], intent: "operate", keywords: ["custodian", "statement", "breaks", "positions", "cash", "match"] },
   { href: "/studio/valuations", label: "Valuations", icon: Landmark, roles: [PT, O, C, B], intent: "operate", keywords: ["private", "nav", "statement", "fund", "stated value"] },
   { href: "/studio/corporate-actions", label: "Corporate actions", icon: Repeat, roles: [O, C], intent: "operate", keywords: ["splits", "dividends", "entitlements"] },
   { href: "/studio/composites", label: "Composites", icon: LineChart, roles: [A, PT, R, C], intent: "operate", keywords: ["gips", "performance"] },

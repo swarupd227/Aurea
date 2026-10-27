@@ -61,6 +61,9 @@ class ToolExecutors:
             "record_valuation": self.record_valuation,
             "read_price_freshness": self.read_price_freshness,
             "refresh_prices": self.refresh_prices,
+            "read_reconciliation": self.read_reconciliation,
+            "import_custody_statement": self.import_custody_statement,
+            "resolve_recon_break": self.resolve_recon_break,
             "explain_invoice": self.explain_invoice,
             "run_billing": self.run_billing,
             "credit_invoice": self.credit_invoice,
@@ -322,6 +325,65 @@ class ToolExecutors:
                   else "; nothing needed revaluing")
             result["message"] = (f"Fetched {result['resolved']} of {result['instruments']} instrument(s): "
                                  f"{result['inserted']} new price(s), {result['updated']} updated{fail}{rv}.")
+        return result
+
+    async def read_reconciliation(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import reconciliation
+
+        result = await reconciliation.overview(self.session, self.firm_id)
+        s = result["summary"]
+        parts = [f"{s['accounts']} account(s): {s['reconciled']} reconciled, {s['breaks']} with breaks, "
+                 f"{s['stale_statement']} on a statement older than {s['fresh_within_days']} days, "
+                 f"{s['no_statement']} with no custodian statement on file"]
+        if s["open_breaks"]:
+            parts.append(f"{s['open_breaks']} open break(s)")
+        result["message"] = "; ".join(parts) + "."
+        return result
+
+    async def import_custody_statement(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from datetime import date as _date
+
+        from app.aurea_core import reconciliation
+        from app.models.identity import User
+
+        if self.role not in (UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM):
+            raise ExecutorError("Importing a custodian statement is for operations and the portfolio team.")
+        try:
+            as_of = _date.fromisoformat(str(inputs.get("as_of") or ""))
+        except ValueError:
+            raise ExecutorError("as_of must be a date, YYYY-MM-DD.")
+        user = await self.session.get(User, self.user_id)
+        try:
+            result = await reconciliation.import_statement(
+                self.session, self.firm_id, account_id=_parse_uuid(inputs.get("account_id"), "account_id"),
+                as_of=as_of, positions=inputs.get("positions"), cash_balance=inputs.get("cash_balance"),
+                source_document=inputs.get("source_document") or "",
+                imported_by=user.email if user else "unknown")
+        except reconciliation.ReconciliationError as exc:
+            raise ExecutorError(str(exc))
+        b = result["breaks"]
+        result["message"] = (
+            f"Compared {result['positions_compared']} position(s) on {result['account']} as at {result['as_of']}: "
+            f"{result['positions_matched']} matched; cash {result['cash'].replace('_', ' ')}. "
+            f"{b['opened']} break(s) opened, {b['refreshed']} refreshed, {b['cleared']} cleared; "
+            f"{b['open']} open on this account.")
+        return result
+
+    async def resolve_recon_break(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import reconciliation
+        from app.models.identity import User
+
+        if self.role not in (UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM):
+            raise ExecutorError("Acting on a reconciliation break is for operations and the portfolio team.")
+        user = await self.session.get(User, self.user_id)
+        try:
+            result = await reconciliation.resolve_break(
+                self.session, self.firm_id, _parse_uuid(inputs.get("break_id"), "break_id"),
+                action=str(inputs.get("action") or "").strip().lower(), note=inputs.get("note"),
+                by=user.email if user else "unknown")
+        except reconciliation.ReconciliationError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = f"The break is now {result['status']} (it was {result['was']})."
         return result
 
     async def read_billing(self, inputs: dict[str, Any]) -> dict[str, Any]:

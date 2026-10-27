@@ -16,6 +16,7 @@ from app.models import (  # noqa: F401
     knowledge,
     onboarding,
     portfolio,
+    reconciliation,
     skill,
     sleeves,
     telemetry,
