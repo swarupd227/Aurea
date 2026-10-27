@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 
 const config: Config = {
   darkMode: ["class", '[data-theme="dark"]'],
@@ -64,6 +65,16 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // Width variants that answer to the view's own box, not the window: a view renders both as a
+    // full page and in the workspace's work pane (as narrow as 420px on a wide screen), so its grid
+    // follows the space it is given. Wrap a view in `.view-container`; `cq-md:grid-cols-3` then
+    // applies once that box is 44rem wide. Registered narrowest first so the wider ones win.
+    plugin(({ addVariant }) => {
+      addVariant("cq-sm", "@container view (min-width: 32rem)");
+      addVariant("cq-md", "@container view (min-width: 44rem)");
+      addVariant("cq-lg", "@container view (min-width: 60rem)");
+    }),
+  ],
 };
 export default config;

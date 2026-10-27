@@ -155,6 +155,12 @@ html, body {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium;
   }
 
+  /* A view's own box, for the cq-* width variants in tailwind.config.ts. */
+  .view-container {
+    container-type: inline-size;
+    container-name: view;
+  }
+
   .tile-label {
     @apply text-xs font-semibold uppercase tracking-wide text-ink-muted;
   }

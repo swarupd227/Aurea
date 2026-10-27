@@ -6,15 +6,15 @@ import { timeAgo, titleCase } from "@/lib/format";
 
 const META: Record<string, { icon: any; color: string }> = {
   watching: { icon: Eye, color: "text-ink-muted" },
-  sensing: { icon: Radar, color: "text-navy-500" },
-  thinking: { icon: Cpu, color: "text-navy-600" },
-  proposed: { icon: Sparkles, color: "text-gold-dark" },
-  acted: { icon: Zap, color: "text-[#6b4b78]" },
-  decided: { icon: Check, color: "text-positive" },
-  flagged: { icon: ShieldAlert, color: "text-caution" },
-  rolled_back: { icon: Undo2, color: "text-critical" },
-  scanned: { icon: Radar, color: "text-navy-500" },
-  delegated: { icon: Send, color: "text-gold-dark" },
+  sensing: { icon: Radar, color: "text-ink-muted" },
+  thinking: { icon: Cpu, color: "text-ink-muted" },
+  proposed: { icon: Sparkles, color: "text-info" },
+  acted: { icon: Zap, color: "text-warn" },
+  decided: { icon: Check, color: "text-ok" },
+  flagged: { icon: ShieldAlert, color: "text-warn" },
+  rolled_back: { icon: Undo2, color: "text-crit" },
+  scanned: { icon: Radar, color: "text-ink-muted" },
+  delegated: { icon: Send, color: "text-info" },
 };
 
 export default function ActivityRail() {
@@ -44,23 +44,24 @@ export default function ActivityRail() {
   }, []);
 
   return (
-    <div className="card p-0 overflow-hidden sticky top-7">
-      <div className="px-4 py-3 border-b border-navy-100 flex items-center gap-2">
-        <Activity size={16} className="text-navy-600" />
+    <div className="rounded-lg border border-border bg-surface overflow-hidden" data-testid="activity-rail">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+        <Activity size={16} className="text-ink-muted" />
         <span className="font-semibold text-ink text-sm">Workforce activity</span>
-        <span className={`ml-auto inline-flex items-center gap-1 text-[11px] ${pulse ? "text-positive" : "text-ink-muted"}`}>
-          <span className={`h-1.5 w-1.5 rounded-full bg-positive ${pulse ? "animate-ping" : "animate-pulse"}`} /> live
+        {/* Motion only for something arriving (rule 9): the dot is still until an event lands. */}
+        <span className={`ml-auto inline-flex items-center gap-1 text-[11px] ${pulse ? "text-ok" : "text-ink-muted"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full bg-ok ${pulse ? "animate-ping motion-reduce:animate-none" : ""}`} /> live
         </span>
       </div>
-      <div className="max-h-[70vh] overflow-y-auto divide-y divide-navy-50">
+      <div className="max-h-[70vh] overflow-y-auto divide-y divide-border-soft">
         {events.length === 0 && (
-          <div className="px-4 py-8 text-center text-xs text-ink-muted">The workforce is on duty — activity will appear here.</div>
+          <div className="px-4 py-8 text-center text-xs text-ink-muted">No activity yet</div>
         )}
         {events.map((e) => {
           const m = META[e.kind] || META.watching;
           const Icon = m.icon;
           return (
-            <div key={e.id} className="px-4 py-2.5 flex items-start gap-2.5 fade-in hover:bg-navy-50/40">
+            <div key={e.id} className="px-4 py-2.5 flex items-start gap-2.5 fade-in hover:bg-border-soft/60">
               <Icon size={15} className={`mt-0.5 shrink-0 ${m.color}`} />
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-ink-soft leading-snug">{e.summary}</div>

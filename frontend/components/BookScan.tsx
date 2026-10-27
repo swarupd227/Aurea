@@ -12,8 +12,8 @@ const SIGNAL: Record<string, { label: string; icon: any; cls: string }> = {
   loss_harvest: { label: "Tax-loss harvest", icon: TrendingDown, cls: "text-positive bg-positive/10" },
   idle_cash: { label: "Cash drag", icon: Coins, cls: "text-caution bg-caution/10" },
   goal_gap: { label: "Goal off-track", icon: Target, cls: "text-caution bg-caution/10" },
-  intergenerational: { label: "Next-gen engagement", icon: Users2, cls: "text-navy-700 bg-navy-100" },
-  insight: { label: "Insight", icon: Sparkles, cls: "text-navy-700 bg-navy-100" },
+  intergenerational: { label: "Next-gen engagement", icon: Users2, cls: "text-info bg-info-bg" },
+  insight: { label: "Insight", icon: Sparkles, cls: "text-ink-soft bg-border-soft" },
 };
 const meta = (k: string) => SIGNAL[k] || SIGNAL.insight;
 
@@ -60,17 +60,17 @@ export default function BookScan({
   const agg = result?.aggregates || {};
 
   return (
-    <div ref={ref} className="card overflow-hidden mb-5 border-gold/40 scroll-mt-4">
+    <div ref={ref} className="view-container rounded-lg border border-border bg-surface overflow-hidden mb-5 scroll-mt-4">
       {/* Header */}
-      <div className="px-4 py-3 bg-navy-900 text-white flex items-center gap-2.5">
-        <Radar size={17} className={result || error ? "text-gold" : "text-gold animate-spin"} />
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2.5">
+        <Radar size={17} className={result || error ? "text-ink-muted" : "text-accent agent-working"} />
         <div className="min-w-0">
-          <div className="font-semibold text-sm">Book scan · Next-Best-Action</div>
-          <div className="text-[11px] text-navy-200/80">
-            {result ? "Sweep complete" : error ? "Scan error" : "Sweeping every household for opportunities, risks & anomalies"}
+          <div className="font-semibold text-sm text-ink">Book scan · Next-Best-Action</div>
+          <div className="font-mono text-[11px] uppercase tracking-wider text-ink-muted">
+            {result ? "Complete" : error ? "Error" : "Scanning"}
           </div>
         </div>
-        <button onClick={onClose} className="ml-auto p-1 hover:bg-white/10 rounded" title="Close"><X size={16} /></button>
+        <button onClick={onClose} className="ml-auto p-1 text-ink-muted hover:bg-border-soft hover:text-ink rounded" title="Close" aria-label="Close"><X size={16} /></button>
       </div>
 
       <div className="p-4">
@@ -78,17 +78,17 @@ export default function BookScan({
           <div className="text-sm text-critical">{error}</div>
         ) : !result ? (
           /* ── Live sweep ── */
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="md:col-span-2">
+          <div className="grid cq-md:grid-cols-3 gap-4">
+            <div className="cq-md:col-span-2">
               <div className="flex items-center justify-between text-sm mb-1.5">
                 <span className="text-ink-soft flex items-center gap-2">
-                  <Loader2 size={14} className="animate-spin text-navy-500" />
+                  <Loader2 size={14} className="animate-spin text-accent" />
                   {current ? <>Scanning <span className="font-medium text-ink">{current}</span></> : "Reading the book…"}
                 </span>
                 <span className="text-ink-muted tabular-nums">{progress}/{total || "…"}</span>
               </div>
-              <div className="h-2 rounded-full bg-navy-100 overflow-hidden">
-                <div className="h-full bg-gold transition-all duration-300" style={{ width: `${pct}%` }} />
+              <div className="h-2 rounded-full bg-border overflow-hidden">
+                <div className="h-full bg-accent transition-all duration-300" style={{ width: `${pct}%` }} />
               </div>
               <div className="mt-3 space-y-1">
                 {recent.map((r, i) => (
@@ -99,9 +99,9 @@ export default function BookScan({
                 ))}
               </div>
             </div>
-            <div className="rounded-lg bg-navy-50/60 border border-navy-100 p-3">
+            <div className="rounded-lg bg-paper/40 border border-border p-3">
               <div className="text-2xl font-bold text-ink tabular-nums">{detected}</div>
-              <div className="text-xs text-ink-muted mb-2">signals detected so far</div>
+              <div className="text-xs text-ink-muted mb-2">signals so far</div>
               <div className="flex flex-wrap gap-1">
                 {Object.entries(tally).map(([k, n]: any) => {
                   const m = meta(k); const Icon = m.icon;
@@ -114,10 +114,10 @@ export default function BookScan({
           /* ── Result ── */
           <div className="space-y-4">
             {/* Stat tiles */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 cq-md:grid-cols-4 gap-3">
               <Tile label="Households swept" value={result.households_scanned} />
               <Tile label="Signals detected" value={result.detected} />
-              <Tile label="Actions surfaced" value={result.items_surfaced} accent="gold" />
+              <Tile label="Actions surfaced" value={result.items_surfaced} />
               <Tile label="At stake" value={money((agg.harvestable_losses || 0) + (agg.idle_cash || 0))}
                 sub={`${money(agg.harvestable_losses || 0)} losses · ${money(agg.idle_cash || 0)} cash`} />
             </div>
@@ -131,31 +131,30 @@ export default function BookScan({
             </div>
 
             {/* Items */}
-            <div className="rounded-xl border border-navy-100 divide-y divide-navy-50 max-h-[360px] overflow-y-auto">
+            <div className="rounded-lg border border-border divide-y divide-border-soft max-h-[360px] overflow-y-auto">
               {(result.items || []).map((it: any) => {
                 const m = meta(it.signal); const Icon = m.icon;
                 return (
-                  <Link key={it.id} href="/studio/review"
-                    className="flex items-start gap-3 p-3 hover:bg-navy-50/50 transition-colors">
+                  <Link key={it.id} href={`/studio/review?rec=${it.id}`}
+                    className="flex items-start gap-3 p-3 hover:bg-border-soft/60 transition-colors">
                     <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${m.cls}`}><Icon size={14} /></span>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-ink">{it.title}</div>
                       <div className="text-xs text-ink-muted">{it.subject_label} · {m.label} · {Math.round(it.confidence * 100)}% confidence</div>
                     </div>
-                    <span className={`chip shrink-0 ${it.priority <= 1 ? "bg-critical/10 text-critical" : it.priority === 2 ? "bg-caution/10 text-caution" : "bg-navy-50 text-ink-muted"}`}>
+                    <span className={`chip shrink-0 ${it.priority <= 1 ? "bg-crit-bg text-crit" : it.priority === 2 ? "bg-warn-bg text-warn" : "bg-border-soft text-ink-muted"}`}>
                       P{it.priority}
                     </span>
                   </Link>
                 );
               })}
               {(!result.items || result.items.length === 0) && (
-                <div className="p-4 text-sm text-ink-muted">No new actions — the book is within tolerance.</div>
+                <div className="p-4 text-sm text-ink-muted">No new actions</div>
               )}
             </div>
 
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-ink-muted">Surfaced items are now in your feed & the decision ledger.</span>
-              <Link href="/studio/review" className="btn-primary text-sm">View in Recommendations <ArrowRight size={15} /></Link>
+            <div className="flex items-center justify-end">
+              <Link href="/studio/review" className="btn-primary text-sm">Recommendations <ArrowRight size={15} /></Link>
             </div>
           </div>
         )}
@@ -166,9 +165,9 @@ export default function BookScan({
 
 function Tile({ label, value, sub, accent }: any) {
   return (
-    <div className="rounded-lg border border-navy-100 bg-surface p-3">
+    <div className="rounded-lg border border-border bg-paper/40 p-3">
       <div className="text-[11px] uppercase tracking-wide text-ink-muted">{label}</div>
-      <div className={`text-xl font-semibold tabular-nums ${accent === "gold" ? "text-gold-dark" : "text-ink"}`}>{value}</div>
+      <div className="text-xl font-semibold tabular-nums text-ink">{value}</div>
       {sub && <div className="text-[11px] text-ink-muted mt-0.5">{sub}</div>}
     </div>
   );

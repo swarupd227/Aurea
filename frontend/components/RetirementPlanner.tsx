@@ -60,28 +60,38 @@ export default function RetirementPlanner({
   const seq = plan.sequence_risk || {};
 
   return (
-    <div className="space-y-5">
+    <div className="view-container space-y-5">
       {/* Headline */}
       <div className={`rounded-2xl p-5 border ${ok ? "bg-positive/5 border-positive/30" : "bg-caution/5 border-caution/30"}`}>
         <div className="flex items-start gap-4">
-          <span className={`h-12 w-12 rounded-xl flex items-center justify-center shrink-0 ${ok ? "bg-positive/15 text-positive" : "bg-caution/15 text-caution"}`}>
+          <span className={`hidden cq-sm:flex h-12 w-12 rounded-xl items-center justify-center shrink-0 ${ok ? "bg-positive/15 text-positive" : "bg-caution/15 text-caution"}`}>
             <PiggyBank size={24} />
           </span>
           <div className="flex-1 min-w-0">
             <div className="text-lg font-semibold text-ink">
               {client ? (ok ? "You're on track for the retirement you want." : "You're close — a small adjustment gets you there.")
-                      : (ok ? "On track" : "Below target — levers available")}
+                      : (ok ? "On track" : "Below target")}
             </div>
-            <p className="text-sm text-ink-soft mt-0.5">
-              {client ? <>Drawing <b>{money(plan.income_target)}</b>/yr from age {plan.retirement_age}, your savings are projected to support you </>
-                      : <>Income of <b>{money(plan.income_target)}</b>/yr (today's $) from {plan.retirement_age} to {plan.longevity_age}: </>}
-              <b className={ok ? "text-positive" : "text-caution"}>{successPct}% probability</b>{" "}
-              {plan.median_depletion_age
-                ? <>of lasting — at this level funds may run low around <b>age {plan.median_depletion_age}</b>.</>
-                : <>of lasting to age {plan.longevity_age}.</>}
-            </p>
+            {client ? (
+              <p className="text-sm text-ink-soft mt-0.5">
+                Drawing <b>{money(plan.income_target)}</b>/yr from age {plan.retirement_age}, your savings are projected to support you{" "}
+                <b className={ok ? "text-positive" : "text-caution"}>{successPct}% probability</b>{" "}
+                {plan.median_depletion_age
+                  ? <>of lasting — at this level funds may run low around <b>age {plan.median_depletion_age}</b>.</>
+                  : <>of lasting to age {plan.longevity_age}.</>}
+              </p>
+            ) : (
+              // Staff see the figures, not a sentence about them (rule 5).
+              <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
+                <span className="chip bg-border-soft text-ink-soft tabular-nums">{money(plan.income_target)}/yr · today&rsquo;s $</span>
+                <span className="chip bg-border-soft text-ink-soft tabular-nums">Age {plan.retirement_age}–{plan.longevity_age}</span>
+                {plan.median_depletion_age && (
+                  <span className="chip bg-warn-bg text-warn tabular-nums">Median depletion · age {plan.median_depletion_age}</span>
+                )}
+              </div>
+            )}
             {/* probability bar with target marker */}
-            <div className="mt-3 relative h-2.5 rounded-full bg-navy-100 overflow-hidden">
+            <div className="mt-3 relative h-2.5 rounded-full bg-border overflow-hidden">
               <div className={`h-full ${ok ? "bg-positive" : "bg-caution"}`} style={{ width: `${successPct}%` }} />
             </div>
             <div className="relative mt-1 h-3">
@@ -97,7 +107,7 @@ export default function RetirementPlanner({
       </div>
 
       {/* Key stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 cq-md:grid-cols-4 gap-3">
         <Stat icon={Clock} label="Years to retirement" value={`${plan.years_to_retirement}`} sub={`retire at ${plan.retirement_age}`} />
         <Stat icon={TrendingUp} label="Projected at retirement" value={money(plan.projected_at_retirement)} sub="median outcome" />
         <Stat icon={Wallet} label="Sustainable income" value={money(plan.sustainable_income)}
@@ -106,11 +116,11 @@ export default function RetirementPlanner({
         <Stat icon={PiggyBank} label="Income at retirement" value={money(plan.income_at_retirement)} sub="inflation-adjusted" />
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-5">
+      <div className="grid cq-md:grid-cols-3 gap-5">
         {/* Fan chart */}
-        <div className="lg:col-span-2 card p-4">
+        <div className="cq-md:col-span-2 card p-4">
           <div className="tile-label mb-1">Projected savings through retirement</div>
-          <div className="text-xs text-ink-muted mb-2">Median outcome, with the 10th–90th percentile range. The red line is depletion.</div>
+          <div className="text-xs text-ink-muted mb-2">Median · 10th–90th percentile · red line depletion</div>
           <RetirementFan data={plan.balance_by_age} retirementAge={plan.retirement_age} />
         </div>
 
@@ -121,7 +131,7 @@ export default function RetirementPlanner({
             {(plan.levers || []).map((l: any) => {
               const clears = l.success >= (plan.target_success || 0.85);
               return (
-                <div key={l.key} className={`rounded-lg border p-2.5 flex items-center justify-between gap-2 ${clears ? "border-positive/40 bg-positive/5" : "border-navy-100"}`}>
+                <div key={l.key} className={`rounded-lg border p-2.5 flex items-center justify-between gap-2 ${clears ? "border-positive/40 bg-positive/5" : "border-border"}`}>
                   <span className="text-sm text-ink-soft">{l.label}</span>
                   <span className={`text-sm font-semibold tabular-nums flex items-center gap-1 ${clears ? "text-positive" : "text-ink"}`}>
                     {clears && <CheckCircle2 size={13} />}{Math.round(l.success * 100)}%
@@ -136,27 +146,21 @@ export default function RetirementPlanner({
       {/* Sequence-of-returns risk */}
       <div className="card p-4">
         <div className="tile-label mb-1 flex items-center gap-1.5"><ShieldAlert size={13} /> Sequence-of-returns risk</div>
-        <p className="text-xs text-ink-muted mb-3">
-          A market crash in the <b>first year</b> of retirement is far more damaging than the same crash later — you sell into a down market.
-          Here's a GFC-style shock ({Math.round((seq.crash_return || 0) * 100)}%) at retirement.
-        </p>
-        <div className="flex items-center gap-4">
+        <div className="text-xs text-ink-muted mb-3">Shock at retirement · {Math.round((seq.crash_return || 0) * 100)}% in year 1</div>
+        <div className="flex flex-wrap items-center gap-4">
           <SeqBar label="Normal markets" pct={Math.round((seq.baseline || 0) * 100)} tone="positive" />
           <SeqBar label="Crash in year 1" pct={Math.round((seq.early_crash || 0) * 100)} tone="critical" />
           <div className="text-sm text-ink-soft">
             <AlertTriangle size={15} className="inline text-caution mr-1" />
-            Success would fall <b className="text-critical">{Math.round((seq.delta || 0) * 100)} pts</b> — the case for a cash buffer / glide-path near retirement.
+            <b className="text-critical tabular-nums">−{Math.round((seq.delta || 0) * 100)} pts</b> success
           </div>
         </div>
       </div>
 
       {/* Controls */}
       <div className="card p-4">
-        <div className="tile-label mb-1">{client ? "Try a change" : "Adjust the retirement plan"}</div>
-        <div className="text-xs text-ink-muted mb-3">
-          Move a slider to see how retirement age, longevity and yearly income change the projection above.
-        </div>
-        <div className="grid sm:grid-cols-3 gap-5">
+        <div className="tile-label mb-3">{client ? "Try a change" : "Adjust the plan"}</div>
+        <div className="grid cq-sm:grid-cols-3 gap-5">
           <Slider label="Retirement age" min={Math.max(plan.current_age + 1, 55)} max={75} value={ctrl.retirement_age}
             onChange={(v) => setCtrl({ ...ctrl, retirement_age: v })} fmt={(v) => `${v}`} />
           <Slider label="Plan to age" min={85} max={100} value={ctrl.longevity_age}
@@ -186,7 +190,7 @@ function SeqBar({ label, pct, tone }: { label: string; pct: number; tone: string
   return (
     <div className="w-32">
       <div className="text-xs text-ink-muted mb-1">{label}</div>
-      <div className="h-6 rounded bg-navy-100 overflow-hidden relative">
+      <div className="h-6 rounded bg-border overflow-hidden relative">
         <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
         <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-ink">{pct}%</span>
       </div>
@@ -202,7 +206,7 @@ function Slider({ label, min, max, step = 1, value, onChange, fmt }: any) {
         <span className="font-semibold text-ink tabular-nums">{fmt(value)}</span>
       </div>
       <input type="range" min={min} max={max} step={step} value={value}
-        onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-gold" />
+        onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-[color:var(--color-ink-soft)]" />
     </div>
   );
 }

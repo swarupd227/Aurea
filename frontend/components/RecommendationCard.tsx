@@ -9,8 +9,12 @@ import { DriftBars } from "./Charts";
 
 const pctf = (v: number) => `${(v * 100).toFixed(1)}%`;
 
-/** The institutional-grade analysis that makes an adviser lean in — surfaces the tax,
- *  drift and mandate reasoning the engine already did. Only rendered for drift recs. */
+// Figures, tables and chips only (CLAUDE.md rule 5). The one paragraph of prose on this card is the
+// agent's own rationale, and it says whose it is.
+const panel = "rounded-lg border border-border bg-paper/40 p-3";
+const chipMuted = "chip bg-border-soft text-ink-soft";
+
+/** The tax, drift and mandate figures behind a rebalancing proposal. Only rendered for drift recs. */
 function DriftAnalysis({ payload, ev, orders }: { payload: any; ev: any; orders: any[] }) {
   const s = payload.summary || {};
   const band = s.drift_band ?? payload.drift_band ?? 0.05;
@@ -30,21 +34,19 @@ function DriftAnalysis({ payload, ev, orders }: { payload: any; ev: any; orders:
   const overBudget = budget != null && realised > budget;
 
   return (
-    <div className="rounded-xl border border-navy-100 bg-surface p-4 space-y-4">
-      <div className="tile-label flex items-center gap-1.5"><Scale size={13} /> Tax & rebalancing analysis</div>
-
-      <div className="grid sm:grid-cols-3 gap-3">
-        {/* Drift vs band */}
-        <div className="rounded-lg bg-navy-50/60 border border-navy-100 p-3">
-          <div className="flex items-center gap-1.5 text-xs text-ink-muted mb-1"><Target size={13} /> Why now</div>
+    <div className="space-y-2">
+      <div className="tile-label flex items-center gap-1.5"><Scale size={13} /> Tax & rebalancing</div>
+      <div className="grid gap-3 cq-sm:grid-cols-3">
+        <div className={panel}>
+          <div className="flex items-center gap-1.5 text-xs text-ink-muted mb-1"><Target size={13} /> Max drift</div>
           <div className="text-lg font-semibold text-ink tabular-nums">{pctf(maxDrift)}</div>
-          <div className="text-xs text-ink-muted">max drift vs {pctf(band)} band</div>
+          <div className="text-xs text-ink-muted">band {pctf(band)}</div>
           {breaching.length > 0 && (
             <div className="mt-1.5 text-xs text-ink-soft">
               {breaching.slice(0, 3).map((c) => (
                 <div key={c} className="flex justify-between">
                   <span>{titleCase(c)}</span>
-                  <span className={`tabular-nums ${(drifts[c] ?? 0) > 0 ? "text-critical" : "text-navy-600"}`}>
+                  <span className={`tabular-nums ${(drifts[c] ?? 0) > 0 ? "text-crit" : "text-info"}`}>
                     {(drifts[c] ?? 0) > 0 ? "+" : ""}{pctf(drifts[c] ?? 0)}
                   </span>
                 </div>
@@ -53,55 +55,37 @@ function DriftAnalysis({ payload, ev, orders }: { payload: any; ev: any; orders:
           )}
         </div>
 
-        {/* Tax — the hero */}
-        <div className="rounded-lg bg-gold-soft/20 border border-gold/30 p-3">
-          <div className="flex items-center gap-1.5 text-xs text-ink-muted mb-1"><Landmark size={13} /> Tax managed</div>
-          <div className={`text-lg font-semibold tabular-nums ${overBudget ? "text-critical" : "text-ink"}`}>
-            {money(realised)}
-          </div>
-          <div className="text-xs text-ink-muted">
-            estimated realised gain{budget != null && <> · budget {money(budget)}</>}
-          </div>
+        <div className={panel}>
+          <div className="flex items-center gap-1.5 text-xs text-ink-muted mb-1"><Landmark size={13} /> Realised gain</div>
+          <div className={`text-lg font-semibold tabular-nums ${overBudget ? "text-crit" : "text-ink"}`}>{money(realised)}</div>
+          <div className="text-xs text-ink-muted">{budget != null ? <>budget {money(budget)}</> : "no budget set"}</div>
           {budget != null && budget > 0 && (
-            <div className="mt-1.5 h-1.5 rounded-full bg-navy-100 overflow-hidden">
-              <div className={`h-full ${overBudget ? "bg-critical" : "bg-positive"}`} style={{ width: `${budgetUse * 100}%` }} />
+            <div className="mt-1.5 h-1.5 rounded-full bg-border overflow-hidden">
+              <div className={`h-full ${overBudget ? "bg-crit" : "bg-ok"}`} style={{ width: `${budgetUse * 100}%` }} />
             </div>
           )}
           {harvested > 0 && (
-            <div className="mt-1.5 text-xs text-positive flex items-center gap-1">
-              <TrendingDown size={12} /> {money(harvested)} losses harvested
+            <div className="mt-1.5 text-xs text-ok flex items-center gap-1">
+              <TrendingDown size={12} /> {money(harvested)} harvested
               {lossHarvestSells > 0 && <span className="text-ink-muted">· {lossHarvestSells} lot{lossHarvestSells > 1 ? "s" : ""}</span>}
             </div>
           )}
         </div>
 
-        {/* Mandate & constraints */}
-        <div className="rounded-lg bg-navy-50/60 border border-navy-100 p-3">
-          <div className="flex items-center gap-1.5 text-xs text-ink-muted mb-1"><ShieldAlert size={13} /> Within mandate</div>
-          {mandateType && (
-            <div className="text-sm font-semibold text-ink capitalize">{mandateType} mandate</div>
-          )}
-          <div className="text-xs text-ink-muted">
-            {mandateType === "discretionary"
-              ? "Discretionary — still gated to you at Tier 2 for this trade size."
-              : "Advisory — requires your explicit approval before any order."}
-          </div>
+        <div className={panel}>
+          <div className="flex items-center gap-1.5 text-xs text-ink-muted mb-1"><ShieldAlert size={13} /> Mandate</div>
+          <div className="text-sm font-semibold text-ink capitalize">{mandateType || "—"}</div>
           {exclusionsHonoured.length > 0 && (
             <div className="mt-1.5 text-xs text-ink-soft flex items-center gap-1">
-              <Scissors size={12} className="text-navy-500" /> {exclusionsHonoured.length} values-excluded holding{exclusionsHonoured.length > 1 ? "s" : ""} honoured
+              <Scissors size={12} className="text-ink-muted" /> {exclusionsHonoured.length} exclusion{exclusionsHonoured.length > 1 ? "s" : ""} honoured
             </div>
           )}
           {ev.guardrail_breaches?.length > 0 ? (
-            <div className="mt-1.5 text-xs text-critical">⚠ {ev.guardrail_breaches.length} guardrail flag</div>
+            <div className="mt-1.5 text-xs text-crit">{ev.guardrail_breaches.length} guardrail flag{ev.guardrail_breaches.length > 1 ? "s" : ""}</div>
           ) : (
-            <div className="mt-1.5 text-xs text-positive">✓ No guardrail breaches</div>
+            <div className="mt-1.5 text-xs text-ok">No guardrail flags</div>
           )}
         </div>
-      </div>
-
-      <div className="text-xs text-ink-muted">
-        Lots were selected <span className="text-ink-soft font-medium">losses-first, then smallest gains</span>, stopping at the
-        capital-gains budget — restoring the target allocation the plan is funded on while minimising the tax cost.
       </div>
     </div>
   );
@@ -111,39 +95,28 @@ function CompliancePanel({ recId }: { recId: string }) {
   const [a, setA] = useState<any>(null);
   useEffect(() => { api(`/api/studio/recommendations/${recId}/compliance`).then(setA).catch(() => {}); }, [recId]);
   if (!a || a.available === false || !a.results?.length) return null;
-  const tone = a.status === "blocked" ? "bg-critical/10 text-critical"
-    : a.status === "flags" ? "bg-caution/10 text-caution" : "bg-positive/10 text-positive";
+  const tone = a.status === "blocked" ? "bg-crit-bg text-crit"
+    : a.status === "flags" ? "bg-warn-bg text-warn" : "bg-ok-bg text-ok";
   return (
-    <div className="rounded-xl border border-navy-100 bg-surface p-3">
-      <div className="flex items-center gap-2 mb-2">
+    <div className={panel}>
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         <div className="tile-label flex items-center gap-1.5"><ShieldAlert size={13} /> Regulatory compliance</div>
-        <span className="chip bg-navy-50 text-ink-muted">{a.regime} · {a.version}</span>
+        <span className={chipMuted}>{a.regime} · {a.version}</span>
         <span className={`chip ${tone} ml-auto capitalize`}>{a.status === "clear" ? "Clear" : a.status}</span>
       </div>
       <div className="space-y-1.5">
         {a.results.map((r: any) => (
           <div key={r.rule_id} className="flex items-start gap-2 text-xs" title={r.citation}>
-            {r.status === "pass" ? <Check size={13} className="text-positive shrink-0 mt-0.5" />
-              : r.status === "fail" ? <ShieldAlert size={13} className={`shrink-0 mt-0.5 ${r.severity === "high" ? "text-critical" : "text-caution"}`} />
+            {r.status === "pass" ? <Check size={13} className="text-ok shrink-0 mt-0.5" />
+              : r.status === "fail" ? <ShieldAlert size={13} className={`shrink-0 mt-0.5 ${r.severity === "high" ? "text-crit" : "text-warn"}`} />
               : <span className="text-ink-muted shrink-0 w-3 text-center">—</span>}
-            <span className="font-medium text-navy-700 shrink-0">{r.code}</span>
-            <span className="text-ink-soft flex-1">
-              {r.title}{r.status === "fail" && <span className="text-caution"> · {r.finding}</span>}
+            <span className="font-mono text-ink-soft shrink-0">{r.code}</span>
+            <span className="text-ink-soft flex-1 min-w-0">
+              {r.title}{r.status === "fail" && <span className="text-warn"> · {r.finding}</span>}
             </span>
           </div>
         ))}
       </div>
-      <div className="text-[11px] text-ink-muted mt-2">Checked against the firm's configured framework and written to the ledger. Hover a line for the full citation.</div>
-    </div>
-  );
-}
-
-function CheckRow({ ok, label, warn }: { ok: boolean; label: string; warn?: string }) {
-  return (
-    <div className="flex items-center gap-1.5 text-xs">
-      {ok ? <Check size={13} className="text-positive shrink-0" /> : <ShieldAlert size={13} className="text-caution shrink-0" />}
-      <span className="text-ink-soft">{label}</span>
-      {warn && <span className="text-caution">· {warn}</span>}
     </div>
   );
 }
@@ -184,6 +157,7 @@ export default function RecommendationCard({
     ? orders.filter((o) => /values?-?excluded|exclusion|esg/i.test(o.reason || "")).length : 0;
   const decided = rec.status !== "proposed";
   const reversible = ["approved", "modified", "executed"].includes(rec.status);
+  const agentName = titleCase(rec.agent_key);
 
   async function rollback() {
     setBusy(true);
@@ -263,96 +237,87 @@ export default function RecommendationCard({
   }
 
   return (
-    <div className="card overflow-hidden" data-testid="rec-card" data-agent={rec.agent_key}
-         data-status={rec.status}>
+    <div className="view-container rounded-lg border border-border bg-surface overflow-hidden" data-testid="rec-card"
+         data-agent={rec.agent_key} data-status={rec.status} data-rec-id={rec.id}>
       {/* Header */}
-      <div className="p-4 flex items-start gap-3">
+      <div className="p-4 flex flex-col gap-3 cq-sm:flex-row cq-sm:items-start">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="h-6 w-6 rounded-full bg-navy-800 text-white flex items-center justify-center shrink-0"><Bot size={12} /></span>
-            <span className="text-xs font-semibold text-ink">{titleCase(rec.agent_key)}</span>
-            <span className="text-xs text-ink-muted">· {rec.status === "proposed" ? "I'd recommend" : "proposed"}</span>
+            <span className="h-6 w-6 rounded bg-border-soft text-ink-soft flex items-center justify-center shrink-0"><Bot size={12} /></span>
+            <span className="font-mono text-[11px] uppercase tracking-wider text-ink-muted">{agentName}</span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <TierBadge tier={rec.tier} />
             <StatusBadge status={rec.status} />
             {ev.guardrail_breaches?.length > 0 && (
-              <span className="chip bg-critical/10 text-critical">
+              <span className="chip bg-crit-bg text-crit">
                 <ShieldAlert size={12} /> {ev.guardrail_breaches.length} guardrail flag
               </span>
             )}
           </div>
           <h3 className="font-semibold text-ink mt-2">{rec.title}</h3>
-          <p className="text-sm text-ink-soft mt-0.5">{rec.summary}</p>
-          {rec.subject_label && (
-            <p className="text-xs text-ink-muted mt-1">Subject · {rec.subject_label}</p>
-          )}
+          {rec.subject_label && <div className="mt-1 text-xs text-ink-muted">{rec.subject_label}</div>}
           {payload.revision_note && (
-            <div className="mt-2 text-xs rounded-md bg-gold-soft/30 border border-gold/30 text-gold-dark px-2 py-1 flex items-center gap-1.5">
-              <Wand2 size={12} /> Revised on your instruction: “{payload.revision_note}”
+            <div className="mt-2">
+              <span className={chipMuted} title="Your revision instruction"><Wand2 size={12} /> Revised: “{payload.revision_note}”</span>
             </div>
           )}
           {isDrift && (
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               {harvested > 0 && (
-                <span className="chip bg-positive/10 text-positive"><TrendingDown size={11} /> {money(harvested)} losses harvested</span>
+                <span className="chip bg-ok-bg text-ok"><TrendingDown size={11} /> {money(harvested)} harvested</span>
               )}
-              <span className={`chip ${budget != null && realised > budget ? "bg-critical/10 text-critical" : "bg-gold-soft/40 text-gold-dark"}`}>
-                <Landmark size={11} /> Realised {money(realised)}{budget != null && <> / {money(budget)} budget</>}
+              <span className={`chip ${budget != null && realised > budget ? "bg-crit-bg text-crit" : "bg-border-soft text-ink-soft"}`}>
+                <Landmark size={11} /> Realised {money(realised)}{budget != null && <> / {money(budget)}</>}
               </span>
               {exclusionsHonoured > 0 && (
-                <span className="chip bg-navy-50 text-navy-700"><Scissors size={11} /> {exclusionsHonoured} exclusion{exclusionsHonoured > 1 ? "s" : ""} honoured</span>
+                <span className={chipMuted}><Scissors size={11} /> {exclusionsHonoured} exclusion{exclusionsHonoured > 1 ? "s" : ""}</span>
               )}
-              {payload.mandate?.type && (
-                <span className="chip bg-navy-50 text-navy-700 capitalize">{payload.mandate.type}</span>
-              )}
+              {payload.mandate?.type && <span className={`${chipMuted} capitalize`}>{payload.mandate.type}</span>}
             </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-2 shrink-0">
+        <div className="flex items-center justify-between gap-2 shrink-0 cq-sm:flex-col cq-sm:items-end">
           <ConfidenceBar value={rec.confidence} />
-          <button onClick={() => setOpen(!open)} className="btn-ghost px-2 py-1 text-xs" title={open ? "Collapse" : "View rationale, orders, compliance and evidence"}>
-            {open ? <>Hide <ChevronUp size={14} /></> : <>Rationale & orders <ChevronDown size={14} /></>}
+          <button onClick={() => setOpen(!open)} className="btn-ghost px-2 py-1 text-xs" aria-expanded={open}>
+            {open ? <>Hide <ChevronUp size={14} /></> : <>Details <ChevronDown size={14} /></>}
           </button>
         </div>
       </div>
 
-      {/* Approval success flash */}
       {justApproved && (
-        <div className="mx-4 mb-0 mt-0 rounded-lg bg-positive/10 border border-positive/30 px-3 py-2 flex items-center gap-2 text-sm text-positive font-medium fade-in">
-          <Check size={16} /> Decision recorded — written to the ledger.
+        <div className="mx-4 rounded-lg bg-ok-bg border border-ok/30 px-3 py-2 flex items-center gap-2 text-sm text-ok font-medium fade-in">
+          <Check size={16} /> Decision recorded · ledger
         </div>
       )}
 
       {open && (
-        <div className="border-t border-navy-100/70 p-4 space-y-4 bg-navy-50/30">
-          {/* Rationale */}
-          {rec.rationale && (
-            <div>
-              <div className="tile-label mb-1">Rationale</div>
-              <p className="text-sm text-ink-soft whitespace-pre-line leading-relaxed">{rec.rationale}</p>
-            </div>
+        <div className="border-t border-border p-4 space-y-4">
+          {/* The agent's own words, attributed. */}
+          {(rec.summary || rec.rationale) && (
+            <figure className="border-l-2 border-border pl-3">
+              <figcaption className="font-mono text-[10px] uppercase tracking-wider text-ink-muted mb-1">{agentName} · rationale</figcaption>
+              {rec.summary && <p className="text-sm text-ink">{rec.summary}</p>}
+              {rec.rationale && <p className="mt-1 text-sm text-ink-soft whitespace-pre-line leading-relaxed">{rec.rationale}</p>}
+            </figure>
           )}
 
-          {/* Deep analysis — the institutional reasoning, surfaced */}
           {isDrift && <DriftAnalysis payload={payload} ev={ev} orders={orders} />}
 
-          {/* Order set */}
           {orders.length > 0 && (
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <div className="tile-label">Draft order set · multi-custodian</div>
+              <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                <div className="tile-label">Draft orders</div>
                 {payload.summary && (
-                  <div className="text-xs text-ink-muted">
-                    Turnover {money(payload.summary.turnover)} · realised gain{" "}
-                    {money(payload.estimated_realised_gain)}
+                  <div className="text-xs text-ink-muted tabular-nums">
+                    Turnover {money(payload.summary.turnover)} · gain {money(payload.estimated_realised_gain)}
                     {payload.harvested_losses > 0 && <> · harvested {money(payload.harvested_losses)}</>}
                   </div>
                 )}
               </div>
-              <div className="overflow-x-auto rounded-lg border border-navy-100 bg-surface">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-sm">
-                  <thead className="bg-navy-50 text-ink-muted text-xs uppercase tracking-wide">
+                  <thead className="bg-border-soft/60 text-ink-muted text-[11px] uppercase tracking-wide">
                     <tr>
                       {mode === "modify" && <th className="px-3 py-2 w-8"></th>}
                       <th className="px-3 py-2 text-left">Side</th>
@@ -366,11 +331,12 @@ export default function RecommendationCard({
                   </thead>
                   <tbody>
                     {orders.map((o, i) => (
-                      <tr key={i} className={`border-t border-navy-50 ${excluded.has(i) ? "opacity-40" : ""}`}>
+                      <tr key={i} className={`border-t border-border-soft ${excluded.has(i) ? "opacity-40" : ""}`}>
                         {mode === "modify" && (
                           <td className="px-3 py-2">
                             <input
                               type="checkbox"
+                              aria-label={`Keep ${o.side} ${o.symbol}`}
                               checked={!excluded.has(i)}
                               onChange={() => {
                                 const n = new Set(excluded);
@@ -381,14 +347,14 @@ export default function RecommendationCard({
                           </td>
                         )}
                         <td className="px-3 py-2">
-                          <span className={`chip ${o.side === "sell" ? "bg-critical/10 text-critical" : "bg-positive/10 text-positive"}`}>
+                          <span className={`chip ${o.side === "sell" ? "bg-crit-bg text-crit" : "bg-ok-bg text-ok"}`}>
                             {o.side.toUpperCase()}
                           </span>
                         </td>
                         <td className="px-3 py-2 font-medium text-ink">{o.symbol}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{o.quantity.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{money(o.est_value)}</td>
-                        <td className={`px-3 py-2 text-right tabular-nums ${o.est_realised_gain < 0 ? "text-positive" : "text-ink-soft"}`}>
+                        <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{o.quantity.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{money(o.est_value)}</td>
+                        <td className={`px-3 py-2 text-right tabular-nums ${o.est_realised_gain < 0 ? "text-ok" : "text-ink-soft"}`}>
                           {money(o.est_realised_gain)}
                         </td>
                         <td className="px-3 py-2 text-ink-muted text-xs">{o.custodian}</td>
@@ -400,43 +366,39 @@ export default function RecommendationCard({
               </div>
               {payload.drifts && payload.target_weights && (
                 <div className="mt-3">
-                  <div className="tile-label mb-1">Allocation drift vs target</div>
+                  <div className="tile-label mb-1">Drift vs target</div>
                   <DriftBars current={payload.current_weights} target={payload.target_weights} />
                 </div>
               )}
             </div>
           )}
 
-          {/* Meeting brief — render structured, not raw JSON */}
           {orders.length === 0 && payload.brief && <MeetingBriefView brief={payload.brief} />}
 
-          {/* Generic payload (other non-order agents) */}
           {orders.length === 0 && !payload.brief && Object.keys(payload).length > 0 && (
             <PayloadView payload={payload} />
           )}
 
-          {/* Regulatory compliance — the cited, versioned assessment */}
           <CompliancePanel recId={rec.id} />
 
-          {/* Evidence & lineage */}
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div className="rounded-lg border border-navy-100 bg-surface p-3">
+          <div className="grid gap-3 cq-sm:grid-cols-2">
+            <div className={panel}>
               <div className="tile-label mb-1.5">Data & lineage</div>
               <dl className="text-xs space-y-1">
                 {evidenceRows(ev).map((r) => <Row key={r.k} k={r.label} v={r.val} />)}
               </dl>
               {evidenceRows(ev).length === 0 && !ev.guardrail_breaches?.length && (
-                <div className="text-xs text-ink-muted">Sourced from the governed client brain.</div>
+                <div className="text-xs text-ink-muted">—</div>
               )}
               {ev.guardrail_breaches?.length > 0 && (
-                <div className="mt-2 text-xs text-critical">
+                <div className="mt-2 text-xs text-crit space-y-0.5">
                   {ev.guardrail_breaches.map((b: string, i: number) => (
-                    <div key={i}>⚠ {b}</div>
+                    <div key={i} className="flex gap-1"><ShieldAlert size={12} className="mt-0.5 shrink-0" /> {b}</div>
                   ))}
                 </div>
               )}
             </div>
-            <div className="rounded-lg border border-navy-100 bg-surface p-3">
+            <div className={panel}>
               <div className="tile-label mb-1.5 flex items-center gap-1">
                 <FileText size={12} /> Firm research cited
               </div>
@@ -450,19 +412,19 @@ export default function RecommendationCard({
                   ))}
                 </ul>
               ) : (
-                <div className="text-xs text-ink-muted">No firm research cited.</div>
+                <div className="text-xs text-ink-muted">None</div>
               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Decision footer (HITL gate) */}
+      {/* Decision footer: the human gate. */}
       {!decided && (
-        <div className="border-t border-navy-100/70 p-3">
+        <div className="border-t border-border p-3">
           {!mode ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-ink-muted mr-auto">Adviser decision required · Tier {rec.tier.slice(-1)}</span>
+              <span className="font-mono text-[11px] uppercase tracking-wider text-ink-muted mr-auto">Decision needed</span>
               <button className="btn-outline" data-testid="rec-dismiss" onClick={() => { setMode("dismiss"); setOpen(true); }}>
                 <X size={15} /> Dismiss
               </button>
@@ -476,35 +438,31 @@ export default function RecommendationCard({
                   <Pencil size={15} /> Modify
                 </button>
               )}
-              <button className="btn-gold" data-testid="rec-approve" onClick={() => { setMode("approve"); setOpen(true); }}>
+              <button className="btn-primary" data-testid="rec-approve" onClick={() => { setMode("approve"); setOpen(true); }}>
                 <Check size={15} /> Approve
               </button>
             </div>
           ) : mode === "revise" ? (
             <div className="space-y-2">
-              <div className="text-xs text-ink-soft">Tell the agent what to change — it will re-run and propose a revised order set.</div>
               <textarea className="input text-sm" rows={2} data-testid="rec-revise-note"
-                placeholder="e.g. Keep realised gains under $10k and don't sell AAPL — harvest losses elsewhere."
+                aria-label="What should the agent change"
+                placeholder="e.g. Keep realised gains under $10k and don't sell AAPL"
                 value={rev.note} onChange={(e) => setRev({ ...rev, note: e.target.value })} />
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid gap-2 cq-sm:grid-cols-3">
                 <div>
-                  <label className="label text-[11px]">CGT cap <span className="text-ink-muted font-normal">(optional $)</span></label>
-                  <input className="input text-sm" placeholder="e.g. 15000" value={rev.cgt} onChange={(e) => setRev({ ...rev, cgt: e.target.value })} />
+                  <label className="label text-[11px]">CGT cap $</label>
+                  <input className="input text-sm" placeholder="15000" value={rev.cgt} onChange={(e) => setRev({ ...rev, cgt: e.target.value })} />
                 </div>
                 <div>
-                  <label className="label text-[11px] flex items-center gap-1">
-                    Drift band %
-                    <span title="The max % deviation from target allocation before a holding triggers a rebalance. Default 5%. Lower = more trades, higher = fewer." className="cursor-help text-navy-400">ⓘ</span>
-                    <span className="text-ink-muted font-normal">(optional)</span>
-                  </label>
-                  <input className="input text-sm" placeholder="e.g. 3" value={rev.band} onChange={(e) => setRev({ ...rev, band: e.target.value })} />
+                  <label className="label text-[11px]" title="Largest deviation from target before a holding is rebalanced. Default 5%.">Drift band %</label>
+                  <input className="input text-sm" placeholder="3" value={rev.band} onChange={(e) => setRev({ ...rev, band: e.target.value })} />
                 </div>
                 <div>
-                  <label className="label text-[11px]">Protect holdings <span className="text-ink-muted font-normal">(don't sell)</span></label>
-                  <input className="input text-sm" placeholder="e.g. AAPL, MSFT" value={rev.exclude} onChange={(e) => setRev({ ...rev, exclude: e.target.value })} />
+                  <label className="label text-[11px]">Protect (don&rsquo;t sell)</label>
+                  <input className="input text-sm" placeholder="AAPL, MSFT" value={rev.exclude} onChange={(e) => setRev({ ...rev, exclude: e.target.value })} />
                 </div>
               </div>
-              {err && <div className="text-xs text-critical">{err}</div>}
+              {err && <div className="text-xs text-crit">{err}</div>}
               <div className="flex items-center gap-2 justify-end">
                 <button className="btn-ghost" onClick={() => setMode(null)} disabled={busy}>Cancel</button>
                 <button className="btn-primary" data-testid="rec-revise-submit" disabled={busy || !rev.note.trim()} onClick={revise}>
@@ -518,15 +476,16 @@ export default function RecommendationCard({
                 className="input text-sm"
                 rows={2}
                 data-testid="rec-decision-note"
+                aria-label="Decision note"
                 placeholder={
-                  mode === "dismiss" ? "Reason for dismissing (optional)…"
-                  : mode === "modify" ? "Note — uncheck any orders above to exclude them…"
-                  : "Approval note (optional)…"
+                  mode === "dismiss" ? "Reason (optional)"
+                  : mode === "modify" ? "Note (optional) · untick orders above to drop them"
+                  : "Note (optional)"
                 }
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
-              {err && <div className="text-xs text-critical">{err}</div>}
+              {err && <div className="text-xs text-crit">{err}</div>}
               <div className="flex items-center gap-2 justify-end">
                 <button className="btn-ghost" onClick={() => setMode(null)} disabled={busy}>
                   Cancel
@@ -546,30 +505,31 @@ export default function RecommendationCard({
       )}
 
       {decided && rec.decision_note && (
-        <div className="border-t border-navy-100/70 px-4 py-2 text-xs text-ink-muted">
-          Note: {rec.decision_note}
+        <div className="border-t border-border px-4 py-2 text-xs text-ink-muted">
+          <span className="font-mono uppercase tracking-wider">Note</span> · {rec.decision_note}
         </div>
       )}
 
       {reversible && onDecided && (
         <>
-          <div className="border-t border-navy-100/70 px-4 py-2 flex items-center justify-between gap-3">
-            <span className="text-xs text-ink-muted">
-              {rec.status === "executed" ? "Executed" : "Approved"} · reversible · written to ledger
+          <div className="border-t border-border px-4 py-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="flex flex-wrap gap-1.5">
+              <span className={chipMuted}>{rec.status === "executed" ? "Executed" : "Approved"}</span>
+              <span className={chipMuted}>Ledger</span>
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button className="btn-ghost text-xs" onClick={() => { setDraftOpen(!draftOpen); setDraft(null); }}>
                 <Mail size={13} /> Draft client letter
               </button>
               {!confirmRollback ? (
-                <button className="btn-ghost text-xs text-critical" data-testid="rec-rollback" disabled={busy} onClick={() => setConfirmRollback(true)}>
+                <button className="btn-ghost text-xs text-crit" data-testid="rec-rollback" disabled={busy} onClick={() => setConfirmRollback(true)}>
                   <Undo2 size={13} /> Roll back
                 </button>
               ) : (
                 <span className="flex items-center gap-2">
-                  <span className="text-xs text-critical font-medium">Roll back — effects will be reversed. Confirm?</span>
+                  <span className="text-xs text-crit font-medium">Roll back?</span>
                   <button className="btn-ghost text-xs" onClick={() => setConfirmRollback(false)}>Cancel</button>
-                  <button className="btn-ghost text-xs border border-critical/40 text-critical px-2 py-0.5 rounded" data-testid="rec-rollback-confirm" disabled={busy} onClick={rollback}>
+                  <button className="btn-crit text-xs px-2 py-0.5" data-testid="rec-rollback-confirm" disabled={busy} onClick={rollback}>
                     {busy ? "Rolling back…" : "Confirm"}
                   </button>
                 </span>
@@ -577,12 +537,12 @@ export default function RecommendationCard({
             </div>
           </div>
           {draftOpen && (
-            <div className="border-t border-navy-100/70 px-4 py-3 bg-navy-50/30 space-y-3">
+            <div className="border-t border-border px-4 py-3 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold text-ink flex items-center gap-1.5"><Mail size={13} /> Draft client communication</div>
-                <button className="btn-ghost text-xs py-0.5 px-1" onClick={() => setDraftOpen(false)}><X size={13} /></button>
+                <div className="text-xs font-semibold text-ink flex items-center gap-1.5"><Mail size={13} /> Client communication</div>
+                <button className="btn-ghost text-xs py-0.5 px-1" aria-label="Close" onClick={() => setDraftOpen(false)}><X size={13} /></button>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-end gap-3">
                 <div>
                   <label className="label text-[11px]">Tone</label>
                   <select className="input text-xs h-7 py-0" value={draftTone} onChange={(e) => setDraftTone(e.target.value)}>
@@ -598,24 +558,22 @@ export default function RecommendationCard({
                     <option value="sms_summary">SMS summary</option>
                   </select>
                 </div>
-                <div className="self-end">
-                  <button className="btn-primary text-xs py-1 px-3" disabled={draftBusy} onClick={draftCommunication}>
-                    {draftBusy ? "Drafting…" : "Generate draft"}
-                  </button>
-                </div>
+                <button className="btn-primary text-xs py-1 px-3" disabled={draftBusy} onClick={draftCommunication}>
+                  {draftBusy ? "Drafting…" : "Generate draft"}
+                </button>
               </div>
               {draft && (
                 <div className="space-y-2">
                   {draft.subject && (
-                    <div className="rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm font-medium text-ink">
+                    <div className="rounded-lg border border-border bg-paper/40 px-3 py-2 text-sm font-medium text-ink">
                       Subject: {draft.subject}
                     </div>
                   )}
-                  <div className="rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm text-ink-soft whitespace-pre-line leading-relaxed">
+                  <div className="rounded-lg border border-border bg-paper/40 px-3 py-2 text-sm text-ink-soft whitespace-pre-line leading-relaxed">
                     {draft.body}
                   </div>
                   <button className="btn-outline text-xs" onClick={copyDraft}>
-                    {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy to clipboard</>}
+                    {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
                   </button>
                 </div>
               )}
@@ -624,11 +582,11 @@ export default function RecommendationCard({
         </>
       )}
       {rec.status === "rolled_back" && (
-        <div className="border-t border-navy-100/70 px-4 py-2 text-xs text-ink-muted flex items-center gap-1.5">
-          <Undo2 size={13} /> Rolled back · {(rec.payload?.rollback_result?.note) || "effects reversed"}
+        <div className="border-t border-border px-4 py-2 text-xs text-ink-muted flex items-center gap-1.5">
+          <Undo2 size={13} /> Rolled back{rec.payload?.rollback_result?.note ? ` · ${rec.payload.rollback_result.note}` : ""}
         </div>
       )}
-      {err && <div className="px-4 py-2 text-xs text-critical">{err}</div>}
+      {err && <div className="px-4 py-2 text-xs text-crit">{err}</div>}
     </div>
   );
 }
@@ -641,7 +599,7 @@ const EV_LABELS: Record<string, string> = {
 };
 const EV_TITLECASE = new Set(["source", "scope", "signal"]);
 
-/** Render any agent's evidence as readable lineage rows (drift, NBA, client-care, …). */
+/** Any agent's evidence as lineage rows (drift, NBA, client-care, …). */
 function evidenceRows(ev: any): { k: string; label: string; val: string }[] {
   return Object.entries(ev || {})
     .filter(([k, v]) => k !== "guardrail_breaches" && v !== null && v !== undefined && typeof v !== "object")
@@ -670,22 +628,22 @@ function MeetingBriefView({ brief }: { brief: any }) {
   const goals = brief.goals || [];
   const onTrack = goals.filter((g: any) => g.on_track).length;
   return (
-    <div className="rounded-lg border border-navy-100 bg-surface p-3 space-y-3">
+    <div className={`${panel} space-y-3`}>
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg bg-navy-50 p-2.5"><div className="tile-label">Portfolio</div><div className="font-semibold text-ink">{money(brief.portfolio?.total_value || 0)}</div></div>
-        <div className="rounded-lg bg-navy-50 p-2.5"><div className="tile-label">Goals on track</div><div className="font-semibold text-ink">{onTrack}/{goals.length}</div></div>
+        <div className="rounded-lg bg-border-soft/60 p-2.5"><div className="tile-label">Portfolio</div><div className="font-semibold text-ink tabular-nums">{money(brief.portfolio?.total_value || 0)}</div></div>
+        <div className="rounded-lg bg-border-soft/60 p-2.5"><div className="tile-label">Goals on track</div><div className="font-semibold text-ink tabular-nums">{onTrack}/{goals.length}</div></div>
       </div>
       {brief.agenda?.length > 0 && (
-        <div><div className="tile-label mb-1">Suggested agenda</div>
-          <ul className="space-y-1 text-sm">{brief.agenda.map((a: string, i: number) => <li key={i} className="text-ink-soft flex gap-2"><span className="text-gold">•</span> {a}</li>)}</ul></div>
+        <div><div className="tile-label mb-1">Agenda</div>
+          <ul className="space-y-1 text-sm list-disc pl-4 marker:text-ink-faint">{brief.agenda.map((a: string, i: number) => <li key={i} className="text-ink-soft">{a}</li>)}</ul></div>
       )}
       {brief.watch_items?.length > 0 && (
         <div><div className="tile-label mb-1">Watch items</div>
-          <ul className="space-y-1">{brief.watch_items.map((w: any, i: number) => <li key={i} className="text-ink-soft text-xs flex gap-1.5"><span className="text-caution">⚠</span> {w.title}</li>)}</ul></div>
+          <ul className="space-y-1">{brief.watch_items.map((w: any, i: number) => <li key={i} className="text-ink-soft text-xs flex gap-1.5"><ShieldAlert size={12} className="mt-0.5 shrink-0 text-warn" /> {w.title}</li>)}</ul></div>
       )}
       {brief.life_events?.length > 0 && (
         <div><div className="tile-label mb-1">Life events</div>
-          <div className="flex flex-wrap gap-1.5">{brief.life_events.map((e: string, i: number) => <span key={i} className="chip bg-navy-50 text-ink-soft">{e}</span>)}</div></div>
+          <div className="flex flex-wrap gap-1.5">{brief.life_events.map((e: string, i: number) => <span key={i} className={chipMuted}>{e}</span>)}</div></div>
       )}
       {brief.house_views?.length > 0 && (
         <div><div className="tile-label mb-1 flex items-center gap-1"><FileText size={12} /> House views</div>
@@ -715,16 +673,16 @@ function PayloadView({ payload }: { payload: any }) {
   const entries = Object.entries(payload).filter(([k]) => !NOISY_KEYS.includes(k));
   if (entries.length === 0) return null;
   return (
-    <div className="rounded-lg border border-navy-100 bg-surface p-3">
+    <div className={panel}>
       <div className="tile-label mb-1.5">Proposed details</div>
-      <div className="text-sm text-ink-soft space-y-1">
+      <dl className="text-sm text-ink-soft space-y-1">
         {entries.map(([k, v]) => (
-          <div key={k} className="flex gap-2">
-            <span className="text-ink-muted min-w-[140px]">{titleCase(k)}</span>
-            <span className="flex-1">{renderVal(v)}</span>
+          <div key={k} className="flex flex-col gap-0.5 cq-sm:flex-row cq-sm:gap-2">
+            <dt className="text-ink-muted cq-sm:min-w-[140px]">{titleCase(k)}</dt>
+            <dd className="flex-1 min-w-0 break-words">{renderVal(v)}</dd>
           </div>
         ))}
-      </div>
+      </dl>
     </div>
   );
 }

@@ -53,26 +53,26 @@ export default function PortfolioWhatIf({ allocation }: { allocation: Record<str
   const dVar = prop.risk.var_95_1y - cur.risk.var_95_1y;
 
   return (
-    <div ref={ref} className="card p-4 mb-6 border-gold/40 scroll-mt-4">
-      <div className="flex items-center gap-2 mb-1">
-        <SlidersHorizontal size={17} className="text-gold" />
+    <div ref={ref} className="view-container rounded-lg border border-border bg-surface p-4 mb-6 scroll-mt-4">
+      <div className="flex flex-wrap items-center gap-2 mb-1">
+        <SlidersHorizontal size={17} className="text-ink-muted" />
         <h3 className="font-semibold text-ink">Portfolio what-if</h3>
-        <span className="text-xs text-ink-muted">Test an allocation change against return, risk and market shocks</span>
+        <span className="chip bg-border-soft text-ink-muted">Modelled · no orders</span>
       </div>
 
       {/* Tilt control */}
       <div className="mt-3 mb-4">
-        <div className="flex justify-between text-sm mb-1">
-          <span className="text-ink-soft">Growth tilt — shift between defensive and equity</span>
+        <div className="flex flex-wrap justify-between gap-1 text-sm mb-1">
+          <span className="text-ink-soft">Growth tilt</span>
           <span className="font-semibold text-ink tabular-nums">{tilt > 0 ? "+" : ""}{Math.round(tilt * 100)}% to growth{busy && " · updating…"}</span>
         </div>
-        <input type="range" min={-0.2} max={0.2} step={0.05} value={tilt}
-          onChange={(e) => setTilt(Number(e.target.value))} className="w-full accent-gold" />
-        <div className="flex justify-between text-[11px] text-ink-muted"><span>−20% (de-risk)</span><span>current</span><span>+20% (growth)</span></div>
+        <input type="range" min={-0.2} max={0.2} step={0.05} value={tilt} aria-label="Growth tilt"
+          onChange={(e) => setTilt(Number(e.target.value))} className="w-full accent-[color:var(--color-ink-soft)]" />
+        <div className="flex justify-between text-[11px] text-ink-muted"><span>−20%</span><span>current</span><span>+20%</span></div>
       </div>
 
       {/* Return / risk comparison */}
-      <div className="grid sm:grid-cols-3 gap-3 mb-4">
+      <div className="grid cq-sm:grid-cols-3 gap-3 mb-4">
         <Compare icon={TrendingUp} label="Expected return" cur={`${(cur.risk.expected_return * 100).toFixed(1)}%`}
           prop={`${(prop.risk.expected_return * 100).toFixed(1)}%`} delta={`${dRet >= 0 ? "+" : ""}${(dRet * 100).toFixed(1)}%`} good={dRet >= 0} />
         <Compare icon={Activity} label="Volatility" cur={`${(cur.risk.volatility * 100).toFixed(1)}%`}
@@ -84,7 +84,11 @@ export default function PortfolioWhatIf({ allocation }: { allocation: Record<str
       </div>
 
       {/* Stress scenarios */}
-      <div className="tile-label mb-2">Loss under a market shock (proposed vs current)</div>
+      <div className="tile-label mb-2 flex flex-wrap items-center gap-2">
+        Market shock
+        <span className="inline-flex items-center gap-1 normal-case tracking-normal font-normal"><span className="h-2 w-2 rounded-sm bg-crit/70" /> proposed</span>
+        <span className="inline-flex items-center gap-1 normal-case tracking-normal font-normal"><span className="h-2 w-2 rounded-sm bg-ink-faint/60" /> current</span>
+      </div>
       <div className="space-y-2">
         {Object.keys(SCENARIOS).map((k) => {
           const c = cur.stress[k]?.impact_value || 0;
@@ -92,10 +96,10 @@ export default function PortfolioWhatIf({ allocation }: { allocation: Record<str
           const worst = Math.min(...Object.keys(SCENARIOS).flatMap((s) => [cur.stress[s]?.impact_value || 0, prop.stress[s]?.impact_value || 0]));
           const w = (v: number) => `${Math.min(100, (Math.abs(v) / Math.abs(worst || 1)) * 100)}%`;
           return (
-            <div key={k} className="grid grid-cols-[120px_1fr_auto] items-center gap-3 text-sm">
+            <div key={k} className="grid grid-cols-[96px_1fr_auto] items-center gap-3 text-sm">
               <span className="text-ink-soft">{SCENARIOS[k]}</span>
-              <div className="relative h-5 rounded bg-navy-50 overflow-hidden">
-                <div className="absolute inset-y-0 left-0 bg-navy-300/50" style={{ width: w(c) }} />
+              <div className="relative h-5 rounded bg-border-soft overflow-hidden">
+                <div className="absolute inset-y-0 left-0 bg-ink-faint/60" style={{ width: w(c) }} />
                 <div className="absolute inset-y-0 left-0 bg-critical/70" style={{ width: w(pr) }} />
               </div>
               <span className={`tabular-nums text-xs ${pr < c ? "text-critical" : "text-positive"}`}>{money(pr)}</span>
@@ -103,14 +107,13 @@ export default function PortfolioWhatIf({ allocation }: { allocation: Record<str
           );
         })}
       </div>
-      <p className="text-[11px] text-ink-muted mt-2">Red = proposed allocation · grey = current. Figures are modelled on long-run capital-market assumptions; no orders are placed.</p>
     </div>
   );
 }
 
 function Compare({ icon: Icon, label, cur, prop, delta, good }: any) {
   return (
-    <div className="rounded-lg border border-navy-100 bg-surface p-3">
+    <div className="rounded-lg border border-border bg-paper/40 p-3">
       <div className="flex items-center gap-1.5 text-xs text-ink-muted mb-1.5"><Icon size={13} /> {label}</div>
       <div className="flex items-center gap-2">
         <span className="text-sm text-ink-muted tabular-nums">{cur}</span>
