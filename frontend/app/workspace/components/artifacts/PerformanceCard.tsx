@@ -33,6 +33,8 @@ interface PerformancePayload {
   benchmark_symbol: string | null;
   /** "70% SPY / 30% AGG" for a blend; older results carry only the symbol. */
   benchmark_label?: string | null;
+  /** The benchmark the household is held to, when it has no price over this window. */
+  benchmark_unmeasured?: string | null;
   benchmark_return: number | null;
   alpha: number | null;
   disclosures: Disclosures;
@@ -76,6 +78,7 @@ export function PerformanceCard({ result }: { result: PerformancePayload }) {
   if (d.ledger_gap_lots > 0) chips.push({ text: `${d.ledger_gap_lots} purchase(s) not in the ledger`, warn: true });
   if (d.periods_skipped > 0) chips.push({ text: `${d.periods_skipped} month(s) skipped, no capital` });
   if (d.stale_days !== null && d.stale_days > 45) chips.push({ text: `Prices as of ${d.as_of}`, warn: true });
+  if (result.benchmark_unmeasured) chips.push({ text: `Benchmark ${result.benchmark_unmeasured}: no price at ${result.start}`, warn: true });
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface" data-testid="performance-card">

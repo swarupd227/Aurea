@@ -274,6 +274,11 @@ async def run() -> None:
             check("a single symbol still parses", performance.parse_benchmark("SPY"), [("SPY", 1.0)])
             check("a blend with an unpriced part has no return, not a partial one",
                   await performance.benchmark_return(s, firm.id, "BENCH:0.5,NOPE:0.5", r["start"], r["end"]), None)
+            bonds.benchmark_symbol = "NOPE"
+            await s.flush()
+            r = await performance.household_performance(s, hh.id, firm_id=firm.id)
+            check("an unmeasurable benchmark is named, not dropped", r["benchmark_unmeasured"], "50% BENCH / 50% NOPE")
+            check("and no alpha is claimed", (r["benchmark_return"], r["alpha"]), (None, None))
     finally:
         await db.dispose()  # otherwise the process hangs on the open pool at exit
 

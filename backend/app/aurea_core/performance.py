@@ -498,6 +498,8 @@ async def household_performance(session: AsyncSession, household_id: uuid.UUID, 
         "household_id": str(household_id), "household_name": household.name,
         "accounts": len(account_ids), "benchmark_symbol": symbol if bm is not None else None,
         "benchmark_label": benchmark_label(symbol) if bm is not None else None,
+        # Held to a benchmark that has no price over this window: said, not silently dropped.
+        "benchmark_unmeasured": benchmark_label(symbol) if (symbol and bm is None and result["start"]) else None,
         "benchmark_return": bm,
         "alpha": round(result["twr"] - bm, 4) if (bm is not None and result["twr"] is not None) else None,
     })
