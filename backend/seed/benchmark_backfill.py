@@ -25,13 +25,13 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
+from app.aurea_core.composites import record_benchmark_change
 from app.aurea_core.performance import DEFENSIVE_PROXY, GROWTH_PROXY, benchmark_label, blend_for_targets
 from app.conduit.marketdata import fetch_history_yahoo
 from app.core.db import SessionLocal
 from app.core.logging import configure_logging, get_logger
 from app.models.portfolio import Instrument, ModelPortfolio, Price
 from app.models.tenant import Firm
-from app.provenance import ledger
 
 log = get_logger("aurea.seed.benchmark_backfill")
 
@@ -84,15 +84,12 @@ async def backfill() -> None:
                 if model.benchmark_symbol not in PLATFORM_DEFAULTS:
                     continue
                 blend = blend_for_targets(model.targets)
-                if not blend or blend == model.benchmark_symbol:
-                    continue
                 before = model.benchmark_symbol
-                model.benchmark_symbol = blend
-                await ledger.append_entry(
-                    s, firm_id=firm.id, event_type="benchmark_changed", actor="system",
-                    content={"model": model.name, "from": before, "to": blend,
-                             "reason": "Benchmark set from the model's own targets: defensive share "
-                                       f"against {DEFENSIVE_PROXY}, the rest against {GROWTH_PROXY}."})
+                if not blend or not await record_benchmark_change(
+                        s, model, to=blend, actor="system",
+                        reason="Benchmark set from the model's own targets: defensive share "
+                               f"against {DEFENSIVE_PROXY}, the rest against {GROWTH_PROXY}."):
+                    continue
                 changed += 1
                 print(f"{firm.slug}: {model.name}: {before or 'none'} -> {benchmark_label(blend)}")
         await s.commit()

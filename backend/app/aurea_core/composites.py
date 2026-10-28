@@ -75,6 +75,54 @@ def _composite_series(per_account: list[dict]) -> list[float]:
     return series
 
 
+BENCHMARK_CHANGED = "benchmark_changed"
+
+
+async def record_benchmark_change(
+    session: AsyncSession, model: ModelPortfolio, *, to: str | None, actor: str, reason: str,
+) -> bool:
+    """Set a model's benchmark and put the change on the ledger, which is where a composite's
+    GIPS disclosure of it is read from. Every path that changes a benchmark goes through here.
+    Returns False when nothing changed."""
+    from app.provenance import ledger
+
+    before = model.benchmark_symbol or None
+    to = to or None
+    if to == before:
+        return False
+    model.benchmark_symbol = to
+    await ledger.append_entry(
+        session, firm_id=model.firm_id, event_type=BENCHMARK_CHANGED, actor=actor,
+        content={"model_id": str(model.id), "model": model.name, "from": before, "to": to, "reason": reason})
+    return True
+
+
+async def benchmark_changes(session: AsyncSession, model: ModelPortfolio) -> list[dict]:
+    """Every change to this model's benchmark, oldest first: date, from, to, why, by whom.
+    GIPS requires a composite presentation to disclose a benchmark change, its date and the
+    reason. Entries written before the model id was recorded are matched by the model's name."""
+    from app.aurea_core.performance import benchmark_label
+    from app.models.governance import LedgerEntry
+
+    rows = (await session.execute(
+        select(LedgerEntry).where(LedgerEntry.firm_id == model.firm_id,
+                                  LedgerEntry.event_type == BENCHMARK_CHANGED)
+        .order_by(LedgerEntry.seq.asc())
+    )).scalars().all()
+    out = []
+    for e in rows:
+        c = e.content or {}
+        if c.get("model_id") != str(model.id) and not (c.get("model_id") is None and c.get("model") == model.name):
+            continue
+        out.append({
+            "date": e.created_at.date().isoformat() if e.created_at else None,
+            "from": c.get("from"), "from_label": benchmark_label(c.get("from")) or "none",
+            "to": c.get("to"), "to_label": benchmark_label(c.get("to")) or "none",
+            "reason": c.get("reason"), "by": e.actor,
+        })
+    return out
+
+
 async def composite_report(session: AsyncSession, composite: Composite) -> dict:
     from app.aurea_core import performance
 
@@ -138,6 +186,15 @@ async def composite_report(session: AsyncSession, composite: Composite) -> dict:
                 session, composite.firm_id, model.benchmark_symbol, min(starts), max(ends))
             if bm is not None:
                 benchmark = {"symbol": model.benchmark_symbol, "return": bm}
+    # What the benchmark is and how it changed are disclosed whether or not it could be measured.
+    benchmark_disclosure = {
+        "symbol": model.benchmark_symbol if model else None,
+        "label": performance.benchmark_label(model.benchmark_symbol) if model else None,
+        "basis": ("fixed-weight blend, weights set at the start of the period, not rebalanced"
+                  if model and len(performance.parse_benchmark(model.benchmark_symbol)) > 1 else None),
+        "measured": benchmark is not None,
+        "changes": await benchmark_changes(session, model) if model else [],
+    }
 
     return {
         "composite_id": str(composite.id), "name": composite.name,
@@ -157,6 +214,7 @@ async def composite_report(session: AsyncSession, composite: Composite) -> dict:
             "meets_gips_minimum": months_used >= GIPS_MIN_MONTHS,
         },
         "benchmark": benchmark,
+        "benchmark_disclosure": benchmark_disclosure,
         "accounts": per_account,
     }
 

@@ -3,6 +3,7 @@ import { AlertTriangle, Check, BarChart3, FileCheck } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, Empty, Spinner } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
+import { BenchmarkDisclosureView } from "@/app/workspace/components/artifacts/CompositeReportCard";
 
 function pct(n: number | null) {
   return n === null || n === undefined ? "—" : `${(n * 100).toFixed(2)}%`;
@@ -47,12 +48,16 @@ function CompositePresentation({ compositeId }: { compositeId: string }) {
                 </span>
               </td>
               <td className="py-1.5 px-2 tabular-nums">
-                {data.benchmark ? `${data.benchmark.symbol} ${pct(data.benchmark.return)}` : "not configured"}
+                {data.benchmark
+                  ? `${data.benchmark_disclosure?.label ?? data.benchmark.symbol} ${pct(data.benchmark.return)}`
+                  : data.benchmark_disclosure?.label ? `${data.benchmark_disclosure.label} · not measurable` : "not configured"}
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+
+      {data.benchmark_disclosure && <div className="mt-3 -mx-3"><BenchmarkDisclosureView disclosure={data.benchmark_disclosure} /></div>}
 
       {(data.accounts_excluded_unseasoned.length > 0 || data.accounts_excluded_below_minimum.length > 0) && (
         <div className="mt-3 pt-3 border-t border-navy-50 text-xs text-ink-muted space-y-1">

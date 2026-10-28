@@ -39,7 +39,8 @@ def check(label: str, got, want) -> None:
 async def main() -> int:
     db = create_async_engine("sqlite+aiosqlite:///:memory:")
     wanted = ["firm", "account", "instrument", "price", "holding", "mandate",
-              "model_portfolio", "composite", "txn", "tax_lot"]  # the return engine reads the ledger
+              "model_portfolio", "composite", "txn", "tax_lot",   # the return engine reads the ledger
+              "ledger_entry"]                                     # benchmark changes are read from it
     tables = [Base.metadata.tables[n] for n in wanted]
     async with db.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
@@ -150,6 +151,41 @@ async def main() -> int:
         check("std dev value is a real positive number", report["ex_post_std_dev"]["value"] > 0, True)
         check("benchmark resolved from the model's benchmark_symbol", report["benchmark"]["symbol"], "BENCH")
         check("benchmark return computed from real price history", report["benchmark"]["return"], 0.10)
+        check("a benchmark never changed discloses no changes", report["benchmark_disclosure"]["changes"], [])
+        check("a single index has no blend basis", report["benchmark_disclosure"]["basis"], None)
+
+        print("\n=== a benchmark change is disclosed: date, from, to, reason (GIPS) ===")
+        from app.models.governance import LedgerEntry
+        from app.provenance import ledger
+        # One written before the model id was recorded (benchmark_backfill's first run) - matched by name.
+        await ledger.append_entry(s, firm_id=firm.id, event_type=engine.BENCHMARK_CHANGED, actor="system",
+                                  content={"model": "Growth", "from": None, "to": "BENCH", "reason": "First set."})
+        # Another model's change must not appear on this composite.
+        await ledger.append_entry(s, firm_id=firm.id, event_type=engine.BENCHMARK_CHANGED, actor="system",
+                                  content={"model_id": str(uuid.uuid4()), "model": "Other", "from": "X", "to": "Y",
+                                           "reason": "Not this one."})
+        changed = await engine.record_benchmark_change(
+            s, model, to="BENCH:0.6,AAA:0.4", actor="Admin", reason="Matches the model's targets.")
+        check("changing the benchmark reports a change", changed, True)
+        check("and sets it", model.benchmark_symbol, "BENCH:0.6,AAA:0.4")
+        check("setting it to what it already is changes nothing",
+              await engine.record_benchmark_change(s, model, to="BENCH:0.6,AAA:0.4", actor="Admin", reason="again"), False)
+        await s.flush()
+        report = await engine.composite_report(s, composite)
+        d = report["benchmark_disclosure"]
+        check("the disclosure names the benchmark as people read it", d["label"], "60% BENCH / 40% AAA")
+        check("a blend says how it is computed", (d["basis"] or "").startswith("fixed-weight blend"), True)
+        check("both of this model's changes, oldest first, none of the other model's",
+              [(c["from_label"], c["to_label"]) for c in d["changes"]],
+              [("none", "BENCH"), ("BENCH", "60% BENCH / 40% AAA")])
+        check("each carries its reason and who made it",
+              [(c["reason"], c["by"]) for c in d["changes"]],
+              [("First set.", "system"), ("Matches the model's targets.", "Admin")])
+        check("and its date", all(c["date"] for c in d["changes"]), True)
+        check("the change is on the hash-chained ledger with the model id",
+              any((e.content or {}).get("model_id") == str(model.id) for e in (await s.execute(
+                  __import__("sqlalchemy").select(LedgerEntry).where(
+                      LedgerEntry.event_type == engine.BENCHMARK_CHANGED))).scalars().all()), True)
 
         print("\n=== firm_definition_check: catches discretionary AUM not captured in any composite ===")
         fd = await engine.firm_definition_check(s, firm.id)

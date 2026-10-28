@@ -10,6 +10,54 @@ interface Benchmark {
   return: number;
 }
 
+interface BenchmarkChange {
+  date: string | null;
+  from_label: string;
+  to_label: string;
+  reason: string | null;
+}
+
+/** What the benchmark is and every change to it - a GIPS disclosure, shown measured or not. */
+export interface BenchmarkDisclosure {
+  label: string | null;
+  basis: string | null;
+  measured: boolean;
+  changes: BenchmarkChange[];
+}
+
+/** The benchmark disclosure block: how a blend is computed, and every change with its date and reason. */
+export function BenchmarkDisclosureView({ disclosure: d }: { disclosure: BenchmarkDisclosure }) {
+  if (!d.basis && d.changes.length === 0) return null;
+  return (
+    <div className="space-y-1.5 border-t border-border-soft px-3 py-2" data-testid="benchmark-disclosure">
+      <div className="font-mono text-[10px] uppercase tracking-wider text-ink-muted">Benchmark disclosure</div>
+      {d.basis && <span className="inline-block rounded border border-border px-1.5 py-0.5 text-[11px] text-ink-soft">{d.basis}</span>}
+      {d.changes.length > 0 && (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-ink-muted">
+              <th className="py-0.5 pr-2 font-normal">Changed</th>
+              <th className="py-0.5 pr-2 font-normal">From</th>
+              <th className="py-0.5 pr-2 font-normal">To</th>
+              <th className="py-0.5 font-normal">Reason</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-soft">
+            {d.changes.map((c, i) => (
+              <tr key={i} className="align-top">
+                <td className="py-1 pr-2 font-mono tabular-nums text-ink-soft">{c.date ?? "—"}</td>
+                <td className="py-1 pr-2 text-ink-soft">{c.from_label}</td>
+                <td className="py-1 pr-2 text-ink">{c.to_label}</td>
+                <td className="py-1 text-ink-soft">{c.reason ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 interface CompositeReportPayload {
   name: string;
   strategy: string | null;
@@ -19,6 +67,7 @@ interface CompositeReportPayload {
   internal_dispersion: number | null;
   ex_post_std_dev: StdDev;
   benchmark: Benchmark | null;
+  benchmark_disclosure?: BenchmarkDisclosure;
 }
 
 function pct(n: number | null) {
@@ -30,6 +79,8 @@ function money(n: number) {
 
 export function CompositeReportCard({ result }: { result: CompositeReportPayload }) {
   const std = result.ex_post_std_dev;
+  const bd = result.benchmark_disclosure;
+  const label = bd?.label ?? result.benchmark?.symbol;
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="flex items-center justify-between border-b border-border-soft px-3 py-2">
@@ -59,14 +110,17 @@ export function CompositeReportCard({ result }: { result: CompositeReportPayload
               </span>
             </td>
           </tr>
-          {result.benchmark && (
+          {label && (
             <tr>
-              <td className="px-3 py-1.5 text-ink-muted">Benchmark ({result.benchmark.symbol})</td>
-              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">{pct(result.benchmark.return)}</td>
+              <td className="px-3 py-1.5 text-ink-muted">Benchmark ({label})</td>
+              <td className={`px-3 py-1.5 text-right font-mono tabular-nums ${result.benchmark ? "text-ink-muted" : "text-warn"}`}>
+                {result.benchmark ? pct(result.benchmark.return) : "not measurable"}
+              </td>
             </tr>
           )}
         </tbody>
       </table>
+      {bd && <BenchmarkDisclosureView disclosure={bd} />}
     </div>
   );
 }

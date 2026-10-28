@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
+from app.aurea_core import composites
 from app.core.db import get_db
 from app.core.security import STAFF_ROLES, require_roles, staff_user
 from app.models.enums import AssetClass
@@ -124,7 +125,10 @@ async def update_model_portfolio(
         mp.description = body.description
     mp.drift_band = body.drift_band
     if body.benchmark_symbol is not None:
-        mp.benchmark_symbol = body.benchmark_symbol
+        # Ledgered: a composite on this model must disclose the change (aurea_core/composites).
+        await composites.record_benchmark_change(
+            db, mp, to=body.benchmark_symbol.strip(), actor=user.full_name or user.email,
+            reason="Changed by an administrator in model portfolio settings.")
     await db.flush()
     return {"ok": True}
 
