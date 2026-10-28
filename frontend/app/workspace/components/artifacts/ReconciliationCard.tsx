@@ -2,6 +2,7 @@ export interface ReconBreak {
   id: string;
   account_id: string;
   account: string | null;
+  household: string | null;
   custodian: string | null;
   kind: "quantity" | "missing_in_book" | "missing_at_custodian" | "unmapped_security" | "cash";
   symbol: string | null;
@@ -24,6 +25,7 @@ export interface ReconAccount {
   account_id: string;
   account: string;
   account_number: string | null;
+  household: string | null;
   custodian: string | null;
   currency: string;
   state: "reconciled" | "breaks" | "stale_statement" | "no_statement";
@@ -47,6 +49,7 @@ interface Overview {
 
 interface Imported {
   account: string;
+  household: string | null;
   as_of: string;
   positions_compared: number;
   positions_matched: number;
@@ -144,7 +147,7 @@ export function ReconciliationCard({ result }: { result: Overview | Imported | D
                   <tr key={b.id}>
                     <td className="px-3 py-1.5">
                       <div className="text-ink">{b.symbol ?? "Cash"} <span className="text-xs text-ink-muted">{KIND_TEXT[b.kind]}</span></div>
-                      <div className="text-xs text-ink-muted">{b.account}</div>
+                      <div className="text-xs text-ink-muted">{b.household ? `${b.household} · ` : ""}{b.account}</div>
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">
                       {f.book} · {f.custodian} <span className={b.status === "explained" ? "text-ink-muted" : "text-crit"}>{f.diff}</span>
@@ -171,7 +174,7 @@ export function ReconciliationCard({ result }: { result: Overview | Imported | D
     const r = result as Imported;
     return (
       <div className="overflow-hidden rounded-lg border border-border bg-surface" data-testid="reconciliation-import-card">
-        <div className="border-b border-border-soft px-3 py-2 text-sm font-medium text-ink">Statement compared · {r.account} · {r.as_of}</div>
+        <div className="border-b border-border-soft px-3 py-2 text-sm font-medium text-ink">Statement compared · {r.household ? `${r.household} · ` : ""}{r.account} · {r.as_of}</div>
         <div className="flex flex-wrap gap-x-8 gap-y-2 px-3 py-3">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-ink-muted">Positions matched</div>

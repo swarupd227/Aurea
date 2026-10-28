@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import utcnow
 from app.models.corporate_actions import CorporateAction, CorporateActionEntitlement
-from app.models.graph import Account
+from app.models.graph import Account, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding, Instrument, Transaction
 from app.models.reconciliation import CLOSED_STATUSES, CustodyStatement, ReconBreak
 from app.models.tenant import Firm
@@ -307,8 +307,9 @@ async def import_statement(
     session.add(stmt)
     await session.flush()
     summary = await reconcile(session, firm_id, stmt, today=today)
+    hh = (await households_of(session, [account])).get(account.id)
     return {"statement_id": str(stmt.id), "account_id": str(account.id), "account": account.name,
-            "as_of": as_of.isoformat(), **summary}
+            "household": hh[1] if hh else None, "as_of": as_of.isoformat(), **summary}
 
 
 async def reconcile(session: AsyncSession, firm_id: uuid.UUID, stmt: CustodyStatement,
@@ -437,11 +438,39 @@ async def reconcile(session: AsyncSession, firm_id: uuid.UUID, stmt: CustodyStat
 
 # ── reading it back ──────────────────────────────────────────────────────────
 
-def _break_row(b: ReconBreak, accounts: dict, instruments: dict) -> dict:
+async def households_of(session: AsyncSession, accounts: list[Account]) -> dict[uuid.UUID, tuple[uuid.UUID, str]]:
+    """The household each account belongs to, by way of its mandate's person or entity. An account
+    with no mandate, or whose owner is in no household, is simply absent."""
+    mandate_ids = {a.mandate_id for a in accounts if a.mandate_id}
+    if not mandate_ids:
+        return {}
+    mandates = {m.id: m for m in (await session.execute(select(Mandate).where(Mandate.id.in_(mandate_ids)))).scalars().all()}
+    person_ids = {m.person_id for m in mandates.values() if m.person_id}
+    entity_ids = {m.entity_id for m in mandates.values() if m.entity_id}
+    person_hh = {pid: hid for pid, hid in (await session.execute(
+        select(Person.id, Person.household_id).where(Person.id.in_(person_ids)))).all()} if person_ids else {}
+    entity_hh = {eid: hid for eid, hid in (await session.execute(
+        select(LegalEntity.id, LegalEntity.household_id).where(LegalEntity.id.in_(entity_ids)))).all()} if entity_ids else {}
+    hh_ids = {h for h in (*person_hh.values(), *entity_hh.values()) if h}
+    names = {hid: name for hid, name in (await session.execute(
+        select(Household.id, Household.name).where(Household.id.in_(hh_ids)))).all()} if hh_ids else {}
+    out: dict[uuid.UUID, tuple[uuid.UUID, str]] = {}
+    for a in accounts:
+        m = mandates.get(a.mandate_id) if a.mandate_id else None
+        hid = (person_hh.get(m.person_id) if m and m.person_id else None) or (
+            entity_hh.get(m.entity_id) if m and m.entity_id else None)
+        if hid and hid in names:
+            out[a.id] = (hid, names[hid])
+    return out
+
+
+def _break_row(b: ReconBreak, accounts: dict, instruments: dict, households: dict) -> dict:
     acc = accounts.get(b.account_id)
+    hh = households.get(b.account_id)
     inst = instruments.get(b.instrument_id) if b.instrument_id else None
     return {
         "id": str(b.id), "account_id": str(b.account_id), "account": acc.name if acc else None,
+        "household": hh[1] if hh else None, "household_id": str(hh[0]) if hh else None,
         "custodian": acc.custodian if acc else None, "kind": b.kind, "symbol": b.symbol or (inst.symbol if inst else None),
         "name": inst.name if inst else None, "currency": acc.currency if acc else None,
         "book": _f(b.book_value), "custodian_value": _f(b.custodian_value), "difference": _f(b.difference),
@@ -458,6 +487,7 @@ async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | N
     accounts = (await session.execute(
         select(Account).where(Account.firm_id == firm_id).order_by(Account.name))).scalars().all()
     by_id = {a.id: a for a in accounts}
+    households = await households_of(session, accounts)
     instruments = {i.id: i for i in (await session.execute(
         select(Instrument).where(Instrument.firm_id == firm_id))).scalars().all()}
     statements = {s.account_id: s for s in (await session.execute(
@@ -480,6 +510,8 @@ async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | N
         counts[state] += 1
         rows.append({
             "account_id": str(a.id), "account": a.name, "account_number": a.account_number,
+            "household": households[a.id][1] if a.id in households else None,
+            "household_id": str(households[a.id][0]) if a.id in households else None,
             "custodian": a.custodian, "currency": a.currency, "state": state,
             "statement_as_of": st.as_of.isoformat() if st else None, "statement_age_days": age,
             "statement_source": st.source_document if st else None,
@@ -487,6 +519,7 @@ async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | N
             "cash": (st.result or {}).get("cash") if st else None,
             "not_comparable": (st.result or {}).get("not_comparable", []) if st else [],
         })
+    rows.sort(key=lambda r: ((r["household"] or "~").lower(), (r["account"] or "").lower()))
     rank = {"escalated": 0, "open": 1, "explained": 2}
     shown = sorted(breaks, key=lambda b: (rank.get(str(b.status), 3), -abs(_f(b.difference))))
     by_cause: dict[str, int] = {}
@@ -495,7 +528,7 @@ async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | N
             by_cause[b.cause] = by_cause.get(b.cause, 0) + 1
     return {
         "accounts": rows,
-        "breaks": [_break_row(b, by_id, instruments) for b in shown[:200]],
+        "breaks": [_break_row(b, by_id, instruments, households) for b in shown[:200]],
         "summary": {"accounts": len(accounts), **counts,
                     "open_breaks": sum(1 for b in breaks if str(b.status) in ("open", "escalated")),
                     "explained_breaks": sum(1 for b in breaks if str(b.status) == "explained"),

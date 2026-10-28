@@ -136,7 +136,7 @@ export default function Reconciliation() {
               <select className="input w-full" value={form.account_id} aria-label="Account"
                 onChange={(e) => setForm({ ...form, account_id: e.target.value })}>
                 <option value="">Choose an account</option>
-                {data.accounts.map((a: any) => <option key={a.account_id} value={a.account_id}>{a.account}{a.custodian ? ` · ${a.custodian}` : ""}</option>)}
+                {data.accounts.map((a: any) => <option key={a.account_id} value={a.account_id}>{a.household ? `${a.household} · ` : ""}{a.account}{a.custodian ? ` · ${a.custodian}` : ""}{a.account_number ? ` · ${a.account_number}` : ""}</option>)}
               </select>
             </label>
             <label className="block">
@@ -202,7 +202,7 @@ export default function Reconciliation() {
                     <tr key={b.id} data-testid="recon-break-row">
                       <td className="px-4 py-2">
                         <div className="text-ink">{b.symbol ?? "Cash"} <span className="text-xs text-ink-muted">{KIND_TEXT[b.kind]}</span></div>
-                        <div className="text-xs text-ink-muted">{b.account}{b.custodian ? ` · ${b.custodian}` : ""}</div>
+                        <div className="text-xs text-ink-muted">{b.household ? `${b.household} · ` : ""}{b.account}{b.custodian ? ` · ${b.custodian}` : ""}</div>
                       </td>
                       <td className="px-4 py-2 text-right font-mono tabular-nums text-ink-muted">
                         {f.book} · {f.custodian} · <span className={b.status === "explained" ? "text-ink-muted" : "text-crit"}>{f.diff}</span>
@@ -262,8 +262,8 @@ export default function Reconciliation() {
                 return (
                   <tr key={a.account_id}>
                     <td className="px-4 py-2">
-                      <div className="text-ink">{a.account}</div>
-                      <div className="text-xs text-ink-muted">{a.custodian ?? "—"}{a.account_number ? ` · ${a.account_number}` : ""} · {a.currency}</div>
+                      <div className="text-ink">{a.household ?? <span className="text-ink-muted">No household</span>}</div>
+                      <div className="text-xs text-ink-muted">{a.account} · {a.custodian ?? "—"}{a.account_number ? ` · ${a.account_number}` : ""} · {a.currency}</div>
                     </td>
                     <td className="px-4 py-2">
                       <span className={`chip ${st.tone}`}>{st.text}</span>

@@ -27,7 +27,7 @@ from app.core.tools import TOOLS, ToolChangeState
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.models.corporate_actions import CorporateAction, CorporateActionEntitlement
 from app.models.enums import MarketType, UserRole
-from app.models.graph import Account
+from app.models.graph import Account, Household, LegalEntity, Mandate, Person
 from app.models.identity import User
 from app.models.portfolio import Holding, Instrument, Transaction
 from app.models.reconciliation import CustodyStatement, ReconBreak
@@ -340,6 +340,49 @@ async def main() -> int:
             rows = (await s.execute(select(CustodyStatement).where(CustodyStatement.account_id == a12.id))).scalars().all()
             check("the same date replaces the first, which is kept as superseded",
                   sorted(str(r.status) for r in rows), ["current", "superseded"])
+
+            print("\n=== Which household an account belongs to ===")
+            chen, okafor, loner = (Household(id=uuid.uuid4(), firm_id=firm.id, name=n)
+                                   for n in ("Chen Family", "Okafor Family", "Unrelated Household"))
+            s.add_all([chen, okafor, loner])
+            await s.flush()
+            person = Person(id=uuid.uuid4(), firm_id=firm.id, household_id=chen.id, full_name="Wei Chen")
+            trust = LegalEntity(id=uuid.uuid4(), firm_id=firm.id, household_id=okafor.id, name="Okafor Trust",
+                                entity_type="trust")
+            orphan = Person(id=uuid.uuid4(), firm_id=firm.id, household_id=None, full_name="No Household")
+            s.add_all([person, trust, orphan])
+            await s.flush()
+            m_person = Mandate(id=uuid.uuid4(), firm_id=firm.id, person_id=person.id, name="Chen mandate",
+                               mandate_type="discretionary")
+            m_trust = Mandate(id=uuid.uuid4(), firm_id=firm.id, entity_id=trust.id, name="Okafor mandate",
+                              mandate_type="discretionary")
+            m_orphan = Mandate(id=uuid.uuid4(), firm_id=firm.id, person_id=orphan.id, name="Orphan mandate",
+                               mandate_type="advisory")
+            s.add_all([m_person, m_trust, m_orphan])
+            await s.flush()
+            a_p, a_e, a_o = acct("Family A/C"), acct("Family A/C"), acct("Family A/C")
+            a_p.mandate_id, a_e.mandate_id, a_o.mandate_id = m_person.id, m_trust.id, m_orphan.id
+            await s.flush()
+            for a in (a_p, a_e, a_o):
+                await holdings(a, aaa=100, bbb=50)
+            hh = await rc.households_of(s, [a_p, a_e, a_o, a1])
+            check("a person's mandate puts the account in the person's household", hh[a_p.id][1], "Chen Family")
+            check("an entity's mandate puts it in the entity's household", hh[a_e.id][1], "Okafor Family")
+            check("an owner in no household leaves the account without one", a_o.id in hh, False)
+            check("so does an account with no mandate", a1.id in hh, False)
+            check("no households means no lookup", await rc.households_of(s, []), {})
+            r = await stmt(a_p, [{"symbol": "AAA", "quantity": 90}, {"symbol": "BBB", "quantity": 50}], cash=10000)
+            check("the import result names the household", (r["household"], r["account"]), ("Chen Family", "Family A/C"))
+            await stmt(a_e, [{"symbol": "AAA", "quantity": 95}, {"symbol": "BBB", "quantity": 50}], cash=10000)
+            ov = await rc.overview(s, firm.id, today=today)
+            same = [a for a in ov["accounts"] if a["account"] == "Family A/C"]
+            check("three accounts with one name are told apart by household",
+                  sorted(a["household"] or "-" for a in same), ["-", "Chen Family", "Okafor Family"])
+            br = {b["account_id"]: b for b in ov["breaks"]}
+            check("a break names its account's household", (br[str(a_p.id)]["household"], br[str(a_e.id)]["household"]),
+                  ("Chen Family", "Okafor Family"))
+            names = [(a["household"] or "~").lower() for a in ov["accounts"]]
+            check("accounts are listed by household", names, sorted(names))
 
             print("\n=== The overview ===")
             ov = await rc.overview(s, firm.id, today=today)

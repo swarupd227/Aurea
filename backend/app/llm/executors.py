@@ -363,7 +363,8 @@ class ToolExecutors:
             raise ExecutorError(str(exc))
         b = result["breaks"]
         result["message"] = (
-            f"Compared {result['positions_compared']} position(s) on {result['account']} as at {result['as_of']}: "
+            f"Compared {result['positions_compared']} position(s) on "
+            f"{result['household'] + ' · ' if result.get('household') else ''}{result['account']} as at {result['as_of']}: "
             f"{result['positions_matched']} matched; cash {result['cash'].replace('_', ' ')}. "
             f"{b['opened']} break(s) opened, {b['refreshed']} refreshed, {b['cleared']} cleared; "
             f"{b['open']} open on this account.")
