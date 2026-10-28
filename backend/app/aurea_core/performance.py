@@ -25,7 +25,7 @@ from __future__ import annotations
 import uuid
 from bisect import bisect_left
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -459,7 +459,15 @@ async def _symbol_return(
                 break
         return px
 
-    p0, p1 = on_or_before(start_d), on_or_before(end_d)
+    def at_start(d: date) -> float | None:
+        # A window can open on a month-end another exchange stamps a day or two apart from the
+        # benchmark's (31 Jul vs 1 Aug) - the same tolerance the portfolio's own month-ends get.
+        px = on_or_before(d)
+        if px is None:
+            px = next((_f(r.close) for r in rows if d < r.as_of <= d + timedelta(days=_SNAP_DAYS)), None)
+        return px
+
+    p0, p1 = at_start(start_d), on_or_before(end_d)
     if not p0 or p1 is None or p0 <= 0:
         return None
     return round(p1 / p0 - 1.0, 4)

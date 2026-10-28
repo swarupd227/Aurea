@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -274,6 +274,14 @@ async def run() -> None:
             check("a single symbol still parses", performance.parse_benchmark("SPY"), [("SPY", 1.0)])
             check("a blend with an unpriced part has no return, not a partial one",
                   await performance.benchmark_return(s, firm.id, "BENCH:0.5,NOPE:0.5", r["start"], r["end"]), None)
+            print("\n=== A window opening a day before the benchmark's first month-end is still measured ===")
+            await instrument("LATE", "equity", [(D1 + timedelta(days=1), 100), (D3, 120)])
+            check("a first price one day after the start counts as the start",
+                  await performance.benchmark_return(s, firm.id, "LATE", D1.isoformat(), D3.isoformat()), 0.20)
+            await instrument("WAYLATE", "equity", [(D1 + timedelta(days=10), 100), (D3, 120)])
+            check("ten days after does not - that is a different month-end",
+                  await performance.benchmark_return(s, firm.id, "WAYLATE", D1.isoformat(), D3.isoformat()), None)
+
             bonds.benchmark_symbol = "NOPE"
             await s.flush()
             r = await performance.household_performance(s, hh.id, firm_id=firm.id)
