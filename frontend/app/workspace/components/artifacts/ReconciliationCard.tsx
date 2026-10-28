@@ -100,15 +100,15 @@ export const BREAK_STATUS_TONE: Record<string, string> = {
   explained: "text-ink-muted",
 };
 
-export function signed(v: number, d = 0) {
-  const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+export function signed(v: number, d = 0, min = d) {
+  const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: min, maximumFractionDigits: d });
   return v > 0 ? `+${s}` : v < 0 ? `−${s}` : s;
 }
 
 export function figure(b: Pick<ReconBreak, "kind" | "book" | "custodian_value" | "difference">) {
   const d = b.kind === "cash" ? 2 : 4;
   const f = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: d });
-  return { book: f(b.book), custodian: f(b.custodian_value), diff: signed(b.difference, b.kind === "cash" ? 2 : 4) };
+  return { book: f(b.book), custodian: f(b.custodian_value), diff: signed(b.difference, d, b.kind === "cash" ? 2 : 0) };
 }
 
 const SHOWN = 10;
