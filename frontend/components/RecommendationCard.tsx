@@ -250,6 +250,11 @@ export default function RecommendationCard({
           <div className="flex items-center gap-2 flex-wrap">
             <TierBadge tier={rec.tier} />
             <StatusBadge status={rec.status} />
+            {payload?.refreshed?.times > 1 && (
+              <span className={chipMuted} title={payload.refreshed.last_at ? `Last found ${String(payload.refreshed.last_at).slice(0, 10)}` : undefined}>
+                Found {payload.refreshed.times}×
+              </span>
+            )}
             {ev.guardrail_breaches?.length > 0 && (
               <span className="chip bg-crit-bg text-crit">
                 <ShieldAlert size={12} /> {ev.guardrail_breaches.length} guardrail flag
@@ -655,7 +660,9 @@ function MeetingBriefView({ brief }: { brief: any }) {
   );
 }
 
-const NOISY_KEYS = ["execution_result", "rollback_result", "meeting_id", "signal", "brief"];
+// "refreshed" is bookkeeping (how often a scheduled run re-found this, and the run's id), shown as a
+// chip in the header rather than as a row with a raw id in it.
+const NOISY_KEYS = ["execution_result", "rollback_result", "meeting_id", "signal", "brief", "refreshed"];
 
 function renderVal(v: any): string {
   if (v === null || v === undefined) return "—";
