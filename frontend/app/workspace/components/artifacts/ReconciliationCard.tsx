@@ -11,7 +11,9 @@ export interface ReconBreak {
   book: number;
   custodian_value: number;
   difference: number;
-  status: "open" | "explained" | "escalated";
+  status: "open" | "explained" | "escalated" | "dismissed";
+  resolved_by: string | null;
+  resolution_note: string | null;
   cause: string;
   confidence: number;
   next_step: string;
@@ -34,6 +36,7 @@ export interface ReconAccount {
   statement_source: string | null;
   open_breaks: number;
   explained_breaks: number;
+  set_aside_breaks: number;
   cash: string | null;
   not_comparable: string[];
 }
@@ -43,7 +46,7 @@ interface Overview {
   breaks: ReconBreak[];
   summary: {
     accounts: number; reconciled: number; breaks: number; stale_statement: number; no_statement: number;
-    open_breaks: number; explained_breaks: number; by_cause: Record<string, number>; fresh_within_days: number;
+    open_breaks: number; explained_breaks: number; set_aside_breaks: number; by_cause: Record<string, number>; fresh_within_days: number;
   };
 }
 
@@ -98,7 +101,10 @@ export const BREAK_STATUS_TONE: Record<string, string> = {
   open: "text-crit",
   escalated: "text-crit",
   explained: "text-ink-muted",
+  dismissed: "text-ink-muted",
 };
+
+export const BREAK_STATUS_TEXT: Record<string, string> = { dismissed: "set aside" };
 
 export function signed(v: number, d = 0, min = d) {
   const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: min, maximumFractionDigits: d });
@@ -126,11 +132,12 @@ export function ReconciliationCard({ result }: { result: Overview | Imported | D
             <span className="chip text-ok">{s.reconciled} reconciled</span>
             {s.breaks > 0 && <span className="chip text-crit">{s.breaks} with breaks</span>}
             {s.stale_statement > 0 && <span className="chip text-warn">{s.stale_statement} out of date</span>}
+            {s.set_aside_breaks > 0 && <span className="chip text-ink-muted">{s.set_aside_breaks} set aside</span>}
             {s.no_statement > 0 && <span className="chip text-ink-muted">{s.no_statement} no statement</span>}
           </div>
         </div>
         {rows.length === 0 ? (
-          <div className="px-3 py-3 font-mono text-xs text-ink-muted">no open breaks</div>
+          <div className="px-3 py-3 font-mono text-xs text-ink-muted">no breaks</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -150,12 +157,12 @@ export function ReconciliationCard({ result }: { result: Overview | Imported | D
                       <div className="text-xs text-ink-muted">{b.household ? `${b.household} · ` : ""}{b.account}</div>
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">
-                      {f.book} · {f.custodian} <span className={b.status === "explained" ? "text-ink-muted" : "text-crit"}>{f.diff}</span>
+                      {f.book} · {f.custodian} <span className={b.status === "explained" || b.status === "dismissed" ? "text-ink-muted" : "text-crit"}>{f.diff}</span>
                     </td>
                     <td className="px-3 py-1.5">
                       <span className="chip text-ink-muted">{CAUSE_TEXT[b.cause] ?? b.cause}{b.confidence > 0 ? ` · ${(b.confidence * 100).toFixed(0)}%` : ""}</span>
                       <span className="chip ml-1 text-ink-muted">{STEP_TEXT[b.next_step] ?? b.next_step}</span>
-                      {b.status !== "open" && <span className={`chip ml-1 ${BREAK_STATUS_TONE[b.status]}`}>{b.status}</span>}
+                      {b.status !== "open" && <span className={`chip ml-1 ${BREAK_STATUS_TONE[b.status]}`}>{BREAK_STATUS_TEXT[b.status] ?? b.status}</span>}
                     </td>
                   </tr>
                 );

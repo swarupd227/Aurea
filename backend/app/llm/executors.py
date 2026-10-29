@@ -337,6 +337,8 @@ class ToolExecutors:
                  f"{s['no_statement']} with no custodian statement on file"]
         if s["open_breaks"]:
             parts.append(f"{s['open_breaks']} open break(s)")
+        if s["set_aside_breaks"]:
+            parts.append(f"{s['set_aside_breaks']} difference(s) set aside by a person, still on the record")
         result["message"] = "; ".join(parts) + "."
         return result
 

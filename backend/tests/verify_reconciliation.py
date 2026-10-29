@@ -412,8 +412,35 @@ async def main() -> int:
                   (set(first) >= {"book", "custodian_value", "difference", "cause", "next_step", "evidence"},
                    "message" in first or "summary" in first), (True, False))
             check("the worst are listed first", [b["status"] for b in ov["breaks"]] ==
-                  sorted((b["status"] for b in ov["breaks"]), key=lambda x: {"escalated": 0, "open": 1, "explained": 2}[x]),
+                  sorted((b["status"] for b in ov["breaks"]), key=lambda x: {"escalated": 0, "open": 1, "explained": 2, "dismissed": 3}[x]),
                   True)
+
+            print("\n=== A difference that was set aside is still shown ===")
+            aside = acct("Set aside")
+            await s.flush()
+            await holdings(aside, aaa=100, bbb=50)
+            await stmt(aside, [{"symbol": "AAA", "quantity": 90}, {"symbol": "BBB", "quantity": 50}], cash=10000)
+            ov = await rc.overview(s, firm.id, today=today)
+            row = next(a for a in ov["accounts"] if a["account"] == "Set aside")
+            check("before it is set aside the account has a break", (row["state"], row["open_breaks"]), ("breaks", 1))
+            (b,) = await breaks_of(aside)
+            await rc.resolve_break(s, firm.id, b.id, action="dismissed", note="Custodian confirmed a rounding lot",
+                                   by="ops@x")
+            ov2 = await rc.overview(s, firm.id, today=today)
+            row = next(a for a in ov2["accounts"] if a["account"] == "Set aside")
+            check("set aside, nobody is chasing it, so the account reads reconciled", row["state"], "reconciled")
+            check("but the account says how many differences are set aside",
+                  (row["open_breaks"], row["explained_breaks"], row["set_aside_breaks"]), (0, 0, 1))
+            shown = next(x for x in ov2["breaks"] if x["id"] == str(b.id))
+            check("the break is still listed, with who set it aside and why",
+                  (shown["status"], shown["resolved_by"], shown["resolution_note"]),
+                  ("dismissed", "ops@x", "Custodian confirmed a rounding lot"))
+            check("it does not count as open", ov2["summary"]["open_breaks"], ov["summary"]["open_breaks"] - 1)
+            check("the summary counts what was set aside", ov2["summary"]["set_aside_breaks"], 1)
+            check("and it is not counted among the causes needing someone",
+                  ov2["summary"]["by_cause"].get("unexplained", 0), ov["summary"]["by_cause"].get("unexplained", 0) - 1)
+            check("set-aside breaks are listed after the ones that need someone",
+                  [x["status"] for x in ov2["breaks"]][-1], "dismissed")
 
             print("\n=== The tools and the routes ===")
             check("reading changes nothing", TOOLS["read_reconciliation"].change_state, ToolChangeState.NO)

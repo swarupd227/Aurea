@@ -482,7 +482,8 @@ def _break_row(b: ReconBreak, accounts: dict, instruments: dict, households: dic
 
 
 async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | None = None) -> dict:
-    """Every account's reconciliation state, and the breaks that need someone."""
+    """Every account's reconciliation state, and its breaks: the ones that need someone first, then
+    explained ones, then differences that were set aside with a reason."""
     today = today or utcnow().date()
     accounts = (await session.execute(
         select(Account).where(Account.firm_id == firm_id).order_by(Account.name))).scalars().all()
@@ -494,7 +495,7 @@ async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | N
         select(CustodyStatement).where(CustodyStatement.firm_id == firm_id, CustodyStatement.status == "current")
     )).scalars().all()}
     breaks = (await session.execute(
-        select(ReconBreak).where(ReconBreak.firm_id == firm_id, ReconBreak.status.in_(OPEN_STATUSES))
+        select(ReconBreak).where(ReconBreak.firm_id == firm_id, ReconBreak.status.in_(ACTIVE_STATUSES))
     )).scalars().all()
     by_account: dict[uuid.UUID, list[ReconBreak]] = {}
     for b in breaks:
@@ -515,12 +516,16 @@ async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | N
             "custodian": a.custodian, "currency": a.currency, "state": state,
             "statement_as_of": st.as_of.isoformat() if st else None, "statement_age_days": age,
             "statement_source": st.source_document if st else None,
-            "open_breaks": len(needs), "explained_breaks": len(mine) - len(needs),
+            "open_breaks": len(needs),
+            "explained_breaks": sum(1 for b in mine if str(b.status) == "explained"),
+            # A difference someone set aside is still a difference: the account stays reconciled
+            # only in the sense that nobody is chasing it, and it is counted here so it is seen.
+            "set_aside_breaks": sum(1 for b in mine if str(b.status) == "dismissed"),
             "cash": (st.result or {}).get("cash") if st else None,
             "not_comparable": (st.result or {}).get("not_comparable", []) if st else [],
         })
     rows.sort(key=lambda r: ((r["household"] or "~").lower(), (r["account"] or "").lower()))
-    rank = {"escalated": 0, "open": 1, "explained": 2}
+    rank = {"escalated": 0, "open": 1, "explained": 2, "dismissed": 3}
     shown = sorted(breaks, key=lambda b: (rank.get(str(b.status), 3), -abs(_f(b.difference))))
     by_cause: dict[str, int] = {}
     for b in breaks:
@@ -532,6 +537,7 @@ async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | N
         "summary": {"accounts": len(accounts), **counts,
                     "open_breaks": sum(1 for b in breaks if str(b.status) in ("open", "escalated")),
                     "explained_breaks": sum(1 for b in breaks if str(b.status) == "explained"),
+                    "set_aside_breaks": sum(1 for b in breaks if str(b.status) == "dismissed"),
                     "by_cause": by_cause, "fresh_within_days": STATEMENT_FRESH_DAYS},
     }
 

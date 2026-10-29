@@ -6,7 +6,7 @@ import { Card, Empty, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import {
-  BREAK_STATUS_TONE, CAUSE_TEXT, KIND_TEXT, STATE_TEXT, STEP_TEXT, figure,
+  BREAK_STATUS_TEXT, BREAK_STATUS_TONE, CAUSE_TEXT, KIND_TEXT, STATE_TEXT, STEP_TEXT, figure,
 } from "@/app/workspace/components/artifacts/ReconciliationCard";
 
 const NEEDS_NOTE = ["dismissed", "resolved"];
@@ -15,6 +15,7 @@ const ALLOWED: Record<string, string[]> = {
   open: ["explained", "escalated", "dismissed", "resolved"],
   explained: ["escalated", "dismissed", "resolved"],
   escalated: ["dismissed", "resolved"],
+  dismissed: [],
 };
 
 function parsePositions(text: string): { symbol: string; quantity: number }[] {
@@ -116,6 +117,7 @@ export default function Reconciliation() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5" data-testid="recon-causes">
             <span className="chip text-ink-muted">statements count for {s.fresh_within_days} days</span>
+            {s.set_aside_breaks > 0 && <span className="chip text-ink-muted" data-testid="recon-set-aside-count">{s.set_aside_breaks} set aside</span>}
             {Object.entries(s.by_cause as Record<string, number>).map(([c, n]) => (
               <span key={c} className="chip text-ink-muted">{CAUSE_TEXT[c] ?? c} · {n}</span>
             ))}
@@ -181,7 +183,7 @@ export default function Reconciliation() {
       </Card>
 
       <h2 className="mb-2 text-sm font-medium text-ink">Breaks</h2>
-      {data.breaks.length === 0 ? <Empty>No open breaks.</Empty> : (
+      {data.breaks.length === 0 ? <Empty>No breaks.</Empty> : (
         <Card className="mb-4 overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="recon-breaks">
@@ -205,12 +207,17 @@ export default function Reconciliation() {
                         <div className="text-xs text-ink-muted">{b.household ? `${b.household} · ` : ""}{b.account}{b.custodian ? ` · ${b.custodian}` : ""}</div>
                       </td>
                       <td className="px-4 py-2 text-right font-mono tabular-nums text-ink-muted">
-                        {f.book} · {f.custodian} · <span className={b.status === "explained" ? "text-ink-muted" : "text-crit"}>{f.diff}</span>
+                        {f.book} · {f.custodian} · <span className={b.status === "explained" || b.status === "dismissed" ? "text-ink-muted" : "text-crit"}>{f.diff}</span>
                       </td>
                       <td className="px-4 py-2">
                         <span className="chip text-ink-muted">{CAUSE_TEXT[b.cause] ?? b.cause}{b.confidence > 0 ? ` · ${(b.confidence * 100).toFixed(0)}%` : ""}</span>
                         <span className="chip ml-1 text-ink-muted">{STEP_TEXT[b.next_step] ?? b.next_step}</span>
-                        <span className={`chip ml-1 ${BREAK_STATUS_TONE[b.status]}`}>{b.status}</span>
+                        <span className={`chip ml-1 ${BREAK_STATUS_TONE[b.status]}`}>{BREAK_STATUS_TEXT[b.status] ?? b.status}</span>
+                        {b.status === "dismissed" && (
+                          <div className="mt-1 max-w-sm text-xs text-ink-muted" data-testid="recon-set-aside-reason">
+                            {b.resolved_by}{b.resolution_note ? ` · ${b.resolution_note}` : ""}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-2 font-mono text-xs tabular-nums text-ink-muted">{b.times_seen}× since {b.first_seen}</td>
                       <td className="px-4 py-2 text-right">
@@ -253,7 +260,7 @@ export default function Reconciliation() {
                 <th className="px-4 py-2 font-medium">Account</th>
                 <th className="px-4 py-2 font-medium">State</th>
                 <th className="px-4 py-2 font-medium">Statement</th>
-                <th className="px-4 py-2 text-right font-medium">Open · explained</th>
+                <th className="px-4 py-2 text-right font-medium">Open · explained · set aside</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border-soft">
@@ -267,6 +274,7 @@ export default function Reconciliation() {
                     </td>
                     <td className="px-4 py-2">
                       <span className={`chip ${st.tone}`}>{st.text}</span>
+                      {a.set_aside_breaks > 0 && <span className="chip ml-1 text-ink-muted">{a.set_aside_breaks} set aside</span>}
                       {a.not_comparable.length > 0 && <span className="chip ml-1 text-warn">{a.not_comparable.join(", ")} not comparable</span>}
                       {a.cash && a.cash !== "compared" && <span className="chip ml-1 text-ink-muted">cash {a.cash.replace(/_/g, " ")}</span>}
                     </td>
@@ -274,7 +282,7 @@ export default function Reconciliation() {
                       {a.statement_as_of ? `${a.statement_as_of} · ${a.statement_age_days}d` : "—"}
                       {a.statement_source && <div className="max-w-xs truncate font-sans text-ink-muted" title={a.statement_source}>{a.statement_source}</div>}
                     </td>
-                    <td className="px-4 py-2 text-right font-mono tabular-nums text-ink-muted">{a.open_breaks} · {a.explained_breaks}</td>
+                    <td className="px-4 py-2 text-right font-mono tabular-nums text-ink-muted">{a.open_breaks} · {a.explained_breaks} · {a.set_aside_breaks}</td>
                   </tr>
                 );
               })}
