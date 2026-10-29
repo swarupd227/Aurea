@@ -67,6 +67,7 @@ export function MeetingView({ id }: { id: string }) {
             {m.household_name && <span className={chip}>{m.household_name}</span>}
             {m.scheduled_at && <span className={`${chip} tabular-nums`}>{new Date(m.scheduled_at).toLocaleString()}</span>}
             <StatusBadge status={m.status} />
+            {m.date_passed && <span className="chip bg-warn-bg text-warn" data-testid="meeting-date-passed">Date passed, not held</span>}
           </>
         }
       />

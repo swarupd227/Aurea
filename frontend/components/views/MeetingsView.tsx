@@ -13,6 +13,7 @@ export function MeetingsView() {
   const { data, loading, error, refetch } = useApi<any[]>("/api/engage/meetings");
   const [showNew, setShowNew] = useState(false);
   const briefed = (data || []).filter((m) => m.brief?.agenda).length;
+  const passed = (data || []).filter((m) => m.date_passed).length;
   return (
     <div className="view-container">
       <ViewHeader
@@ -21,6 +22,7 @@ export function MeetingsView() {
           <>
             <span className={chip}>{data.length} meetings</span>
             <span className={chip}>{briefed} briefed</span>
+            {passed > 0 && <span className="chip bg-warn-bg text-warn" data-testid="meetings-date-passed">{passed} date passed</span>}
           </>
         ) : null}
         actions={<button className="btn-primary" data-testid="meeting-new" onClick={() => setShowNew(true)}><Plus size={16} /> New meeting</button>}
@@ -46,6 +48,7 @@ export function MeetingsView() {
                   </span>
                 </span>
                 {m.brief?.agenda && <span className={`${chip} hidden cq-sm:inline-flex`}>brief</span>}
+                {m.date_passed && <span className="chip bg-warn-bg text-warn">date passed</span>}
                 <StatusBadge status={m.status} />
                 <ChevronRight size={16} className="shrink-0 text-ink-faint transition-colors group-hover:text-ink" aria-hidden />
               </ViewLink>

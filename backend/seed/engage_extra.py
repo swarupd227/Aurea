@@ -16,7 +16,10 @@ from app.models.enums import MeetingStatus, ReportStatus
 from app.models.graph import Household
 from app.models.tenant import Firm
 
-NOW = datetime(2026, 6, 24, tzinfo=timezone.utc)  # deterministic; matches the demo "today"
+# Meeting dates are offsets from the day the seed runs. A fixed date made every "upcoming" meeting
+# months overdue on a book seeded later; meeting_dates_backfill.py moves the ones seeded that way.
+SEEDED_FROM = datetime(2026, 6, 24, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
 # (title, status, days_from_now)
 MEETINGS = [

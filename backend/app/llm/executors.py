@@ -1257,6 +1257,7 @@ class ToolExecutors:
         """The Meetings page's list, with each meeting's brief, transcript and captured notes
         (api.engage.list_meetings / get_meeting). Only this firm's meetings, and a household is
         read back inside the firm before it filters anything."""
+        from app.core.db import utcnow
         from app.models.engagement import Meeting
 
         stmt = select(Meeting).where(Meeting.firm_id == self.firm_id)
@@ -1270,6 +1271,7 @@ class ToolExecutors:
         names = {h.id: h.name for h in (await self.session.execute(
             select(Household).where(Household.firm_id == self.firm_id))).scalars().all()}
         limit = self._limit(inputs.get("limit"), 20, 50)
+        now = utcnow()
         meetings = []
         for m in rows[:limit]:
             brief, notes = m.brief or {}, m.notes or {}
@@ -1277,6 +1279,8 @@ class ToolExecutors:
                 "id": str(m.id), "title": m.title, "household_id": str(m.household_id),
                 "household_name": names.get(m.household_id), "status": str(m.status),
                 "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
+                # Not held, and its time has gone by - so not upcoming, whatever the status says.
+                "date_passed": m.date_passed(now),
                 "brief_prepared": bool(brief.get("agenda")), "agenda": brief.get("agenda") or [],
                 "watch_items": [w.get("title") for w in brief.get("watch_items") or [] if isinstance(w, dict)],
                 "has_transcript": bool((m.transcript or "").strip()),
@@ -1286,10 +1290,16 @@ class ToolExecutors:
         by_status: dict[str, int] = {}
         for m in rows:
             by_status[str(m.status)] = by_status.get(str(m.status), 0) + 1
+        passed = sum(1 for m in rows if m.date_passed(now))
+        upcoming = sum(1 for m in rows if m.scheduled_at is not None and str(m.status) != "completed"
+                       and not m.date_passed(now))
         return {
             "meetings": meetings, "shown": len(meetings), "total": len(rows), "by_status": by_status,
+            "upcoming": upcoming, "date_passed": passed, "as_of": now.date().isoformat(),
             "message": (f"{len(rows)} meeting(s)" + (f"; showing {len(meetings)}" if len(meetings) < len(rows) else "")
-                        + (f" - {', '.join(f'{n} {s}' for s, n in sorted(by_status.items()))}." if rows else ".")),
+                        + (f" - {', '.join(f'{n} {s}' for s, n in sorted(by_status.items()))}" if rows else "")
+                        + f". {upcoming} upcoming"
+                        + (f"; {passed} not held although the date has passed" if passed else "") + "."),
         }
 
     async def read_provenance(self, inputs: dict[str, Any]) -> dict[str, Any]:

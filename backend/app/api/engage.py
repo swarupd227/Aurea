@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_firm
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
-from app.core.db import get_db
+from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
 from app.models.client_experience import Message
 from app.models.engagement import ClientReport, Meeting, Task
@@ -30,6 +30,7 @@ def _meeting_dict(m: Meeting, household_name: str | None = None) -> dict:
         "id": str(m.id), "household_id": str(m.household_id), "household_name": household_name,
         "title": m.title, "status": m.status,
         "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
+        "date_passed": m.date_passed(utcnow()),
         "brief": m.brief, "transcript": m.transcript, "notes": m.notes,
     }
 

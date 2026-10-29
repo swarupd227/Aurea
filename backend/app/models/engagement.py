@@ -33,6 +33,13 @@ class Meeting(Base):
     # Structured notes (summary, decisions, sentiment) from the Companion.
     notes: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    def date_passed(self, now: datetime) -> bool:
+        """Not held yet, and its time has gone by: not an upcoming meeting, whatever its status."""
+        when = self.scheduled_at
+        if when is None or str(self.status) == MeetingStatus.COMPLETED.value:
+            return False
+        return (when if when.tzinfo else when.replace(tzinfo=now.tzinfo)) < now
+
 
 class Task(Base):
     __tablename__ = "task"

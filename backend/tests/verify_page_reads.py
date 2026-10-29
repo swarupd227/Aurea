@@ -184,16 +184,31 @@ async def behaviour() -> None:
                           brief={"agenda": ["Drift", "Goals"]}, transcript="We talked.",
                           notes={"summary": ["ok"], "sentiment": "positive", "action_items": ["Send pack"]}))
             s.add(Meeting(id=uuid.uuid4(), firm_id=mine.id, household_id=hh_other.id, title="Intro"))
+            from datetime import timedelta
+            from app.core.db import utcnow
+            s.add(Meeting(id=uuid.uuid4(), firm_id=mine.id, household_id=hh_other.id, title="Missed check-in",
+                          scheduled_at=utcnow() - timedelta(days=90), status="prepped"))
+            s.add(Meeting(id=uuid.uuid4(), firm_id=mine.id, household_id=hh_other.id, title="Next check-in",
+                          scheduled_at=utcnow() + timedelta(days=5)))
+            s.add(Meeting(id=uuid.uuid4(), firm_id=mine.id, household_id=hh_mine.id, title="Last year's review",
+                          scheduled_at=utcnow() - timedelta(days=300), status="completed"))
             s.add(Meeting(id=uuid.uuid4(), firm_id=theirs.id, household_id=hh_theirs.id, title="Theirs"))
             await s.commit()
             mt = await ex(R.ADVISER).execute("read_meetings", {})
-            check("this firm's meetings only", sorted(x["title"] for x in mt["meetings"]), ["Annual review", "Intro"])
+            check("this firm's meetings only", sorted(x["title"] for x in mt["meetings"]),
+                  ["Annual review", "Intro", "Last year's review", "Missed check-in", "Next check-in"])
+            passed = {x["title"]: x["date_passed"] for x in mt["meetings"]}
+            check("a meeting not held whose date has gone by says so",
+                  (passed["Missed check-in"], passed["Next check-in"], passed["Last year's review"]), (True, False, False))
+            check("  and is not counted as upcoming", (mt["upcoming"], mt["date_passed"]), (1, 1))
+            check("  and the sentence says so", "1 not held although the date has passed" in mt["message"], True)
             review = next(x for x in mt["meetings"] if x["title"] == "Annual review")
             check("a meeting says whether it was briefed, and its agenda", (review["brief_prepared"], review["agenda"]), (True, ["Drift", "Goals"]))
             check("whether a transcript is on file, and the follow-ups", (review["has_transcript"], review["action_items"]), (True, ["Send pack"]))
             check("and names its client", review["household_name"], "Chen Family")
             one = await ex(R.ADVISER).execute("read_meetings", {"household_id": str(hh_other.id)})
-            check("a household filters to its own", [x["title"] for x in one["meetings"]], ["Intro"])
+            check("a household filters to its own", sorted(x["title"] for x in one["meetings"]),
+                  ["Intro", "Missed check-in", "Next check-in"])
             try:
                 await ex(R.ADVISER).execute("read_meetings", {"household_id": str(hh_theirs.id)})
                 check("another firm's household is refused", "read", "refused")
