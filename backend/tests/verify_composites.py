@@ -140,13 +140,25 @@ async def main() -> int:
         print("\n=== composite_report: seasoning/minimum exclusions, gross return, dispersion, std dev ===")
         composite = Composite(id=uuid.uuid4(), firm_id=firm.id, model_portfolio_id=model.id,
                               name="Growth Composite", inclusion_criteria="All discretionary Growth accounts.",
-                              creation_date=date(2020, 1, 1), seasoning_days=90, minimum_account_size=Decimal("1000"))
-        s.add(composite)
+                              creation_date=date(2020, 1, 1), seasoning_days=90, minimum_account_size=Decimal("1000"),
+                              created_at=now - timedelta(days=100))
+        # Built today from the same book: every account it found is back-book, so none waits.
+        built_today = Composite(id=uuid.uuid4(), firm_id=firm.id, model_portfolio_id=model.id,
+                                name="Growth Composite (new)", inclusion_criteria="All discretionary Growth accounts.",
+                                creation_date=date(2020, 1, 1), seasoning_days=90, created_at=now + timedelta(seconds=1))
+        s.add_all([composite, built_today])
         await s.flush()
+
+        fresh = await engine.composite_report(s, built_today)
+        check("a composite built from the existing book includes its accounts at once",
+              fresh["accounts_excluded_unseasoned"], [])
+        check("  and says when it was built and how long a later account waits",
+              (fresh["seasoning_days"], fresh["constructed_on"]), (90, (now + timedelta(seconds=1)).date().isoformat()))
 
         report = await engine.composite_report(s, composite)
         check("only the two seasoned, above-minimum accounts qualify", report["accounts_included"], 2)
-        check("the unseasoned account is named as excluded", report["accounts_excluded_unseasoned"], ["A3 Unseasoned"])
+        check("an account opened after the composite was built waits out its seasoning",
+              report["accounts_excluded_unseasoned"], ["A3 Unseasoned"])
         check("the below-minimum account is named as excluded", report["accounts_excluded_below_minimum"], ["A4 Below Minimum"])
         check("the advisory account on the same model is not in the composite",
               "A6 Advisory" in [p["account_name"] for p in report["accounts"]], False)

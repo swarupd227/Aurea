@@ -34,6 +34,19 @@ from app.models.tenant import Firm
 log = get_logger("aurea.seed.composites_backfill")
 
 TODAY = date.today()
+SEASONING_DAYS = 90
+
+
+def criteria_for(model_name: str) -> str:
+    """What a seeded composite says it includes. composite_report applies exactly this."""
+    return (
+        f"All discretionary, fee-paying accounts managed to the '{model_name}' model "
+        "for the full reporting period, from the date of firm inception. Accounts already "
+        "on the model at composite construction are included immediately (this composite "
+        "is being built from an existing back-book, not accumulating from a cold start); "
+        f"a new account joining after construction is seasoned {SEASONING_DAYS} days before inclusion. "
+        "No minimum account size."
+    )
 
 
 async def _ensure_spy(s, firm_id) -> Instrument | None:
@@ -92,22 +105,11 @@ async def backfill() -> None:
 
                 s.add(Composite(
                     firm_id=firm.id, model_portfolio_id=model.id, name=f"{model.name} Composite",
-                    inclusion_criteria=(
-                        f"All discretionary, fee-paying accounts managed to the '{model.name}' model "
-                        "for the full reporting period, from the date of firm inception. Accounts already "
-                        "on the model at composite construction are included immediately (this composite "
-                        "is being built from an existing back-book, not accumulating from a cold start); "
-                        "a new account joining after construction is seasoned 90 days before inclusion. "
-                        "No minimum account size."
-                    ),
-                    # A freshly-seeded demo book has every account created within the last
-                    # few days — a 90-day seasoning window applied from day one would
-                    # exclude every account and make the composite look empty rather than
-                    # under-seasoned. 0 days here reflects that this composite is being
-                    # constructed today from the firm's existing accounts; a genuinely new
-                    # account opened after this point still seasons normally (the rule
-                    # itself, and its exclusion path, is unchanged and fully tested).
-                    creation_date=TODAY, seasoning_days=0,
+                    inclusion_criteria=criteria_for(model.name),
+                    # The accounts seeded with the book are back-book and count at once;
+                    # composite_report seasons only an account opened after this row.
+                    # composite_seasoning_backfill.py corrects composites seeded with 0 days.
+                    creation_date=TODAY, seasoning_days=SEASONING_DAYS,
                     minimum_account_size=None, status="active",
                 ))
                 created += 1

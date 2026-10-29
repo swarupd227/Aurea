@@ -143,6 +143,11 @@ async def composite_report(session: AsyncSession, composite: Composite) -> dict:
 
     now = utcnow()
     seasoning_cutoff = now - timedelta(days=composite.seasoning_days)
+    # Seasoning is for an account that joins after the composite was built. One the firm already
+    # managed when it was built is part of the back-book the composite was built from. The
+    # platform records when an account was opened, not when its mandate moved onto this model,
+    # so an older account moved onto the model later is counted as back-book.
+    constructed = _aware(composite.created_at) or now
     qualifying, excluded_unseasoned, excluded_small = [], [], []
     value_of: dict[uuid.UUID, float] = {}
     for a in accounts:
@@ -154,7 +159,7 @@ async def composite_report(session: AsyncSession, composite: Composite) -> dict:
             excluded_small.append(a.name)
             continue
         created = _aware(a.created_at)
-        if created is not None and created > seasoning_cutoff:
+        if created is not None and created > constructed and created > seasoning_cutoff:
             excluded_unseasoned.append(a.name)
             continue
         qualifying.append(a)
@@ -211,6 +216,8 @@ async def composite_report(session: AsyncSession, composite: Composite) -> dict:
         "strategy": model.name if model else None,
         "inclusion_criteria": composite.inclusion_criteria,
         "creation_date": composite.creation_date.isoformat(),
+        "seasoning_days": composite.seasoning_days,
+        "constructed_on": constructed.date().isoformat(),
         "accounts_included": len(qualifying),
         "accounts_excluded_unseasoned": excluded_unseasoned,
         "accounts_excluded_below_minimum": excluded_small,
