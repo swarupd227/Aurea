@@ -19,13 +19,16 @@ from app.models.enums import AgentKey, AutonomyTier, UserRole
 R = UserRole
 
 # Agents a sentence cannot start, and why. Each is page-first today: it needs an inbound book batch
-# or a recorded meeting that a sentence cannot name, or it has its own tool.
+# a sentence cannot name, or it has its own tool.
 NOT_FROM_CONVERSATION: dict[AgentKey, str] = {
     AgentKey.ABANDONMENT_RECOVERY: "it belongs to the onboarding desk - run it from the Onboarding page",
     AgentKey.BOOK_INTEGRATION: "it works on an inbound book batch - run it from Book integration",
-    AgentKey.MEETING_COMPANION: "it works on a recorded meeting - run it from Meetings",
     AgentKey.BILLING: "billing has its own tool - ask to prepare a billing run",
 }
+
+# The agents that work on one meeting, named by the meeting's id (read_meetings). Meeting prep can
+# also run on a household alone; the companion needs the meeting, because it reads its transcript.
+MEETING_AGENTS: frozenset[AgentKey] = frozenset({AgentKey.MEETING_PREP, AgentKey.MEETING_COMPANION})
 
 # Who may start an agent. Everyone below holds the Cockpit's Delegate bar today; the compliance
 # and research agents are added for the people whose job they are. Administrators configure the
@@ -46,6 +49,7 @@ _ONLY_RUN_ROLES: dict[AgentKey, frozenset[UserRole]] = {
     AgentKey.CONDUCT_SURVEILLANCE: frozenset({R.COMPLIANCE}),
     AgentKey.REVERSE_CHURNING: frozenset({R.COMPLIANCE}),
     **{k: frozenset({R.ADVISER, R.OPERATIONS, R.COMPLIANCE}) for k in CASE_AGENTS},
+    AgentKey.MEETING_COMPANION: frozenset({R.ADVISER, R.PARAPLANNER}),
 }
 
 # What an agent needs to be pointed at. Anything not listed here may run firm-wide, which is
@@ -54,6 +58,7 @@ SUBJECT_REQUIRED: dict[AgentKey, str] = {
     AgentKey.DRIFT_REBALANCING: "mandate",
     AgentKey.RESEARCH_REPORTING: "household",
     AgentKey.MEETING_PREP: "household",
+    AgentKey.MEETING_COMPANION: "meeting",
     **{k: "onboarding_case" for k in CASE_AGENTS},
 }
 

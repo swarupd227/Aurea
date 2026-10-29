@@ -485,19 +485,21 @@ TOOLS: dict[str, Tool] = {
             "decision; give recommendation_id to bring one to the top), clients (the client list), client (one "
             "household; give household_id), billing (the run awaiting approval, held and unpaid bills; give "
             "invoice_id to open one bill), valuations (private holdings and their stated values), onboarding (the "
-            "onboarding board) or onboarding_case (one case; give case_id). It returns no data and states nothing - "
-            "answer first, then open the view when seeing it would help. An id must come from a tool you called "
-            "earlier in this turn (search_households, read_household, read_recommendations, read_billing, "
-            "explain_invoice, read_onboarding_cases); an id from memory or an earlier turn is refused."
+            "onboarding board), onboarding_case (one case; give case_id), meetings (the meeting list) or meeting (one "
+            "meeting's brief, transcript and notes; give meeting_id). It returns no data and states nothing - answer "
+            "first, then open the view when seeing it would help. An id must come from a tool you called earlier in "
+            "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
+            "read_onboarding_cases, read_meetings); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding or onboarding_case", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings or meeting", required=True),
             ToolInput("household_id", "uuid", "For client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
+            ToolInput("meeting_id", "uuid", "For meeting: the meeting, as read_meetings returned it this turn", required=False),
         ],
         output=ToolOutput("object", "The view's route - nothing about what it shows"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
@@ -565,6 +567,21 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.OPERATIONS, UserRole.COMPLIANCE, UserRole.ADVISER, UserRole.ADMIN},
     ),
 
+    "read_meetings": Tool(
+        key="read_meetings",
+        name="Read Meetings",
+        speaking_agent="astra",
+        description="Client meetings, newest first: title, client, when, status, whether a brief has been prepared and its agenda, whether a transcript is on file, and the notes and follow-ups captured from it. Give a household to see only its meetings.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "Only this household's meetings (from search_households)", required=False),
+            ToolInput("limit", "number", "Max meetings to return (default 20, at most 50)", required=False),
+        ],
+        output=ToolOutput("object", "Meetings with their brief, transcript and captured notes"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.ADMIN},
+    ),
+
     "read_provenance": Tool(
         key="read_provenance",
         name="Read Provenance",
@@ -589,7 +606,9 @@ TOOLS: dict[str, Tool] = {
             "proposal for a human to decide. Whether it may act on its own is the autonomy tier the firm set, shown on the "
             "confirmation. Give the agent_key (call read_agents if unsure) and, where the agent works on one client, the "
             "household_id (find it with search_households) or mandate_id; an onboarding agent works on one case, so give "
-            "its case_id (from read_onboarding_cases) - never guess an id. Agents you can start: "
+            "its case_id (from read_onboarding_cases); the meeting companion works on one meeting's transcript, and "
+            "meeting prep can prepare a particular meeting, so give its meeting_id (from read_meetings) - never guess an "
+            "id. Agents you can start: "
             + ", ".join(agent_runs.conversation_agent_keys()) + "."
         ),
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
@@ -602,6 +621,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("household_id", "uuid", "The household the run is about (from search_households)", required=False),
             ToolInput("mandate_id", "uuid", "The mandate the run is about (drift_rebalancing works on a mandate)", required=False),
             ToolInput("case_id", "uuid", "The onboarding case an onboarding agent works on (from read_onboarding_cases)", required=False),
+            ToolInput("meeting_id", "uuid", "The meeting meeting_prep or meeting_companion works on (from read_meetings)", required=False),
         ],
         output=ToolOutput("object", "The run's beats, any proposals it put forward, and the tier it ran at"),
         roles_required=set(agent_runs.ANY_RUN_ROLES),
@@ -877,6 +897,8 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "valuations": ("/studio/valuations", "Valuations", {_PT, _O, _C, _B}),
     "onboarding": ("/studio/onboarding", "Onboarding", {_O, _C, _A}),
     "onboarding_case": ("/studio/onboarding", "Onboarding case", {_O, _C, _A}),
+    "meetings": ("/studio/meetings", "Meetings", {_A, _P}),
+    "meeting": ("/studio/meetings", "Meeting", {_A, _P}),
 }
 
 

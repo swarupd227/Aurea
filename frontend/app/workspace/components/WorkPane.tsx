@@ -13,6 +13,8 @@ import { BillingView } from "@/components/views/BillingView";
 import { ValuationsView } from "@/components/views/ValuationsView";
 import { OnboardingView } from "@/components/views/OnboardingView";
 import { OnboardingCaseView } from "@/components/views/OnboardingCaseView";
+import { MeetingsView } from "@/components/views/MeetingsView";
+import { MeetingView } from "@/components/views/MeetingView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
 
@@ -54,6 +56,10 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <OnboardingView />;
     case "onboarding_case":
       return pane.id ? <OnboardingCaseView key={pane.id} id={pane.id} /> : null;
+    case "meetings":
+      return <MeetingsView />;
+    case "meeting":
+      return pane.id ? <MeetingView key={pane.id} id={pane.id} /> : null;
   }
 }
 

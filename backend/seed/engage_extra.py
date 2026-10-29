@@ -52,10 +52,11 @@ def _notes() -> dict:
 
 
 def _brief() -> dict:
+    # No portfolio figure: a seeded brief never valued the book, and a 0 would read as one.
+    # meeting_brief_backfill.py removes the 0 earlier seeds wrote.
     return {"agenda": ["Portfolio review & positioning vs the house view",
                        "Progress against goals — am I on track?", "Cash, liquidity & upcoming needs"],
-            "watch_items": [], "goals": [], "house_views": [], "life_events": [],
-            "portfolio": {"total_value": 0}}
+            "watch_items": [], "goals": [], "house_views": [], "life_events": []}
 
 
 def _sections(title: str, hh: str) -> list[dict]:

@@ -41,6 +41,7 @@ PAGES = {
     "read_capacity": "/studio/capacity",
     "read_analytics": "/studio/analytics",
     "read_onboarding_cases": "/studio/onboarding",
+    "read_meetings": "/studio/meetings",
     "read_provenance": "/provenance",
 }
 
@@ -169,6 +170,35 @@ async def behaviour() -> None:
             check("all includes the approved case", sorted(x["prospect_name"] for x in allc["cases"]), ["Done Person", "Ngata Trust"])
             check("the other firm sees only its own", [x["prospect_name"] for x in
                   (await ex(R.OPERATIONS, theirs).execute("read_onboarding_cases", {}))["cases"]], ["Their Prospect"])
+
+            print("\n=== Meetings ===")
+            # Households only here: the capacity checks above count a firm with none.
+            from app.models.engagement import Meeting
+            from app.models.graph import Household
+            hh_mine = Household(id=uuid.uuid4(), firm_id=mine.id, name="Chen Family")
+            hh_other = Household(id=uuid.uuid4(), firm_id=mine.id, name="Patel Family")
+            hh_theirs = Household(id=uuid.uuid4(), firm_id=theirs.id, name="Their Client")
+            s.add_all([hh_mine, hh_other, hh_theirs])
+            await s.flush()
+            s.add(Meeting(id=uuid.uuid4(), firm_id=mine.id, household_id=hh_mine.id, title="Annual review",
+                          brief={"agenda": ["Drift", "Goals"]}, transcript="We talked.",
+                          notes={"summary": ["ok"], "sentiment": "positive", "action_items": ["Send pack"]}))
+            s.add(Meeting(id=uuid.uuid4(), firm_id=mine.id, household_id=hh_other.id, title="Intro"))
+            s.add(Meeting(id=uuid.uuid4(), firm_id=theirs.id, household_id=hh_theirs.id, title="Theirs"))
+            await s.commit()
+            mt = await ex(R.ADVISER).execute("read_meetings", {})
+            check("this firm's meetings only", sorted(x["title"] for x in mt["meetings"]), ["Annual review", "Intro"])
+            review = next(x for x in mt["meetings"] if x["title"] == "Annual review")
+            check("a meeting says whether it was briefed, and its agenda", (review["brief_prepared"], review["agenda"]), (True, ["Drift", "Goals"]))
+            check("whether a transcript is on file, and the follow-ups", (review["has_transcript"], review["action_items"]), (True, ["Send pack"]))
+            check("and names its client", review["household_name"], "Chen Family")
+            one = await ex(R.ADVISER).execute("read_meetings", {"household_id": str(hh_other.id)})
+            check("a household filters to its own", [x["title"] for x in one["meetings"]], ["Intro"])
+            try:
+                await ex(R.ADVISER).execute("read_meetings", {"household_id": str(hh_theirs.id)})
+                check("another firm's household is refused", "read", "refused")
+            except ExecutorError:
+                check("another firm's household is refused", "refused", "refused")
 
             print("\n=== Provenance ===")
             p = await ex(R.COMPLIANCE).execute("read_provenance", {})

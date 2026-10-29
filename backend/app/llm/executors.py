@@ -85,6 +85,7 @@ class ToolExecutors:
             "read_capacity": self.read_capacity,
             "read_analytics": self.read_analytics,
             "read_onboarding_cases": self.read_onboarding_cases,
+            "read_meetings": self.read_meetings,
             "read_provenance": self.read_provenance,
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
@@ -889,6 +890,27 @@ class ToolExecutors:
         need = agent_runs.SUBJECT_REQUIRED.get(key)
         household_in, mandate_in, case_in = inputs.get("household_id"), inputs.get("mandate_id"), inputs.get("case_id")
         household = mandate = None
+        meeting_in = inputs.get("meeting_id")
+        if need == "meeting" or meeting_in:
+            from app.models.engagement import Meeting
+
+            if key not in agent_runs.MEETING_AGENTS:
+                raise ExecutorError(f"{name} does not work on a meeting.")
+            if not meeting_in:
+                raise ExecutorError(f"{name} works on one meeting. Give a meeting_id (read_meetings).")
+            mtid = _parse_uuid(meeting_in, "meeting_id")
+            meeting = (await self.session.execute(
+                select(Meeting).where(Meeting.id == mtid, Meeting.firm_id == self.firm_id)
+            )).scalar_one_or_none()
+            if meeting is None:
+                raise ExecutorError(f"Meeting {mtid} not found or access denied.")
+            if key == AgentKey.MEETING_COMPANION and not (meeting.transcript or "").strip():
+                raise ExecutorError(f"{meeting.title} has no transcript yet - add one on the meeting first.")
+            hh = await self.session.get(Household, meeting.household_id)
+            tier, guardrails = await policy.resolve_tier(self.session, self.firm_id, key, None)
+            return {"key": key, "name": name, "firm": firm, "mandate_type": None, "tier": str(tier),
+                    "guardrails": guardrails,
+                    "subject": Subject("meeting", meeting.id, f"{meeting.title} · {hh.name}" if hh else meeting.title)}
         if need == "onboarding_case" or case_in:
             from app.models.onboarding import OnboardingCase
 
@@ -1083,6 +1105,7 @@ class ToolExecutors:
 
         from app.core.tools import OPEN_VIEWS
         from app.models.billing import Invoice
+        from app.models.engagement import Meeting
         from app.models.governance import Recommendation
         from app.models.onboarding import OnboardingCase
 
@@ -1097,7 +1120,7 @@ class ToolExecutors:
         seen = json.dumps([t.get("result") for t in (turn or [])], default=str)
 
         finder = {Household: "search_households", Recommendation: "read_recommendations", Invoice: "read_billing",
-                  OnboardingCase: "read_onboarding_cases"}
+                  OnboardingCase: "read_onboarding_cases", Meeting: "read_meetings"}
 
         async def grounded(field: str, model) -> uuid.UUID:
             value = _parse_uuid(inputs.get(field) or "", field)
@@ -1118,6 +1141,8 @@ class ToolExecutors:
             route = f"{route}?invoice={await grounded('invoice_id', Invoice)}"
         elif view == "onboarding_case":
             route = f"{route}/{await grounded('case_id', OnboardingCase)}"
+        elif view == "meeting":
+            route = f"{route}/{await grounded('meeting_id', Meeting)}"
 
         return {"view": route, "kind": view, "message": f"The {label} view is open beside the conversation."}
 
@@ -1224,6 +1249,45 @@ class ToolExecutors:
             "summary": summary,
             "message": (f"{summary['open']} open onboarding case(s) of {total}; {summary['blocked']} blocked, "
                         f"{summary['sla_breached']} past their SLA, {summary['ready_to_activate']} ready to activate."),
+        }
+
+    async def read_meetings(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The Meetings page's list, with each meeting's brief, transcript and captured notes
+        (api.engage.list_meetings / get_meeting). Only this firm's meetings, and a household is
+        read back inside the firm before it filters anything."""
+        from app.models.engagement import Meeting
+
+        stmt = select(Meeting).where(Meeting.firm_id == self.firm_id)
+        if inputs.get("household_id"):
+            hid = _parse_uuid(inputs["household_id"], "household_id")
+            hh = await self.session.get(Household, hid)
+            if hh is None or hh.firm_id != self.firm_id:
+                raise ExecutorError(f"Household {hid} not found or access denied")
+            stmt = stmt.where(Meeting.household_id == hid)
+        rows = (await self.session.execute(stmt.order_by(Meeting.created_at.desc()))).scalars().all()
+        names = {h.id: h.name for h in (await self.session.execute(
+            select(Household).where(Household.firm_id == self.firm_id))).scalars().all()}
+        limit = self._limit(inputs.get("limit"), 20, 50)
+        meetings = []
+        for m in rows[:limit]:
+            brief, notes = m.brief or {}, m.notes or {}
+            meetings.append({
+                "id": str(m.id), "title": m.title, "household_id": str(m.household_id),
+                "household_name": names.get(m.household_id), "status": str(m.status),
+                "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
+                "brief_prepared": bool(brief.get("agenda")), "agenda": brief.get("agenda") or [],
+                "watch_items": [w.get("title") for w in brief.get("watch_items") or [] if isinstance(w, dict)],
+                "has_transcript": bool((m.transcript or "").strip()),
+                "notes_captured": bool(notes.get("summary")), "sentiment": notes.get("sentiment"),
+                "action_items": notes.get("action_items") or [],
+            })
+        by_status: dict[str, int] = {}
+        for m in rows:
+            by_status[str(m.status)] = by_status.get(str(m.status), 0) + 1
+        return {
+            "meetings": meetings, "shown": len(meetings), "total": len(rows), "by_status": by_status,
+            "message": (f"{len(rows)} meeting(s)" + (f"; showing {len(meetings)}" if len(meetings) < len(rows) else "")
+                        + (f" - {', '.join(f'{n} {s}' for s, n in sorted(by_status.items()))}." if rows else ".")),
         }
 
     async def read_provenance(self, inputs: dict[str, Any]) -> dict[str, Any]:

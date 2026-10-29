@@ -107,7 +107,9 @@ async def behaviour() -> None:
             s.add(bill)
             from app.models.onboarding import OnboardingCase
             ocase = OnboardingCase(id=uuid.uuid4(), firm_id=mine.id, prospect_name="Daniel Okonkwo")
-            s.add(ocase)
+            from app.models.engagement import Meeting
+            meet = Meeting(id=uuid.uuid4(), firm_id=mine.id, household_id=chen.id, title="Annual review")
+            s.add_all([ocase, meet])
             await s.commit()
 
             def ex(role, f=mine):
@@ -181,6 +183,15 @@ async def behaviour() -> None:
             await refused("a case view with no id", ex(R.OPERATIONS).open_view({"view": "onboarding_case"}, turn=cased))
             await refused("the other firm cannot open this firm's case",
                           ex(R.OPERATIONS, theirs).open_view({"view": "onboarding_case", "case_id": str(ocase.id)}, turn=cased))
+            check("meetings opens for a paraplanner", (await ex(R.PARAPLANNER).open_view({"view": "meetings"}))["view"], "/studio/meetings")
+            await refused("operations has no meetings view", ex(R.OPERATIONS).open_view({"view": "meetings"}))
+            met = [{"tool_key": "read_meetings", "inputs": {}, "result": {"meetings": [{"id": str(meet.id)}]}}]
+            mv = await ex(R.ADVISER).open_view({"view": "meeting", "meeting_id": str(meet.id)}, turn=met)
+            check("a meeting read this turn opens", mv["view"], f"/studio/meetings/{meet.id}")
+            await refused("a meeting not read this turn",
+                          ex(R.ADVISER).open_view({"view": "meeting", "meeting_id": str(meet.id)}, turn=searched))
+            await refused("the other firm cannot open this firm's meeting",
+                          ex(R.ADVISER, theirs).open_view({"view": "meeting", "meeting_id": str(meet.id)}, turn=met))
 
             print("\n=== The gateway passes the turn ===")
             gw = Gateway(s, uuid.uuid4(), R.ADVISER, mine.id)
