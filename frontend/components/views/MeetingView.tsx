@@ -32,7 +32,8 @@ export function MeetingView({ id }: { id: string }) {
   if (error || !m) return <Card><ErrorState what="this meeting" message={error ?? "Not found"} onRetry={refetch} /></Card>;
   const brief = m.brief || {};
   const notes = m.notes || {};
-  const who = `${m.title} with ${m.household_name ?? "the client"}`;
+  // A seeded title already names the client ("… — The Patel Household"); don't name them twice.
+  const who = m.household_name && !m.title.includes(m.household_name) ? `${m.title} with ${m.household_name}` : m.title;
 
   async function runPrep() {
     if (nav.say) return nav.say(withRef(`Prepare the brief for ${who}.`, "meeting", id));

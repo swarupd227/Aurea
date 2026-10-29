@@ -910,7 +910,9 @@ class ToolExecutors:
             tier, guardrails = await policy.resolve_tier(self.session, self.firm_id, key, None)
             return {"key": key, "name": name, "firm": firm, "mandate_type": None, "tier": str(tier),
                     "guardrails": guardrails,
-                    "subject": Subject("meeting", meeting.id, f"{meeting.title} · {hh.name}" if hh else meeting.title)}
+                    # A title that already names the client is not given the client's name twice.
+                    "subject": Subject("meeting", meeting.id, f"{meeting.title} · {hh.name}"
+                                       if hh and hh.name not in meeting.title else meeting.title)}
         if need == "onboarding_case" or case_in:
             from app.models.onboarding import OnboardingCase
 

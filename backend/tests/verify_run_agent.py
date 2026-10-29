@@ -201,7 +201,7 @@ async def scenarios(Session) -> None:
         from app.models.engagement import Meeting
         meeting = Meeting(id=uuid.uuid4(), firm_id=firm.id, household_id=hh.id, title="Annual review",
                           transcript="We discussed the trust.")
-        silent = Meeting(id=uuid.uuid4(), firm_id=firm.id, household_id=hh.id, title="Intro call")
+        silent = Meeting(id=uuid.uuid4(), firm_id=firm.id, household_id=hh.id, title="Intro call — Chen Family")
         foreign_meeting = Meeting(id=uuid.uuid4(), firm_id=other.id, household_id=foreign_hh.id, title="Theirs")
         s.add_all([meeting, silent, foreign_meeting])
         # The firm has put both agents at Tier 3 - the case where one confirmation could mean execution.
@@ -305,6 +305,7 @@ async def scenarios(Session) -> None:
         ev = await ask(adviser, tprep, "run_agent", {"agent_key": "meeting_prep", "meeting_id": str(silent.id)})
         pp = next((e for e in ev if e["type"] == "pending_action"), None)
         check("meeting prep can prepare a particular meeting", (pp or {}).get("preview", {}).get("subject_type"), "meeting")
+        check("  a title that names the client does not name them twice", (pp or {}).get("preview", {}).get("subject_label"), "Intro call — Chen Family")
         check("  and nothing ran", await count(AgentRun), 0)
         tc = await refused(adviser, {}, "billing, which has its own tool", agent="billing")
         check("  and points to the billing tool", "billing run" in tc.error, True)
