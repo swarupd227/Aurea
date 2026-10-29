@@ -82,20 +82,25 @@ async def main() -> int:
         # A discretionary mandate with NO model -> its account should show up as
         # "uncaptured" in the firm-definition check.
         mandate_unmodeled = Mandate(id=uuid.uuid4(), firm_id=firm.id, name="M-unmodeled", mandate_type="discretionary")
-        s.add_all([mandate, mandate_unmodeled])
+        # An ADVISORY mandate on the same model: the client decides, so it is never in the composite.
+        mandate_advisory = Mandate(id=uuid.uuid4(), firm_id=firm.id, name="M-advisory", mandate_type="advisory",
+                                   model_portfolio_id=model.id)
+        s.add_all([mandate, mandate_unmodeled, mandate_advisory])
         await s.flush()
 
         a1 = Account(id=uuid.uuid4(), firm_id=firm.id, mandate_id=mandate.id, name="A1 Seasoned AAA",
                      currency="USD", cash_balance=Decimal("0"), created_at=seasoned)
         a2 = Account(id=uuid.uuid4(), firm_id=firm.id, mandate_id=mandate.id, name="A2 Seasoned BBB",
-                     currency="USD", cash_balance=Decimal("0"), created_at=seasoned)
+                     currency="USD", cash_balance=Decimal("300"), created_at=seasoned)
         a3 = Account(id=uuid.uuid4(), firm_id=firm.id, mandate_id=mandate.id, name="A3 Unseasoned",
                      currency="USD", cash_balance=Decimal("0"), created_at=unseasoned)
         a4 = Account(id=uuid.uuid4(), firm_id=firm.id, mandate_id=mandate.id, name="A4 Below Minimum",
                      currency="USD", cash_balance=Decimal("0"), created_at=seasoned)
         a5 = Account(id=uuid.uuid4(), firm_id=firm.id, mandate_id=mandate_unmodeled.id, name="A5 Uncaptured",
                      currency="USD", cash_balance=Decimal("5000"), created_at=seasoned)
-        s.add_all([a1, a2, a3, a4, a5])
+        a6 = Account(id=uuid.uuid4(), firm_id=firm.id, mandate_id=mandate_advisory.id, name="A6 Advisory",
+                     currency="USD", cash_balance=Decimal("0"), created_at=seasoned)
+        s.add_all([a1, a2, a3, a4, a5, a6])
         await s.flush()
 
         s.add_all([
@@ -107,6 +112,8 @@ async def main() -> int:
                     quantity=Decimal("10"), market_value=Decimal("1210"), cost_basis=Decimal("1000")),
             Holding(firm_id=firm.id, account_id=a4.id, instrument_id=aaa.id,
                     quantity=Decimal("1"), market_value=Decimal("121"), cost_basis=Decimal("100")),
+            Holding(firm_id=firm.id, account_id=a6.id, instrument_id=bbb.id,
+                    quantity=Decimal("500"), market_value=Decimal("36000"), cost_basis=Decimal("50000")),
         ])
         await s.flush()
 
@@ -141,8 +148,11 @@ async def main() -> int:
         check("only the two seasoned, above-minimum accounts qualify", report["accounts_included"], 2)
         check("the unseasoned account is named as excluded", report["accounts_excluded_unseasoned"], ["A3 Unseasoned"])
         check("the below-minimum account is named as excluded", report["accounts_excluded_below_minimum"], ["A4 Below Minimum"])
-        check("composite assets = A1 + A2 market value", report["composite_assets"], 19300.0)
-        # gross = (12100*0.10 + 7200*-0.20) / 19300 = -230/19300
+        check("the advisory account on the same model is not in the composite",
+              "A6 Advisory" in [p["account_name"] for p in report["accounts"]], False)
+        check("composite assets = A1 + A2 holdings and cash, as the firm check values them",
+              report["composite_assets"], 19600.0)
+        # gross = (12100*0.10 + 7200*-0.20) / 19300 = -230/19300 - weighted by the invested value
         check("gross return (latest period, asset-weighted)", report["gross_return"], round(-230 / 19300, 4))
         check("net return is honestly absent, not estimated", report["net_return"], None)
         check("internal dispersion is a real positive number", report["internal_dispersion"] > 0, True)
@@ -189,11 +199,14 @@ async def main() -> int:
 
         print("\n=== firm_definition_check: catches discretionary AUM not captured in any composite ===")
         fd = await engine.firm_definition_check(s, firm.id)
-        check("discretionary AUM includes all 5 accounts", fd["discretionary_aum"], 12100 + 7200 + 1210 + 121 + 5000)
+        check("discretionary AUM includes the 5 discretionary accounts, not the advisory one",
+              fd["discretionary_aum"], 12100 + 7200 + 300 + 1210 + 121 + 5000)
         check("composite-eligible AUM excludes the unmodeled mandate's account",
-              fd["composite_eligible_aum"], 12100 + 7200 + 1210 + 121)
+              fd["composite_eligible_aum"], 12100 + 7200 + 300 + 1210 + 121)
         check("uncaptured AUM equals the unmodeled account's value", fd["uncaptured_aum"], 5000.0)
         check("firm definition is not clean", fd["clean"], False)
+        check("the composites never hold more than the firm's discretionary assets",
+              report["composite_assets"] <= fd["composite_eligible_aum"], True)
 
         print(f"\n{'=' * 64}\n{len(PASS)} passed, {len(FAIL)} failed")
         for f in FAIL:

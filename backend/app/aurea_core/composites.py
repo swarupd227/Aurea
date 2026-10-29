@@ -125,11 +125,15 @@ async def benchmark_changes(session: AsyncSession, model: ModelPortfolio) -> lis
 
 async def composite_report(session: AsyncSession, composite: Composite) -> dict:
     from app.aurea_core import performance
+    from app.models.enums import MandateType
 
     model = await session.get(ModelPortfolio, composite.model_portfolio_id)
+    # Only discretionary mandates: an advisory account on the same model is the client's own
+    # decisions, which GIPS keeps out of a composite - and out of the firm definition check.
     mandates = (await session.execute(
         select(Mandate).where(
-            Mandate.firm_id == composite.firm_id, Mandate.model_portfolio_id == composite.model_portfolio_id
+            Mandate.firm_id == composite.firm_id, Mandate.model_portfolio_id == composite.model_portfolio_id,
+            Mandate.mandate_type == MandateType.DISCRETIONARY,
         )
     )).scalars().all()
     mandate_ids = [m.id for m in mandates]
@@ -140,6 +144,7 @@ async def composite_report(session: AsyncSession, composite: Composite) -> dict:
     now = utcnow()
     seasoning_cutoff = now - timedelta(days=composite.seasoning_days)
     qualifying, excluded_unseasoned, excluded_small = [], [], []
+    value_of: dict[uuid.UUID, float] = {}
     for a in accounts:
         value = float(a.cash_balance or 0) + sum(
             float(h.market_value or 0) for h in
@@ -153,19 +158,24 @@ async def composite_report(session: AsyncSession, composite: Composite) -> dict:
             excluded_unseasoned.append(a.name)
             continue
         qualifying.append(a)
+        value_of[a.id] = value
 
     per_account = []
     for a in qualifying:
         series = await account_return_series(session, a.id)
         per_account.append({"account_id": str(a.id), "account_name": a.name, **series})
 
+    # Composite assets are valued as the firm definition check values them (holdings and cash),
+    # so the composites can be read against the firm's discretionary total. Returns are weighted
+    # by the invested value each one was measured on.
+    composite_assets = sum(value_of[a.id] for a in qualifying)
     latest = [(p["account_value"], p["returns"][-1]) for p in per_account if p["returns"]]
-    composite_assets = sum(v for v, _ in latest)
-    gross_return = round(sum(v * r for v, r in latest) / composite_assets, 4) if composite_assets else None
+    weight = sum(v for v, _ in latest)
+    gross_return = round(sum(v * r for v, r in latest) / weight, 4) if weight else None
 
     dispersion = None
-    if len(latest) >= 2 and composite_assets and gross_return is not None:
-        variance = sum(v * (r - gross_return) ** 2 for v, r in latest) / composite_assets
+    if len(latest) >= 2 and weight and gross_return is not None:
+        variance = sum(v * (r - gross_return) ** 2 for v, r in latest) / weight
         dispersion = round(variance ** 0.5, 4)
 
     series = _composite_series(per_account)
