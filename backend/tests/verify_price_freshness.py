@@ -266,7 +266,9 @@ async def main() -> int:
                 h = dq["households"][0]
                 check("the household rests on a stale, a placeholder and a missing price",
                       h["untrusted_prices"], ["NOPRICE", "PPEF1", "STALE"])
-                check("its oldest price is named", (h["price_age_days"], h["stalest_symbol"]), (290, "PPEF1"))
+                # The admin view dates prices against the real clock, not the test's fixed day.
+                check("its oldest price is named", (h["price_age_days"], h["stalest_symbol"]),
+                      ((date.today() - (today - timedelta(days=290))).days, "PPEF1"))
                 check("an untrusted price makes it critical however recent the feed run", h["health"], "red")
 
                 print("\n=== The schedules the page shows are the ones the worker runs ===")

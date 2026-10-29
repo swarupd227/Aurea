@@ -73,6 +73,8 @@ _AGENTS = [
      "Detects stalled onboarding cases and drafts an adviser nudge."),
     ("billing", "Billing", "agent", "Head of Operations", "high",
      "Works out each fee, proposes the billing run, and on approval issues bills and takes them from client cash — a wrong fee is a client reimbursement and a named exam topic."),
+    ("reconciliation", "Reconciliation", "agent", "Head of Operations", "medium",
+     "Re-checks custodian statements against the book and proposes which breaks to escalate to the custodian and which to accept as explained. Never changes the book and never escalates without operations or the portfolio team approving."),
 ]
 
 _TOOLS = [

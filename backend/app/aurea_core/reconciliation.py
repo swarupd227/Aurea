@@ -396,11 +396,17 @@ async def reconcile(session: AsyncSession, firm_id: uuid.UUID, stmt: CustodyStat
         elif changed:
             history.append({"at": now.isoformat(), "by": "reconciliation", "event": "figures_changed",
                             "difference": float(diff_value)})
+        # Checking the same statement again (the agent's recheck) is not seeing the break again.
+        again = row.statement_id != stmt.id
         row.statement_id = stmt.id
         row.kind, row.book_value, row.custodian_value, row.difference = d["kind"], d["book"], d["custodian"], diff_value
+        if verdict["cause"] != row.cause:
+            history.append({"at": now.isoformat(), "by": "reconciliation", "event": "cause_changed",
+                            "was": row.cause, "now": verdict["cause"]})
         row.cause, row.confidence, row.next_step, row.evidence = (
             verdict["cause"], verdict["confidence"], verdict["next_step"], verdict["evidence"])
-        row.last_seen, row.times_seen, row.history = stmt.as_of, int(row.times_seen or 1) + 1, history
+        row.last_seen, row.history = stmt.as_of, history
+        row.times_seen = int(row.times_seen or 1) + (1 if again else 0)
         refreshed += 1
 
     # A break the statement no longer shows has cleared - unless this statement could not speak to it.
@@ -434,6 +440,73 @@ async def reconcile(session: AsyncSession, firm_id: uuid.UUID, stmt: CustodyStat
     stmt.result = summary
     await session.flush()
     return summary
+
+
+# ── the agent's view: what has changed, and what needs a person ─────────────
+
+# A timing difference should be gone within a settlement cycle. One still on a statement struck this
+# many days after it first appeared did not clear, and is no longer timing.
+TIMING_GRACE_DAYS = 5
+TIMING_CAUSES = ("settlement_timing", "fee_timing")
+# Why the agent puts a break in front of a person, and what it proposes doing with it.
+REASONS = {
+    "unexplained": "escalated",          # nothing on the book accounts for it: take it to the custodian
+    "timing_not_cleared": "escalated",   # it was timing, but a later statement still shows it
+    "entitlement_to_post": "explained",  # the cause is known; the entitlement needs posting here
+    "unmapped_security": "explained",    # the cause is known; the instrument needs mapping here
+}
+
+
+async def recheck(session: AsyncSession, firm_id: uuid.UUID, *, today: date | None = None) -> dict:
+    """Compare every account's current statement with the book again. The book on the statement's
+    date can change after the fact - an entitlement posted late, a correction - so a break may have
+    cleared or changed cause without any new statement arriving. Nothing in the book is touched."""
+    stmts = (await session.execute(
+        select(CustodyStatement).where(CustodyStatement.firm_id == firm_id, CustodyStatement.status == "current")
+    )).scalars().all()
+    cleared = opened = 0
+    for st in stmts:
+        out = await reconcile(session, firm_id, st, today=today)
+        cleared += out["breaks"]["cleared"]
+        opened += out["breaks"]["opened"]
+    return {"statements": len(stmts), "cleared": cleared, "opened": opened}
+
+
+async def needs_attention(session: AsyncSession, firm_id: uuid.UUID, *, today: date | None = None) -> dict:
+    """The open breaks a person should decide on, each with the agent's proposed action, and the
+    ones it is leaving to clear by themselves. Escalated, explained and set-aside breaks already have
+    a decision and are not raised again."""
+    today = today or utcnow().date()
+    rows = (await session.execute(
+        select(ReconBreak).where(ReconBreak.firm_id == firm_id, ReconBreak.status == "open")
+    )).scalars().all()
+    accounts = {a.id: a for a in (await session.execute(
+        select(Account).where(Account.firm_id == firm_id))).scalars().all()}
+    households = await households_of(session, list(accounts.values()))
+    items, waiting = [], []
+    for b in rows:
+        lingered = (b.last_seen - b.first_seen).days
+        if b.cause in TIMING_CAUSES:
+            if lingered <= TIMING_GRACE_DAYS:
+                waiting.append(str(b.id))
+                continue
+            reason = "timing_not_cleared"
+        elif b.cause == "corporate_action_pending":
+            reason = "entitlement_to_post"
+        elif b.cause == "unmapped_security":
+            reason = "unmapped_security"
+        else:
+            reason = "unexplained"
+        acc, hh = accounts.get(b.account_id), households.get(b.account_id)
+        items.append({
+            "break_id": str(b.id), "account": acc.name if acc else None, "household": hh[1] if hh else None,
+            "kind": b.kind, "symbol": b.symbol, "book": _f(b.book_value), "custodian": _f(b.custodian_value),
+            "difference": _f(b.difference), "currency": acc.currency if acc else None, "cause": b.cause,
+            "reason": reason, "action": REASONS[reason], "first_seen": b.first_seen.isoformat(),
+            "days_open": (today - b.first_seen).days,
+        })
+    items.sort(key=lambda i: (i["action"] != "escalated", -abs(i["difference"])))
+    return {"items": items, "waiting": waiting}
 
 
 # ── reading it back ──────────────────────────────────────────────────────────

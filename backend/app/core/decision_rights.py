@@ -42,6 +42,12 @@ CASH_MOVING_AGENTS: frozenset[str] = frozenset({AgentKey.BILLING.value})
 BILLING_APPROVERS: frozenset[UserRole] = frozenset({UserRole.OPERATIONS, UserRole.BRANCH_LEADER})
 BILLING_VETO: frozenset[UserRole] = frozenset({UserRole.COMPLIANCE})
 
+# Agents whose approved proposals record decisions on reconciliation breaks - escalating a
+# difference to a custodian. No money moves, but the decision belongs to the people who can take a
+# break to the custodian, the same people the reconciliation routes admit.
+RECON_AGENTS: frozenset[str] = frozenset({AgentKey.RECONCILIATION.value})
+RECON_DECIDERS: frozenset[UserRole] = frozenset({UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM})
+
 STAFF: frozenset[UserRole] = frozenset(r for r in UserRole if r != UserRole.CLIENT)
 
 
@@ -68,6 +74,11 @@ def roles_for(agent_key: str | AgentKey, decision: str) -> frozenset[UserRole]:
             return BILLING_APPROVERS
         if decision in (HumanAction.DISMISS.value, "rollback"):
             return BILLING_APPROVERS | BILLING_VETO
+        return frozenset()
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in RECON_AGENTS:
+        if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, HumanAction.DISMISS.value,
+                        "revise", "rollback"):
+            return RECON_DECIDERS
         return frozenset()
     if not moves_the_book(agent_key):
         return STAFF
@@ -108,6 +119,10 @@ def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> Non
                else "operations or a branch leader")
         raise DecisionForbidden(
             f"This run issues fees and takes them from client cash, so only {who} may {decision} it."
+        )
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in RECON_AGENTS:
+        raise DecisionForbidden(
+            f"This proposal decides reconciliation breaks, so only operations or the portfolio team may {decision} it."
         )
     if moves_the_book(agent_key):
         if decision in ("dismiss", "rollback"):

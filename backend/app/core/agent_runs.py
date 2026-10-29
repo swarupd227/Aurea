@@ -50,6 +50,7 @@ _ONLY_RUN_ROLES: dict[AgentKey, frozenset[UserRole]] = {
     AgentKey.REVERSE_CHURNING: frozenset({R.COMPLIANCE}),
     **{k: frozenset({R.ADVISER, R.OPERATIONS, R.COMPLIANCE}) for k in CASE_AGENTS},
     AgentKey.MEETING_COMPANION: frozenset({R.ADVISER, R.PARAPLANNER}),
+    AgentKey.RECONCILIATION: frozenset({R.OPERATIONS, R.PORTFOLIO_TEAM}),
 }
 
 # What an agent needs to be pointed at. Anything not listed here may run firm-wide, which is
@@ -113,8 +114,11 @@ def forced_to_proposal(agent_key: str | AgentKey) -> bool:
     at a proposal, whatever its autonomy tier. A tier decides what an agent may do on a schedule
     or on a page; it is not a licence to trade or take fees because a sentence was confirmed.
     The decision to approve stays with decision_rights - this only keeps the agent from
-    approving for itself."""
-    return decision_rights.moves_the_book(agent_key) or decision_rights.moves_client_cash(agent_key)
+    approving for itself. Escalating a reconciliation break to a custodian is held the same way:
+    nothing moves, but it is a judgement the agent proposes and a person makes."""
+    key = str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key)
+    return (decision_rights.moves_the_book(agent_key) or decision_rights.moves_client_cash(agent_key)
+            or key in decision_rights.RECON_AGENTS)
 
 
 def acts_on_its_own(agent_key: str | AgentKey, tier: str) -> bool:

@@ -155,6 +155,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Do we reconcile", prompt: "Do we reconcile against the custodians? Which accounts have breaks or no statement?" },
         { label: "Open breaks", prompt: "What reconciliation breaks are open, and what is the likely cause of each?" },
         { label: "No statement", prompt: "Which accounts have no custodian statement on file?" },
+        { label: "Work the queue", prompt: "Run the reconciliation agent over the open breaks." },
       ];
     case "/studio/valuations":
       return [{ label: "Private valuations", prompt: "What are the private holdings carried at, and which are overdue?" }, { label: "Price freshness", prompt: "How fresh are my prices?" }];

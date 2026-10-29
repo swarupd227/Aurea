@@ -81,6 +81,11 @@ DEFAULT_SCHEDULES: dict[str, tuple[str, str]] = {
         "0 3 * * *",
         "Supervises the recommendations made that day — surveillance that lags is not supervision.",
     ),
+    AgentKey.RECONCILIATION: (
+        "30 6 * * 1-5",
+        "Each business day, just after the morning price run, so the queue operations opens is "
+        "already sorted. Statements arrive on business days; a weekend run would find nothing new.",
+    ),
     AgentKey.CLIENT_CARE: (
         "0 6 * * *",
         "Volatility and at-risk signals are time-sensitive; before the adviser's day starts.",

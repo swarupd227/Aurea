@@ -37,6 +37,7 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
     from app.agents.custodian_account_opener import CustodianAccountOpenerAgent
     # Operations
     from app.agents.billing import BillingAgent
+    from app.agents.reconciliation import ReconciliationAgent
 
     agents: list[BaseAgent] = [
         OnboardingAgent(),
@@ -69,6 +70,7 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
         CustodianAccountOpenerAgent(),
         # Operations
         BillingAgent(),
+        ReconciliationAgent(),
     ]
     return {a.key: a for a in agents}
 

@@ -248,4 +248,16 @@ CATALOGUE: dict[str, dict] = {
                       "offset it. A bill with no cash behind it stays issued and unpaid - assets "
                       "are never sold to pay a fee.",
     },
+    AgentKey.RECONCILIATION: {
+        "name": "Reconciliation", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_2, "subject": "firm",
+        "senses": "Every account's current custodian statement against the book as it stood on the "
+                  "statement's date, and the open breaks with their likely causes.",
+        "acts": "Re-checks each statement so a late posting can clear a break, leaves settlement-timing "
+                "differences to clear on the next statement, and proposes what to do with the rest: "
+                "escalate to the custodian what nothing explains or what did not clear, accept as "
+                "explained what has a known cause to fix here.",
+        "checkpoint": "Operations or the portfolio team approves. Nothing in the book changes, and the "
+                      "agent never escalates on its own.",
+    },
 }

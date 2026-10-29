@@ -123,6 +123,7 @@ class AgentKey(StrEnum):
     CUSTODIAN_ACCOUNT_OPENER = "custodian_account_opener"
     # Operations
     BILLING = "billing"
+    RECONCILIATION = "reconciliation"
 
 
 class ActivityKind(StrEnum):

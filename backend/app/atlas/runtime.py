@@ -191,8 +191,9 @@ async def run_agent(
                 )
 
         closed = 0
-        if pools is not None and agent.expires_unraised and subject.id is None:
-            # A scan of the whole book that no longer finds a condition has resolved it.
+        if pools is not None and agent.expires_unraised and (subject.id is None or subject.type == "firm"):
+            # A scan of the whole book that no longer finds a condition has resolved it. The
+            # scheduler names the firm as a firm-wide run's subject, which is the same scan.
             for left in pools.values():
                 for rec in left:
                     await proposals.expire(session, rec, run_id=run.id,
