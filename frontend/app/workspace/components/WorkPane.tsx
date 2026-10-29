@@ -9,6 +9,7 @@ import { CockpitView } from "@/components/views/CockpitView";
 import { RecommendationsView } from "@/components/views/RecommendationsView";
 import { ClientsView } from "@/components/views/ClientsView";
 import { ClientView } from "@/components/views/ClientView";
+import { BillingView } from "@/components/views/BillingView";
 import { matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
 
@@ -42,6 +43,8 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <ClientsView />;
     case "client":
       return pane.id ? <ClientView key={pane.id} id={pane.id} /> : null;
+    case "billing":
+      return <BillingView focusInvoice={pane.query.invoice ?? null} />;
   }
 }
 
@@ -117,7 +120,7 @@ export function WorkPane({ pane }: { pane: PaneMatch }) {
             type="button"
             data-testid="pane-ask"
             onClick={() => {
-              setContextChip({ route, label: matchPaneView(route)?.label || title, id: pane.id ?? pane.query.rec });
+              setContextChip({ route, label: matchPaneView(route)?.label || title, id: pane.id ?? pane.query.rec ?? pane.query.invoice });
               setSheetHidden(true);
             }}
             className="flex h-7 shrink-0 items-center gap-1 rounded px-2 text-xs text-ink-muted transition-colors hover:bg-border-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"

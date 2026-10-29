@@ -482,17 +482,20 @@ TOOLS: dict[str, Tool] = {
         description=(
             "Open one of the workspace's views in the pane beside the conversation, so the person can look at it and "
             "work on it: cockpit (the day's proposals and agent activity), recommendations (the proposals waiting for a "
-            "decision; give recommendation_id to bring one to the top), clients (the client list) or client (one "
-            "household; give household_id). It returns no data and states nothing - answer first, then open the view "
+            "decision; give recommendation_id to bring one to the top), clients (the client list), client (one "
+            "household; give household_id) or billing (the run awaiting approval, held and unpaid bills; give "
+            "invoice_id to open one bill). It returns no data and states nothing - answer first, then open the view "
             "when seeing it would help. An id must come from a tool you called earlier in this turn (search_households, "
-            "read_household, read_recommendations); an id from memory or an earlier turn is refused."
+            "read_household, read_recommendations, read_billing, explain_invoice); an id from memory or an earlier "
+            "turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients or client", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client or billing", required=True),
             ToolInput("household_id", "uuid", "For client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
+            ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
         ],
         output=ToolOutput("object", "The view's route - nothing about what it shows"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
@@ -866,6 +869,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "recommendations": ("/studio/review", "Recommendations", {_A, _PT, _C}),
     "clients": ("/studio/clients", "Clients", {_A, _P, _PT, _R, _O, _B}),
     "client": ("/studio/clients", "Client", {_A, _P, _PT, _R, _O, _B}),
+    "billing": ("/studio/billing", "Billing", {_A, _C, _O, _B}),
 }
 
 

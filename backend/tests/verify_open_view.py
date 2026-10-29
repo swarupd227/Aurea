@@ -95,6 +95,16 @@ async def behaviour() -> None:
                                  tier="tier_2", status=RecommendationStatus.PROPOSED, title="t", summary="s",
                                  rationale="r", confidence=0.9, priority=1, payload={}, evidence={}, citations=[])
             s.add(rec)
+            await s.flush()
+            from datetime import date
+            from app.models.billing import BillingRun, Invoice
+            brun = BillingRun(id=uuid.uuid4(), firm_id=mine.id, as_of=date(2026, 9, 30))
+            s.add(brun)
+            await s.flush()
+            bill = Invoice(id=uuid.uuid4(), firm_id=mine.id, run_id=brun.id, mandate_name="Chen - Balanced",
+                           household_id=chen.id, household_name="Chen Family",
+                           period_start=date(2026, 7, 1), period_end=date(2026, 9, 30))
+            s.add(bill)
             await s.commit()
 
             def ex(role, f=mine):
@@ -125,7 +135,10 @@ async def behaviour() -> None:
             await refused("compliance has no cockpit", ex(R.COMPLIANCE).open_view({"view": "cockpit"}))
             await refused("compliance has no client list", ex(R.COMPLIANCE).open_view({"view": "clients"}))
             await refused("research has no recommendations view", ex(R.RESEARCH_CIO).open_view({"view": "recommendations"}))
-            await refused("an unknown view", ex(R.ADVISER).open_view({"view": "billing"}))
+            check("billing opens for operations", (await ex(R.OPERATIONS).open_view({"view": "billing"}))["view"], "/studio/billing")
+            check("and for compliance", (await ex(R.COMPLIANCE).open_view({"view": "billing"}))["view"], "/studio/billing")
+            await refused("a paraplanner has no billing view", ex(R.PARAPLANNER).open_view({"view": "billing"}))
+            await refused("an unknown view", ex(R.ADVISER).open_view({"view": "estate"}))
 
             print("\n=== An id only from this turn, and only this firm's ===")
             got = await ex(R.ADVISER).open_view({"view": "client", "household_id": str(chen.id)}, turn=searched)
@@ -144,6 +157,14 @@ async def behaviour() -> None:
                           ex(R.PORTFOLIO_TEAM).open_view({"view": "recommendations", "recommendation_id": str(rec.id)}, turn=searched))
             await refused("the other firm cannot open this firm's proposal",
                           ex(R.PORTFOLIO_TEAM, theirs).open_view({"view": "recommendations", "recommendation_id": str(rec.id)}, turn=listed))
+
+            billed = [{"tool_key": "explain_invoice", "inputs": {}, "result": {"id": str(bill.id), "number": None}}]
+            b = await ex(R.OPERATIONS).open_view({"view": "billing", "invoice_id": str(bill.id)}, turn=billed)
+            check("a bill a tool returned this turn opens", b["view"], f"/studio/billing?invoice={bill.id}")
+            await refused("a bill no tool returned this turn",
+                          ex(R.OPERATIONS).open_view({"view": "billing", "invoice_id": str(bill.id)}, turn=searched))
+            await refused("the other firm cannot open this firm's bill",
+                          ex(R.OPERATIONS, theirs).open_view({"view": "billing", "invoice_id": str(bill.id)}, turn=billed))
 
             print("\n=== The gateway passes the turn ===")
             gw = Gateway(s, uuid.uuid4(), R.ADVISER, mine.id)

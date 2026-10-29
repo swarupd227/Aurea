@@ -1064,6 +1064,7 @@ class ToolExecutors:
         import json
 
         from app.core.tools import OPEN_VIEWS
+        from app.models.billing import Invoice
         from app.models.governance import Recommendation
 
         view = str(inputs.get("view") or "").strip().lower()
@@ -1076,12 +1077,13 @@ class ToolExecutors:
 
         seen = json.dumps([t.get("result") for t in (turn or [])], default=str)
 
+        finder = {Household: "search_households", Recommendation: "read_recommendations", Invoice: "read_billing"}
+
         async def grounded(field: str, model) -> uuid.UUID:
             value = _parse_uuid(inputs.get(field) or "", field)
             if str(value) not in seen:
                 raise ExecutorError(
-                    f"{field} {value} did not come from a tool called this turn - look it up first "
-                    f"({'search_households' if model is Household else 'read_recommendations'}).")
+                    f"{field} {value} did not come from a tool called this turn - look it up first ({finder[model]}).")
             owned = (await self.session.execute(
                 select(model.id).where(model.id == value, model.firm_id == self.firm_id))).scalar_one_or_none()
             if owned is None:
@@ -1092,6 +1094,8 @@ class ToolExecutors:
             route = f"{route}/{await grounded('household_id', Household)}"
         elif view == "recommendations" and inputs.get("recommendation_id"):
             route = f"{route}?rec={await grounded('recommendation_id', Recommendation)}"
+        elif view == "billing" and inputs.get("invoice_id"):
+            route = f"{route}?invoice={await grounded('invoice_id', Invoice)}"
 
         return {"view": route, "kind": view, "message": f"The {label} view is open beside the conversation."}
 

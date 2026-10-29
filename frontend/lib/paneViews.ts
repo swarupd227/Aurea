@@ -8,7 +8,7 @@
 // (components/views), add it here, and render it in app/workspace/components/WorkPane.tsx.
 import { viewsForRole } from "./nav";
 
-export type PaneViewKey = "cockpit" | "recommendations" | "clients" | "client";
+export type PaneViewKey = "cockpit" | "recommendations" | "clients" | "client" | "billing";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -25,6 +25,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "recommendations", pattern: /^\/studio\/review\/?$/, base: "/studio/review", label: "Recommendations" },
   { key: "clients", pattern: /^\/studio\/clients\/?$/, base: "/studio/clients", label: "Clients" },
   { key: "client", pattern: /^\/studio\/clients\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/clients", label: "Client" },
+  { key: "billing", pattern: /^\/studio\/billing\/?$/, base: "/studio/billing", label: "Billing" },
 ];
 
 export interface PaneMatch {
@@ -35,7 +36,8 @@ export interface PaneMatch {
   label: string;
   /** The entity the view is about, if any: a household id. */
   id?: string;
-  /** Query parameters the view reads (Recommendations: `rec`, the proposal to bring to the top). */
+  /** Query parameters the view reads (Recommendations: `rec`, the proposal to bring to the top;
+   * Billing: `invoice`, the bill to open). */
   query: Record<string, string>;
 }
 
@@ -80,6 +82,13 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     }
     case "read_agents":
       return "/studio";
+    case "read_billing":
+      return r.scope === "household" && typeof r.household_id === "string" ? `/studio/clients/${r.household_id}` : "/studio/billing";
+    case "run_billing":
+      return "/studio/billing";
+    case "explain_invoice":
+    case "credit_invoice":
+      return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";
     case "search_households": {
       const hits = Array.isArray(r.results) ? r.results : [];
       return hits.length === 1 && hits[0]?.household_id ? `/studio/clients/${hits[0].household_id}` : hits.length ? "/studio/clients" : null;
