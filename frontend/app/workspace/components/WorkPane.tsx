@@ -10,7 +10,10 @@ import { RecommendationsView } from "@/components/views/RecommendationsView";
 import { ClientsView } from "@/components/views/ClientsView";
 import { ClientView } from "@/components/views/ClientView";
 import { BillingView } from "@/components/views/BillingView";
-import { matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
+import { ValuationsView } from "@/components/views/ValuationsView";
+import { OnboardingView } from "@/components/views/OnboardingView";
+import { OnboardingCaseView } from "@/components/views/OnboardingCaseView";
+import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
 
 /** A view that throws stays inside the pane; the conversation beside it keeps working. */
@@ -45,6 +48,12 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return pane.id ? <ClientView key={pane.id} id={pane.id} /> : null;
     case "billing":
       return <BillingView focusInvoice={pane.query.invoice ?? null} />;
+    case "valuations":
+      return <ValuationsView />;
+    case "onboarding":
+      return <OnboardingView />;
+    case "onboarding_case":
+      return pane.id ? <OnboardingCaseView key={pane.id} id={pane.id} /> : null;
   }
 }
 
@@ -73,12 +82,13 @@ export function WorkPane({ pane }: { pane: PaneMatch }) {
     [openView, pathname, say, setViewTitle, route]
   );
 
-  // A client opened straight from the conversation still has its list behind it.
+  // A client or a case opened straight from the conversation still has its list behind it.
   const { crumbs, synthetic } = useMemo(() => {
     const base = trail.length && trail[trail.length - 1] === route ? trail : [route];
     const first = matchPaneView(base[0]);
-    return first?.key === "client"
-      ? { crumbs: ["/studio/clients", ...base], synthetic: true }
+    const parent = first ? PANE_PARENT[first.key] : undefined;
+    return parent
+      ? { crumbs: [parent, ...base], synthetic: true }
       : { crumbs: base, synthetic: false };
   }, [trail, route]);
   const titleOf = (r: string) => titles[r] || matchPaneView(r)?.label || r;

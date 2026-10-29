@@ -483,19 +483,21 @@ TOOLS: dict[str, Tool] = {
             "Open one of the workspace's views in the pane beside the conversation, so the person can look at it and "
             "work on it: cockpit (the day's proposals and agent activity), recommendations (the proposals waiting for a "
             "decision; give recommendation_id to bring one to the top), clients (the client list), client (one "
-            "household; give household_id) or billing (the run awaiting approval, held and unpaid bills; give "
-            "invoice_id to open one bill). It returns no data and states nothing - answer first, then open the view "
-            "when seeing it would help. An id must come from a tool you called earlier in this turn (search_households, "
-            "read_household, read_recommendations, read_billing, explain_invoice); an id from memory or an earlier "
-            "turn is refused."
+            "household; give household_id), billing (the run awaiting approval, held and unpaid bills; give "
+            "invoice_id to open one bill), valuations (private holdings and their stated values), onboarding (the "
+            "onboarding board) or onboarding_case (one case; give case_id). It returns no data and states nothing - "
+            "answer first, then open the view when seeing it would help. An id must come from a tool you called "
+            "earlier in this turn (search_households, read_household, read_recommendations, read_billing, "
+            "explain_invoice, read_onboarding_cases); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client or billing", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding or onboarding_case", required=True),
             ToolInput("household_id", "uuid", "For client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
+            ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
         ],
         output=ToolOutput("object", "The view's route - nothing about what it shows"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
@@ -586,7 +588,8 @@ TOOLS: dict[str, Tool] = {
             "it never approves its own proposal, and an agent that would move a client's book or cash always stops at a "
             "proposal for a human to decide. Whether it may act on its own is the autonomy tier the firm set, shown on the "
             "confirmation. Give the agent_key (call read_agents if unsure) and, where the agent works on one client, the "
-            "household_id (find it with search_households) or mandate_id - never guess an id. Agents you can start: "
+            "household_id (find it with search_households) or mandate_id; an onboarding agent works on one case, so give "
+            "its case_id (from read_onboarding_cases) - never guess an id. Agents you can start: "
             + ", ".join(agent_runs.conversation_agent_keys()) + "."
         ),
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
@@ -598,6 +601,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("agent_key", "string", "Which agent to run, e.g. drift_rebalancing or next_best_action", required=True),
             ToolInput("household_id", "uuid", "The household the run is about (from search_households)", required=False),
             ToolInput("mandate_id", "uuid", "The mandate the run is about (drift_rebalancing works on a mandate)", required=False),
+            ToolInput("case_id", "uuid", "The onboarding case an onboarding agent works on (from read_onboarding_cases)", required=False),
         ],
         output=ToolOutput("object", "The run's beats, any proposals it put forward, and the tier it ran at"),
         roles_required=set(agent_runs.ANY_RUN_ROLES),
@@ -870,6 +874,9 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "clients": ("/studio/clients", "Clients", {_A, _P, _PT, _R, _O, _B}),
     "client": ("/studio/clients", "Client", {_A, _P, _PT, _R, _O, _B}),
     "billing": ("/studio/billing", "Billing", {_A, _C, _O, _B}),
+    "valuations": ("/studio/valuations", "Valuations", {_PT, _O, _C, _B}),
+    "onboarding": ("/studio/onboarding", "Onboarding", {_O, _C, _A}),
+    "onboarding_case": ("/studio/onboarding", "Onboarding case", {_O, _C, _A}),
 }
 
 

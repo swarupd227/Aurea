@@ -8,7 +8,8 @@
 // (components/views), add it here, and render it in app/workspace/components/WorkPane.tsx.
 import { viewsForRole } from "./nav";
 
-export type PaneViewKey = "cockpit" | "recommendations" | "clients" | "client" | "billing";
+export type PaneViewKey =
+  | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -26,7 +27,17 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "clients", pattern: /^\/studio\/clients\/?$/, base: "/studio/clients", label: "Clients" },
   { key: "client", pattern: /^\/studio\/clients\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/clients", label: "Client" },
   { key: "billing", pattern: /^\/studio\/billing\/?$/, base: "/studio/billing", label: "Billing" },
+  { key: "valuations", pattern: /^\/studio\/valuations\/?$/, base: "/studio/valuations", label: "Valuations" },
+  { key: "onboarding", pattern: /^\/studio\/onboarding\/?$/, base: "/studio/onboarding", label: "Onboarding" },
+  { key: "onboarding_case", pattern: /^\/studio\/onboarding\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/onboarding", label: "Onboarding case" },
 ];
+
+/** The list a single-item view sits under, so one opened straight from the conversation still has
+ * its list behind it in the pane's breadcrumbs. */
+export const PANE_PARENT: Partial<Record<PaneViewKey, string>> = {
+  client: "/studio/clients",
+  onboarding_case: "/studio/onboarding",
+};
 
 export interface PaneMatch {
   key: PaneViewKey;
@@ -34,7 +45,7 @@ export interface PaneMatch {
   route: string;
   base: string;
   label: string;
-  /** The entity the view is about, if any: a household id. */
+  /** The entity the view is about, if any: a household or onboarding case id. */
   id?: string;
   /** Query parameters the view reads (Recommendations: `rec`, the proposal to bring to the top;
    * Billing: `invoice`, the bill to open). */
@@ -86,6 +97,13 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
       return r.scope === "household" && typeof r.household_id === "string" ? `/studio/clients/${r.household_id}` : "/studio/billing";
     case "run_billing":
       return "/studio/billing";
+    case "read_private_valuations":
+    case "record_valuation":
+      return "/studio/valuations";
+    case "read_onboarding_cases": {
+      const cases = Array.isArray(r.cases) ? r.cases : [];
+      return cases.length === 1 && cases[0]?.id ? `/studio/onboarding/${cases[0].id}` : "/studio/onboarding";
+    }
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";

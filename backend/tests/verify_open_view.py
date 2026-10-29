@@ -105,6 +105,9 @@ async def behaviour() -> None:
                            household_id=chen.id, household_name="Chen Family",
                            period_start=date(2026, 7, 1), period_end=date(2026, 9, 30))
             s.add(bill)
+            from app.models.onboarding import OnboardingCase
+            ocase = OnboardingCase(id=uuid.uuid4(), firm_id=mine.id, prospect_name="Daniel Okonkwo")
+            s.add(ocase)
             await s.commit()
 
             def ex(role, f=mine):
@@ -165,6 +168,19 @@ async def behaviour() -> None:
                           ex(R.OPERATIONS).open_view({"view": "billing", "invoice_id": str(bill.id)}, turn=searched))
             await refused("the other firm cannot open this firm's bill",
                           ex(R.OPERATIONS, theirs).open_view({"view": "billing", "invoice_id": str(bill.id)}, turn=billed))
+
+            check("valuations opens for the portfolio team", (await ex(R.PORTFOLIO_TEAM).open_view({"view": "valuations"}))["view"], "/studio/valuations")
+            await refused("an adviser has no valuations view", ex(R.ADVISER).open_view({"view": "valuations"}))
+            check("the onboarding board opens for operations", (await ex(R.OPERATIONS).open_view({"view": "onboarding"}))["view"], "/studio/onboarding")
+            await refused("a portfolio team member has no onboarding view", ex(R.PORTFOLIO_TEAM).open_view({"view": "onboarding"}))
+            cased = [{"tool_key": "read_onboarding_cases", "inputs": {}, "result": {"cases": [{"id": str(ocase.id)}]}}]
+            o = await ex(R.OPERATIONS).open_view({"view": "onboarding_case", "case_id": str(ocase.id)}, turn=cased)
+            check("a case read this turn opens", o["view"], f"/studio/onboarding/{ocase.id}")
+            await refused("a case not read this turn",
+                          ex(R.OPERATIONS).open_view({"view": "onboarding_case", "case_id": str(ocase.id)}, turn=searched))
+            await refused("a case view with no id", ex(R.OPERATIONS).open_view({"view": "onboarding_case"}, turn=cased))
+            await refused("the other firm cannot open this firm's case",
+                          ex(R.OPERATIONS, theirs).open_view({"view": "onboarding_case", "case_id": str(ocase.id)}, turn=cased))
 
             print("\n=== The gateway passes the turn ===")
             gw = Gateway(s, uuid.uuid4(), R.ADVISER, mine.id)

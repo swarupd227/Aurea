@@ -145,7 +145,11 @@ async def scenarios(Session) -> None:
     check("compliance may start conduct surveillance", agent_runs.may_run(R.COMPLIANCE, AgentKey.CONDUCT_SURVEILLANCE), True)
     check("an adviser may not start conduct surveillance", agent_runs.may_run(R.ADVISER, AgentKey.CONDUCT_SURVEILLANCE), False)
     check("nobody starts billing from here", agent_runs.run_roles(AgentKey.BILLING), frozenset())
-    check("nor an onboarding-case agent", agent_runs.run_roles(AgentKey.CIP_IDENTITY_VERIFIER), frozenset())
+    check("an onboarding-case agent is started by the onboarding desk's roles",
+          agent_runs.run_roles(AgentKey.CIP_IDENTITY_VERIFIER), frozenset({R.ADVISER, R.OPERATIONS, R.COMPLIANCE}))
+    check("  not a paraplanner", agent_runs.may_run(R.PARAPLANNER, AgentKey.ONBOARDING_KYC_AML), False)
+    check("  and it needs a case", agent_runs.SUBJECT_REQUIRED[AgentKey.NIGO_PREVENTION], "onboarding_case")
+    check("operations now holds run_agent, for the case agents", "run_agent" in tools_for_role(R.OPERATIONS), True)
     check("a client may start nothing", agent_runs.runnable_agents(R.CLIENT), [])
     check("an administrator may start nothing", agent_runs.runnable_agents(R.ADMIN), [])
     check("drift is held to a proposal", agent_runs.forced_to_proposal(drift_key), True)
@@ -189,6 +193,11 @@ async def scenarios(Session) -> None:
         foreign_mandate = Mandate(id=uuid.uuid4(), firm_id=other.id, person_id=foreign_person.id, name="Their Mandate",
                                   mandate_type="discretionary", is_active=True, model_portfolio_id=uuid.uuid4())
         s.add_all([mandate, foreign_mandate])
+        from app.models.onboarding import OnboardingCase
+        case = OnboardingCase(id=uuid.uuid4(), firm_id=firm.id, prospect_name="Daniel Okonkwo")
+        closed_case = OnboardingCase(id=uuid.uuid4(), firm_id=firm.id, prospect_name="Done Already", status="approved")
+        foreign_case = OnboardingCase(id=uuid.uuid4(), firm_id=other.id, prospect_name="Their Prospect")
+        s.add_all([case, closed_case, foreign_case])
         # The firm has put both agents at Tier 3 - the case where one confirmation could mean execution.
         for k in (drift_key, nba_key):
             s.add(AutonomyPolicy(firm_id=firm.id, agent_key=k, mandate_type=None, tier=AutonomyTier.TIER_3, guardrails={}))
@@ -252,7 +261,25 @@ async def scenarios(Session) -> None:
         tc = await refused(adviser, {"mandate_id": str(foreign_mandate.id)}, "another firm's mandate")
         check("  and it reads as not found", "not found" in tc.error, True)
         await refused(adviser, {}, "no subject for a mandate agent")
-        await refused(adviser, {"household_id": str(hh.id)}, "an onboarding-case agent", agent="cip_identity_verifier")
+        tc = await refused(adviser, {"household_id": str(hh.id)}, "an onboarding-case agent given a household",
+                           agent="cip_identity_verifier")
+        check("  and asks for the case", "case_id" in tc.error, True)
+        tc = await refused(ops, {"case_id": str(foreign_case.id)}, "another firm's onboarding case", agent="nigo_prevention")
+        check("  and it reads as not found", "not found" in tc.error, True)
+        tc = await refused(ops, {"case_id": str(closed_case.id)}, "a closed onboarding case", agent="nigo_prevention")
+        check("  and says it is closed", "closed" in tc.error, True)
+        tc = await refused(adviser, {"case_id": str(case.id)}, "a case given to an agent that does not work on one")
+        check("  and says so", "does not work on an onboarding case" in tc.error, True)
+        await refused(paraplanner, {"case_id": str(case.id)}, "a role the onboarding desk is not", agent="nigo_prevention")
+
+        print("\n=== an onboarding agent on this firm's open case pauses like any other run ===")
+        tcase = await new_thread(ops)
+        ev = await ask(ops, tcase, "run_agent", {"agent_key": "nigo_prevention", "case_id": str(case.id)})
+        pcase = next((e for e in ev if e["type"] == "pending_action"), None)
+        check("operations is asked to confirm", pcase is not None, True)
+        check("  the card names the case", (pcase or {}).get("preview", {}).get("subject_label"), "Daniel Okonkwo")
+        check("  as an onboarding case", (pcase or {}).get("preview", {}).get("subject_type"), "onboarding_case")
+        check("  and nothing ran", await count(AgentRun), 0)
         tc = await refused(adviser, {}, "billing, which has its own tool", agent="billing")
         check("  and points to the billing tool", "billing run" in tc.error, True)
         tc = await refused(adviser, {}, "a role that may not start it", agent="conduct_surveillance")

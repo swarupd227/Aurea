@@ -18,16 +18,9 @@ from app.models.enums import AgentKey, AutonomyTier, UserRole
 
 R = UserRole
 
-# Agents a sentence cannot start, and why. Each is page-first today: it needs an onboarding case,
-# an inbound book batch or a recorded meeting that a sentence cannot name, or it has its own tool.
+# Agents a sentence cannot start, and why. Each is page-first today: it needs an inbound book batch
+# or a recorded meeting that a sentence cannot name, or it has its own tool.
 NOT_FROM_CONVERSATION: dict[AgentKey, str] = {
-    AgentKey.ONBOARDING_KYC_AML: "it works on an onboarding case - open the case to run it",
-    AgentKey.NIGO_PREVENTION: "it works on an onboarding case - open the case to run it",
-    AgentKey.ADVERSE_MEDIA_PEP: "it works on an onboarding case - open the case to run it",
-    AgentKey.EDD_SOW_NARRATOR: "it works on an onboarding case - open the case to run it",
-    AgentKey.ROLLOVER_PTE_DOCUMENTER: "it works on an onboarding case - open the case to run it",
-    AgentKey.CIP_IDENTITY_VERIFIER: "it works on an onboarding case - open the case to run it",
-    AgentKey.CUSTODIAN_ACCOUNT_OPENER: "it works on an onboarding case - open the case to run it",
     AgentKey.ABANDONMENT_RECOVERY: "it belongs to the onboarding desk - run it from the Onboarding page",
     AgentKey.BOOK_INTEGRATION: "it works on an inbound book batch - run it from Book integration",
     AgentKey.MEETING_COMPANION: "it works on a recorded meeting - run it from Meetings",
@@ -41,10 +34,18 @@ _DEFAULT_RUN_ROLES: frozenset[UserRole] = frozenset({R.ADVISER, R.PARAPLANNER, R
 _ALSO_RUN_ROLES: dict[AgentKey, frozenset[UserRole]] = {
     AgentKey.RESEARCH_REPORTING: frozenset({R.RESEARCH_CIO}),
 }
-# Supervision is compliance's job, not the advice desk's: these replace the default.
+# The agents that work on one onboarding case, named by the case's id (read_onboarding_cases).
+CASE_AGENTS: frozenset[AgentKey] = frozenset({
+    AgentKey.ONBOARDING_KYC_AML, AgentKey.NIGO_PREVENTION, AgentKey.ADVERSE_MEDIA_PEP,
+    AgentKey.EDD_SOW_NARRATOR, AgentKey.ROLLOVER_PTE_DOCUMENTER, AgentKey.CIP_IDENTITY_VERIFIER,
+    AgentKey.CUSTODIAN_ACCOUNT_OPENER,
+})
+# Supervision is compliance's job, not the advice desk's: these replace the default. A case agent
+# is started by the people the Onboarding page is for.
 _ONLY_RUN_ROLES: dict[AgentKey, frozenset[UserRole]] = {
     AgentKey.CONDUCT_SURVEILLANCE: frozenset({R.COMPLIANCE}),
     AgentKey.REVERSE_CHURNING: frozenset({R.COMPLIANCE}),
+    **{k: frozenset({R.ADVISER, R.OPERATIONS, R.COMPLIANCE}) for k in CASE_AGENTS},
 }
 
 # What an agent needs to be pointed at. Anything not listed here may run firm-wide, which is
@@ -53,6 +54,7 @@ SUBJECT_REQUIRED: dict[AgentKey, str] = {
     AgentKey.DRIFT_REBALANCING: "mandate",
     AgentKey.RESEARCH_REPORTING: "household",
     AgentKey.MEETING_PREP: "household",
+    **{k: "onboarding_case" for k in CASE_AGENTS},
 }
 
 TIER_LABEL: dict[str, str] = {

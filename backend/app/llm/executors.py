@@ -887,8 +887,26 @@ class ToolExecutors:
             raise ExecutorError("Firm not found.")
 
         need = agent_runs.SUBJECT_REQUIRED.get(key)
-        household_in, mandate_in = inputs.get("household_id"), inputs.get("mandate_id")
+        household_in, mandate_in, case_in = inputs.get("household_id"), inputs.get("mandate_id"), inputs.get("case_id")
         household = mandate = None
+        if need == "onboarding_case" or case_in:
+            from app.models.onboarding import OnboardingCase
+
+            if need != "onboarding_case":
+                raise ExecutorError(f"{name} does not work on an onboarding case.")
+            if not case_in:
+                raise ExecutorError(f"{name} works on one onboarding case. Give a case_id (read_onboarding_cases).")
+            cid = _parse_uuid(case_in, "case_id")
+            case = (await self.session.execute(
+                select(OnboardingCase).where(OnboardingCase.id == cid, OnboardingCase.firm_id == self.firm_id)
+            )).scalar_one_or_none()
+            if case is None:
+                raise ExecutorError(f"Onboarding case {cid} not found or access denied.")
+            if case.status in ("approved", "rejected"):
+                raise ExecutorError(f"{case.prospect_name}'s case is closed ({case.status}).")
+            tier, guardrails = await policy.resolve_tier(self.session, self.firm_id, key, None)
+            return {"key": key, "name": name, "firm": firm, "mandate_type": None, "tier": str(tier),
+                    "guardrails": guardrails, "subject": Subject("onboarding_case", case.id, case.prospect_name)}
         if household_in:
             hid = _parse_uuid(household_in, "household_id")
             household = (await self.session.execute(
@@ -1066,6 +1084,7 @@ class ToolExecutors:
         from app.core.tools import OPEN_VIEWS
         from app.models.billing import Invoice
         from app.models.governance import Recommendation
+        from app.models.onboarding import OnboardingCase
 
         view = str(inputs.get("view") or "").strip().lower()
         spec = OPEN_VIEWS.get(view)
@@ -1077,7 +1096,8 @@ class ToolExecutors:
 
         seen = json.dumps([t.get("result") for t in (turn or [])], default=str)
 
-        finder = {Household: "search_households", Recommendation: "read_recommendations", Invoice: "read_billing"}
+        finder = {Household: "search_households", Recommendation: "read_recommendations", Invoice: "read_billing",
+                  OnboardingCase: "read_onboarding_cases"}
 
         async def grounded(field: str, model) -> uuid.UUID:
             value = _parse_uuid(inputs.get(field) or "", field)
@@ -1096,6 +1116,8 @@ class ToolExecutors:
             route = f"{route}?rec={await grounded('recommendation_id', Recommendation)}"
         elif view == "billing" and inputs.get("invoice_id"):
             route = f"{route}?invoice={await grounded('invoice_id', Invoice)}"
+        elif view == "onboarding_case":
+            route = f"{route}/{await grounded('case_id', OnboardingCase)}"
 
         return {"view": route, "kind": view, "message": f"The {label} view is open beside the conversation."}
 
