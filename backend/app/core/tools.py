@@ -287,6 +287,73 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM},
     ),
 
+    "read_protection": Tool(
+        key="read_protection",
+        name="Read Protection",
+        speaking_agent="astra",
+        description="What happens to a household if an earner dies or cannot work: for each earner, what would be needed to their retirement, the life, TPD and income cover on file, the household's assets, and the gap. Give a household_id for one household, or none for the whole book with the largest gaps first. 'not_assessed' means income or date of birth is not on file, and it is a finding, not a zero. No cover on file does not mean the client has none. Debts and long-term care are not modelled; say so when it matters.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, or leave out for the whole book", required=False),
+        ],
+        output=ToolOutput("object", "Each earner's death and disability need, cover, assets and gap, and the policies on file"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_protection_policy": Tool(
+        key="record_protection_policy",
+        name="Record Protection Policy",
+        speaking_agent="astra",
+        description="Record a policy a client actually holds, from its schedule: life or tpd with a sum insured, or income_protection with an annual benefit. It changes the household's protection gap. Use only figures from a document the user gives you, and never estimate cover.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this policy? It is counted as cover in the household's protection gap.",
+        inputs=[
+            ToolInput("person_id", "uuid", "The insured person", required=True),
+            ToolInput("kind", "string", "One of: life, tpd, income_protection", required=True),
+            ToolInput("provider", "string", "The insurer", required=True),
+            ToolInput("sum_insured", "number", "The sum insured, for life or tpd", required=False),
+            ToolInput("annual_benefit", "number", "The yearly benefit, for income_protection", required=False),
+            ToolInput("benefit_to_age", "number", "The age an income benefit stops, if not retirement", required=False),
+            ToolInput("expires_on", "string", "When the cover ends (YYYY-MM-DD), if it has a term", required=False),
+            ToolInput("source_document", "string", "The document it comes from - name, date and provider", required=True),
+        ],
+        output=ToolOutput("object", "The recorded policy"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "end_protection_policy": Tool(
+        key="end_protection_policy",
+        name="End Protection Policy",
+        speaking_agent="astra",
+        description="Mark a policy as no longer in force - lapsed, cancelled, claimed or replaced. It stops counting as cover and is kept on file with the reason.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="End this policy? It stops counting as cover, which widens the household's protection gap.",
+        inputs=[
+            ToolInput("policy_id", "uuid", "The policy, from read_protection", required=True),
+            ToolInput("reason", "string", "Why it ended", required=True),
+        ],
+        output=ToolOutput("object", "The ended policy"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "record_income": Tool(
+        key="record_income",
+        name="Record Income",
+        speaking_agent="astra",
+        description="Record a person's annual income from a document, so their protection gap can be assessed. It is the same figure the tax planning reads, so it changes those results too. Use only a figure the user gives you from a document; never estimate an income.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this income? It changes this person's protection gap and their tax planning.",
+        inputs=[
+            ToolInput("person_id", "uuid", "The person", required=True),
+            ToolInput("annual_income", "number", "Their annual income", required=True),
+            ToolInput("source_document", "string", "The document it comes from - name, date and issuer", required=True),
+        ],
+        output=ToolOutput("object", "The recorded income and what it replaced"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

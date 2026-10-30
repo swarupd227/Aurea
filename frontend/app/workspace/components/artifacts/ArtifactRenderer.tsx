@@ -11,6 +11,7 @@ import { BillingCard } from "./BillingCard";
 import { ValuationCard } from "./ValuationCard";
 import { PriceFreshnessCard } from "./PriceFreshnessCard";
 import { ReconciliationCard } from "./ReconciliationCard";
+import { ProtectionCard } from "./ProtectionCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
@@ -91,6 +92,14 @@ export function artifactCard(artifact: Artifact) {
       case "refresh_prices":
         if (typeof artifact.result?.resolved !== "number") return null;
         return <PriceFreshnessCard result={artifact.result as any} />;
+      case "read_protection":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.people)) return null;
+        return <ProtectionCard result={artifact.result as any} />;
+      case "record_protection_policy":
+      case "end_protection_policy":
+      case "record_income":
+        if (!artifact.result?.policy_id && !artifact.result?.person_id) return null;
+        return <ProtectionCard result={artifact.result as any} />;
       case "read_reconciliation":
         if (!Array.isArray(artifact.result?.accounts) || !Array.isArray(artifact.result?.breaks)) return null;
         return <ReconciliationCard result={artifact.result as any} />;

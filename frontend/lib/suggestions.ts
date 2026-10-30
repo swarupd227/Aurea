@@ -150,6 +150,12 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Fetch prices now", prompt: "Fetch prices now." },
         { label: "Failed symbols", prompt: "Did the last price run fail for any symbol, and why?" },
       ];
+    case "/studio/protection":
+      return [
+        { label: "Largest gaps", prompt: "Which households have the largest protection gaps?" },
+        { label: "Not assessed", prompt: "Who can't be assessed for protection, and what's missing?" },
+        h1 ? { label: `${short(h1)}'s cover`, prompt: `What happens to ${the(h1)} if an earner dies or can't work?` } : { label: "Explain the basis", prompt: "How is a protection gap worked out, and what does it leave out?" },
+      ];
     case "/studio/reconciliation":
       return [
         { label: "Do we reconcile", prompt: "Do we reconcile against the custodians? Which accounts have breaks or no statement?" },

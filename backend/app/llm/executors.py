@@ -61,6 +61,10 @@ class ToolExecutors:
             "record_valuation": self.record_valuation,
             "read_price_freshness": self.read_price_freshness,
             "refresh_prices": self.refresh_prices,
+            "read_protection": self.read_protection,
+            "record_protection_policy": self.record_protection_policy,
+            "end_protection_policy": self.end_protection_policy,
+            "record_income": self.record_income,
             "read_reconciliation": self.read_reconciliation,
             "import_custody_statement": self.import_custody_statement,
             "resolve_recon_break": self.resolve_recon_break,
@@ -330,6 +334,70 @@ class ToolExecutors:
                   else "; nothing needed revaluing")
             result["message"] = (f"Fetched {result['resolved']} of {result['instruments']} instrument(s): "
                                  f"{result['inserted']} new price(s), {result['updated']} updated{fail}{rv}.")
+        return result
+
+    async def read_protection(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import protection
+
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await protection.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            s = result["summary"]
+            result["message"] = (f"{result['household']}: {s['people']} earner(s), {s['gaps']} gap(s), "
+                                 f"{s['not_assessed']} not assessed, {s['policies_counted']} polic(ies) counted.")
+            return result
+        result = await protection.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = (f"{s['households']} household(s): {s['with_gap']} with a gap, {s['clear']} clear, "
+                             f"{s['not_assessed']} not assessed, {s['no_people']} with no one to assess.")
+        return result
+
+    async def _protection_write(self, action) -> dict[str, Any]:
+        from app.aurea_core import protection
+        from app.models.identity import User
+
+        # The gateway checks the catalogue's roles; this re-checks, as for the other record-keeping tools.
+        if self.role not in (UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS):
+            raise ExecutorError("Recording protection details is for advisers, paraplanners and operations.")
+        user = await self.session.get(User, self.user_id)
+        try:
+            return await action(protection, user.email if user else "unknown")
+        except protection.ProtectionError as exc:
+            raise ExecutorError(str(exc))
+
+    async def record_protection_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from datetime import date as _date
+
+        expires = None
+        if inputs.get("expires_on"):
+            try:
+                expires = _date.fromisoformat(str(inputs["expires_on"]))
+            except ValueError:
+                raise ExecutorError("expires_on must be a date, YYYY-MM-DD.")
+        person_id = _parse_uuid(inputs.get("person_id"), "person_id")
+        result = await self._protection_write(lambda p, by: p.record_policy(
+            self.session, self.firm_id, person_id=person_id, kind=str(inputs.get("kind") or "").strip().lower(),
+            provider=inputs.get("provider") or "", source_document=inputs.get("source_document") or "", recorded_by=by,
+            sum_insured=inputs.get("sum_insured"), annual_benefit=inputs.get("annual_benefit"),
+            benefit_to_age=inputs.get("benefit_to_age"), expires_on=expires))
+        result["message"] = f"Recorded {result['kind']} cover with {result['provider']} for {result['person']}."
+        return result
+
+    async def end_protection_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        policy_id = _parse_uuid(inputs.get("policy_id"), "policy_id")
+        result = await self._protection_write(lambda p, by: p.end_policy(
+            self.session, self.firm_id, policy_id, reason=inputs.get("reason") or "", by=by))
+        result["message"] = f"The {result['kind']} policy with {result['provider']} has ended and no longer counts."
+        return result
+
+    async def record_income(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        person_id = _parse_uuid(inputs.get("person_id"), "person_id")
+        result = await self._protection_write(lambda p, by: p.record_income(
+            self.session, self.firm_id, person_id=person_id, annual_income=inputs.get("annual_income"),
+            source_document=inputs.get("source_document") or "", recorded_by=by))
+        result["message"] = f"Recorded an income of {result['annual_income']:,.0f} for {result['person']}."
         return result
 
     async def read_reconciliation(self, inputs: dict[str, Any]) -> dict[str, Any]:
