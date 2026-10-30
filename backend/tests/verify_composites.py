@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -175,6 +175,21 @@ async def main() -> int:
         check("benchmark return computed from real price history", report["benchmark"]["return"], 0.10)
         check("a benchmark never changed discloses no changes", report["benchmark_disclosure"]["changes"], [])
         check("a single index has no blend basis", report["benchmark_disclosure"]["basis"], None)
+
+        print("\n=== a seeded composite states the day it was built, not an earlier one ===")
+        from seed.composite_creation_date_backfill import corrected
+        from seed.composites_backfill import criteria_for
+        seeded = Composite(firm_id=firm.id, model_portfolio_id=model.id, name="Growth Composite",
+                           inclusion_criteria=criteria_for("Growth"), creation_date=date(2024, 9, 24),
+                           created_at=datetime(2026, 9, 24, 9, tzinfo=timezone.utc))
+        check("a seeded composite claiming an earlier date gets the day it was built",
+              corrected(seeded, "Growth"), date(2026, 9, 24))
+        seeded.creation_date = date(2026, 9, 24)
+        check("  and a second run changes nothing", corrected(seeded, "Growth"), None)
+        brought_across = Composite(firm_id=firm.id, model_portfolio_id=model.id, name="Legacy",
+                                   inclusion_criteria="Our composite since 2019.", creation_date=date(2019, 1, 1),
+                                   created_at=datetime(2026, 9, 24, tzinfo=timezone.utc))
+        check("a composite a person dated earlier keeps their date", corrected(brought_across, "Growth"), None)
 
         print("\n=== a benchmark change is disclosed: date, from, to, reason (GIPS) ===")
         from app.models.governance import LedgerEntry
