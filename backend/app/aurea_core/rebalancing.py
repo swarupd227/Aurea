@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, replace
 # cannot exceed the reserved fee either. Trading a fractionally smaller amount is always
 # safe; a fractionally larger one is not.
 _QTY_DP = 4
+_SHORTFALL_WORTH_SAYING = 1.0  # the limitation is written in whole dollars
 
 
 def _floor_qty(qty: float) -> float:
@@ -353,7 +354,9 @@ def optimise(
                 reason="Top up under-weight",
             ))
             available -= (buy_value + _fee(buy_value))
-            if buy_value < wanted - 1e-6:
+            # Flooring the quantity always leaves a buy a few cents under what was wanted. That is
+            # rounding, not a shortfall, and reporting it told an adviser they were "$0 short".
+            if wanted - buy_value >= _SHORTFALL_WORTH_SAYING:
                 underfunded.append((cls, wanted, buy_value))
 
     # Say what could not be funded. Silently buying less than the target would look like a

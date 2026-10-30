@@ -80,6 +80,23 @@ def main() -> int:
     buys = [o for o in r.orders if o.side == "buy" and o.asset_class == "alternatives"]
     check("buys into the position already held", buys[0].symbol if buys else None, "HELD")
 
+    print("\n=== a buy rounded down is not a shortfall; a real one still is ===")
+    odd = Position(holding_id="", instrument_id="i5", symbol="ODD", name="Odd Price ETF",
+                   asset_class="alternatives", market_value=0.0, price=33.337, cost_basis=0.0,
+                   account_id="", custodian="", tradeable=True)
+    # Cash covers the fees, so the only gap left between wanted and bought is the rounding.
+    funded = {"equity": 0.5, "alternatives": 0.45, "cash": 0.05}
+    r = optimise(positions=[equity(95_000)], target_weights=funded, cash=5_000.0, drift_band=0.05,
+                 cgt_budget=None, model_instruments={"alternatives": odd})
+    buys = [o for o in r.orders if o.side == "buy"]
+    check("the buy lands a fraction under what was wanted",
+          0 < 45_000 - buys[0].quantity * odd.price < 1 if buys else None, True)
+    check("and no '$0 short' is reported", any("short" in l for l in r.limitations), False)
+    r = optimise(positions=[equity(100_000)], target_weights=TARGETS, cash=0.0, drift_band=0.05,
+                 cgt_budget=0.0, model_instruments={"alternatives": odd})
+    check("a CGT budget that stops the sale is still reported as a shortfall",
+          any("short" in l and "$0 short" not in l for l in r.limitations), True)
+
     print(f"\n{'=' * 64}\n{len(PASS)} passed, {len(FAIL)} failed")
     for f in FAIL:
         print(f"  FAILED: {f}")
