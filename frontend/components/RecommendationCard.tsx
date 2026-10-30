@@ -81,6 +81,15 @@ function DriftAnalysis({ payload, ev, orders }: { payload: any; ev: any; orders:
               <Scissors size={12} className="text-ink-muted" /> {exclusionsHonoured.length} exclusion{exclusionsHonoured.length > 1 ? "s" : ""} honoured
             </div>
           )}
+          {payload.wash_sale?.held?.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1" data-testid="wash-sale-held">
+              {payload.wash_sale.held.map((h: any) => (
+                <span key={`${h.side}-${h.symbol}`} className="chip text-warn" title={`${h.account} · ${h.on}`}>
+                  {h.symbol} {h.side === "sell" ? "loss" : "buy"} held · clears {h.clear_on}
+                </span>
+              ))}
+            </div>
+          )}
           {ev.guardrail_breaches?.length > 0 ? (
             <div className="mt-1.5 text-xs text-crit">{ev.guardrail_breaches.length} guardrail flag{ev.guardrail_breaches.length > 1 ? "s" : ""}</div>
           ) : (

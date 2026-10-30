@@ -143,7 +143,10 @@ def wash_sale(c: CheckContext) -> RuleResult:
     clash = sorted(s for s in (loss_sells & buys) if s)
     if clash:
         return RuleResult("fail", f"Potential wash sale: {', '.join(clash)} sold at a loss and repurchased.")
-    return RuleResult("pass", "No loss sale repurchased within the wash-sale window.")
+    guard = (c.payload or {}).get("wash_sale") or {}
+    if guard.get("applies"):
+        return RuleResult("pass", "Checked against the household's trades in the wash-sale window, in every account.")
+    return RuleResult("pass", "No loss sale repurchased within this order set.")
 
 
 def costs_disclosed(c: CheckContext) -> RuleResult:

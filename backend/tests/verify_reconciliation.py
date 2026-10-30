@@ -510,7 +510,7 @@ async def main() -> int:
                     check(f"{label} is refused to an adviser", e.status_code, 403)
             try:
                 await recon_api.import_statement(
-                    recon_api.StatementIn(account_id=a13.id, as_of=today + timedelta(days=3),
+                    recon_api.StatementIn(account_id=a13.id, as_of=date.today() + timedelta(days=3),
                                           positions=[{"symbol": "AAA", "quantity": 1}], source_document="x statement"),
                     user=ops_user, firm=firm, db=s)
                 check("a statement dated ahead is a 422", False, True)

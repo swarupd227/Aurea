@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.graph import household_brain, list_households
+from app.aurea_core.wash_sale import WINDOW_DAYS
 from app.models.portfolio import Holding, Instrument, TaxLot
 
 # ── NZ constants ──────────────────────────────────────────────────────────────
@@ -23,7 +24,7 @@ _GOVT_TOPUP_OWN_MIN = 1042.86
 _BRIGHT_LINE_SHORT = 2
 _BRIGHT_LINE_LONG = 10
 _HARVEST_THRESHOLD = -5_000
-_WASH_SALE_WINDOW = 30
+_WASH_SALE_WINDOW = WINDOW_DAYS
 _KIWISAVER_RATES = [0.03, 0.04, 0.06, 0.08, 0.10]
 _ASSUMED_EMPLOYER_MATCH = 0.03
 _ASSUMED_GROSS_RETURN = 0.07

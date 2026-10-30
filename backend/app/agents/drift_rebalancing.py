@@ -10,8 +10,8 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import knowledge
-from app.aurea_core.rebalancing import Lot, Position, optimise
+from app.aurea_core import knowledge, wash_sale
+from app.aurea_core.rebalancing import Lot, Position, WashSaleGuard, optimise
 from app.aurea_core.valuation import latest_prices
 import uuid
 
@@ -127,6 +127,7 @@ class DriftRebalancingAgent(BaseAgent):
             "cash": cash,
             "revision_note": ov.get("note"),
             "capacity_for_loss": capacity_for_loss,
+            "wash_sale": await wash_sale.guard(s, ctx.firm, mandate),
         }
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
@@ -162,7 +163,9 @@ class DriftRebalancingAgent(BaseAgent):
         # The venue's own fee model, so proposed buys are sized net of what execution will
         # charge rather than assuming the default.
         exec_cfg = ((ctx.firm.settings or {}).get("execution") or {})
+        washed = sensed.get("wash_sale") or {}
         result = optimise(
+            wash=WashSaleGuard(no_loss_sale=washed.get("no_loss_sale") or {}, no_buy=washed.get("no_buy") or {}),
             positions=positions,
             target_weights=sensed["target_weights"],
             cash=sensed["cash"],
@@ -244,6 +247,8 @@ class DriftRebalancingAgent(BaseAgent):
             "estimated_realised_gain": result.estimated_realised_gain,
             "harvested_losses": result.harvested_losses,
             "cgt_budget": sensed.get("cgt_budget"),
+            "wash_sale": {"applies": bool(washed.get("applies")), "jurisdiction": washed.get("jurisdiction"),
+                          "held": result.wash_sale_held},
         }
         if sensed.get("revision_note"):
             payload["revision_note"] = sensed["revision_note"]
@@ -340,6 +345,18 @@ class DriftRebalancingAgent(BaseAgent):
         order_set = payload.get("order_set", [])
         if not order_set:
             return {"executed": False, "note": "No orders in the approved set."}
+
+        # A proposal can wait days for its approval, and another account in the household may have
+        # traded meanwhile. The set is sized as a whole - a held sale funds a buy - so nothing is
+        # placed rather than part of it; a fresh run re-sizes around whatever changed.
+        mandate = await ctx.session.get(Mandate, ctx.subject.id) if ctx.subject.type == "mandate" else None
+        if mandate is not None:
+            clash = wash_sale.conflicts(order_set, await wash_sale.guard(ctx.session, ctx.firm, mandate))
+            if clash:
+                names = ", ".join(sorted({c["symbol"] for c in clash}))
+                return {"executed": False, "wash_sale_held": clash,
+                        "note": (f"Nothing was placed: {names} would now be a wash sale, because of a trade in "
+                                 f"the household since this was proposed. Run the agent again for a fresh set.")}
 
         result = await execution.execute_order_set(
             ctx.session, firm=ctx.firm, order_set=order_set,

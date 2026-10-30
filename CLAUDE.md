@@ -41,6 +41,10 @@ pages are artifact views the agents open. Full guideline, including what is buil
   `aurea_core/reconciliation.py` writes to holdings, cash or lots. The reconciliation agent proposes which
   breaks to escalate or accept; it records nothing until operations or the portfolio team approves
   (`decision_rights.RECON_AGENTS`), whatever its tier.
+- **The rebalancer does not propose a wash sale.** `aurea_core/wash_sale.py` reads the household's trades in
+  the 30-day window, every account included, and `optimise` works around them. It binds a household taxed
+  in the US (its own `values.jurisdiction`, else the firm's) and nobody else. `act()` re-checks at approval
+  and places nothing if the window has changed. "Substantially identical" means the same instrument.
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
@@ -54,7 +58,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

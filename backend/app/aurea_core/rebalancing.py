@@ -14,7 +14,7 @@ No live execution — the output is a draft, multi-custodian order set for advis
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 # Quantities are carried to four decimal places. Orders are *sized* in value but *carried*
@@ -58,6 +58,15 @@ class Position:
 
 
 @dataclass
+class WashSaleGuard:
+    """What the household did in the wash-sale window (aurea_core/wash_sale.py), by instrument id.
+    Each value says when, where and when it clears: {"on", "account", "clear_on"}."""
+
+    no_loss_sale: dict[str, dict] = field(default_factory=dict)  # bought recently: a loss here is disallowed
+    no_buy: dict[str, dict] = field(default_factory=dict)        # sold at a loss recently: buying back disallows it
+
+
+@dataclass
 class Order:
     side: str  # buy | sell
     symbol: str
@@ -89,14 +98,19 @@ class RebalanceResult:
     guardrail_breaches: list[str]
     limitations: list[str]  # informational — not compliance breaches (e.g. no instrument to buy)
     max_drift: float
+    # What the wash-sale guard kept out of the order set, as figures for the proposal's card.
+    wash_sale_held: list[dict] = field(default_factory=list)
 
 
-def _sell_with_lots(pos: Position, target_value: float, cgt_remaining: float) -> tuple[float, float, float]:
+def _sell_with_lots(
+    pos: Position, target_value: float, cgt_remaining: float, *, no_loss: bool = False,
+) -> tuple[float, float, float]:
     """Sell up to target_value from a position using tax-optimal lots.
 
     Returns (value_sold, realised_gain, quantity_sold). Harvests losses first, then takes
     the smallest gains, and stops if the next gain lot would breach the remaining CGT budget
-    (unless the lot is a loss, which is always allowed)."""
+    (unless the lot is a loss, which is always allowed). With `no_loss` the loss lots are left
+    alone: inside a wash-sale window the loss would be disallowed."""
     if pos.price <= 0 or not pos.lots:
         return 0.0, 0.0, 0.0
     # Order lots by gain-per-unit ascending (most negative / losses first).
@@ -106,6 +120,8 @@ def _sell_with_lots(pos: Position, target_value: float, cgt_remaining: float) ->
         if value_sold >= target_value - 1e-6:
             break
         gain_per_unit = pos.price - lot.cost_per_unit
+        if no_loss and gain_per_unit < 0:
+            continue
         remaining_value = target_value - value_sold
         max_qty_by_value = remaining_value / pos.price
         qty = min(lot.quantity, max_qty_by_value)
@@ -126,6 +142,29 @@ def _sell_with_lots(pos: Position, target_value: float, cgt_remaining: float) ->
     return value_sold, realised_gain, qty_sold
 
 
+def _hold_loss_lots(pos: Position, want: float, window: dict, held: list[dict], limitations: list[str]) -> None:
+    """Record what the guard kept out of a sale: the loss lots a sale of `want` would have taken."""
+    if pos.price <= 0:
+        return
+    left, qty, loss = want / pos.price, 0.0, 0.0
+    for lot in sorted(pos.lots, key=lambda l: pos.price - l.cost_per_unit):
+        per_unit = lot.cost_per_unit - pos.price
+        if per_unit <= 0 or left <= 1e-9:
+            break
+        take = min(lot.quantity, left)
+        qty, loss, left = qty + take, loss + take * per_unit, left - take
+    if qty <= 1e-9:
+        return
+    qty = _floor_qty(qty)
+    held.append({"side": "sell", "symbol": pos.symbol, "instrument_id": pos.instrument_id,
+                 "asset_class": pos.asset_class, "quantity": qty, "loss": round(loss, 2), **window})
+    limitations.append(
+        f"{qty:g} {pos.symbol} at a loss held back: it was bought on {window['on']} in "
+        f"{window['account']}, so selling now would disallow about ${loss:,.0f} of loss. "
+        f"Sellable at a loss from {window['clear_on']}."
+    )
+
+
 def optimise(
     *,
     positions: list[Position],
@@ -140,10 +179,13 @@ def optimise(
     # exactly the total fees and the last buy fails to settle.
     fee_rate: float = 0.001,
     fee_minimum: float = 5.0,
+    wash: WashSaleGuard | None = None,
 ) -> RebalanceResult:
     total_value = sum(p.market_value for p in positions) + cash
     if total_value <= 0:
-        return RebalanceResult(False, 0, drift_band, {}, target_weights, {}, [], 0, 0, 0, 0, [], 0)
+        return RebalanceResult(False, 0, drift_band, {}, target_weights, {}, [], 0, 0, 0, 0, [], [], 0)
+    wash = wash or WashSaleGuard()
+    held: list[dict] = []
 
     # Current weights by asset class (cash counted as its own class).
     by_class_value: dict[str, float] = {}
@@ -181,7 +223,10 @@ def optimise(
                 if sell_value <= 1e-6:
                     break
                 want = min(sell_value, pos.market_value)
-                value_sold, lot_gain, qty = _sell_with_lots(pos, want, cgt_remaining)
+                window = wash.no_loss_sale.get(pos.instrument_id)
+                value_sold, lot_gain, qty = _sell_with_lots(pos, want, cgt_remaining, no_loss=bool(window))
+                if window:
+                    _hold_loss_lots(pos, want, window, held, limitations)
                 if qty <= 1e-9:
                     continue
                 cgt_remaining -= max(lot_gain, 0.0)
@@ -241,9 +286,25 @@ def optimise(
                 underfunded.append((cls, wanted, 0.0))
                 continue
             # Prefer an existing non-excluded holding in the class; else the instrument the
-            # model nominates for it.
+            # model nominates for it. Either way, not one the household sold at a loss inside
+            # the window: buying it back would disallow that loss.
             candidates = [p for p in positions if p.asset_class == cls and not p.excluded]
-            target_pos = candidates[0] if candidates else (model_instruments or {}).get(cls)
+            pick = (model_instruments or {}).get(cls)
+            target_pos = next((p for p in candidates if p.instrument_id not in wash.no_buy), None)
+            if target_pos is None and pick is not None and pick.instrument_id not in wash.no_buy:
+                target_pos = pick
+            if target_pos is None and (candidates or pick is not None):
+                blocked = candidates[0] if candidates else pick
+                window = wash.no_buy[blocked.instrument_id]
+                held.append({"side": "buy", "symbol": blocked.symbol, "instrument_id": blocked.instrument_id,
+                             "asset_class": cls, "value": round(buy_value, 2), **window})
+                limitations.append(
+                    f"'{cls}' is {(-drift):.0%} under target, but {blocked.symbol} was sold at a loss on "
+                    f"{window['on']} in {window['account']} and buying it back now would disallow that "
+                    f"loss. ${buy_value:,.0f} to allocate from {window['clear_on']}, or into another "
+                    f"instrument - adviser to select."
+                )
+                continue
             if target_pos is None:
                 limitations.append(
                     f"The model targets {(-drift):.0%} in '{cls}' but names no instrument to "
@@ -267,6 +328,11 @@ def optimise(
                     f"— adviser to select manually."
                 )
                 continue
+            # A model pick nobody holds yet has no account of its own. It goes where the mandate's
+            # other money is: an order with no account cannot be placed at all.
+            if not target_pos.account_id and positions:
+                target_pos = replace(target_pos, account_id=positions[0].account_id,
+                                     custodian=positions[0].custodian)
             # Size in quantity and then price it the way settlement will, stepping down a
             # tick if the rounded quantity does not fit. Checking the value alone is not
             # enough: the order carries the quantity, and that is what gets valued.
@@ -321,4 +387,5 @@ def optimise(
         guardrail_breaches=breaches,
         limitations=limitations,
         max_drift=round(max_drift, 4),
+        wash_sale_held=held,
     )
