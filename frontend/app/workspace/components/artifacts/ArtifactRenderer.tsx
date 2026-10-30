@@ -22,7 +22,7 @@ import { RecommendationsCard } from "./RecommendationsCard";
 import { AgentsCard } from "./AgentsCard";
 import { AgentRunCard, isAgentRunData } from "./AgentRunCard";
 import {
-  AgentHistoryCard, AnalyticsCard, CapacityCard, OnboardingCasesCard, ProvenanceCard,
+  AgentHistoryCard, AnalyticsCard, CapacityCard, OnboardingCasesCard, ProvenanceCard, TasksCard,
 } from "./PageReadCards";
 import type { Artifact, MessageCard } from "../../types";
 
@@ -141,6 +141,12 @@ export function artifactCard(artifact: Artifact) {
       case "read_onboarding_cases":
         if (!Array.isArray(artifact.result?.cases) || !artifact.result?.summary || !artifact.result.cases.every((c: any) => Array.isArray(c?.tracks))) return null;
         return <OnboardingCasesCard result={artifact.result as any} />;
+      case "read_tasks":
+      case "complete_task":
+      case "assign_task":
+      case "create_task":
+        if (!Array.isArray(artifact.result?.tasks)) return null;
+        return <TasksCard result={artifact.result as any} />;
       case "read_provenance":
         if (typeof artifact.result?.ledger?.valid !== "boolean" || !Array.isArray(artifact.result?.surveillance?.flags) || !artifact.result?.surveillance?.by_severity || !Array.isArray(artifact.result?.evaluations) || !Array.isArray(artifact.result?.autonomy_changes)) return null;
         return <ProvenanceCard result={artifact.result as any} />;

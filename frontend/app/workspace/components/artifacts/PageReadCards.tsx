@@ -67,6 +67,40 @@ export function AgentHistoryCard({ result }: { result: AgentHistoryPayload }) {
   );
 }
 
+// ── Tasks ───────────────────────────────────────────────────────────────────────────────────
+export interface TasksPayload {
+  shown: number;
+  total: number;
+  overdue: number;
+  unassigned: number;
+  tasks: { id: string; title: string; status: string; due_date: string | null; overdue: boolean; subject_label: string | null; assigned_to_name: string | null }[];
+}
+
+export function TasksCard({ result }: { result: TasksPayload }) {
+  return (
+    <Frame title="Tasks" count={result.total > result.shown ? `${result.shown} of ${result.total}` : result.total} testId="tasks-card">
+      {(result.overdue > 0 || result.unassigned > 0) && (
+        <div className="flex flex-wrap gap-1.5 border-b border-border-soft px-3 py-1.5">
+          {result.overdue > 0 && <Chip tone="text-warn">Overdue {result.overdue}</Chip>}
+          {result.unassigned > 0 && <Chip>Unassigned {result.unassigned}</Chip>}
+        </div>
+      )}
+      <table className="w-full text-sm">
+        <tbody className="divide-y divide-border-soft">
+          {result.tasks.map((t) => (
+            <tr key={t.id}>
+              <td className={`px-3 py-1.5 ${t.status === "open" ? "text-ink" : "text-ink-muted line-through"}`}>{t.title}</td>
+              <td className="px-3 py-1.5 text-xs text-ink-muted">{t.subject_label ?? "—"}</td>
+              <td className="px-3 py-1.5 text-xs text-ink-muted">{t.assigned_to_name ?? "—"}</td>
+              <td className={`px-3 py-1.5 text-right font-mono text-xs tabular-nums whitespace-nowrap ${t.overdue ? "text-warn" : "text-ink-muted"}`}>{t.due_date ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Frame>
+  );
+}
+
 // ── Capacity ────────────────────────────────────────────────────────────────────────────────
 export interface CapacityPayload {
   total_agent_runs: number;

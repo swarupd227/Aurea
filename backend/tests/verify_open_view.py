@@ -185,6 +185,8 @@ async def behaviour() -> None:
                           ex(R.OPERATIONS, theirs).open_view({"view": "onboarding_case", "case_id": str(ocase.id)}, turn=cased))
             check("meetings opens for a paraplanner", (await ex(R.PARAPLANNER).open_view({"view": "meetings"}))["view"], "/studio/meetings")
             await refused("operations has no meetings view", ex(R.OPERATIONS).open_view({"view": "meetings"}))
+            check("tasks opens for an adviser", (await ex(R.ADVISER).open_view({"view": "tasks"}))["view"], "/studio/tasks")
+            await refused("compliance has no tasks view", ex(R.COMPLIANCE).open_view({"view": "tasks"}))
             met = [{"tool_key": "read_meetings", "inputs": {}, "result": {"meetings": [{"id": str(meet.id)}]}}]
             mv = await ex(R.ADVISER).open_view({"view": "meeting", "meeting_id": str(meet.id)}, turn=met)
             check("a meeting read this turn opens", mv["view"], f"/studio/meetings/{meet.id}")

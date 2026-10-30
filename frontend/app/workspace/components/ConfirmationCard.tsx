@@ -83,6 +83,7 @@ export function ConfirmationCard({
   const decided = action.decision;
   const preview = action.preview && "agent_key" in action.preview ? (action.preview as RunPreview) : null;
   const unavailable = action.preview && "unavailable" in action.preview && action.preview.unavailable ? action.preview.unavailable : null;
+  const changes = action.preview && "rows" in action.preview ? action.preview.rows : null;
 
   const act = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -105,6 +106,16 @@ export function ConfirmationCard({
       </div>
       <div className="font-medium text-ink">{action.confirmation_text}</div>
       {preview && <RunPreviewBlock preview={preview} />}
+      {changes && (
+        <dl className="mt-3 divide-y divide-border-soft rounded border border-border-soft text-sm" data-testid="change-preview">
+          {changes.map((r) => (
+            <div key={r.label} className="flex gap-3 px-3 py-1.5">
+              <dt className="w-20 shrink-0 font-mono text-[11px] uppercase tracking-wider text-ink-muted">{r.label}</dt>
+              <dd className="min-w-0 text-ink">{r.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
       {unavailable && (
         <div role="alert" className="mt-3 rounded border border-warn/40 px-3 py-2 text-sm text-ink" data-testid="run-unavailable">
           {unavailable}

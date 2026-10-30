@@ -86,6 +86,10 @@ class ToolExecutors:
             "read_analytics": self.read_analytics,
             "read_onboarding_cases": self.read_onboarding_cases,
             "read_meetings": self.read_meetings,
+            "read_tasks": self.read_tasks,
+            "complete_task": self.complete_task,
+            "assign_task": self.assign_task,
+            "create_task": self.create_task,
             "read_provenance": self.read_provenance,
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
@@ -1301,6 +1305,149 @@ class ToolExecutors:
                         + f". {upcoming} upcoming"
                         + (f"; {passed} not held although the date has passed" if passed else "") + "."),
         }
+
+    async def read_tasks(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The Tasks page's list (api.engage.list_tasks). Only this firm's tasks, and a household
+        is read back inside the firm before it filters anything."""
+        from app.aurea_core import tasks
+        from app.core.db import utcnow
+
+        status = str(inputs.get("status") or "open").strip().lower()
+        if status not in tasks.STATUSES:
+            raise ExecutorError(f"There is no task status '{status}'. Use {', '.join(tasks.STATUSES)}.")
+        household_id = None
+        if inputs.get("household_id"):
+            household_id = (await self._task_household(inputs["household_id"])).id
+        rows = await tasks.for_firm(self.session, self.firm_id, status=status, household_id=household_id,
+                                    assigned_to=self.user_id if inputs.get("assigned_to_me") else None)
+        today = utcnow().date()
+        all_views = await tasks.views(self.session, rows, today)
+        shown = all_views[:self._limit(inputs.get("limit"), 20, 50)]
+        overdue = sum(1 for t in all_views if t["overdue"])
+        unassigned = sum(1 for t in all_views if t["status"] == "open" and not t["assigned_to"])
+        return {
+            "tasks": shown, "shown": len(shown), "total": len(all_views), "status": status,
+            "overdue": overdue, "unassigned": unassigned, "as_of": today.isoformat(),
+            "message": (f"{len(all_views)} {'' if status == 'all' else status + ' '}task(s)"
+                        + (f"; showing {len(shown)}" if len(shown) < len(all_views) else "")
+                        + f". {overdue} overdue, {unassigned} unassigned."),
+        }
+
+    async def _task_household(self, value: Any) -> Household:
+        hid = _parse_uuid(value, "household_id")
+        hh = await self.session.get(Household, hid)
+        if hh is None or hh.firm_id != self.firm_id:
+            raise ExecutorError(f"Household {hid} not found or access denied")
+        return hh
+
+    async def _task(self, inputs: dict[str, Any]):
+        from app.aurea_core import tasks
+
+        try:
+            return await tasks.get(self.session, self.firm_id, _parse_uuid(inputs.get("task_id") or "", "task_id"))
+        except tasks.TaskError as exc:
+            raise ExecutorError(str(exc))
+
+    async def _task_assignee(self, name: Any):
+        """'me', 'nobody' (None) or a colleague's name, inside this firm."""
+        from app.aurea_core import tasks
+
+        wanted = str(name or "").strip()
+        if not wanted:
+            raise ExecutorError("Say who should hold the task: a colleague's name, 'me' or 'nobody'.")
+        if wanted.lower() == "nobody":
+            return None
+        try:
+            if wanted.lower() == "me":
+                return await tasks.staff_member(self.session, self.firm_id, self.user_id)
+            return await tasks.staff_named(self.session, self.firm_id, wanted)
+        except tasks.TaskError as exc:
+            raise ExecutorError(str(exc))
+
+    @staticmethod
+    def _task_due(value: Any):
+        from datetime import date
+
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return date.fromisoformat(text)
+        except ValueError:
+            raise ExecutorError(f"'{text}' is not a date. Give it as YYYY-MM-DD.")
+
+    async def _task_result(self, task, message: str) -> dict[str, Any]:
+        from app.aurea_core import tasks
+        from app.core.db import utcnow
+
+        await self.session.flush()
+        today = utcnow().date()
+        views = await tasks.views(self.session, [task], today)
+        return {"tasks": views, "shown": 1, "total": 1, "status": str(task.status), "overdue": sum(v["overdue"] for v in views),
+                "unassigned": 0 if task.assigned_to else 1, "as_of": today.isoformat(), "message": message}
+
+    async def complete_task(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tasks
+
+        task = await self._task(inputs)
+        try:
+            tasks.complete(task)
+        except tasks.TaskError as exc:
+            raise ExecutorError(str(exc))
+        return await self._task_result(task, f"'{task.title}' is done.")
+
+    async def assign_task(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tasks
+
+        task = await self._task(inputs)
+        to = await self._task_assignee(inputs.get("assignee_name"))
+        try:
+            tasks.assign(task, to, self.user_id)
+        except tasks.TaskError as exc:
+            raise ExecutorError(str(exc))
+        return await self._task_result(task, f"'{task.title}' is with {to.full_name}." if to else f"'{task.title}' is unassigned.")
+
+    async def _new_task(self, inputs: dict[str, Any]):
+        from app.aurea_core import tasks
+
+        household = await self._task_household(inputs["household_id"]) if inputs.get("household_id") else None
+        assignee = await self._task_assignee(inputs.get("assignee_name") or "me")
+        try:
+            return tasks.new(self.firm_id, str(inputs.get("title") or ""), household=household,
+                             due_date=self._task_due(inputs.get("due_date")), assignee=assignee, by=self.user_id), assignee
+        except tasks.TaskError as exc:
+            raise ExecutorError(str(exc))
+
+    async def create_task(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        task, _ = await self._new_task(inputs)
+        self.session.add(task)
+        return await self._task_result(task, f"Added '{task.title}'.")
+
+    async def preview_change(self, tool_key: str, inputs: dict[str, Any]) -> dict[str, Any] | None:
+        """What a Confirm card names, so a person confirms this task and not "a task": the record
+        and the change, read now, as label and value rows. Raises what executing would raise, so
+        a change that would only fail is refused instead of offered. None for a tool without one."""
+        def rows(*pairs: tuple[str, Any]) -> dict[str, Any]:
+            return {"rows": [{"label": k, "value": str(v)} for k, v in pairs if v]}
+
+        if tool_key not in ("complete_task", "assign_task", "create_task"):
+            return None
+        from app.aurea_core import tasks
+        from app.core.db import utcnow
+
+        if tool_key == "create_task":
+            task, assignee = await self._new_task(inputs)
+            return rows(("Task", task.title), ("Client", task.subject_label), ("Due", task.due_date),
+                        ("Assign to", assignee.full_name if assignee else "Nobody"))
+        task = await self._task(inputs)
+        if str(task.status) != "open":
+            raise ExecutorError(f"'{task.title}' is already {task.status}.")
+        common = (("Task", task.title), ("Client", task.subject_label), ("Due", task.due_date))
+        if tool_key == "complete_task":
+            return rows(*common)
+        to = await self._task_assignee(inputs.get("assignee_name"))
+        held = (await tasks.views(self.session, [task], utcnow().date()))[0]["assigned_to_name"]
+        return rows(*common, ("Held by", held), ("Assign to", to.full_name if to else "Nobody"))
 
     async def read_provenance(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """The Provenance page in brief: ledger integrity, open surveillance flags, agent quality and

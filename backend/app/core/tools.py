@@ -485,8 +485,8 @@ TOOLS: dict[str, Tool] = {
             "decision; give recommendation_id to bring one to the top), clients (the client list), client (one "
             "household; give household_id), billing (the run awaiting approval, held and unpaid bills; give "
             "invoice_id to open one bill), valuations (private holdings and their stated values), onboarding (the "
-            "onboarding board), onboarding_case (one case; give case_id), meetings (the meeting list) or meeting (one "
-            "meeting's brief, transcript and notes; give meeting_id). It returns no data and states nothing - answer "
+            "onboarding board), onboarding_case (one case; give case_id), meetings (the meeting list), meeting (one "
+            "meeting's brief, transcript and notes; give meeting_id) or tasks (the follow-ups). It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings); an id from memory or an earlier turn is refused."
@@ -580,6 +580,67 @@ TOOLS: dict[str, Tool] = {
         ],
         output=ToolOutput("object", "Meetings with their brief, transcript and captured notes"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.ADMIN},
+    ),
+
+    "read_tasks": Tool(
+        key="read_tasks",
+        name="Read Tasks",
+        speaking_agent="astra",
+        description="Follow-ups for the firm's clients, soonest due first: title, client, due date, whether it is overdue, where it came from and who it is assigned to. Open tasks unless asked otherwise. Also gives the date it was read, so a day like 'Friday' can be turned into a date.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("status", "string", "open (default), done, dismissed or all", required=False),
+            ToolInput("assigned_to_me", "boolean", "Only tasks assigned to the person asking", required=False),
+            ToolInput("household_id", "uuid", "Only this household's tasks (from search_households)", required=False),
+            ToolInput("limit", "number", "Max tasks to return (default 20, at most 50)", required=False),
+        ],
+        output=ToolOutput("object", "Tasks with due dates and assignees, and how many are overdue or unassigned"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.ADMIN},
+    ),
+
+    "complete_task": Tool(
+        key="complete_task",
+        name="Complete Task",
+        speaking_agent="astra",
+        description="Mark an open task as done. Find it with read_tasks first.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Mark this task as done?",
+        inputs=[ToolInput("task_id", "uuid", "The task, from read_tasks", required=True)],
+        output=ToolOutput("object", "The task as it now stands"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "assign_task": Tool(
+        key="assign_task",
+        name="Assign Task",
+        speaking_agent="astra",
+        description="Give an open task to a colleague, or take it off whoever holds it. Find it with read_tasks first. A name that fits nobody, or more than one person, is refused with the names it could be.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Change who holds this task?",
+        inputs=[
+            ToolInput("task_id", "uuid", "The task, from read_tasks", required=True),
+            ToolInput("assignee_name", "string", "A colleague's name, 'me', or 'nobody' to unassign it", required=True),
+        ],
+        output=ToolOutput("object", "The task as it now stands"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "create_task": Tool(
+        key="create_task",
+        name="Create Task",
+        speaking_agent="astra",
+        description="Add a follow-up, for a client or for the firm. It goes to the person asking unless they name someone else.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Add this task?",
+        inputs=[
+            ToolInput("title", "string", "What needs doing, in the person's own words", required=True),
+            ToolInput("household_id", "uuid", "The client it is for (from search_households)", required=False),
+            ToolInput("due_date", "string", "When it is due, as YYYY-MM-DD. Leave out if no date was given", required=False),
+            ToolInput("assignee_name", "string", "A colleague's name, or 'nobody'. Leave out to give it to the person asking", required=False),
+        ],
+        output=ToolOutput("object", "The new task"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
     "read_provenance": Tool(
@@ -899,6 +960,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "onboarding_case": ("/studio/onboarding", "Onboarding case", {_O, _C, _A}),
     "meetings": ("/studio/meetings", "Meetings", {_A, _P}),
     "meeting": ("/studio/meetings", "Meeting", {_A, _P}),
+    "tasks": ("/studio/tasks", "Tasks", {_A, _P}),
 }
 
 

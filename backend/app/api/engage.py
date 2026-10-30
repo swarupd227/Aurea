@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_firm
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
+from app.aurea_core import tasks as task_core
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
 from app.models.client_experience import Message
-from app.models.engagement import ClientReport, Meeting, Task
-from app.models.enums import AgentKey, MessageAuthor, TaskStatus
+from app.models.engagement import ClientReport, Meeting
+from app.models.enums import AgentKey, MessageAuthor
 from app.models.governance import Recommendation
 from app.models.graph import Household
 from app.models.identity import User
@@ -139,32 +140,15 @@ async def list_tasks(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    stmt = select(Task).where(Task.firm_id == firm.id)
-    if status != "all":
-        stmt = stmt.where(Task.status == status)
-    if assigned_to_me:
-        stmt = stmt.where(Task.assigned_to == user.id)
+    rows = await task_core.for_firm(db, firm.id, status=status, assigned_to=user.id if assigned_to_me else None)
+    return await task_core.views(db, rows, utcnow().date())
 
-    # Load assignee names in one query
-    rows = (await db.execute(stmt.order_by(Task.created_at.desc()).limit(200))).scalars().all()
-    assignee_ids = list({t.assigned_to for t in rows if t.assigned_to})
-    assignees: dict[uuid.UUID, str] = {}
-    if assignee_ids:
-        for u in (await db.execute(select(User).where(User.id.in_(assignee_ids)))).scalars().all():
-            assignees[u.id] = u.full_name or u.email
 
-    return [
-        {
-            "id": str(t.id), "title": t.title, "detail": t.detail, "status": t.status,
-            "due_date": t.due_date.isoformat() if t.due_date else None, "source": t.source,
-            "subject_label": t.subject_label,
-            "household_id": str(t.household_id) if t.household_id else None,
-            "assigned_to": str(t.assigned_to) if t.assigned_to else None,
-            "assigned_to_name": assignees.get(t.assigned_to) if t.assigned_to else None,
-            "assigned_by": str(t.assigned_by) if t.assigned_by else None,
-        }
-        for t in rows
-    ]
+@router.get("/task-assignees")
+async def task_assignees(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """Who a task can be given to. Any staff role may assign, so this is not the admin user list."""
+    return [{"id": str(u.id), "name": u.full_name or u.email, "role": u.role}
+            for u in await task_core.staff(db, firm.id)]
 
 
 @router.patch("/tasks/{task_id}")
@@ -173,11 +157,12 @@ async def assign_task(
     user: User = Depends(require_roles(*STAFF_ROLES)),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    t = await db.get(Task, task_id)
-    if not t or t.firm_id != firm.id:
-        raise HTTPException(status_code=404, detail="Task not found")
-    t.assigned_to = body.assigned_to
-    t.assigned_by = user.id if body.assigned_to else None
+    try:
+        t = await task_core.get(db, firm.id, task_id)
+        to = await task_core.staff_member(db, firm.id, body.assigned_to) if body.assigned_to else None
+        task_core.assign(t, to, user.id)
+    except task_core.TaskError as exc:
+        raise HTTPException(status_code=404 if "not found" in str(exc) else 409, detail=str(exc))
     await db.flush()
     return {"ok": True, "assigned_to": str(body.assigned_to) if body.assigned_to else None}
 
@@ -185,10 +170,10 @@ async def assign_task(
 @router.post("/tasks/{task_id}/complete")
 async def complete_task(task_id: uuid.UUID, user: User = Depends(require_roles(*STAFF_ROLES)),
                         firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    t = await db.get(Task, task_id)
-    if not t or t.firm_id != firm.id:
-        raise HTTPException(status_code=404, detail="Task not found")
-    t.status = TaskStatus.DONE
+    try:
+        task_core.complete(await task_core.get(db, firm.id, task_id))
+    except task_core.TaskError as exc:
+        raise HTTPException(status_code=404 if "not found" in str(exc) else 409, detail=str(exc))
     await db.flush()
     return {"ok": True}
 

@@ -476,11 +476,13 @@ async def get_thread(
     for m in thread.messages:
         for tc in m.tool_calls:
             pending = pending_by_tool_call.get(tc.id)
-            if pending is not None and tc.tool_key == "run_agent":
+            if pending is not None:
                 try:
-                    previews[pending.id] = await ToolExecutors(
-                        session, user.id, user.role, user.firm_id,
-                    ).preview_run_agent(tc.inputs or {})
+                    executors = ToolExecutors(session, user.id, user.role, user.firm_id)
+                    preview = (await executors.preview_run_agent(tc.inputs or {}) if tc.tool_key == "run_agent"
+                               else await executors.preview_change(tc.tool_key, tc.inputs or {}))
+                    if preview is not None:
+                        previews[pending.id] = preview
                 except ExecutorError as exc:
                     # Say why it can no longer be confirmed rather than showing a stale card.
                     previews[pending.id] = {"unavailable": str(exc)}

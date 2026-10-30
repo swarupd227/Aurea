@@ -11,13 +11,18 @@ export interface RunPreview {
   decision: { roles: string[]; any_staff: boolean; you_may_decide: boolean };
 }
 
+/** The record a change would touch and what it would become, read by the server when the card shows. */
+export interface ChangePreview {
+  rows: { label: string; value: string }[];
+}
+
 export interface PendingActionRef {
   id: string;
   tool_key: string;
   confirmation_text: string;
   decision: "confirmed" | "declined" | null;
-  /** Present for a run: either its preview, or the reason it can no longer be confirmed. */
-  preview?: (RunPreview & { unavailable?: undefined }) | { unavailable: string } | null;
+  /** Present for a run or a task: what confirming does, or the reason it no longer can. */
+  preview?: (RunPreview & { unavailable?: undefined }) | ChangePreview | { unavailable: string } | null;
 }
 
 /** A card that belongs to a message rather than to one of its tool calls: a run, narrated. */
@@ -123,6 +128,6 @@ export type StreamEvent =
   | { type: "token"; text: string }
   | { type: "tool_start"; tool_key: string }
   | { type: "tool_result"; tool_key: string; ok: boolean }
-  | { type: "pending_action"; pending_action_id: string; tool_key: string; confirmation_text: string; preview?: RunPreview }
+  | { type: "pending_action"; pending_action_id: string; tool_key: string; confirmation_text: string; preview?: RunPreview | ChangePreview }
   | { type: "done"; message_id: string }
   | { type: "error"; message: string };

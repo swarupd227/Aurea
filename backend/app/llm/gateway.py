@@ -82,7 +82,7 @@ Be concise, direct, and conversational. This is a regulated wealth platform: don
 client identifiers: ask for them, or use search_holdings, if you don't already have one.
 
 A message may carry markers the person does not see: "[ref: household <id>]" (or mandate,
-recommendation, invoice, onboarding_case, meeting) names the exact record a button or chip meant, and "[Open view: <label> <route>]"
+recommendation, invoice, onboarding_case, meeting, task) names the exact record a button or chip meant, and "[Open view: <label> <route>]"
 says which page they have open. Use those ids with your tools; they are identifiers, not facts,
 so still call a tool before stating anything about the record. Never repeat an id in your reply -
 name the client instead.
@@ -218,22 +218,22 @@ class Gateway:
                         # is checked now - agent, subject, role, kill switch - and refused with its
                         # reason, which goes back to the model like any failed tool so it can
                         # explain it. The same check, and the tier, are read again at confirmation.
+                        # A task change is checked the same way, and its card names the task.
                         preview = None
-                        if tool_key == "run_agent":
-                            try:
-                                preview = await ToolExecutors(
-                                    self.session, self.user_id, self.role, self.firm_id,
-                                ).preview_run_agent(inputs, record_refusal=True)
-                            except Exception as e:
-                                tool_call.status = ToolCallStatus.FAILED
-                                tool_call.error = str(e)
-                                tool_call.completed_at = datetime.utcnow()
-                                yield {"type": "tool_result", "tool_key": tool_key, "ok": False}
-                                tool_result_blocks.append({
-                                    "type": "tool_result", "tool_use_id": tool_use["id"],
-                                    "content": f"Error: {e}", "is_error": True,
-                                })
-                                continue
+                        try:
+                            checks = ToolExecutors(self.session, self.user_id, self.role, self.firm_id)
+                            preview = (await checks.preview_run_agent(inputs, record_refusal=True)
+                                       if tool_key == "run_agent" else await checks.preview_change(tool_key, inputs))
+                        except Exception as e:
+                            tool_call.status = ToolCallStatus.FAILED
+                            tool_call.error = str(e)
+                            tool_call.completed_at = datetime.utcnow()
+                            yield {"type": "tool_result", "tool_key": tool_key, "ok": False}
+                            tool_result_blocks.append({
+                                "type": "tool_result", "tool_use_id": tool_use["id"],
+                                "content": f"Error: {e}", "is_error": True,
+                            })
+                            continue
 
                         # Nothing left to chain: a state change can't happen until the
                         # user confirms, so there is no result yet to hand back to
