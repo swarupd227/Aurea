@@ -1,8 +1,8 @@
 """Give each seeded composite the creation date it was actually built on.
 
 The two deployed composites state a creation date of 24 Sep 2024 but their rows were written on
-24 Sep 2026, and the page shows the stated date as fact - two years of composite history that does
-not exist. composites_backfill writes the day it runs, so this corrects only a seeded composite
+24 Sep 2026, and the composite report carries the stated date as fact - two years of composite
+history that does not exist. composites_backfill writes the day it runs, so this corrects only a seeded composite
 (its criteria are the seeded wording) whose stated date is earlier than the day it was built. A
 composite a person created keeps the date they gave it: a firm bringing an existing composite
 across may rightly date it before it reached this platform. Idempotent.
