@@ -73,9 +73,10 @@ def _status(gap: float) -> str:
 def assess(
     *, age: int | None, income: float | None, other_income: float, has_dependants: bool, retirement_age: int,
     goals_due: float, assets: float, life: float = 0.0, tpd: float = 0.0, income_benefits: list[tuple[float, int | None]] = (),
-    rules: dict | None = None,
+    rules: dict | None = None, retirement_stated: bool = True,
 ) -> dict:
-    """The two gaps for one earner. Pure. `income_benefits` is [(annual benefit, paid to age)]."""
+    """The two gaps for one earner. Pure. `income_benefits` is [(annual benefit, paid to age)].
+    `retirement_stated` says the retirement age came from the client's own goal, not the default."""
     rules = {**DEFAULTS, **(rules or {})}
     missing = [name for name, v in (("income", income), ("date_of_birth", age)) if v is None]
     if missing:
@@ -83,6 +84,11 @@ def assess(
         return {"years": None, "death": blank, "disability": blank}
     years = max(0, retirement_age - age)
     if years == 0:
+        # Past the default age with an income is someone who has not retired, not someone with
+        # nothing to protect. How long the earnings run is unknown, so it is not assessed.
+        if income > 0 and not retirement_stated:
+            blank = {"status": "not_assessed", "missing": ["retirement_date"]}
+            return {"years": None, "death": blank, "disability": blank}
         done = {"status": "past_retirement"}
         return {"years": 0, "death": done, "disability": done}
 
@@ -117,13 +123,20 @@ def assess(
     }
 
 
-def _retirement_age(goals: list[dict], default: int) -> int:
+def _retirement_for(age: int | None, goals: list[dict], *, today: date, default: int) -> tuple[int, str]:
+    """(retirement age, where it came from): the age the retirement goal states, else the age this
+    person reaches on the goal's date, else the firm's default."""
     for g in goals:
-        if g.get("kind") == "retirement":
-            stated = (g.get("assumptions") or {}).get("retirement_age")
-            if stated:
-                return int(stated)
-    return default
+        if g.get("kind") != "retirement":
+            continue
+        stated = (g.get("assumptions") or {}).get("retirement_age")
+        if stated:
+            return int(stated), "goal_age"
+        if age is not None and g.get("target_date"):
+            years = (date.fromisoformat(g["target_date"]) - today).days / 365.25
+            if years > 0:
+                return age + max(1, round(years)), "goal_date"
+    return default, "assumed"
 
 
 def _goals_due(goals: list[dict], *, today: date, years: int, rate: float) -> float:
@@ -174,7 +187,6 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     managed = float(brain["totals"]["total_value"])
     held_away = sum(float((p.profile or {}).get("held_away") or 0) for p in persons)
     assets = managed + held_away
-    retirement_age = _retirement_age(brain["goals"], rules["retirement_age"])
     has_people = len(persons) > 1
 
     people = []
@@ -186,10 +198,11 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         other_income = sum(income_of(o) or 0.0 for o in others)
         age = age_on(p.date_of_birth, today)
         mine = [x for x in in_force if x.person_id == p.id]
+        retirement_age, basis = _retirement_for(age, brain["goals"], today=today, default=rules["retirement_age"])
         years = max(0, retirement_age - age) if age is not None else 0
         result = assess(
             age=age, income=income, other_income=other_income, has_dependants=has_people,
-            retirement_age=retirement_age, assets=assets, rules=rules,
+            retirement_age=retirement_age, retirement_stated=basis != "assumed", assets=assets, rules=rules,
             goals_due=_goals_due(brain["goals"], today=today, years=years, rate=rules["discount_rate"]),
             life=sum(float(x.sum_insured or 0) for x in mine if x.kind == "life"),
             tpd=sum(float(x.sum_insured or 0) for x in mine if x.kind == "tpd"),
@@ -198,7 +211,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         )
         people.append({
             "person_id": str(p.id), "name": p.full_name, "age": age, "income": income,
-            "retirement_age": retirement_age, "years_to_retirement": result["years"],
+            "retirement_age": retirement_age, "retirement_basis": basis, "years_to_retirement": result["years"],
             # A survivor whose income is unknown is counted as earning nothing, which overstates the need.
             "other_income_missing": any(income_of(o) is None and not o.is_next_gen for o in others),
             "death": result["death"], "disability": result["disability"],
@@ -213,6 +226,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         "assumptions": rules, "not_modelled": NOT_MODELLED,
         "summary": {"people": len(people), "gaps": statuses.count("gap"), "largest_gap": max(gaps, default=0.0),
                     "not_assessed": sum(1 for r in people if r["death"]["status"] == "not_assessed"),
+                    "assessed": sum(1 for r in people if r["death"]["status"] in ("gap", "no_gap")),
                     "policies_counted": len(in_force)},
     }
 
@@ -227,16 +241,18 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, today: date | N
         if view:
             rows.append(view)
     rows.sort(key=lambda r: (-r["summary"]["largest_gap"], -r["summary"]["not_assessed"], r["household"]))
-    with_people = [r for r in rows if r["people"]]
+    # Clear means someone was measured and came up covered. A household nobody could be measured in
+    # is not clear: it has no one to assess, however it got there.
+    gap = [r for r in rows if r["summary"]["gaps"]]
+    unknown = [r for r in rows if not r["summary"]["gaps"] and r["summary"]["not_assessed"]]
+    clear = [r for r in rows if not r["summary"]["gaps"] and not r["summary"]["not_assessed"] and r["summary"]["assessed"]]
     return {
         "households": rows, "assumptions": assumptions(firm), "not_modelled": NOT_MODELLED,
         "currency": firm.base_currency if firm else None,
         "summary": {
             "households": len(rows),
-            "with_gap": sum(1 for r in with_people if r["summary"]["gaps"]),
-            "not_assessed": sum(1 for r in with_people if r["summary"]["not_assessed"] and not r["summary"]["gaps"]),
-            "clear": sum(1 for r in with_people if not r["summary"]["gaps"] and not r["summary"]["not_assessed"]),
-            "no_people": sum(1 for r in rows if not r["people"]),
+            "with_gap": len(gap), "not_assessed": len(unknown), "clear": len(clear),
+            "no_people": len(rows) - len(gap) - len(unknown) - len(clear),
             "people_not_assessed": sum(r["summary"]["not_assessed"] for r in rows),
         },
     }

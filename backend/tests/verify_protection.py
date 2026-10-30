@@ -30,6 +30,7 @@ from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Per
 from app.models.identity import User
 from app.models.protection import ProtectionPolicy
 from app.models.tenant import Firm
+from seed import person_tax_backfill
 
 PASS, FAIL = [], []
 A20 = 13.590326  # (1 - 1.04^-20) / 0.04
@@ -101,6 +102,11 @@ def sums() -> None:
     r = pr.assess(**{**base, "income": 0.0})
     check("a stated income of zero is assessed", r["disability"]["status"], "no_gap")
     check("past retirement there is no earnings to protect", pr.assess(**{**base, "age": 66})["death"]["status"], "past_retirement")
+    r = pr.assess(**{**base, "age": 68}, retirement_stated=False)
+    check("past the default age with an income has not retired: not assessed, and it says why",
+          (r["death"]["status"], r["death"]["missing"]), ("not_assessed", ["retirement_date"]))
+    r = pr.assess(**{**base, "age": 68, "income": 0.0}, retirement_stated=False)
+    check("past it with no income has nothing to protect", r["death"]["status"], "past_retirement")
     custom = pr.assess(**base, rules={"death_replacement": 0.5})["death"]
     check("a firm's own replacement rate is used", custom["annual_need"], 50_000.0)
 
@@ -254,6 +260,34 @@ async def main() -> int:
             await refused("another firm cannot record one", pr.record_income(
                 s, other.id, person_id=wei.id, annual_income=1, source_document="Payslip", recorded_by="x"), "not in this firm")
 
+            print("\n=== When someone retires comes from their goal ===")
+            late = household("Late")
+            await s.flush()
+            robert = person(late, "Robert", 800_000, age=67)
+            await s.flush()
+            s.add(Goal(firm_id=firm.id, household_id=late.id, name="Retire", kind="retirement", target_amount=1,
+                       target_date=today + timedelta(days=int(365.25 * 8))))
+            await s.flush()
+            v = await pr.for_household(s, late.id, firm_id=firm.id, today=today)
+            row = v["people"][0]
+            check("a goal date puts retirement at 75, not the default 65",
+                  (row["retirement_age"], row["retirement_basis"], row["years_to_retirement"]), (75, "goal_date", 8))
+            check("so a 67-year-old on an income is assessed", row["disability"]["status"] in ("gap", "no_gap"), True)
+            none = household("Working on")
+            await s.flush()
+            person(none, "James", 320_000, age=68)
+            await s.flush()
+            v = await pr.for_household(s, none.id, firm_id=firm.id, today=today)
+            check("with no goal, a 68-year-old on an income is not called retired",
+                  (v["people"][0]["death"]["status"], v["people"][0]["death"]["missing"], v["people"][0]["retirement_basis"]),
+                  ("not_assessed", ["retirement_date"], "assumed"))
+            stopped = household("Stopped")
+            await s.flush()
+            person(stopped, "Retired", 0, age=70)
+            await s.flush()
+            v = await pr.for_household(s, stopped.id, firm_id=firm.id, today=today)
+            check("someone retired is measured as nothing, not as covered", v["summary"]["assessed"], 0)
+
             print("\n=== The book ===")
             trust = household("Trust only")
             await s.flush()
@@ -269,12 +303,31 @@ async def main() -> int:
             check("another firm's households are not shown", "Theirs" in order, False)
             check("the largest gap comes first", book["households"][0]["summary"]["largest_gap"] >=
                   book["households"][1]["summary"]["largest_gap"], True)
-            check("the counts add up", (book["summary"]["households"],
-                                        sum(book["summary"][k] for k in ("with_gap", "not_assessed", "clear", "no_people"))), (4, 4))
-            check("a household of only a trust has no one to assess", book["summary"]["no_people"], 1)
-            check("a household with no income is not called clear", book["summary"]["not_assessed"], 1)
+            check("the counts add up", book["summary"]["households"],
+                  sum(book["summary"][k] for k in ("with_gap", "not_assessed", "clear", "no_people")))
+            check("a trust and a retired household have no one to assess", book["summary"]["no_people"], 2)
+            check("a retired household is not called clear",
+                  next(h for h in book["households"] if h["household"] == "Stopped")["summary"]["assessed"], 0)
+            check("households with no income or no retirement date are not called clear",
+                  book["summary"]["not_assessed"], 2)
             check("no household in another firm can be read",
                   await pr.for_household(s, theirs.id, firm_id=firm.id, today=today), None)
+
+            print("\n=== Restoring the seed's income details ===")
+            demo = Firm(id=uuid.uuid4(), name="Demo", slug="demo", base_currency="NZD")
+            s.add(demo)
+            await s.flush()
+            dh = household("The Chen Family", f=demo)
+            await s.flush()
+            dwei = person(dh, "Wei Chen", f=demo, held=620_000)
+            dmei = person(dh, "Mei Chen", 150_000, f=demo)
+            await s.flush()
+            first = await person_tax_backfill.apply(s)
+            check("a person with no tax details gets the seed's", (first, dwei.profile["tax"]["annual_income"]), (1, 280_000))
+            check("what else was on the profile is kept", dwei.profile["held_away"], 620_000)
+            check("properties come with it", len(dwei.profile["properties"]), 2)
+            check("a figure already on file is never overwritten", dmei.profile["tax"]["annual_income"], 150_000)
+            check("running it again changes nothing", await person_tax_backfill.apply(s), 0)
 
             print("\n=== The tools and the routes ===")
             check("reading changes nothing", TOOLS["read_protection"].change_state, ToolChangeState.NO)
