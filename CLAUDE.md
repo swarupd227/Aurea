@@ -67,6 +67,9 @@ pages are artifact views the agents open. Full guideline, including what is buil
 
 ## Working in this repo
 
+- **The backlog is `docs/BACKLOG.md`, and there is only one.** A plan or "what next" answer starts from it,
+  not from memory, chat or an old report. Anything found, deferred or finished updates it in the same
+  commit, in every session. A status in it is checked against the code or the live site before it is stated.
 - **Backend** runs locally with uvicorn against the Azure database. Never use Docker for code changes.
   Azure Postgres is IP-allowlisted and usually unreachable from a dev machine, so verification here relies
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
