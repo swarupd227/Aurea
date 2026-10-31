@@ -51,8 +51,8 @@ Nothing is being built right now.
 | B-49 | Approve shown to a role that cannot approve | - | `RecommendationCard` shows Approve to everyone. The server refuses compliance on a proposal that moves a book, so the control holds, but the screen should read `decision_rights` |
 | B-51 | A lapsed Confirm card still offers Confirm | - | A pending action expires after 24 hours, but only when someone clicks. Until then the card shows live buttons; the server refuses the click and only then does it read Expired |
 | B-52 | Astra blurs "no review on record" | §5.10 | Live on 31 Oct it listed the Chens, reviewed on 14 Sep, among clients paying fees with no review on file. `read_client_reviews` was right. A carried review also reports all four topics as `not_covered` when they are unknown; the page says "not recorded" |
-| B-50 | Approved outreach under the right adviser's name | - | `client_care.act` signs with the first adviser found at the firm, not that client's adviser. Only matters with more than one adviser |
-| B-51 | A report's age at the moment of approval | - | Approving shows the period but no warning. The live Morrison draft is dated 13 Aug, so its figures were 11 weeks old on 31 Oct; a redraft refreshes the same draft |
+| B-54 | Approved outreach under the right adviser's name | - | `client_care.act` signs with the first adviser found at the firm, not that client's adviser. Only matters with more than one adviser |
+| B-55 | A report's age at the moment of approval | - | Approving shows the period but no warning. The live Morrison draft is dated 13 Aug, so its figures were 11 weeks old on 31 Oct; a redraft refreshes the same draft |
 
 ## Parked until a client needs it
 
@@ -90,7 +90,7 @@ B-26 waits for a real custodian statement.
 | B-36 | Crediting an invoice, and Astra's prepare-run and credit tools | Tests only |
 | B-41 | A real questionnaire through to an adviser's decision | Tests only; no client answers are seeded and none should be invented |
 | B-50 | A client review recorded, booked or re-cadenced through Astra's Confirm | Tests and a local click-through of the page's own forms. Live on 31 Oct, Astra's Confirm card named the record and Not now wrote nothing. No review has been recorded live, because a record cannot be edited and none should be invented |
-| B-52 | Sending a client message | Live on 31 Oct: the card with the exact words, and Not now. A confirmed send is tests only, because it reaches a client at once and cannot be taken back |
+| B-56 | Sending a client message | Live on 31 Oct: the card with the exact words, and Not now. A confirmed send is tests only, because it reaches a client at once and cannot be taken back |
 | B-53 | Approving and withdrawing a report | Live on 31 Oct: the approval card, and Not now. A confirmed approval or withdrawal is tests only, because a client would see it |
 | B-45 | India demo: a real consent and a real fill | Live on 31 Oct: the firm, all four Indian seats, Astra's tax and licence tools, the client assistant and compliance under IN-SEBI. Not tried on Azure: approving, recording a consent, or an order filling on either track |
 
