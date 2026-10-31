@@ -20,6 +20,7 @@ from app.models.identity import User
 STATUSES = ("open", "done", "dismissed", "all")
 LIST_LIMIT = 200
 TITLE_MAX = 280
+NOT_ASSIGNABLE = (UserRole.CLIENT, UserRole.ADMIN, UserRole.SUPERADMIN)
 
 
 class TaskError(Exception):
@@ -69,9 +70,10 @@ async def get(session: AsyncSession, firm_id: uuid.UUID, task_id: uuid.UUID) -> 
 
 
 async def staff(session: AsyncSession, firm_id: uuid.UUID) -> list[User]:
-    """Who a task can be given to: the firm's active staff."""
+    """Who a task can be given to: the firm's active staff, and not the accounts that only run the
+    platform. A follow-up is client work, and those accounts hold none."""
     rows = (await session.execute(
-        select(User).where(User.firm_id == firm_id, User.role != UserRole.CLIENT, User.is_active.is_(True))
+        select(User).where(User.firm_id == firm_id, User.role.notin_(NOT_ASSIGNABLE), User.is_active.is_(True))
         .order_by(User.full_name))).scalars().all()
     return list(rows)
 

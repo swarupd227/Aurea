@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_firm
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
-from app.aurea_core import tasks as task_core
+from app.aurea_core import firm_time, tasks as task_core
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
 from app.models.client_experience import Message
@@ -141,7 +141,7 @@ async def list_tasks(
     user: User = Depends(get_current_user),
 ):
     rows = await task_core.for_firm(db, firm.id, status=status, assigned_to=user.id if assigned_to_me else None)
-    return await task_core.views(db, rows, utcnow().date())
+    return await task_core.views(db, rows, firm_time.today(firm))
 
 
 @router.get("/task-assignees")

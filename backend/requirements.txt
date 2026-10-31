@@ -36,6 +36,9 @@ numpy==2.2.1
 # Logging
 structlog==24.4.0
 
+# Time zones for zoneinfo (aurea_core/firm_time.py), which a slim image or Windows may not carry.
+tzdata==2026.3
+
 # Local embeddings for RAG (CPU, no external API). Optional at runtime — guarded import.
 fastembed==0.5.1
 

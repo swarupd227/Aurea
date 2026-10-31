@@ -12,7 +12,8 @@ pages are artifact views the agents open. Full guideline, including what is buil
 
 1. Natural language is the primary way to do anything; buttons inside pages are the same actions as tools.
 2. Every fact Astra states comes from a tool called after the user's latest message. Tool calls stay on
-   the message as Sources; results become cards. The orchestrator prompt carries no client or firm facts.
+   the message as Sources; results become cards. The orchestrator prompt carries no client or firm facts;
+   the one thing it is told is today's date on the firm's calendar (`aurea_core/firm_time.py`).
 3. State-changing tools pause on a Confirm / Not now card, held **server-side** and executed exactly once.
 4. Three controls, never merged: confirmation ("did you mean this"), decision rights ("may this role"),
    autonomy tier ("may an agent do this on its own").

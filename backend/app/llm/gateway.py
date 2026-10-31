@@ -27,8 +27,10 @@ from typing import Any, AsyncGenerator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.core.tools import ToolChangeState, anthropic_tools_for_role, get_tool, validate_tool_call
 from app.models.enums import UserRole
+from app.models.tenant import Firm
 from app.models.thread import (
     Thread, ThreadMessage, MessageRole, ToolCall, ToolCallStatus,
     PendingAction, PendingActionStatus,
@@ -86,6 +88,9 @@ recommendation, invoice, onboarding_case, meeting, task) names the exact record 
 says which page they have open. Use those ids with your tools; they are identifiers, not facts,
 so still call a tool before stating anything about the record. Never repeat an id in your reply -
 name the client instead.
+
+Today, on the firm's calendar, is {today}. A day someone names, like "Friday" or "next week", counts
+forward from it; tools take dates as YYYY-MM-DD.
 
 User's role: {role}
 """
@@ -351,7 +356,8 @@ class Gateway:
         carrying the tool_uses Claude requested this round and its raw content_blocks
         (for the caller to append as the next "assistant" turn if it continues)."""
 
-        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(role=str(self.role))
+        firm = await self.session.get(Firm, self.firm_id)
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(role=str(self.role), today=firm_time.spoken(firm_time.today(firm)))
         tools = anthropic_tools_for_role(self.role)
 
         tool_uses: list[dict[str, Any]] = []

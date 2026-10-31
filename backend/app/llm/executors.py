@@ -1169,6 +1169,12 @@ class ToolExecutors:
             raise ExecutorError("Firm not found.")
         return firm
 
+    async def _today(self):
+        """Today on the firm's calendar, which is the day a person means (aurea_core.firm_time)."""
+        from app.aurea_core import firm_time
+
+        return firm_time.today(await self._firm())
+
     async def open_view(self, inputs: dict[str, Any], turn: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Name a view for the workspace to open beside the conversation. It reads no figures and
         returns none: the view loads its own data through its page's routes. An id it is given must
@@ -1367,7 +1373,7 @@ class ToolExecutors:
                        and not m.date_passed(now))
         return {
             "meetings": meetings, "shown": len(meetings), "total": len(rows), "by_status": by_status,
-            "upcoming": upcoming, "date_passed": passed, "as_of": now.date().isoformat(),
+            "upcoming": upcoming, "date_passed": passed, "as_of": (await self._today()).isoformat(),
             "message": (f"{len(rows)} meeting(s)" + (f"; showing {len(meetings)}" if len(meetings) < len(rows) else "")
                         + (f" - {', '.join(f'{n} {s}' for s, n in sorted(by_status.items()))}" if rows else "")
                         + f". {upcoming} upcoming"
@@ -1378,7 +1384,6 @@ class ToolExecutors:
         """The Tasks page's list (api.engage.list_tasks). Only this firm's tasks, and a household
         is read back inside the firm before it filters anything."""
         from app.aurea_core import tasks
-        from app.core.db import utcnow
 
         status = str(inputs.get("status") or "open").strip().lower()
         if status not in tasks.STATUSES:
@@ -1388,7 +1393,7 @@ class ToolExecutors:
             household_id = (await self._task_household(inputs["household_id"])).id
         rows = await tasks.for_firm(self.session, self.firm_id, status=status, household_id=household_id,
                                     assigned_to=self.user_id if inputs.get("assigned_to_me") else None)
-        today = utcnow().date()
+        today = await self._today()
         all_views = await tasks.views(self.session, rows, today)
         shown = all_views[:self._limit(inputs.get("limit"), 20, 50)]
         overdue = sum(1 for t in all_views if t["overdue"])
@@ -1432,24 +1437,30 @@ class ToolExecutors:
         except tasks.TaskError as exc:
             raise ExecutorError(str(exc))
 
-    @staticmethod
-    def _task_due(value: Any):
+    async def _task_due(self, value: Any):
+        """A due date for a new task. One already gone is refused with today's date in the words,
+        because it almost always means a day like 'Friday' was worked out wrongly."""
         from datetime import date
+
+        from app.aurea_core import firm_time
 
         text = str(value or "").strip()
         if not text:
             return None
         try:
-            return date.fromisoformat(text)
+            due = date.fromisoformat(text)
         except ValueError:
             raise ExecutorError(f"'{text}' is not a date. Give it as YYYY-MM-DD.")
+        today = await self._today()
+        if due < today:
+            raise ExecutorError(f"{firm_time.spoken(due)} has already passed: today is {firm_time.spoken(today)}.")
+        return due
 
     async def _task_result(self, task, message: str) -> dict[str, Any]:
         from app.aurea_core import tasks
-        from app.core.db import utcnow
 
         await self.session.flush()
-        today = utcnow().date()
+        today = await self._today()
         views = await tasks.views(self.session, [task], today)
         return {"tasks": views, "shown": 1, "total": 1, "status": str(task.status), "overdue": sum(v["overdue"] for v in views),
                 "unassigned": 0 if task.assigned_to else 1, "as_of": today.isoformat(), "message": message}
@@ -1480,9 +1491,10 @@ class ToolExecutors:
 
         household = await self._task_household(inputs["household_id"]) if inputs.get("household_id") else None
         assignee = await self._task_assignee(inputs.get("assignee_name") or "me")
+        due = await self._task_due(inputs.get("due_date"))
         try:
             return tasks.new(self.firm_id, str(inputs.get("title") or ""), household=household,
-                             due_date=self._task_due(inputs.get("due_date")), assignee=assignee, by=self.user_id), assignee
+                             due_date=due, assignee=assignee, by=self.user_id), assignee
         except tasks.TaskError as exc:
             raise ExecutorError(str(exc))
 
@@ -1500,21 +1512,23 @@ class ToolExecutors:
 
         if tool_key not in ("complete_task", "assign_task", "create_task"):
             return None
-        from app.aurea_core import tasks
-        from app.core.db import utcnow
+        from app.aurea_core import firm_time, tasks
+
+        def due(task) -> str | None:
+            return firm_time.spoken(task.due_date) if task.due_date else None
 
         if tool_key == "create_task":
             task, assignee = await self._new_task(inputs)
-            return rows(("Task", task.title), ("Client", task.subject_label), ("Due", task.due_date),
+            return rows(("Task", task.title), ("Client", task.subject_label), ("Due", due(task)),
                         ("Assign to", assignee.full_name if assignee else "Nobody"))
         task = await self._task(inputs)
         if str(task.status) != "open":
             raise ExecutorError(f"'{task.title}' is already {task.status}.")
-        common = (("Task", task.title), ("Client", task.subject_label), ("Due", task.due_date))
+        common = (("Task", task.title), ("Client", task.subject_label), ("Due", due(task)))
         if tool_key == "complete_task":
             return rows(*common)
         to = await self._task_assignee(inputs.get("assignee_name"))
-        held = (await tasks.views(self.session, [task], utcnow().date()))[0]["assigned_to_name"]
+        held = (await tasks.views(self.session, [task], await self._today()))[0]["assigned_to_name"]
         return rows(*common, ("Held by", held), ("Assign to", to.full_name if to else "Nobody"))
 
     async def read_provenance(self, inputs: dict[str, Any]) -> dict[str, Any]:
