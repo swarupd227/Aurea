@@ -89,6 +89,9 @@ says which page they have open. Use those ids with your tools; they are identifi
 so still call a tool before stating anything about the record. Never repeat an id in your reply -
 name the client instead.
 
+"[Not done: <tool> <inputs> - <why>]" means a change you offered was not carried out: nothing happened.
+Treat that request as settled, and do not offer the change again unless the person asks for it again.
+
 Today, on the firm's calendar, is {today}. A day someone names, like "Friday" or "next week", counts
 forward from it; tools take dates as YYYY-MM-DD.
 
@@ -339,17 +342,38 @@ class Gateway:
         )
         recent_result = await self.session.execute(recent_stmt)
         recent_messages = list(reversed(recent_result.scalars().all()))
+        not_done = await self._not_done(recent_messages)
 
         messages: list[dict[str, Any]] = []
-        for msg in recent_messages:
-            if not (msg.text or "").strip():
-                continue    # a run's card while it is still running has no words yet
-            role = "user" if msg.role == MessageRole.USER else "assistant"
+
+        def add(role: str, text: str) -> None:
             if messages and messages[-1]["role"] == role:
-                messages[-1]["content"] = f"{messages[-1]['content']}\n\n{msg.text}"
+                messages[-1]["content"] = f"{messages[-1]['content']}\n\n{text}"
             else:
-                messages.append({"role": role, "content": msg.text})
+                messages.append({"role": role, "content": text})
+
+        for msg in recent_messages:
+            if (msg.text or "").strip():    # a run's card while it is still running has no words yet
+                add("user" if msg.role == MessageRole.USER else "assistant", msg.text)
+            for marker in not_done.get(msg.id, []):
+                add("user", marker)
         return messages
+
+    async def _not_done(self, recent: list[ThreadMessage]) -> dict[uuid.UUID, list[str]]:
+        """A change that paused and was never carried out, as a marker for the model. A pause ends
+        the turn with no result, so without this a declined request reads as still unanswered and
+        the next turn offers it again."""
+        rows = (await self.session.execute(
+            select(ToolCall.message_id, ToolCall.tool_key, ToolCall.inputs, PendingAction.status)
+            .join(PendingAction, PendingAction.tool_call_id == ToolCall.id)
+            .where(ToolCall.message_id.in_([m.id for m in recent]),
+                   PendingAction.status.in_([PendingActionStatus.REJECTED, PendingActionStatus.EXPIRED]))
+        )).all()
+        out: dict[uuid.UUID, list[str]] = {}
+        for message_id, tool_key, inputs, status in rows:
+            why = "the person chose Not now" if status == PendingActionStatus.REJECTED else "its confirmation expired"
+            out.setdefault(message_id, []).append(f"[Not done: {tool_key} {json.dumps(inputs, default=str)} - {why}]")
+        return out
 
     async def _stream_tokens(self, messages: list[dict[str, Any]]) -> AsyncGenerator[dict[str, Any], None]:
         """Yields {"type": "token", ...} chunks then a final {"type": "_final", ...}

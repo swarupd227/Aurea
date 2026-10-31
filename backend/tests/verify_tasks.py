@@ -269,6 +269,31 @@ async def behaviour() -> None:
             check("the page's list carries what is overdue", all("overdue" in t for t in listed), True)
             check("and is the same list", [t["title"] for t in listed][:1], [(await ex().execute("read_tasks", {}))["tasks"][0]["title"]])
 
+            print("\n=== a declined change stays declined ===")
+            heard: dict = {}
+            async def hearing(**kw):
+                heard.update(kw)
+                for ev in say("Fine."):
+                    yield ev
+            def said_to_model():
+                return "\n".join(str(m["content"]) for m in heard["messages"])
+            t7, _ = await ask("create_task", {"title": "Declined one"})
+            await Gateway(s, sophie.id, sophie.role, sophie.firm_id).confirm_pending_action((await pending_of(t7)).id, False)
+            gw_mod.llm_service.stream = hearing
+            async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t7.id, "Something else"):
+                pass
+            check("the model hears that it was declined", "[Not done: create_task" in said_to_model() and "chose Not now" in said_to_model(), True)
+            check("  which change it was", "Declined one" in said_to_model(), True)
+            check("  before the new request", said_to_model().index("Not done") < said_to_model().index("Something else"), True)
+            check("turns still alternate", all(a["role"] != b["role"] for a, b in zip(heard["messages"], heard["messages"][1:])), True)
+            t8, _ = await ask("create_task", {"title": "Confirmed one"})
+            gw_mod.llm_service.stream = script(say("Done."))
+            await Gateway(s, sophie.id, sophie.role, sophie.firm_id).confirm_pending_action((await pending_of(t8)).id, True)
+            gw_mod.llm_service.stream = hearing
+            async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t8.id, "Thanks"):
+                pass
+            check("a confirmed change is not marked", "Not done" in said_to_model(), False)
+
             print("\n=== today is the firm's ===")
             # 8pm UTC on a Friday is already Saturday morning in Auckland.
             friday_night = datetime(2026, 10, 30, 20, 0, tzinfo=timezone.utc)
