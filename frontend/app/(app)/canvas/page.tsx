@@ -450,7 +450,7 @@ export default function Canvas() {
           <button className="btn-primary" disabled={busy} aria-label="Send message"><Send size={16} /></button>
         </form>
         <div className="flex items-center gap-1.5 text-xs text-ink-muted mt-2">
-          <ShieldCheck size={12} className="text-positive" /> Your data stays in {view.firm?.name}; it never trains external models.
+          <ShieldCheck size={12} className="text-positive" /> Your data stays with {view.firm?.name}; it never trains external models.
         </div>
       </div>
     </div>

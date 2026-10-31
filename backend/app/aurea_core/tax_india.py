@@ -275,8 +275,8 @@ def _opportunities(row: dict, position: dict, inputs: dict, *, today: date, tax_
         for lot in taken:
             split[bucket(tax_class, lot["acquired_on"], today)] += (price - lot["cost"]) * lot["quantity"]
         with_it = _merge(position["realised"], split)
-        now = tax_on(set_off(position["realised"], inputs["brought"], slab_rate=inputs["slab_rate"]),
-                     slab_rate=inputs["slab_rate"], income=inputs["income"])
+        before = set_off(position["realised"], inputs["brought"], slab_rate=inputs["slab_rate"])
+        now = tax_on(before, slab_rate=inputs["slab_rate"], income=inputs["income"])
         settled = set_off(with_it, inputs["brought"], slab_rate=inputs["slab_rate"])
         then = tax_on(settled, slab_rate=inputs["slab_rate"], income=inputs["income"])
         out.append({
@@ -284,8 +284,9 @@ def _opportunities(row: dict, position: dict, inputs: dict, *, today: date, tax_
             "gain_en_route": round(sum(max((price - l["cost"]) * l["quantity"], 0.0) for l in taken), 2),
             "long_term": sum(split[b] for b in LONG_TERM_BUCKETS) < 0,
             "tax_saved": round(max(now["amount"] - then["amount"], 0.0), 2),
+            # What this sale adds to next year's losses, against the year as it stands.
             "carries_forward": round(sum(settled["carry_forward"].values())
-                                     - sum(float(v or 0) for v in inputs["brought"].values()), 2),
+                                     - sum(before["carry_forward"].values()), 2),
         })
 
     # A short-term loss at the front of the queue that will soon be long-term, and worth less.

@@ -18,23 +18,25 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  - registers every table on Base.metadata
+from app.agents import _signals
 from app.agents import drift_rebalancing as drift
 from app.agents import tax_intelligence as tax_agent
 from app.atlas import runtime
 from app.atlas.base import Subject
 from app.aurea_core import disclosures, licences, protection, tax_intelligence
+from app.aurea_core.graph import household_brain
 from app.compliance import ontology
 from app.core.db import Base
 from app.core.personas import INDIA_PERSONAS
-from app.models.enums import AgentKey, AutonomyTier, HumanAction
+from app.models.enums import AgentKey, AutonomyTier, HumanAction, RecommendationStatus
 from app.models.governance import Recommendation
-from app.models.graph import Household, Mandate
+from app.models.graph import Goal, Household, Mandate
 from app.models.identity import User
 from app.models.portfolio import Price
 from app.models.tenant import AgentConfig
 from app.models.trading import Order
 from app.provenance import policy
-from seed import india_demo
+from seed import india_demo, india_demo_backfill
 
 PASS, FAIL = [], []
 FOREIGN = ("KiwiSaver", "PIE", "bright-line", "NZD", "IRA", "Roth", "ISA ", "401(k)", "IRD ", "$")
@@ -56,7 +58,10 @@ async def main() -> int:
             async def _no_research(*a, **k):
                 return []
 
+            prompts = []
+
             async def _fallback(ctx, *, fallback, **k):
+                prompts.append(k.get("prompt", ""))
                 return fallback
 
             drift.knowledge.retrieve = _no_research
@@ -99,6 +104,21 @@ async def main() -> int:
             check("the HUF has a loss about to go long-term", any(o["kind"] == "turning_long" for o in huf["opportunities"]), True)
             text = json.dumps(r)
             check("nothing from another country in it", [w for w in FOREIGN if w in text], [])
+
+            reliance = next(o for o in huf["opportunities"] if o["kind"] == "loss" and o["symbol"] == "RELIANCE.NS")
+            check("a loss with no gain to meet carries forward", reliance["carries_forward"], -reliance["net_loss"])
+            infosys = next(o for o in rajesh["opportunities"] if o["kind"] == "loss")
+            check("one the year absorbs carries nothing forward", infosys["carries_forward"], 0)
+
+            print("\n=== Goals ===")
+            on_track = {}
+            for h in (await s.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all():
+                brain = await household_brain(s, h.id, firm_id=firm.id)
+                for g in _signals.goal_projections(brain):
+                    on_track[f"{h.name}: {g['name']}"] = g["on_track"]
+            check("a book with some goals met and some to talk about", sum(on_track.values()), 4)
+            check("the client we sign in as has one of each", [v for k, v in sorted(on_track.items()) if "Sharma" in k],
+                  [False, True])
 
             print("\n=== Protection works from what is on file ===")
             view = await protection.for_household(s, sharma.id, firm_id=firm.id)
@@ -150,8 +170,28 @@ async def main() -> int:
             check("each on its household", all(m.subject_type == "household" and m.subject_id for m in memos), True)
             check("and in rupees", all("₹" in m.summary and "$" not in m.summary for m in memos), True)
 
+            asked = [p for p in prompts if "tax memo" in p]
+            check("the memo names a household once", [p for p in asked if " household." in p.split("\n")[0]], [])
+            check("and does not call a gain a harvest", all("gain(s) that fit the exemption" in p for p in asked), True)
+
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)
+
+            print("\n=== The backfill ===")
+            goal = (await s.execute(select(Goal).where(Goal.firm_id == firm.id,
+                                                       Goal.name == "Next generation endowment"))).scalar_one()
+            goal.target_amount, goal.assumptions = 500000000, {"years": 20}
+            check("it reaches every seeded goal", await india_demo_backfill.reset_goals(s, firm), 6)
+            check("and puts the target back", float(goal.target_amount), 28000000.0)
+            check("and the assumptions", goal.assumptions["funding_share"], 0.8)
+            open_tax = select(func.count()).select_from(Recommendation).where(
+                Recommendation.firm_id == firm.id, Recommendation.agent_key == AgentKey.TAX_INTELLIGENCE,
+                Recommendation.status == RecommendationStatus.PROPOSED)
+            before = (await s.execute(open_tax)).scalar_one()
+            await runtime.run_agent(s, firm=firm, agent_key=AgentKey.TAX_INTELLIGENCE, trigger="seed_scan",
+                                    subject=Subject("firm", firm.id, firm.name), require_human=True)
+            await s.flush()
+            check("its rerun refreshes the tax proposals, it adds none", (await s.execute(open_tax)).scalar_one(), before)
     finally:
         await db.dispose()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")

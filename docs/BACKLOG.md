@@ -47,6 +47,8 @@ Nothing is being built right now.
 | B-40 | IPS drafting reads the assessment | §5.5 | `ips_drafting` reads the mandate's profile, not the scored tolerance and capacity. Do with B-04 |
 | B-44 | Astra overstates "not taken" | §5.2 | Live on 31 Oct it said nothing on file supports a mandate's profile. The tool knows only that no questionnaire is recorded here; a firm may hold one elsewhere |
 | B-46 | Confirm cards that name the change | - | `preview_change` has no rows for `decide_risk_profile` or the protection tools, so their cards show only a general sentence, not the mandate, policy or figure being confirmed |
+| B-48 | Over-promising rule reads a denial as a promise | - | `no_overpromise` matches words, so "does not mean a rebuy carries no risk" and "not a guarantee of outcome" fail it. Two Indian tax memos show this live. Every firm shares the rule and over-flagging is the safe direction, so the user chose on 31 Oct to leave it |
+| B-49 | Approve shown to a role that cannot approve | - | `RecommendationCard` shows Approve to everyone. The server refuses compliance on a proposal that moves a book, so the control holds, but the screen should read `decision_rights` |
 
 ## Parked until a client needs it
 
@@ -85,13 +87,14 @@ B-26 waits for a real custodian statement.
 | B-41 | A real questionnaire through to an adviser's decision | Tests only; no client answers are seeded and none should be invented |
 | B-03 | Client reviews: the record, cadence, next due date, booking, and fees since the last review | Tests and a local click-through on a throwaway database, not deployed. Needs `seed.client_review_backfill` and `seed.ai_governance_backfill` |
 | B-43 | A decided Confirm card stays in the thread, with what it showed and how it ended | Tests only, not deployed. Cards decided before the deploy keep their chip but have no saved rows |
-| B-45 | India demo through Astra's chat and a real consent | The firm, its 5 households and the licences API are live on 31 Oct; chat and consent not tried there |
+| B-45 | India demo: a real consent and a real fill | Live on 31 Oct: the firm, all four Indian seats, Astra's tax and licence tools, the client assistant and compliance under IN-SEBI. Not tried on Azure: approving, recording a consent, or an order filling on either track |
 
 ## Done
 
 | Item | Commit |
 |---|---|
-| India demo rows 1-3: market layer, licences and consent, per-taxpayer tax, the demonstration firm | `035007d`, `3183767` and the commit that adds this line |
+| India demo: what the live check found. The carry-forward on a harvest, memo wording, goals sized with contributions, the client assistant's cut-off replies, a line that read as a data-location claim | The commit that adds this line, with `seed/india_demo_backfill.py` |
+| India demo rows 1-3: market layer, licences and consent, per-taxpayer tax, the demonstration firm | `035007d`, `3183767`, `7a10e46` |
 | Billing and invoices | |
 | Performance: time-weighted and money-weighted returns | |
 | Price refresh | |

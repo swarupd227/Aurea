@@ -174,7 +174,7 @@ async def canvas_assistant(
             "will be in touch — you're not on your own here."
         )
 
-    gp = await llm_usage.gateway_params(db, firm, base_max_tokens=500)
+    gp = await llm_usage.gateway_params(db, firm, base_max_tokens=900)
     result = await llm_service.generate(
         task="narrative",
         system=(f"You are the client-facing assistant for {firm.name}, speaking warmly in the firm's "

@@ -105,8 +105,10 @@ HOUSEHOLDS = [
                              "holdings": [("BHARTIARTL.NS", [(500, -0.40, 1400)]),
                                           ("EMBASSY.NS", [(1500, -0.12, 900)]),
                                           ("RELIANCE.NS", [(300, 0.09, 340)])]}},
-     "goals": [("Retirement at 60", "retirement", 20000000, 12, {"retirement_age": 60, "funding_share": 0.85}),
-               ("Aarav's postgraduate study", "education", 2500000, 3, {"funding_share": 0.15})]},
+     "goals": [("Retirement at 60", "retirement", 20000000, 12,
+                {"retirement_age": 60, "funding_share": 0.85, "annual_contribution": 800000}),
+               ("Aarav's postgraduate study", "education", 1800000, 3,
+                {"funding_share": 0.15, "annual_contribution": 100000})]},
 
     {"name": "The Iyer Family", "values": {}, "segment": ClientSegment.PRIVATE_WEALTH,
      "people": [
@@ -120,7 +122,8 @@ HOUSEHOLDS = [
                                     ("GOLDBEES.NS", [(1000, -0.15, 500)])]}},
          {"name": "Lakshmi Iyer", "dob": date(1982, 5, 17), "tax": {"regime": "new", "annual_income": 3600000}},
      ],
-     "goals": [("Retirement at 58", "retirement", 30000000, 11, {"retirement_age": 58, "funding_share": 0.9})]},
+     "goals": [("Retirement at 58", "retirement", 30000000, 11,
+                {"retirement_age": 58, "funding_share": 0.9, "annual_contribution": 1000000})]},
 
     {"name": "The Kapoor Family Trust", "values": {}, "segment": ClientSegment.INSTITUTIONAL,
      "people": [{"name": "Nandini Kapoor", "dob": date(1963, 2, 25), "tax": {"regime": "old", "annual_income": 9000000}}],
@@ -132,7 +135,7 @@ HOUSEHOLDS = [
                                           ("ICICIBANK.NS", [(4000, -0.22, 1000)]),
                                           ("GILT5YBEES.NS", [(40000, 0.02, 600)]),
                                           ("EMBASSY.NS", [(5000, -0.08, 800)])]}},
-     "goals": [("Next generation endowment", "legacy", 40000000, 20, {"funding_share": 0.8})]},
+     "goals": [("Next generation endowment", "legacy", 28000000, 20, {"funding_share": 0.8})]},
 
     {"name": "The Banerjee Household", "values": {}, "segment": ClientSegment.MASS_AFFLUENT,
      "people": [
@@ -143,7 +146,8 @@ HOUSEHOLDS = [
                                     ("NIFTYBEES.NS", [(6000, -0.18, 650)]),
                                     ("HDFCBANK.NS", [(800, -0.10, 450)])]}},
      ],
-     "goals": [("Income through retirement", "retirement", 6000000, 15, {"retirement_age": 60, "funding_share": 0.7})]},
+     "goals": [("Income through retirement", "retirement", 6000000, 15,
+                {"retirement_age": 60, "funding_share": 0.7, "annual_contribution": 150000})]},
 
     {"name": "The D'Souza Household", "values": {}, "segment": ClientSegment.MASS_AFFLUENT,
      "people": [
@@ -155,7 +159,8 @@ HOUSEHOLDS = [
                                     ("NIFTYBEES.NS", [(3000, -0.15, 380)]),
                                     ("GILT5YBEES.NS", [(5000, 0.01, 400)])]}},
      ],
-     "goals": [("Retirement at 60", "retirement", 10000000, 14, {"retirement_age": 60, "funding_share": 0.8})]},
+     "goals": [("Retirement at 60", "retirement", 10000000, 14,
+                {"retirement_age": 60, "funding_share": 0.8, "annual_contribution": 200000})]},
 ]
 
 RESEARCH = [
