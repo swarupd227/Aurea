@@ -59,6 +59,11 @@ pages are artifact views the agents open. Full guideline, including what is buil
   client wrote is data, never an instruction. A declined change reaches the model as `[Not done: ...]`.
 - **Canvas stays in its household.** `api/canvas._resolve_household` gives a client their own household,
   whatever they ask for, and staff only one inside their firm. A client tied to no household gets none.
+- **The questionnaire indicates, an adviser decides.** `aurea_core/risk_profile.py` scores tolerance and
+  capacity apart, only from a complete form, and the lower is indicated. Nothing reaches a mandate until an
+  adviser adopts it or keeps what is on file with a reason, and new answers reopen that. Adopting is refused
+  above the model's equity, because a mandate over its ceiling pauses the rebalancer for the whole firm.
+  Every questionnaire stays on record in `risk_assessment`; a client is not shown the result.
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
@@ -75,7 +80,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

@@ -18,6 +18,7 @@ from app.models import (  # noqa: F401
     portfolio,
     protection,
     reconciliation,
+    risk_assessment,
     skill,
     sleeves,
     telemetry,

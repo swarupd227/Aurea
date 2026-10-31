@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import knowledge, wash_sale
+from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX as _CAPACITY_EQUITY_MAX
 from app.aurea_core.rebalancing import Lot, Position, WashSaleGuard, optimise
 from app.aurea_core.valuation import latest_prices
 import uuid
@@ -187,7 +188,6 @@ class DriftRebalancingAgent(BaseAgent):
         # kill-switch paused the agent permanently. That is a missing field, not a
         # suitability failure, and the two need different handling: a gap gets recorded
         # for someone to complete, a breach stops the trade.
-        _CAPACITY_EQUITY_MAX = {"low": 0.40, "medium": 0.70, "high": 1.0}
         capacity = (sensed.get("capacity_for_loss") or "").strip().lower() or None
         proposed_equity = result.target_weights.get("equity", 0.0)
         suitability_gaps: list[str] = []

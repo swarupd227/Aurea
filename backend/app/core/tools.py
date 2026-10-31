@@ -354,6 +354,37 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
+    "read_risk_profiles": Tool(
+        key="read_risk_profiles",
+        name="Read Risk Profiles",
+        speaking_agent="astra",
+        description="What each household's risk questionnaire indicates, beside the profile on file for each mandate: tolerance (willingness to bear a loss), capacity (financial ability to bear one), and the profile indicated, which is the lower of the two. Give a household_id for one household, or none for the whole book with mandates taking more risk than the client's answers support first. 'indicated' is a result to review, not a decision, and the questionnaire cannot see wealth against needs. 'not_taken' means no answers are on file, which is a finding. Tell the user nothing changes until an adviser decides.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, or leave out for the whole book", required=False),
+        ],
+        output=ToolOutput("object", "Each household's latest assessment and how each mandate compares"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "decide_risk_profile": Tool(
+        key="decide_risk_profile",
+        name="Decide Risk Profile",
+        speaking_agent="astra",
+        description="An adviser's decision on a household's latest questionnaire, for one mandate. 'adopt' puts the indicated profile and capacity on the mandate, which changes its suitability record and the rebalancer's equity ceiling; it is refused if the mandate's model holds more equity than the new ceiling allows. 'keep' leaves what is on file and needs the adviser's reason. A decision holds until the client's next answers. Never choose for the adviser.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this decision? Adopting changes the mandate's suitability record and its equity ceiling.",
+        inputs=[
+            ToolInput("mandate_id", "uuid", "The mandate, from read_risk_profiles", required=True),
+            ToolInput("decision", "string", "One of: adopt, keep", required=True),
+            ToolInput("reason", "string", "Why, in the adviser's words. Required to keep what is on file", required=False),
+        ],
+        output=ToolOutput("object", "The profile and capacity now on the mandate, and what they were"),
+        roles_required={UserRole.ADVISER},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

@@ -10,6 +10,7 @@ import {
   PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare, MessageSquare, Gauge, Activity,
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
   Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2, ArrowLeftRight, Umbrella,
+  SlidersHorizontal,
 } from "lucide-react";
 
 export type ViewIntent = "decide" | "clients" | "operate" | "govern" | "configure" | "platform";
@@ -55,6 +56,7 @@ export const VIEWS: View[] = [
   { href: "/studio/estate", label: "Estate & succession", icon: Landmark, roles: [A, P, PT], intent: "clients", keywords: ["wills", "heirs", "trust"] },
   { href: "/studio/tax", label: "Tax intelligence", icon: Receipt, roles: [A, P, PT], intent: "clients", keywords: ["harvest", "wash sale", "capital gains"] },
   { href: "/studio/protection", label: "Protection", icon: Umbrella, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["insurance", "life cover", "disability", "income protection", "tpd", "gap"] },
+  { href: "/studio/risk-profiles", label: "Risk profiles", icon: SlidersHorizontal, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["questionnaire", "tolerance", "capacity", "suitability", "risk score"] },
   { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT], intent: "clients", keywords: ["bias", "nudge"] },
   { href: "/studio/beneficiary-audit", label: "Beneficiary audit", icon: UserCheck, roles: [A, P, PT, C], intent: "clients", keywords: ["registration", "beneficiaries"] },
   { href: "/studio/pipeline", label: "Growth pipeline", icon: TrendingUp, roles: [A, P, PT], intent: "clients", keywords: ["crm", "prospects", "opportunities"] },

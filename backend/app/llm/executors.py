@@ -65,6 +65,8 @@ class ToolExecutors:
             "record_protection_policy": self.record_protection_policy,
             "end_protection_policy": self.end_protection_policy,
             "record_income": self.record_income,
+            "read_risk_profiles": self.read_risk_profiles,
+            "decide_risk_profile": self.decide_risk_profile,
             "read_reconciliation": self.read_reconciliation,
             "import_custody_statement": self.import_custody_statement,
             "resolve_recon_break": self.resolve_recon_break,
@@ -402,6 +404,43 @@ class ToolExecutors:
             self.session, self.firm_id, person_id=person_id, annual_income=inputs.get("annual_income"),
             source_document=inputs.get("source_document") or "", recorded_by=by))
         result["message"] = f"Recorded an income of {result['annual_income']:,.0f} for {result['person']}."
+        return result
+
+    async def read_risk_profiles(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import risk_profile
+
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await risk_profile.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            done = result["assessment"]
+            result["message"] = (f"{result['household']}: {result['status']}, indicated {done['indicated']}."
+                                 if done and done["indicated"] else f"{result['household']}: {result['status']}.")
+            return result
+        result = await risk_profile.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = (f"{s['households']} household(s): {s['more_risk']} taking more risk than their answers "
+                             f"support, {s['less_risk']} less, {s['aligned']} aligned, {s['not_taken']} not taken.")
+        return result
+
+    async def decide_risk_profile(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import risk_profile
+        from app.models.identity import User
+
+        # The gateway checks the catalogue's roles; this re-checks, as for the other record-keeping tools.
+        if self.role != UserRole.ADVISER:
+            raise ExecutorError("Only an adviser decides a client's risk profile.")
+        mandate_id = _parse_uuid(inputs.get("mandate_id"), "mandate_id")
+        user = await self.session.get(User, self.user_id)
+        try:
+            result = await risk_profile.decide(
+                self.session, self.firm_id, mandate_id, decision=str(inputs.get("decision") or "").strip().lower(),
+                reason=inputs.get("reason"), by=user.email if user else "unknown")
+        except risk_profile.RiskProfileError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = (f"{result['mandate']} is now {result['risk_profile']} with {result['capacity_for_loss']} capacity."
+                             if result["decision"] == "adopt" else f"{result['mandate']} keeps its {result['risk_profile']} profile.")
         return result
 
     async def read_reconciliation(self, inputs: dict[str, Any]) -> dict[str, Any]:

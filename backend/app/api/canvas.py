@@ -539,16 +539,6 @@ async def download_summary_pdf(
 
 # ── I2: Client Risk Tolerance Questionnaire ───────────────────────────────────
 
-QUESTIONNAIRE_KEYS = [
-    "investment_horizon",   # short / medium / long
-    "loss_tolerance",       # low / medium / high
-    "income_stability",     # variable / stable / very_stable
-    "liquidity_needs",      # high / medium / low
-    "esg_priority",         # none / some / strong
-    "experience",           # beginner / intermediate / experienced
-]
-
-
 class QuestionnaireIn(BaseModel):
     answers: dict  # key → selected value
     household_id: uuid.UUID | None = None
@@ -561,30 +551,11 @@ async def get_questionnaire(
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return questionnaire schema + current saved answers for this mandate."""
-    from app.models.graph import Mandate
+    """Return the questions and this household's latest answers."""
+    from app.aurea_core import risk_profile
     hid = await _resolve_household(db, user, household_id)
-    mandate = (await db.execute(
-        select(Mandate).where(Mandate.firm_id == firm.id,
-                              Mandate.household_id == hid if hasattr(Mandate, "household_id") else Mandate.person_id.isnot(None))
-        .limit(1)
-    )).scalars().first()
-    saved = (mandate.suitability or {}).get("questionnaire", {}) if mandate else {}
-    schema = [
-        {"key": "investment_horizon", "question": "What is your investment time horizon?",
-         "options": ["short (< 3 years)", "medium (3–7 years)", "long (> 7 years)"]},
-        {"key": "loss_tolerance", "question": "How comfortable are you with temporary losses?",
-         "options": ["low — I'd want to sell", "medium — I'd hold on", "high — I'd buy more"]},
-        {"key": "income_stability", "question": "How stable is your income?",
-         "options": ["variable", "stable", "very stable"]},
-        {"key": "liquidity_needs", "question": "How soon might you need access to your funds?",
-         "options": ["within 1 year", "1–5 years", "5+ years"]},
-        {"key": "esg_priority", "question": "How important is ESG/values alignment?",
-         "options": ["not important", "somewhat important", "very important"]},
-        {"key": "experience", "question": "How would you describe your investment experience?",
-         "options": ["beginner", "intermediate", "experienced"]},
-    ]
-    return {"schema": schema, "answers": saved, "household_id": str(hid)}
+    return {"schema": risk_profile.questions(), "household_id": str(hid),
+            "answers": await risk_profile.latest_answers(db, hid, firm_id=firm.id)}
 
 
 @router.post("/questionnaire")
@@ -594,30 +565,15 @@ async def submit_questionnaire(
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
 ):
-    """Save questionnaire answers into the household's mandate suitability profile."""
-    from sqlalchemy.orm.attributes import flag_modified as _flag
-    from app.models.graph import Mandate, Person
+    """Record a completed questionnaire. The client is not shown a result here: what it indicates goes
+    to their adviser, who decides, and no mandate changes until they do."""
+    from app.aurea_core import risk_profile
     hid = await _resolve_household(db, user, body.household_id)
-    # Find all persons in this household, then find a mandate.
-    persons = (await db.execute(
-        select(Person).where(Person.firm_id == firm.id, Person.household_id == hid)
-    )).scalars().all()
-    person_ids = [p.id for p in persons]
-    mandate = None
-    if person_ids:
-        mandate = (await db.execute(
-            select(Mandate).where(Mandate.firm_id == firm.id, Mandate.person_id.in_(person_ids))
-            .limit(1)
-        )).scalars().first()
-    if not mandate:
-        return {"ok": True, "saved": False, "reason": "no_mandate"}
-    suit = dict(mandate.suitability or {})
-    suit["questionnaire"] = body.answers
-    suit["questionnaire_completed_at"] = utcnow().isoformat()
-    mandate.suitability = suit
-    _flag(mandate, "suitability")
-    await db.flush()
-    return {"ok": True, "saved": True, "mandate_id": str(mandate.id)}
+    try:
+        row = await risk_profile.submit(db, hid, body.answers, firm_id=firm.id, by=user.email, role=user.role)
+    except risk_profile.RiskProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"ok": True, "saved": True, "assessment_id": str(row.id)}
 
 
 # ── I3: Fee Transparency Dashboard ────────────────────────────────────────────

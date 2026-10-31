@@ -101,6 +101,8 @@ _TOOLS = [
      "Marks a policy as no longer in force, which widens the protection gap; the policy is kept with the reason. Confirm-gated."),
     ("record_income", "Record Income (tool)", "tool", "Head of Advice", "medium",
      "Records a person's income from a document. It changes their protection gap and the tax planning that reads it. Confirm-gated; income is never estimated."),
+    ("decide_risk_profile", "Decide Risk Profile (tool)", "tool", "Head of Advice", "high",
+     "Records an adviser's decision on a client's questionnaire. Adopting changes the mandate's suitability record and the rebalancer's equity ceiling. Confirm-gated, adviser only, and it never chooses for the adviser."),
     ("run_billing", "Prepare Billing Run (tool)", "tool", "Head of Operations", "medium",
      "Has the billing agent draft a run for approval; nothing is issued or taken until it is approved."),
     ("run_agent", "Run Agent (tool)", "tool", "Head of Advice", "medium",

@@ -16,13 +16,13 @@ Status last checked against the code: **2026-10-31**, by keyword search and read
 
 | ID | Item | State |
 |---|---|---|
-| B-01 | Deploy `03c04d2`: protection assets, Not now, Messages, Reports | Deploy running. After it: expect protection at 0 with a gap, 3 clear, 6 not assessed, 5 no one to assess |
+| B-01 | Not now and Messages live | Pushed in `8c9e5a3`, `03c04d2`; not confirmed live. Protection from the same deploy is confirmed |
+| B-02 | Risk questionnaire scoring | Built and tested, not deployed. Needs `seed.risk_assessment_backfill` and `seed.ai_governance_backfill` |
 
 ## Next, in order
 
 | ID | Item | L100 | Where it stands | Size |
 |---|---|---|---|---|
-| B-02 | Risk questionnaire scoring | §5.2 | Answers saved in `Mandate.suitability`; no score; tolerance not compared with capacity | Small |
 | B-03 | Client review cadence | §5.10 | No next-review date for clients; cadence exists only for compliance and AI reviews | Small |
 | B-04 | IPS monitoring | §5.5 | Drift is checked against the model portfolio, not the accepted IPS | Medium |
 | B-05 | Net worth and liabilities | §5.4 | Held-away not in household totals; no liabilities or expenses model; protection cannot count debts | Medium |
@@ -45,6 +45,10 @@ Status last checked against the code: **2026-10-31**, by keyword search and read
 | B-17 | Protection and reconciliation in the work pane | - | Not in `OPEN_VIEWS` |
 | B-18 | Wash-sale calendar for non-US households | - | The tool still reports for NZ households, though the rule binds US ones only |
 | B-19 | Double-count guard for pensions | - | Accounts have no wrapper type, so one both booked and recorded on a profile would count twice |
+| B-37 | A mandate's model against its risk profile | §5.5 | Adopting changes the profile, not the model; only equity over the capacity ceiling is checked, so a conservative profile can sit on a Growth model unflagged |
+| B-38 | Capacity from wealth against needs | §5.2 | The questionnaire cannot see it, so capacity comes from horizon, income stability and liquidity alone |
+| B-39 | Questionnaire by person or entity | §5.2 | One set of answers per household, compared with every mandate; a trust is not asked separately |
+| B-40 | IPS drafting reads the assessment | §5.5 | `ips_drafting` reads the mandate's profile, not the scored tolerance and capacity. Do with B-04 |
 
 ## Parked until a client needs it
 
@@ -79,6 +83,7 @@ B-26 waits for a real custodian statement.
 | B-34 | Reconciliation import and resolve Confirm cards in chat, and a real proposal | Tests only |
 | B-35 | Tasks Confirm write | Tests only |
 | B-36 | Crediting an invoice, and Astra's prepare-run and credit tools | Tests only |
+| B-41 | A real questionnaire through to an adviser's decision | Tests only; no client answers are seeded and none should be invented |
 
 ## Done
 
@@ -92,6 +97,6 @@ B-26 waits for a real custodian statement.
 | Wash-sale enforcement in the rebalancer | `dbbf98d` |
 | "$0 short" on proposals | `a094429` |
 | Tasks in the conversation | `e424ae8` |
-| Protection slice 1 and its fixes | `7a06b89`, `569bc13`, `3028117` |
+| Protection slice 1 and its fixes, confirmed live 31 Oct | `7a06b89`, `569bc13`, `3028117` |
 | Reports in the conversation | `8326cd9` |
 | Messages in the conversation | `03c04d2` |

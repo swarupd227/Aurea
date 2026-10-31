@@ -12,6 +12,7 @@ import { ValuationCard } from "./ValuationCard";
 import { PriceFreshnessCard } from "./PriceFreshnessCard";
 import { ReconciliationCard } from "./ReconciliationCard";
 import { ProtectionCard } from "./ProtectionCard";
+import { RiskProfileCard } from "./RiskProfileCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
@@ -100,6 +101,12 @@ export function artifactCard(artifact: Artifact) {
       case "record_income":
         if (!artifact.result?.policy_id && !artifact.result?.person_id) return null;
         return <ProtectionCard result={artifact.result as any} />;
+      case "read_risk_profiles":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.mandates)) return null;
+        return <RiskProfileCard result={artifact.result as any} />;
+      case "decide_risk_profile":
+        if (typeof artifact.result?.decision !== "string") return null;
+        return <RiskProfileCard result={artifact.result as any} />;
       case "read_reconciliation":
         if (!Array.isArray(artifact.result?.accounts) || !Array.isArray(artifact.result?.breaks)) return null;
         return <ReconciliationCard result={artifact.result as any} />;

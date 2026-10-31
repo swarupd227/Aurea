@@ -156,6 +156,12 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Not assessed", prompt: "Who can't be assessed for protection, and what's missing?" },
         h1 ? { label: `${short(h1)}'s cover`, prompt: `What happens to ${the(h1)} if an earner dies or can't work?` } : { label: "Explain the basis", prompt: "How is a protection gap worked out, and what does it leave out?" },
       ];
+    case "/studio/risk-profiles":
+      return [
+        { label: "Too much risk", prompt: "Which mandates take more risk than the client's answers support?" },
+        { label: "Not taken", prompt: "Which households haven't completed a risk questionnaire?" },
+        h1 ? { label: `${short(h1)}'s profile`, prompt: `What does ${the(h1)} risk questionnaire indicate, and how does it compare with what's on file?` } : { label: "Explain the score", prompt: "How is a risk profile worked out from the questionnaire?" },
+      ];
     case "/studio/reconciliation":
       return [
         { label: "Do we reconcile", prompt: "Do we reconcile against the custodians? Which accounts have breaks or no statement?" },
