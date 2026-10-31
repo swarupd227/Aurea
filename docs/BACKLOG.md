@@ -54,7 +54,7 @@ Nothing is being built right now.
 | B-61 | The signed-in app on a phone | - | `Shell.tsx` keeps a fixed `w-64` sidebar with no breakpoint, so at phone width it takes about half the screen and clips the page beside it. Seen on the client's Canvas |
 | B-63 | What an IPS limit does not do yet | §5.5 | The rebalancer stops a buy at a position limit and a cash floor, and never buys a restricted holding, but it does not sell down a holding already over its limit or restricted unless its class is overweight. The monitor reports those. A position limit also counts a diversified fund as one holding, because an instrument does not say what it is |
 | B-64 | The client sees their IPS | §5.5 | Reading is staff only. A client's Canvas shows no IPS, though the terms are theirs |
-| B-65 | `verify_fees` fails before its first check | - | Its stub user has no `firm_id`, which `canvas._resolve_household` has needed since Canvas was held to its household. Same failure on the commit before B-04. It is not in the checks list, so nothing caught it. Twelve more suites need a running server and do not run offline |
+| B-65 | `verify_fees` fails before its first check | - | Its stub user has no `firm_id`, which `canvas._resolve_household` has needed since Canvas was held to its household. Same failure on the commit before B-04. It is not in the checks list, so nothing caught it. Thirteen more suites need a running server and do not run offline |
 
 ## Parked until a client needs it
 
