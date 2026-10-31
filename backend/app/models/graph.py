@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import JSON, Boolean, Date, ForeignKey, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, Date, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -25,6 +25,8 @@ class Household(Base):
     # Shared values / impact objectives, used for values-aligned reporting (spec §9).
     values: Mapped[dict] = mapped_column(JSON, default=dict)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Set by an adviser; none means the firm's default (aurea_core.reviews).
+    review_cadence_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     persons: Mapped[list["Person"]] = relationship(back_populates="household")
 

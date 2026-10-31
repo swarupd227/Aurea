@@ -128,6 +128,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
       { label: "Performance", prompt: withRef("How has this household performed against its benchmark?", "household", household) },
       { label: "Wash sales", prompt: withRef("Check this household for wash-sale conflicts.", "household", household) },
       { label: "Billing", prompt: withRef("Why was this household billed what it was?", "household", household) },
+      { label: "Next review", prompt: withRef("When was this household last reviewed, and when is the next review due?", "household", household) },
     ];
   }
   const route = pathname.replace(/\/$/, "");
@@ -174,6 +175,12 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Too much risk", prompt: "Which mandates take more risk than the client's answers support?" },
         { label: "Not taken", prompt: "Which households haven't completed a risk questionnaire?" },
         h1 ? { label: `${short(h1)}'s profile`, prompt: `What does ${the(h1)} risk questionnaire indicate, and how does it compare with what's on file?` } : { label: "Explain the score", prompt: "How is a risk profile worked out from the questionnaire?" },
+      ];
+    case "/studio/reviews":
+      return [
+        { label: "Overdue reviews", prompt: "Which client reviews are overdue, and what have those clients paid since?" },
+        { label: "No record", prompt: "Which households have no review on record?" },
+        h1 ? { label: `${short(h1)}'s review`, prompt: `When was ${the(h1)} last reviewed, and what did it cover?` } : { label: "Due soon", prompt: "Which client reviews fall due in the next month?" },
       ];
     case "/studio/reconciliation":
       return [

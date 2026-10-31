@@ -20,7 +20,6 @@ Nothing is being built right now.
 
 | ID | Item | L100 | Where it stands | Size |
 |---|---|---|---|---|
-| B-03 | Client review cadence | §5.10 | No next-review date for clients; cadence exists only for compliance and AI reviews | Small |
 | B-04 | IPS monitoring | §5.5 | Drift is checked against the model portfolio, not the accepted IPS | Medium |
 | B-05 | Net worth and liabilities | §5.4 | Held-away not in household totals; no liabilities or expenses model; protection cannot count debts | Medium |
 | B-06 | Protection slice 2 | §5.4 | No agent raises gaps as proposals; long-term care not modelled | Medium |
@@ -39,7 +38,7 @@ Nothing is being built right now.
 | B-14 | Binary document storage | - | Text only |
 | B-15 | Book scan covers every scheduled agent | - | `POST /api/studio/scan` runs three agents |
 | B-16 | Household currency | - | Not stored; protection shows UK and US figures as NZD with no conversion |
-| B-17 | Protection and reconciliation in the work pane | - | Not in `OPEN_VIEWS` |
+| B-17 | Protection, reconciliation, risk profiles and client reviews in the work pane | - | Not in `OPEN_VIEWS` |
 | B-18 | Wash-sale calendar for non-US households | - | The tool still reports for NZ households, though the rule binds US ones only |
 | B-19 | Double-count guard for pensions | - | Accounts have no wrapper type, so one both booked and recorded on a profile would count twice |
 | B-37 | A mandate's model against its risk profile | §5.5 | Adopting changes the profile, not the model; only equity over the capacity ceiling is checked, so a conservative profile can sit on a Growth model unflagged |
@@ -47,6 +46,7 @@ Nothing is being built right now.
 | B-39 | Questionnaire by person or entity | §5.2 | One set of answers per household, compared with every mandate; a trust is not asked separately |
 | B-40 | IPS drafting reads the assessment | §5.5 | `ips_drafting` reads the mandate's profile, not the scored tolerance and capacity. Do with B-04 |
 | B-44 | Astra overstates "not taken" | §5.2 | Live on 31 Oct it said nothing on file supports a mandate's profile. The tool knows only that no questionnaire is recorded here; a firm may hold one elsewhere |
+| B-46 | Confirm cards that name the change | - | `preview_change` has no rows for `decide_risk_profile` or the protection tools, so their cards show only a general sentence, not the mandate, policy or figure being confirmed |
 
 ## Parked until a client needs it
 
@@ -70,6 +70,7 @@ B-26 waits for a real custodian statement.
 | B-28 | Credit and rebill the 13 bills issued on stale prices | Moves money again |
 | B-29 | Hartley and Morrison retirement dates | Seeded goals have James Hartley working to 77 and Robert Morrison to 74, which sets their protection figures |
 | B-30 | India alignment: the rest | Rows 1-3 of the investor demo are built. Rows 4-6 and everything for real client data still await approval (`reports/India market alignment for Astra.md`), and hosting is deferred. The customer's SEBI licences are unknown (D1), and could change B-02, B-04 and B-08 |
+| B-47 | Reverse Churning reading the review record | Today any task or proposal counts as advisory activity, so its own proposal resets its 12-month clock. Reading recorded reviews fixes that, but flags every fee-paying household with no record and opens a surveillance flag for each, so it should wait for a yes and for real reviews to be recorded |
 | B-42 | Tax Intelligence agent on NZ, US and UK | Calls `narrate` positionally, which raises, and reads NZ-only keys for US and UK. Fixing it starts raising proposals on the live firm, so it needs a yes. The India path is separate and works |
 
 ## Built, not yet proven live
@@ -82,6 +83,7 @@ B-26 waits for a real custodian statement.
 | B-35 | Tasks Confirm write | Tests only |
 | B-36 | Crediting an invoice, and Astra's prepare-run and credit tools | Tests only |
 | B-41 | A real questionnaire through to an adviser's decision | Tests only; no client answers are seeded and none should be invented |
+| B-03 | Client reviews: the record, cadence, next due date, booking, and fees since the last review | Tests and a local click-through on a throwaway database, not deployed. Needs `seed.client_review_backfill` and `seed.ai_governance_backfill` |
 | B-43 | A decided Confirm card stays in the thread, with what it showed and how it ended | Tests only, not deployed. Cards decided before the deploy keep their chip but have no saved rows |
 | B-45 | India demo through Astra's chat and a real consent | The firm, its 5 households and the licences API are live on 31 Oct; chat and consent not tried there |
 

@@ -52,6 +52,7 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE skill ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) DEFAULT 'private'"))
         await conn.execute(text("ALTER TABLE skill ADD COLUMN IF NOT EXISTS shared_with JSON DEFAULT '[]'"))
         await conn.execute(text("ALTER TABLE pending_actions ADD COLUMN IF NOT EXISTS shown JSON"))
+        await conn.execute(text("ALTER TABLE household ADD COLUMN IF NOT EXISTS review_cadence_months INTEGER"))
         # Wave F: MFA columns on app_user
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(64)"))
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE"))

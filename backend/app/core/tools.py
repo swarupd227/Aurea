@@ -431,6 +431,71 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER},
     ),
 
+    "read_client_reviews": Tool(
+        key="read_client_reviews",
+        name="Read Client Reviews",
+        speaking_agent="astra",
+        description="When each household was last reviewed, what that review covered, its cadence, when the next is due, any review booked, any meeting held since that nobody has recorded as a review, and fees invoiced since the last review. Give a household_id for one household with its history, or none for the whole book with overdue reviews first. 'no_record' means no review is recorded here, which does not mean none was held, and such a household has no due date. A booked review does not stop one being overdue. A review on file with nothing in 'covered' came from an older meeting and what it covered was not recorded.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, or leave out for the whole book", required=False),
+        ],
+        output=ToolOutput("object", "Each household's last review, cadence, next due date and status"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_client_review": Tool(
+        key="record_client_review",
+        name="Record Client Review",
+        speaking_agent="astra",
+        description="Record a review that has been held with a client, as evidence of ongoing service. Only a person can say a review happened and what it covered, so take the date and topics from the user and never infer them from a meeting or a transcript. Give meeting_id to tie it to a meeting. The record cannot be edited afterwards, and it sets the next due date.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this review? It becomes the evidence of service for this client and cannot be edited.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household (from search_households or read_client_reviews)", required=True),
+            ToolInput("held_on", "string", "The date it was held, YYYY-MM-DD. May be left out when a meeting_id gives it", required=False),
+            ToolInput("covered", "list[string]", "What it covered, from: performance_vs_goals, plan_updates, tax_items, life_changes", required=True),
+            ToolInput("meeting_id", "uuid", "The meeting it took place at, from read_client_reviews or read_meetings", required=False),
+            ToolInput("notes", "string", "Anything the adviser wants on the record, in their words", required=False),
+        ],
+        output=ToolOutput("object", "The household's review position after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "set_review_cadence": Tool(
+        key="set_review_cadence",
+        name="Set Review Cadence",
+        speaking_agent="astra",
+        description="Change how often a household is reviewed: every 3, 6 or 12 months. It is a service commitment to the client and moves the next due date, so it needs the adviser's reason. Never choose a cadence for the adviser.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Change this client's review cadence? It moves their next review date.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household (from search_households or read_client_reviews)", required=True),
+            ToolInput("months", "number", "One of: 3, 6, 12", required=True),
+            ToolInput("reason", "string", "Why, in the adviser's words", required=True),
+        ],
+        output=ToolOutput("object", "The household's review position after the change"),
+        roles_required={UserRole.ADVISER},
+    ),
+
+    "book_client_review": Tool(
+        key="book_client_review",
+        name="Book Client Review",
+        speaking_agent="astra",
+        description="Put a review meeting in the diary for a household, on the firm's calendar. It is a meeting on the Meetings page and nothing is sent to the client. It is refused if a review is already booked.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Book this review? It goes in the diary; the client is not told.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household (from search_households or read_client_reviews)", required=True),
+            ToolInput("date", "string", "The date, YYYY-MM-DD", required=True),
+            ToolInput("time", "string", "The time on the firm's calendar, HH:MM. Defaults to 10:00", required=False),
+        ],
+        output=ToolOutput("object", "The household's review position with the booking"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

@@ -64,6 +64,11 @@ pages are artifact views the agents open. Full guideline, including what is buil
   adviser adopts it or keeps what is on file with a reason, and new answers reopen that. Adopting is refused
   above the model's equity, because a mandate over its ceiling pauses the rebalancer for the whole firm.
   Every questionnaire stays on record in `risk_assessment`; a client is not shown the result.
+- **A person says a review happened.** `aurea_core/reviews.py` holds the evidence of ongoing service: when a
+  review was held and what it covered, added and never edited. A meeting is not a review until someone records
+  it; only `seed/client_review_backfill.py` carries one across, and marks what it covered as not recorded. The
+  next date comes from a recorded review and the cadence, so no record means no date, and no record does not
+  mean no review. A booking sits beside an overdue review and does not clear it.
 - **A market is resolved in one place, and a country with no rules is refused.** `aurea_core/markets.py` says
   what a jurisdiction fixes; `compliance/ontology.framework_for` matches a regulator as a word. A country with
   no market gets `NO_REGIME`, no tax report and a held activation, never New Zealand's rules. Money in a
@@ -95,7 +100,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_client_reviews`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

@@ -13,6 +13,7 @@ import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { money, pct, titleCase } from "@/lib/format";
 import { withRef } from "@/lib/refs";
+import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 
@@ -198,6 +199,17 @@ function WalletShareTile({ persons, totalValue }: { persons: any[]; totalValue: 
   );
 }
 
+/** Renders nothing for a role that does not read reviews. */
+function NextReviewChip({ householdId }: { householdId: string }) {
+  const { data } = useApi<any>(`/api/reviews/households/${householdId}`, [householdId]);
+  if (!data) return null;
+  return (
+    <span className={`${chip} ${data.status === "overdue" ? "text-crit" : ""}`} data-testid="client-next-review">
+      {data.next_due ? `Next review ${reviewDay(data.next_due)}` : "No review on record"}
+    </span>
+  );
+}
+
 /** One household: its total-portfolio view, accounts and positions, members, goals, and the agents
  * that work on it. In the work pane an agent run is a sentence to the conversation beside it, so it
  * goes through `run_agent` and its Confirm card (which shows the tier) like any other run. */
@@ -247,6 +259,7 @@ export function ClientView({ id }: { id: string }) {
           <>
             {brain.household.segment && <span className={chip}>{titleCase(brain.household.segment)}</span>}
             <span className={`${chip} tabular-nums`}>Data confidence {Math.round(t.data_confidence * 100)}%</span>
+            <NextReviewChip householdId={id} />
           </>
         }
         actions={

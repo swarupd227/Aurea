@@ -70,6 +70,10 @@ class ToolExecutors:
             "record_income": self.record_income,
             "read_risk_profiles": self.read_risk_profiles,
             "decide_risk_profile": self.decide_risk_profile,
+            "read_client_reviews": self.read_client_reviews,
+            "record_client_review": self.record_client_review,
+            "set_review_cadence": self.set_review_cadence,
+            "book_client_review": self.book_client_review,
             "read_reconciliation": self.read_reconciliation,
             "import_custody_statement": self.import_custody_statement,
             "resolve_recon_break": self.resolve_recon_break,
@@ -517,6 +521,103 @@ class ToolExecutors:
         result["message"] = (f"{result['mandate']} is now {result['risk_profile']} with {result['capacity_for_loss']} capacity."
                              if result["decision"] == "adopt" else f"{result['mandate']} keeps its {result['risk_profile']} profile.")
         return result
+
+    async def read_client_reviews(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import reviews
+
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await reviews.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            result["message"] = (f"{result['household']}: {result['status']}, next review due {result['next_due']}."
+                                 if result["next_due"] else f"{result['household']}: no review on record.")
+            return result
+        result = await reviews.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = (f"{s['households']} household(s): {s['overdue']} overdue, {s['due_soon']} due within "
+                             f"{result['due_soon_days']} days, {s['on_track']} on track, {s['no_record']} with no review on record.")
+        return result
+
+    @staticmethod
+    def _review_day(value: Any, name: str):
+        from datetime import date as _date
+
+        if not value:
+            return None
+        try:
+            return _date.fromisoformat(str(value)[:10])
+        except ValueError:
+            raise ExecutorError(f"{name} must be a date, YYYY-MM-DD.")
+
+    def _review_record_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"held_on": self._review_day(inputs.get("held_on"), "held_on"), "covered": inputs.get("covered"),
+                "notes": inputs.get("notes"),
+                "meeting_id": _parse_uuid(inputs["meeting_id"], "meeting_id") if inputs.get("meeting_id") else None}
+
+    async def _review_write(self, write, roles: set) -> dict[str, Any]:
+        """A write to the review record: the role re-checked as for the other record-keeping tools, and
+        a refusal handed back as the tool's error."""
+        from app.aurea_core import reviews
+        from app.models.identity import User
+
+        if self.role not in roles:
+            raise ExecutorError("Your role cannot change a client's review record.")
+        user = await self.session.get(User, self.user_id)
+        try:
+            return await write(reviews, user.email if user else "unknown")
+        except reviews.ReviewError as exc:
+            raise ExecutorError(str(exc))
+
+    async def record_client_review(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+        args = self._review_record_args(inputs)
+        result = await self._review_write(lambda r, by: r.record(
+            self.session, household_id, firm_id=self.firm_id, by=by, role=str(self.role), **args),
+            {UserRole.ADVISER, UserRole.PARAPLANNER})
+        result["message"] = f"Recorded the review for {result['household']}. The next is due {result['next_due']}."
+        return result
+
+    async def set_review_cadence(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+        result = await self._review_write(lambda r, by: r.set_cadence(
+            self.session, household_id, firm_id=self.firm_id, months=inputs.get("months"), reason=inputs.get("reason"),
+            by=by), {UserRole.ADVISER})
+        result["message"] = f"{result['household']} is now reviewed every {result['cadence_months']} months."
+        return result
+
+    async def book_client_review(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+        on = self._review_day(inputs.get("date"), "date")
+        result = await self._review_write(lambda r, by: r.book(
+            self.session, household_id, firm_id=self.firm_id, on=on, at=inputs.get("time"), by=by),
+            {UserRole.ADVISER, UserRole.PARAPLANNER})
+        result["message"] = f"Booked '{result['booked']['title']}' for {result['booked']['on']}."
+        return result
+
+    async def _review_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What a review Confirm card names, refused for the reasons doing it would be refused."""
+        from app.aurea_core import firm_time, reviews
+
+        household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+        try:
+            if tool_key == "record_client_review":
+                r = await reviews.prepare_record(self.session, household_id, firm_id=self.firm_id,
+                                                 **self._review_record_args(inputs))
+                return [("Client", r["household"].name), ("Held on", firm_time.spoken(r["held_on"])),
+                        ("Covered", ", ".join(t.replace("_", " ") for t in r["covered"])),
+                        ("Meeting", r["meeting"].title if r["meeting"] else None), ("Notes", r["notes"])]
+            if tool_key == "set_review_cadence":
+                r = await reviews.prepare_cadence(self.session, household_id, firm_id=self.firm_id,
+                                                  months=inputs.get("months"), reason=inputs.get("reason"))
+                return [("Client", r["household"].name), ("From", f"Every {r['was']} months"),
+                        ("To", f"Every {r['months']} months"), ("Reason", r["reason"])]
+            r = await reviews.prepare_booking(self.session, household_id, firm_id=self.firm_id,
+                                              on=self._review_day(inputs.get("date"), "date"), at=inputs.get("time"))
+            return [("Client", r["household"].name), ("Meeting", r["title"]),
+                    ("When", f"{firm_time.spoken(r['when'].date())}, {r['when']:%H:%M}")]
+        except reviews.ReviewError as exc:
+            raise ExecutorError(str(exc))
 
     async def read_reconciliation(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import reconciliation
@@ -1801,6 +1902,8 @@ class ToolExecutors:
             household, body = await self._client_message(inputs)
             sender = await self.session.get(User, self.user_id)
             return rows(("To", household.name), ("From", sender.full_name if sender else None), ("Message", body))
+        if tool_key in ("record_client_review", "set_review_cadence", "book_client_review"):
+            return rows(*await self._review_preview(tool_key, inputs))
         if tool_key not in ("complete_task", "assign_task", "create_task"):
             return None
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -39,6 +39,26 @@ class Meeting(Base):
         if when is None or str(self.status) == MeetingStatus.COMPLETED.value:
             return False
         return (when if when.tzinfo else when.replace(tzinfo=now.tzinfo)) < now
+
+
+class ClientReview(Base):
+    """A review held with a client, recorded by a person as evidence of ongoing service. Rows are
+    added, not edited. `covered` is empty only on one carried from a meeting, where nobody said."""
+    __tablename__ = "client_review"
+    __table_args__ = (UniqueConstraint("household_id", "held_on", name="uq_client_review_day"),)
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("household.id", ondelete="CASCADE"), index=True
+    )
+    meeting_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("meeting.id", ondelete="SET NULL"), nullable=True
+    )
+    held_on: Mapped[date] = mapped_column(Date)
+    covered: Mapped[list] = mapped_column(JSON, default=list)
+    notes: Mapped[str | None] = mapped_column(Text)
+    recorded_by: Mapped[str] = mapped_column(String(200))
+    recorded_by_role: Mapped[str] = mapped_column(String(32))
 
 
 class Task(Base):
