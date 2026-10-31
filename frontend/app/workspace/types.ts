@@ -20,7 +20,7 @@ export interface PendingActionRef {
   id: string;
   tool_key: string;
   confirmation_text: string;
-  decision: "confirmed" | "declined" | null;
+  decision: "confirmed" | "declined" | "expired" | "failed" | null;
   /** Present for a run or a task: what confirming does, or the reason it no longer can. */
   preview?: (RunPreview & { unavailable?: undefined }) | ChangePreview | { unavailable: string } | null;
 }

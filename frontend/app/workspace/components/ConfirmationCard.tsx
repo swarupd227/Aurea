@@ -14,6 +14,8 @@ const ROLE_NAMES: Record<string, string> = {
   research_cio: "research",
 };
 
+const DECISION_TEXT = { confirmed: "Confirmed", declined: "Not now", expired: "Expired", failed: "Failed" };
+
 function Row({ label, children, testId }: { label: string; children: React.ReactNode; testId?: string }) {
   return (
     <div className="flex items-baseline gap-3 py-1" data-testid={testId}>
@@ -69,6 +71,7 @@ function RunPreviewBlock({ preview }: { preview: RunPreview }) {
 /**
  * A change waiting for the user. Confirm runs exactly what the card shows
  * (the server froze it when the turn paused); Not now changes nothing.
+ * Once decided it stays on the message, as the record of what was shown and what was chosen.
  */
 export function ConfirmationCard({
   action,
@@ -102,7 +105,7 @@ export function ConfirmationCard({
       data-testid={action.tool_key === "run_agent" ? "run-confirmation" : undefined}
     >
       <div className="mb-1 font-mono text-[11px] uppercase tracking-wider text-ink-muted">
-        {preview ? "Confirm this run" : "Confirm this change"}
+        {decided ? (preview ? "Run" : "Change") : preview ? "Confirm this run" : "Confirm this change"}
       </div>
       <div className="font-medium text-ink">{action.confirmation_text}</div>
       {preview && <RunPreviewBlock preview={preview} />}
@@ -129,11 +132,12 @@ export function ConfirmationCard({
         {decided ? (
           <span
             className={`inline-flex items-center gap-1.5 font-mono text-xs ${
-              decided === "confirmed" ? "text-ok" : "text-ink-muted"
+              decided === "confirmed" ? "text-ok" : decided === "failed" ? "text-crit" : "text-ink-muted"
             }`}
+            data-testid="action-decision"
           >
             {decided === "confirmed" ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
-            {decided === "confirmed" ? "Confirmed" : "Not now"}
+            {DECISION_TEXT[decided]}
           </span>
         ) : (
           <>

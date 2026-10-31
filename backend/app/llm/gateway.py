@@ -251,6 +251,7 @@ class Gateway:
                             thread_id=thread_id,
                             tool_call_id=tool_call.id,
                             confirmation_text=tool.confirmation or f"Confirm {tool.name}?",
+                            shown=preview,
                             requires_user_id=self.user_id,
                             expires_at=datetime.utcnow() + timedelta(hours=24),
                         )

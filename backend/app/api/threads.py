@@ -60,6 +60,7 @@ def _serialize_message(
     # for a tool_key it doesn't have a card for.
     artifacts = [{"tool_key": tc.tool_key, "result": tc.result} for tc in done_calls]
     pending = next((pending_by_tool_call[tc.id] for tc in m.tool_calls if tc.id in pending_by_tool_call), None)
+    pending_call = next((tc for tc in m.tool_calls if pending and tc.id == pending.tool_call_id), None)
 
     return {
         "id": str(m.id),
@@ -70,15 +71,20 @@ def _serialize_message(
         "artifacts": artifacts,
         "pending_action": {
             "id": str(pending.id),
-            "tool_key": next(tc.tool_key for tc in m.tool_calls if tc.id == pending.tool_call_id),
+            "tool_key": pending_call.tool_key,
             "confirmation_text": pending.confirmation_text,
             "decision": (
-                "confirmed" if pending.status == PendingActionStatus.CONFIRMED
+                None if pending.status == PendingActionStatus.AWAITING_CONFIRMATION
+                else "expired" if pending.status == PendingActionStatus.EXPIRED
                 else "declined" if pending.status == PendingActionStatus.REJECTED
-                else None
+                else "failed" if pending_call.status == ToolCallStatus.FAILED
+                else "confirmed"
             ),
-            # What confirming would start, read from live policy; only a run has one.
-            "preview": (previews or {}).get(pending.id),
+            # Waiting: what confirming would do, read now. Decided: what the card showed at the time.
+            "preview": (
+                (previews or {}).get(pending.id)
+                if pending.status == PendingActionStatus.AWAITING_CONFIRMATION else pending.shown
+            ),
         } if pending else None,
         # A run's card lives on the message of the agent that ran it, so it is served as the
         # message's own card rather than as a tool's artifact.
@@ -466,16 +472,17 @@ async def get_thread(
 
     pending_stmt = select(PendingAction).where(PendingAction.thread_id == thread_id)
     pending_rows = (await session.execute(pending_stmt)).scalars().all()
-    pending_by_tool_call = {p.tool_call_id: p for p in pending_rows if p.status == PendingActionStatus.AWAITING_CONFIRMATION}
+    pending_by_tool_call = {p.tool_call_id: p for p in pending_rows}
+    waiting = {k: p for k, p in pending_by_tool_call.items() if p.status == PendingActionStatus.AWAITING_CONFIRMATION}
 
-    status = "awaiting_confirmation" if pending_by_tool_call else "idle"
+    status = "awaiting_confirmation" if waiting else "idle"
 
     # A run's confirmation shows what it would start - agent, subject, the tier it resolves to
     # now - read from live policy each time, so the card cannot be stale about the tier.
     previews: dict[uuid.UUID, dict] = {}
     for m in thread.messages:
         for tc in m.tool_calls:
-            pending = pending_by_tool_call.get(tc.id)
+            pending = waiting.get(tc.id)
             if pending is not None:
                 try:
                     executors = ToolExecutors(session, user.id, user.role, user.firm_id)

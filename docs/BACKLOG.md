@@ -46,7 +46,6 @@ Nothing is being built right now.
 | B-38 | Capacity from wealth against needs | §5.2 | The questionnaire cannot see it, so capacity comes from horizon, income stability and liquidity alone |
 | B-39 | Questionnaire by person or entity | §5.2 | One set of answers per household, compared with every mandate; a trust is not asked separately |
 | B-40 | IPS drafting reads the assessment | §5.5 | `ips_drafting` reads the mandate's profile, not the scored tolerance and capacity. Do with B-04 |
-| B-43 | A decided Confirm card stays in the thread | - | `api/threads.py:469` keeps only cards still waiting, so the "Confirmed" and "Not now" chips never show. A declined message leaves only "I'll send that now" in the thread, even after a reload. Astra itself knows it was declined |
 | B-44 | Astra overstates "not taken" | §5.2 | Live on 31 Oct it said nothing on file supports a mandate's profile. The tool knows only that no questionnaire is recorded here; a firm may hold one elsewhere |
 
 ## Parked until a client needs it
@@ -83,6 +82,7 @@ B-26 waits for a real custodian statement.
 | B-35 | Tasks Confirm write | Tests only |
 | B-36 | Crediting an invoice, and Astra's prepare-run and credit tools | Tests only |
 | B-41 | A real questionnaire through to an adviser's decision | Tests only; no client answers are seeded and none should be invented |
+| B-43 | A decided Confirm card stays in the thread, with what it showed and how it ended | Tests only, not deployed. Cards decided before the deploy keep their chip but have no saved rows |
 | B-45 | India demo through Astra's chat and a real consent | The firm, its 5 households and the licences API are live on 31 Oct; chat and consent not tried there |
 
 ## Done

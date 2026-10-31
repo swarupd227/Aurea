@@ -416,6 +416,10 @@ async def scenarios(Session) -> None:
         out = await gateway(adviser).confirm_pending_action(p2.id, False)
         check("declined", out["status"], "rejected")
         check("no new run", await count(AgentRun), 1)
+        served = await T.get_thread(t2.id, user=adviser, session=s)
+        pa = next(m["pending_action"] for m in served["messages"] if m["pending_action"])
+        check("the declined run stays on the thread", (served["status"], pa["decision"]), ("idle", "declined"))
+        check("  showing the tier it was declined at", pa["preview"]["autonomy"]["tier"], p2.shown["autonomy"]["tier"])
 
         print("\n=== the confirmation shows the preview on the thread ===")
         t3 = await new_thread(adviser)

@@ -154,6 +154,9 @@ class PendingAction(Base):
     # The confirmation sentence to show
     confirmation_text: Mapped[str] = mapped_column(Text)
 
+    # What the card showed when the turn paused, kept as the record of what was decided
+    shown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # The user who must confirm
     requires_user_id: Mapped[uuid.UUID]
 

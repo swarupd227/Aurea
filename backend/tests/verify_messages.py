@@ -19,14 +19,14 @@ from __future__ import annotations
 import asyncio
 import sys
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  — registers every table on Base.metadata
-from app.api import canvas, engage
+from app.api import canvas, engage, threads
 from app.aurea_core import messages
 from app.core.db import Base, utcnow
 from app.core.tools import OPEN_VIEWS, TOOLS, ToolChangeState, tools_for_role
@@ -38,7 +38,7 @@ from app.models.enums import MessageAuthor, UserRole
 from app.models.graph import Household, Person
 from app.models.identity import User
 from app.models.tenant import Firm
-from app.models.thread import PendingAction, Thread, ThreadKind
+from app.models.thread import PendingAction, Thread, ThreadKind, ToolCall, ToolCallStatus
 
 PASS, FAIL = [], []
 R = UserRole
@@ -206,9 +206,40 @@ async def behaviour() -> None:
             check("nothing is sent yet", await sent_count(), before)
             await settle(t1, False)
             check("Not now sends nothing", await sent_count(), before)
+
+            async def card_of(t):
+                served = await threads.get_thread(t.id, user=sophie, session=s)
+                return served["status"], next(m["pending_action"] for m in served["messages"] if m["pending_action"])
+
+            status, card = await card_of(t1)
+            check("the declined card stays on the thread", (status, card["decision"]), ("idle", "declined"))
+            check("  with the exact words it showed", {r["label"]: r["value"] for r in card["preview"]["rows"]},
+                  {"To": "Chen Family", "From": "Sophie Tran", "Message": words})
             t2, ev = await ask({"household_id": str(chen.id), "body": words})
             pending, _ = await settle(t2, True)
             check("confirming sends one", await sent_count(), before + 1)
+            status, card = await card_of(t2)
+            check("the confirmed card stays on the thread", (status, card["decision"]), ("idle", "confirmed"))
+            call = await s.get(ToolCall, pending.tool_call_id)
+            call.status = ToolCallStatus.FAILED
+            await s.commit()
+            check("a confirmed change that failed does not read as confirmed", (await card_of(t2))[1]["decision"], "failed")
+            call.status = ToolCallStatus.DONE
+            await s.commit()
+            t_late, _ = await ask({"household_id": str(chen.id), "body": words})
+            late = (await s.execute(select(PendingAction).where(PendingAction.thread_id == t_late.id))).scalars().one()
+            status, card = await card_of(t_late)
+            check("a waiting card has no decision", (status, card["decision"]), ("awaiting_confirmation", None))
+            late.expires_at = datetime.utcnow() - timedelta(hours=1)
+            await s.commit()
+            try:
+                await Gateway(s, sophie.id, sophie.role, sophie.firm_id).confirm_pending_action(late.id, True)
+                check("an expired card cannot be confirmed", "sent", "refused")
+            except Exception:
+                check("an expired card cannot be confirmed", "refused", "refused")
+            check("  sends nothing", await sent_count(), before + 1)
+            status, card = await card_of(t_late)
+            check("  and reads as expired", (status, card["decision"]), ("idle", "expired"))
             try:
                 await Gateway(s, sophie.id, sophie.role, sophie.firm_id).confirm_pending_action(pending.id, True)
                 check("a second confirm is refused", "sent", "refused")
