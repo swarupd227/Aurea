@@ -12,7 +12,8 @@ It only works from what is on file. Income is never estimated: the planners' fal
 portfolio is a guess about a retirement goal, and a protection figure built on it would look exact.
 With no income or date of birth the person is "not assessed", and saying so is the result.
 
-Assets are counted at full value, so a wealthy household reads as self-insured. That is the honest
+Assets are the managed book, what is held away, and the pensions and savings accounts in a person's
+tax details, all at full value, so a wealthy household reads as self-insured. That is the honest
 reading of the sum, but it spends the retirement pot on the claim: the need, the cover and the assets
 are all reported so an adviser can see which of them closed the gap. Debts and long-term care are not
 modelled, because the book holds no liabilities or care costs, and the result says that as well.
@@ -43,6 +44,9 @@ DEFAULTS = {
 # income, and a legacy is what is left, not a need.
 _NOT_A_NEED = ("retirement", "legacy")
 NOT_MODELLED = ["debts", "long_term_care", "funeral_and_final_costs"]
+# Pots a person's tax details record. An account in the book carries no tax wrapper, so a pot here is
+# not also in the managed total. A firm that books one as well as recording it would count it twice.
+_RETIREMENT_ACCOUNTS = ("pension_pot", "isa_value", "ira_value", "roth_value")
 
 
 class ProtectionError(Exception):
@@ -64,6 +68,11 @@ def income_of(person: Person) -> float | None:
     """The income on file, or None. Zero is a stated figure and stays zero."""
     value = ((person.profile or {}).get("tax") or {}).get("annual_income")
     return None if value is None else float(value)
+
+
+def retirement_accounts_of(person: Person) -> float:
+    tax = (person.profile or {}).get("tax") or {}
+    return sum(float(tax.get(k) or 0) for k in _RETIREMENT_ACCOUNTS)
 
 
 def _status(gap: float) -> str:
@@ -186,7 +195,8 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
 
     managed = float(brain["totals"]["total_value"])
     held_away = sum(float((p.profile or {}).get("held_away") or 0) for p in persons)
-    assets = managed + held_away
+    retirement_accounts = sum(retirement_accounts_of(p) for p in persons)
+    assets = managed + held_away + retirement_accounts
     has_people = len(persons) > 1
 
     people = []
@@ -222,7 +232,8 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     return {
         "household_id": str(household_id), "household": brain["household"]["name"],
         "currency": firm.base_currency if firm else None, "people": people, "policies": rows,
-        "assets": {"managed": round(managed, 2), "held_away": round(held_away, 2), "total": round(assets, 2)},
+        "assets": {"managed": round(managed, 2), "held_away": round(held_away, 2),
+                   "retirement_accounts": round(retirement_accounts, 2), "total": round(assets, 2)},
         "assumptions": rules, "not_modelled": NOT_MODELLED,
         "summary": {"people": len(people), "gaps": statuses.count("gap"), "largest_gap": max(gaps, default=0.0),
                     "not_assessed": sum(1 for r in people if r["death"]["status"] == "not_assessed"),

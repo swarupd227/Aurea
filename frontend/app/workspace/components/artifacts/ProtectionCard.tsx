@@ -41,7 +41,7 @@ export interface ProtectionHousehold {
   currency: string | null;
   people: ProtectionPerson[];
   policies: ProtectionPolicy[];
-  assets: { managed: number; held_away: number; total: number };
+  assets: { managed: number; held_away: number; retirement_accounts: number; total: number };
   summary: { people: number; gaps: number; largest_gap: number; not_assessed: number; policies_counted: number };
 }
 
@@ -63,12 +63,12 @@ export function Scenario({ s }: { s: ProtectionScenario }) {
   if (s.status === "no_gap") {
     return (
       <span className="chip text-ok" title={s.gap_before_assets ? `${money(s.gap_before_assets)} before counting assets` : undefined}>
-        {s.gap_before_assets ? "self-insured" : "covered"}
+        {s.gap_before_assets ? "self-insured" : s.need ? "covered" : "no need"}
       </span>
     );
   }
   if (s.status === "past_retirement") return <span className="chip text-ink-muted">past retirement</span>;
-  return <span className="chip text-warn" title={(s.missing ?? []).join(", ")}>no {(s.missing ?? []).join(" · ").replace(/_/g, " ")}</span>;
+  return <span className="chip text-warn">{(s.missing ?? []).join(" · ").replace(/_/g, " ")} not on file</span>;
 }
 
 function PeopleTable({ rows, currency }: { rows: { household?: string; p: ProtectionPerson }[]; currency?: string | null }) {

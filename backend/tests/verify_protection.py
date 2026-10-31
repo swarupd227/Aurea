@@ -173,7 +173,8 @@ async def main() -> int:
             v = await pr.for_household(s, chen.id, firm_id=firm.id, today=today)
             names = [p["name"] for p in v["people"]]
             check("a child with no income is not an earner to assess", sorted(names), ["Mei", "Wei"])
-            check("assets are managed plus held away", v["assets"], {"managed": 400_000.0, "held_away": 100_000.0, "total": 500_000.0})
+            check("assets are managed plus held away", v["assets"],
+                  {"managed": 400_000.0, "held_away": 100_000.0, "retirement_accounts": 0.0, "total": 500_000.0})
             w = next(p for p in v["people"] if p["name"] == "Wei")
             check("each earner's survivor income is the other's", w["death"]["annual_need"], 110_000.0)
             near("only a goal due before retirement, in today's money, is a need",
@@ -182,6 +183,28 @@ async def main() -> int:
             check("cover not yet on file", w["death"]["cover"], 0.0)
             check("what is left out is stated", "debts" in v["not_modelled"], True)
             check("the assumptions travel with the figures", v["assumptions"]["death_replacement"], 0.7)
+
+            print("\n=== Pensions and savings accounts on file count ===")
+            third = Firm(id=uuid.uuid4(), name="P", slug="p", base_currency="NZD")
+            s.add(third)
+            await s.flush()
+            pots = household("Pots", f=third)
+            await s.flush()
+            james = person(pots, "James", 320_000, f=third, age=60)
+            cath = person(pots, "Catherine", 95_000, f=third, age=58)
+            james.profile["tax"].update(pension_pot=2_200_000, isa_value=240_000)
+            cath.profile["tax"].update(ira_value=500_000, roth_value=60_000)
+            await s.flush()
+            goal = Goal(firm_id=third.id, household_id=pots.id, name="Retire", kind="retirement", target_amount=5_000_000,
+                        target_date=today + timedelta(days=3650), assumptions={"retirement_age": 69})
+            s.add(goal)
+            await s.flush()
+            v = await pr.for_household(s, pots.id, firm_id=third.id, today=today)
+            check("each pot on file is an asset, shown apart", v["assets"],
+                  {"managed": 0.0, "held_away": 0.0, "retirement_accounts": 3_000_000.0, "total": 3_000_000.0})
+            j = next(p for p in v["people"] if p["name"] == "James")
+            check("they can close a gap", (j["death"]["status"], j["disability"]["status"]), ("no_gap", "no_gap"))
+            check("and what they closed stays visible", j["disability"]["gap_before_assets"] > 0, True)
 
             print("\n=== Cover counts while it is in force ===")
             before = w["death"]["gap"]
