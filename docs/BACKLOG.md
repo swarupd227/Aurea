@@ -20,7 +20,6 @@ Nothing is being built right now.
 
 | ID | Item | L100 | Where it stands | Size |
 |---|---|---|---|---|
-| B-04 | IPS monitoring | §5.5 | Drift is checked against the model portfolio, not the accepted IPS | Medium |
 | B-05 | Net worth and liabilities | §5.4 | Held-away not in household totals; no liabilities or expenses model; protection cannot count debts | Medium |
 | B-06 | Protection slice 2 | §5.4 | No agent raises gaps as proposals; long-term care not modelled | Medium |
 | B-07 | Offboarding | §5.11 | No account closure or transfer-out flow | Medium |
@@ -38,13 +37,12 @@ Nothing is being built right now.
 | B-14 | Binary document storage | - | Text only |
 | B-15 | Book scan covers every scheduled agent | - | `POST /api/studio/scan` runs three agents |
 | B-16 | Household currency | - | Not stored; protection shows UK and US figures as NZD with no conversion |
-| B-17 | Protection, reconciliation, risk profiles and client reviews in the work pane | - | Not in `OPEN_VIEWS` |
+| B-17 | Protection, reconciliation, risk profiles, client reviews and IPS monitoring in the work pane | - | Not in `OPEN_VIEWS` |
 | B-18 | Wash-sale calendar for non-US households | - | The tool still reports for NZ households, though the rule binds US ones only |
 | B-19 | Double-count guard for pensions | - | Accounts have no wrapper type, so one both booked and recorded on a profile would count twice |
 | B-37 | A mandate's model against its risk profile | §5.5 | Adopting changes the profile, not the model; only equity over the capacity ceiling is checked, so a conservative profile can sit on a Growth model unflagged |
 | B-38 | Capacity from wealth against needs | §5.2 | The questionnaire cannot see it, so capacity comes from horizon, income stability and liquidity alone |
 | B-39 | Questionnaire by person or entity | §5.2 | One set of answers per household, compared with every mandate; a trust is not asked separately |
-| B-40 | IPS drafting reads the assessment | §5.5 | `ips_drafting` reads the mandate's profile, not the scored tolerance and capacity. Do with B-04 |
 | B-44 | Astra overstates "not taken" | §5.2 | Live on 31 Oct it said nothing on file supports a mandate's profile. The tool knows only that no questionnaire is recorded here; a firm may hold one elsewhere |
 | B-46 | Confirm cards that name the change | - | `preview_change` has no rows for `decide_risk_profile` or the protection tools, so their cards show only a general sentence, not the mandate, policy or figure being confirmed |
 | B-48 | Over-promising rule reads a denial as a promise | - | `no_overpromise` matches words, so "does not mean a rebuy carries no risk" and "not a guarantee of outcome" fail it. Two Indian tax memos show this live. Every firm shares the rule and over-flagging is the safe direction, so the user chose on 31 Oct to leave it |
@@ -54,6 +52,8 @@ Nothing is being built right now.
 | B-54 | Approved outreach under the right adviser's name | - | `client_care.act` signs with the first adviser found at the firm, not that client's adviser. Only matters with more than one adviser |
 | B-55 | A report's age at the moment of approval | - | Approving shows the period but no warning. The live Morrison draft is dated 13 Aug, so its figures were 11 weeks old on 31 Oct; a redraft refreshes the same draft |
 | B-61 | The signed-in app on a phone | - | `Shell.tsx` keeps a fixed `w-64` sidebar with no breakpoint, so at phone width it takes about half the screen and clips the page beside it. Seen on the client's Canvas |
+| B-63 | What an IPS limit does not do yet | §5.5 | The rebalancer stops a buy at a position limit and a cash floor, and never buys a restricted holding, but it does not sell down a holding already over its limit or restricted unless its class is overweight. The monitor reports those. A position limit also counts a diversified fund as one holding, because an instrument does not say what it is |
+| B-64 | The client sees their IPS | §5.5 | Reading is staff only. A client's Canvas shows no IPS, though the terms are theirs |
 
 ## Parked until a client needs it
 
@@ -93,6 +93,8 @@ B-26 waits for a real custodian statement.
 | B-50 | A client review recorded, booked or re-cadenced through Astra's Confirm | Tests and a local click-through of the page's own forms. Live on 31 Oct, Astra's Confirm card named the record and Not now wrote nothing. No review has been recorded live, because a record cannot be edited and none should be invented |
 | B-56 | Sending a client message | Live on 31 Oct: the card with the exact words, and Not now. A confirmed send is tests only, because it reaches a client at once and cannot be taken back |
 | B-53 | Approving and withdrawing a report | Live on 31 Oct: the approval card, and Not now. A confirmed approval or withdrawal is tests only, because a client would see it |
+| B-04 | IPS monitoring: the accepted terms, the rebalancer working to them, the IPS monitor and exceptions. Includes B-40, the drafter reading the scored assessment and the targets on file | Tests, and a local click-through of the page, form, proposal and approval on a throwaway database, not deployed. Needs `seed.ips_backfill`, `seed.schedule_backfill` and `seed.ai_governance_backfill`. Astra's tools have not been run against a real model |
+| B-62 | A real IPS on a live mandate | Nothing yet. No IPS is on file for any seeded mandate and none should be invented, so every mandate reads "No IPS on file" until an adviser records one from a document. Until then the monitor has nothing to raise and the rebalancer is unchanged |
 | B-45 | India demo: a real consent and a real fill | Live on 31 Oct: the firm, all four Indian seats, Astra's tax and licence tools, the client assistant and compliance under IN-SEBI. Not tried on Azure: approving, recording a consent, or an order filling on either track |
 
 ## Done

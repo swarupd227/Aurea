@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import JSON, Boolean, Date, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -148,3 +148,48 @@ class TargetAllocation(Base):
     target_weight: Mapped[float] = mapped_column(Numeric(6, 5))  # fraction summing to 1.0
 
     model: Mapped["ModelPortfolio"] = relationship(back_populates="targets")
+
+
+class InvestmentPolicy(Base):
+    """A mandate's investment policy statement as accepted: the terms it is monitored against.
+
+    Added and never edited. A change is a new version, and the highest version is in force."""
+
+    __tablename__ = "investment_policy"
+    __table_args__ = (UniqueConstraint("mandate_id", "version", name="uq_investment_policy_version"),)
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    mandate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("mandate.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    accepted_on: Mapped[date] = mapped_column(Date)
+    targets: Mapped[dict] = mapped_column(JSON, default=dict)  # asset class -> fraction, summing to 1.0
+    drift_band: Mapped[float] = mapped_column(Numeric(5, 4))
+    max_position: Mapped[float | None] = mapped_column(Numeric(5, 4))  # largest share of any one instrument
+    min_cash: Mapped[float | None] = mapped_column(Numeric(5, 4))      # the liquidity floor
+    restricted: Mapped[list] = mapped_column(JSON, default=list)       # symbols and values flags
+    # What the mandate said when this was accepted, so a later risk decision shows it is out of date.
+    profile: Mapped[dict] = mapped_column(JSON, default=dict)
+    document: Mapped[str] = mapped_column(String(300))  # which document these terms come from
+    reason: Mapped[str | None] = mapped_column(String(500))  # why it replaced the one before
+    source: Mapped[str] = mapped_column(String(24), default="recorded")  # recorded | onboarding
+    recorded_by: Mapped[str] = mapped_column(String(200))
+    recorded_by_role: Mapped[str] = mapped_column(String(32))
+
+
+class IpsException(Base):
+    """A person's acceptance of one breach of an IPS, for a limited time and up to how far it stood.
+
+    A new version of the IPS leaves it behind. Withdrawn, never deleted."""
+
+    __tablename__ = "ips_exception"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    mandate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("mandate.id", ondelete="CASCADE"), index=True)
+    policy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("investment_policy.id", ondelete="CASCADE"), index=True)
+    term: Mapped[str] = mapped_column(String(80))  # e.g. allocation:equity, position:BTI, cash
+    excess: Mapped[float] = mapped_column(Numeric(7, 5))  # how far outside the term it stood when accepted
+    until: Mapped[date] = mapped_column(Date)
+    reason: Mapped[str] = mapped_column(String(500))
+    accepted_by: Mapped[str] = mapped_column(String(200))
+    recommendation_id: Mapped[uuid.UUID | None] = mapped_column(index=True, nullable=True)
+    withdrawn_by: Mapped[str | None] = mapped_column(String(200))

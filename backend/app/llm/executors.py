@@ -74,6 +74,8 @@ class ToolExecutors:
             "record_client_review": self.record_client_review,
             "set_review_cadence": self.set_review_cadence,
             "book_client_review": self.book_client_review,
+            "read_ips_monitoring": self.read_ips_monitoring,
+            "record_ips": self.record_ips,
             "read_reconciliation": self.read_reconciliation,
             "import_custody_statement": self.import_custody_statement,
             "resolve_recon_break": self.resolve_recon_break,
@@ -618,6 +620,91 @@ class ToolExecutors:
                     ("When", f"{firm_time.spoken(r['when'].date())}, {r['when']:%H:%M}")]
         except reviews.ReviewError as exc:
             raise ExecutorError(str(exc))
+
+    async def read_ips_monitoring(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import ips
+
+        if inputs.get("mandate_id"):
+            mandate_id = _parse_uuid(inputs["mandate_id"], "mandate_id")
+            result = await ips.for_mandate(self.session, mandate_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Mandate {mandate_id} not found or access denied")
+            result["message"] = (f"{result['mandate']}: {result['status']}, {len(result['findings'])} term(s) outside IPS "
+                                 f"version {result['ips']['version']}." if result["ips"]
+                                 else f"{result['mandate']}: no IPS recorded here, so it is measured against its model.")
+            return result
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await ips.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+        else:
+            result = await ips.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = (f"{s['mandates']} mandate(s): {s['breach']} in breach of their IPS, {s['excepted']} with an "
+                             f"accepted exception, {s['within']} within, {s['not_assessed']} not assessed, and {s['no_ips']} "
+                             f"with no IPS recorded here, measured against their model.")
+        return result
+
+    @staticmethod
+    def _ips_percent(value: Any, name: str) -> float | None:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value) / 100
+        except (TypeError, ValueError):
+            raise ExecutorError(f"{name} must be a number.")
+
+    def _ips_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The tool's percentages and 'equity 60' pairs as the fractions the record holds."""
+        targets = None
+        if inputs.get("targets"):
+            targets = {}
+            for item in inputs["targets"]:
+                parts = str(item).replace(":", " ").replace("=", " ").replace("%", " ").split()
+                if len(parts) != 2:
+                    raise ExecutorError(f"A target is a class and a percentage, like 'equity 60', not '{item}'.")
+                targets[parts[0]] = self._ips_percent(parts[1], parts[0])
+        return {"accepted_on": self._review_day(inputs.get("accepted_on"), "accepted_on"), "document": inputs.get("document"),
+                "targets": targets, "drift_band": self._ips_percent(inputs.get("drift_band"), "drift_band"),
+                "max_position": self._ips_percent(inputs.get("max_position"), "max_position"),
+                "min_cash": self._ips_percent(inputs.get("min_cash"), "min_cash"),
+                "restricted": inputs.get("restricted"), "reason": inputs.get("reason")}
+
+    async def record_ips(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import ips
+        from app.models.identity import User
+
+        if self.role != UserRole.ADVISER:
+            raise ExecutorError("Only an adviser records an IPS.")
+        mandate_id = _parse_uuid(inputs.get("mandate_id"), "mandate_id")
+        user = await self.session.get(User, self.user_id)
+        try:
+            result = await ips.record(self.session, mandate_id, firm_id=self.firm_id, by=user.email if user else "unknown",
+                                      role=str(self.role), **self._ips_args(inputs))
+        except ips.IpsError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = f"Recorded version {result['version']} of the IPS for {result['mandate']}: {result['status']}."
+        return result
+
+    async def _ips_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What the IPS Confirm card names, refused for the reasons recording would be refused."""
+        from app.aurea_core import firm_time, ips
+
+        def share(value: float | None) -> str | None:
+            return f"{value:.1%}" if value is not None else None
+
+        mandate_id = _parse_uuid(inputs.get("mandate_id"), "mandate_id")
+        try:
+            r = await ips.prepare_record(self.session, mandate_id, firm_id=self.firm_id, **self._ips_args(inputs))
+        except ips.IpsError as exc:
+            raise ExecutorError(str(exc))
+        return [("Mandate", r["mandate"].name), ("Version", r["version"]), ("Accepted on", firm_time.spoken(r["accepted_on"])),
+                ("Document", r["document"]),
+                ("Targets", ", ".join(f"{c.replace('_', ' ')} {w:.1%}" for c, w in r["targets"].items())),
+                ("Band", f"±{r['drift_band']:.1%}"), ("Largest holding", share(r["max_position"])),
+                ("Cash floor", share(r["min_cash"])), ("Restricted", ", ".join(r["restricted"]) or None),
+                ("Reason", r["reason"])]
 
     async def read_reconciliation(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import reconciliation
@@ -1852,6 +1939,26 @@ class ToolExecutors:
                 "messages": [messages.view(sent)], "shown": 1, "total": len(rows), "unread": messages.unread(rows),
                 "needs_reply": False, "message": f"Sent to {household.name}."}
 
+    @staticmethod
+    def _ips_decision_preview(rec, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Accepting a breach names what is being set aside, and is refused here with no reason, where
+        the adviser can still give one, rather than after the decision is recorded."""
+        from datetime import date as _date
+
+        from app.aurea_core import firm_time
+
+        if str(rec.status) != "proposed":
+            raise ExecutorError(f"Already {rec.status}")
+        action, note = str(inputs.get("action") or ""), str(inputs.get("note") or "").strip()
+        if action == "approve" and len(note) < 3:
+            raise ExecutorError("Accepting a breach needs the reason. Ask the adviser for it.")
+        until = (rec.payload or {}).get("accept_until")
+        return {"rows": [{"label": k, "value": str(v)} for k, v in (
+            ("Mandate", rec.subject_label), ("Breaches", rec.summary),
+            ("Decision", f"Accept until {firm_time.spoken(_date.fromisoformat(until))}" if action == "approve" and until else action.title()),
+            ("Reason", note),
+        ) if v]}
+
     async def _report_decision_preview(self, inputs: dict[str, Any]) -> dict[str, Any] | None:
         """A decision on a report's proposal names the report, because approving it puts it in front
         of the client. Any other proposal, or an id that does not resolve, keeps the plain card and
@@ -1864,6 +1971,8 @@ class ToolExecutors:
             rec = await self.session.get(Recommendation, _parse_uuid(inputs.get("recommendation_id") or "", "recommendation_id"))
         except ExecutorError:
             return None
+        if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.IPS_MONITORING.value:
+            return self._ips_decision_preview(rec, inputs)
         if rec is None or rec.firm_id != self.firm_id or str(rec.agent_key) != AgentKey.RESEARCH_REPORTING.value:
             return None
         report = await reports.of_proposal(self.session, self.firm_id, rec.payload)
@@ -1904,6 +2013,8 @@ class ToolExecutors:
             return rows(("To", household.name), ("From", sender.full_name if sender else None), ("Message", body))
         if tool_key in ("record_client_review", "set_review_cadence", "book_client_review"):
             return rows(*await self._review_preview(tool_key, inputs))
+        if tool_key == "record_ips":
+            return rows(*await self._ips_preview(inputs))
         if tool_key not in ("complete_task", "assign_task", "create_task"):
             return None
 

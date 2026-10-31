@@ -16,6 +16,7 @@ import { LicenceCard } from "./LicenceCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
+import { IpsCard } from "./IpsCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
@@ -116,6 +117,10 @@ export function artifactCard(artifact: Artifact) {
       case "book_client_review":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.status !== "string") return null;
         return <ReviewsCard result={artifact.result as any} />;
+      case "read_ips_monitoring":
+      case "record_ips":
+        if (!Array.isArray(artifact.result?.mandates) && typeof artifact.result?.status !== "string") return null;
+        return <IpsCard result={artifact.result as any} />;
       case "read_tax_position":
         if (!Array.isArray(artifact.result?.taxpayers)) return null;
         return <TaxPositionCard result={artifact.result as any} />;

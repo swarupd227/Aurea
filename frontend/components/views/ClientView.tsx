@@ -210,6 +210,22 @@ function NextReviewChip({ householdId }: { householdId: string }) {
   );
 }
 
+/** Renders nothing for a role that does not read IPS monitoring, or a household with no mandate. */
+function IpsChip({ householdId }: { householdId: string }) {
+  const { data } = useApi<any>(`/api/ips/households/${householdId}`, [householdId]);
+  const s = data?.summary;
+  if (!s?.mandates) return null;
+  return (
+    <span className={`${chip} ${s.breach ? "text-crit" : ""}`} data-testid="client-ips">
+      {s.breach ? `IPS breach ${s.breach}`
+        : s.excepted ? `IPS exception ${s.excepted}`
+        : s.no_ips === s.mandates ? "No IPS on file"
+        : s.no_ips ? `No IPS on ${s.no_ips} of ${s.mandates}`
+        : s.within ? "Within IPS" : "IPS not assessed"}
+    </span>
+  );
+}
+
 /** One household: its total-portfolio view, accounts and positions, members, goals, and the agents
  * that work on it. In the work pane an agent run is a sentence to the conversation beside it, so it
  * goes through `run_agent` and its Confirm card (which shows the tier) like any other run. */
@@ -260,6 +276,7 @@ export function ClientView({ id }: { id: string }) {
             {brain.household.segment && <span className={chip}>{titleCase(brain.household.segment)}</span>}
             <span className={`${chip} tabular-nums`}>Data confidence {Math.round(t.data_confidence * 100)}%</span>
             <NextReviewChip householdId={id} />
+            <IpsChip householdId={id} />
           </>
         }
         actions={

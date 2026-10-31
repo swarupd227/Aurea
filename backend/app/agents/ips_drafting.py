@@ -6,11 +6,32 @@ draft IPS for adviser review — the adviser is the named author before client d
 """
 from __future__ import annotations
 
+import uuid
+
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import markets
+from app.aurea_core import ips, markets, risk_profile
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
+
+
+def _assessed(view: dict | None) -> str:
+    """The client's scored answers, which are not the same thing as the profile on the mandate."""
+    scored = (view or {}).get("assessment") or {}
+    if scored.get("status") != "scored":
+        return "No scored questionnaire on file"
+    return (f"Questionnaire: tolerance {scored['tolerance']}, capacity {scored['capacity']}, "
+            f"indicated {scored['indicated']}" + (" (they differ)" if scored.get("tension") else ""))
+
+
+def _policy_line(row: dict) -> str:
+    """The targets and band this draft may state, so a section is filled from the record or left open."""
+    targets = row.get("targets") or {}
+    if not targets:
+        return "No targets on file"
+    weights = ", ".join(f"{c.replace('_', ' ')} {w:.0%}" for c, w in targets.items())
+    source = f"IPS version {row['ips']['version']} in force" if row.get("ips") else f"the {row.get('model') or 'mandate'} model"
+    return f"{weights}; band ±{row.get('drift_band') or 0:.1%}; from {source}"
 
 
 def _rrttllu(brain: dict) -> dict:
@@ -60,7 +81,8 @@ def _rrttllu(brain: dict) -> dict:
     legal = "; ".join(legal_structures) if legal_structures else "No formal structures recorded"
 
     # Unique preferences — values exclusions
-    values_excl = constraints.get("values_exclusions") or []
+    values_excl = list(dict.fromkeys([*(suitability.get("values_exclusions") or []),
+                                      *(constraints.get("values_exclusions") or [])]))
     unique = "; ".join(values_excl) if values_excl else "No values-based exclusions recorded"
 
     # Current allocation
@@ -97,17 +119,26 @@ class IPSDraftingAgent(BaseAgent):
     async def sense(self, ctx: AgentContext) -> dict:
         s = ctx.session
         if ctx.subject.type in (None, "firm"):
-            ids = [h["id"] for h in await list_households(s, ctx.firm.id)]
+            ids = [uuid.UUID(str(h["id"])) for h in await list_households(s, ctx.firm.id)]
         else:
-            ids = [str(ctx.subject.id)]
+            ids = [ctx.subject.id]
         brains = [b for hid in ids if (b := await household_brain(s, hid, firm_id=ctx.firm.id))]
-        return {"brains": brains}
+        assessed, policies = {}, {}
+        for brain in brains:
+            hid = brain["household"]["id"]
+            household_id = uuid.UUID(str(hid))
+            assessed[hid] = _assessed(await risk_profile.for_household(s, household_id, firm_id=ctx.firm.id))
+            rows = (await ips.for_household(s, household_id, firm_id=ctx.firm.id) or {}).get("mandates") or []
+            policies[hid] = _policy_line(rows[0]) if rows else "No targets on file"
+        return {"brains": brains, "assessed": assessed, "policies": policies}
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
         drafts = []
         for brain in sensed["brains"]:
             hh = brain["household"]
             dims = _rrttllu(brain)
+            dims["assessment"] = sensed["assessed"].get(hh["id"], "No scored questionnaire on file")
+            dims["policy"] = sensed["policies"].get(hh["id"], "No targets on file")
             dims["jurisdiction"] = dims["jurisdiction"] or ctx.firm.jurisdiction
             currency = markets.currency(dims["jurisdiction"], ctx.firm.base_currency)
 
@@ -120,6 +151,7 @@ RRTTLLU framework — populate each section from the data below:
 R — Return objective: {dims['return_objective']}
 R — Risk tolerance (psychological): {dims['risk_tolerance']}
     Risk capacity (financial): {dims['risk_capacity']}
+    {dims['assessment']}
 T — Time horizon: {dims['time_horizon_years']} years
 T — Tax situation: {dims['tax_situation']}
     CGT budget: {dims['cgt_budget'] or 'Not set'}
@@ -128,6 +160,10 @@ L — Legal & ownership structures: {dims['legal']}
 U — Unique preferences / values exclusions: {dims['unique_preferences']}
 
 Current allocation: {dims['current_allocation']}
+Targets and rebalancing band on file: {dims['policy']}
+
+State the targets and band exactly as given. Do not propose others, and if none are on file mark those
+sections for the adviser. Where the questionnaire and the mandate's profile differ, say so; do not resolve it.
 
 Write the IPS draft in professional advisory language. Include:
 1. Client objective statement (2 sentences)
@@ -148,6 +184,7 @@ This is a draft for adviser review — not final or client-facing."""
                 f"IPS draft for {hh['name']}: "
                 f"Return objective: {dims['return_objective']}. "
                 f"Risk tolerance: {dims['risk_tolerance']}, capacity: {dims['risk_capacity']}. "
+                f"{dims['assessment']}. Targets: {dims['policy']}. "
                 f"Time horizon: {dims['time_horizon_years']} years. "
                 f"Tax: {dims['tax_situation']}. Legal: {dims['legal']}. "
                 "Adviser to review and complete missing sections before client delivery."

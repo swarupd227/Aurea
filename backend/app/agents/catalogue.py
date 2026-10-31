@@ -192,7 +192,8 @@ CATALOGUE: dict[str, dict] = {
                 "Liquidity needs, Legal constraints, Unique preferences. "
                 "Includes target allocation, benchmark, and rebalancing policy.",
         "checkpoint": "Adviser reviews and edits the draft IPS before delivery to the client. "
-                      "The IPS is an advisory-relationship document — human authorship is required.",
+                      "The IPS is an advisory-relationship document — human authorship is required. "
+                      "Nothing is monitored against a draft: its terms apply once a person records them.",
     },
     AgentKey.ASSET_LOCATION: {
         "name": "Asset Location Optimizer", "stage": "Manage & optimise",
@@ -259,5 +260,17 @@ CATALOGUE: dict[str, dict] = {
                 "explained what has a known cause to fix here.",
         "checkpoint": "Operations or the portfolio team approves. Nothing in the book changes, and the "
                       "agent never escalates on its own.",
+    },
+    AgentKey.IPS_MONITORING: {
+        "name": "IPS Monitor", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_2, "subject": "firm",
+        "senses": "Every mandate with an IPS on file: its allocation, largest holdings, cash and restricted "
+                  "holdings against the accepted terms, and whether the risk profile has changed since.",
+        "acts": "Puts each mandate in breach to a person, one proposal per mandate, kept up to date while the "
+                "breach stands and closed when it clears. Drift past a band is left out while a rebalance is "
+                "open for that mandate.",
+        "checkpoint": "An adviser or the portfolio team approves, which accepts the breaches for a limited "
+                      "time under their name. Compliance may dismiss or roll back. Nothing trades and the "
+                      "IPS does not change.",
     },
 }

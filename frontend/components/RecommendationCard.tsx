@@ -10,6 +10,8 @@ import { DriftBars } from "./Charts";
 import { ViewLink } from "./views/ViewNav";
 import { ConsentPanel, ConsentChips } from "./ConsentPanel";
 import { BUCKET_TEXT } from "@/app/workspace/components/artifacts/TaxPositionCard";
+import { findingText, type IpsFinding } from "@/app/workspace/components/artifacts/IpsCard";
+import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 
 const pctf = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -184,6 +186,7 @@ export default function RecommendationCard({
   const [open, setOpen] = useState(defaultOpen || rec.status === "proposed");
   const [mode, setMode] = useState<null | "approve" | "modify" | "dismiss" | "revise">(null);
   const [note, setNote] = useState("");
+  const needsReason = rec.payload?.signal === "ips_breach" && mode === "approve";
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -324,6 +327,13 @@ export default function RecommendationCard({
               <span className={chipMuted} title="Your revision instruction"><Wand2 size={12} /> Revised: “{payload.revision_note}”</span>
             </div>
           )}
+          {payload.signal === "ips_breach" && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2" data-testid="rec-ips-breach">
+              <span className={chipMuted}>IPS v{payload.version}</span>
+              {(payload.findings ?? []).map((f: IpsFinding) => <span key={f.term} className="chip bg-crit-bg text-crit">{findingText(f)}</span>)}
+              {payload.accept_until && <span className={chipMuted}>Accepting runs to {reviewDay(payload.accept_until)}</span>}
+            </div>
+          )}
           {isDrift && (
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               {harvested > 0 && (
@@ -336,6 +346,9 @@ export default function RecommendationCard({
                 <span className={chipMuted}><Scissors size={11} /> {exclusionsHonoured} exclusion{exclusionsHonoured > 1 ? "s" : ""}</span>
               )}
               {payload.mandate?.type && <span className={`${chipMuted} capitalize`}>{payload.mandate.type}</span>}
+              {"ips" in payload && (
+                <span className={chipMuted} data-testid="rec-measured">{payload.ips ? `IPS v${payload.ips.version}` : "Model · no IPS on file"}</span>
+              )}
               {payload.licence && (
                 <span className={chipMuted} title={payload.licence.citation} data-testid="rec-licence">
                   {payload.licence.name} · {payload.licence.per_trade_consent ? "client consents" : "no client consent needed"}
@@ -444,7 +457,7 @@ export default function RecommendationCard({
 
           {orders.length === 0 && payload.brief && <MeetingBriefView brief={payload.brief} />}
 
-          {orders.length === 0 && !payload.brief && Object.keys(payload).length > 0 && (
+          {orders.length === 0 && !payload.brief && payload.signal !== "ips_breach" && Object.keys(payload).length > 0 && (
             <PayloadView payload={payload} shown={`${rec.summary ?? ""}\n${rec.rationale ?? ""}`} />
           )}
 
@@ -549,6 +562,7 @@ export default function RecommendationCard({
                 placeholder={
                   mode === "dismiss" ? "Reason (optional)"
                   : mode === "modify" ? "Note (optional) · untick orders above to drop them"
+                  : needsReason ? "Reason (required)"
                   : "Note (optional)"
                 }
                 value={note}
@@ -568,7 +582,7 @@ export default function RecommendationCard({
                 <button
                   className={mode === "dismiss" ? "btn-outline" : "btn-primary"}
                   data-testid={`rec-confirm-${mode}`}
-                  disabled={busy}
+                  disabled={busy || (needsReason && note.trim().length < 3)}
                   onClick={() => submit(mode)}
                 >
                   {busy ? "Recording…" : `Confirm ${titleCase(mode)}`}

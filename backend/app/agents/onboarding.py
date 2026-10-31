@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import billing, knowledge
+from app.aurea_core import billing, firm_time, ips, knowledge
 from app.aurea_core.document_intel import DOC_LABELS, extract
 from app.aurea_core.screening import screen_parties
 from app.core.db import utcnow
@@ -305,6 +305,12 @@ class OnboardingAgent(BaseAgent):
         s.add(mandate)
         await s.flush()
         created["mandate_id"] = str(mandate.id)
+
+        # What the client accepted at onboarding is this model and these constraints, so they are the
+        # first version of the IPS the mandate is monitored against.
+        if case.ips_accepted_at:
+            await ips.carry_from_onboarding(s, mandate, accepted_on=firm_time.today(ctx.firm, case.ips_accepted_at),
+                                            by=case.ips_accepted_by, document=f"Accepted at onboarding: {case.prospect_name}")
 
         # The fee terms the case confirmed under maker/checker become the mandate's billing
         # arrangement - the thing a bill is later reconciled to (L200 Track A step 2). The

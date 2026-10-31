@@ -75,6 +75,8 @@ _AGENTS = [
      "Works out each fee, proposes the billing run, and on approval issues bills and takes them from client cash — a wrong fee is a client reimbursement and a named exam topic."),
     ("reconciliation", "Reconciliation", "agent", "Head of Operations", "medium",
      "Re-checks custodian statements against the book and proposes which breaks to escalate to the custodian and which to accept as explained. Never changes the book and never escalates without operations or the portfolio team approving."),
+    ("ips_monitoring", "IPS Monitor", "agent", "Head of Advice", "medium",
+     "Reads each mandate against the IPS its client accepted and puts each breach to a person. Never trades or changes an IPS; approving accepts a breach for a limited time under the approver's name."),
 ]
 
 _TOOLS = [
@@ -115,6 +117,8 @@ _TOOLS = [
      "Changes how often a client is reviewed, which moves their next due date. Confirm-gated, adviser only, with the adviser's reason."),
     ("book_client_review", "Book Client Review (tool)", "tool", "Head of Advice", "low",
      "Puts a review meeting in the diary. Confirm-gated; nothing is sent to the client."),
+    ("record_ips", "Record IPS (tool)", "tool", "Head of Advice", "high",
+     "Records the terms of an IPS a client accepted, from the document. The rebalancer then trades to them instead of the model. Confirm-gated, adviser only, append-only, and no term is ever worked out."),
     ("run_billing", "Prepare Billing Run (tool)", "tool", "Head of Operations", "medium",
      "Has the billing agent draft a run for approval; nothing is issued or taken until it is approved."),
     ("run_agent", "Run Agent (tool)", "tool", "Head of Advice", "medium",

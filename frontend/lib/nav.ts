@@ -11,7 +11,7 @@ import {
   PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare, MessageSquare, Gauge, Activity,
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
   Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2, ArrowLeftRight, Umbrella,
-  SlidersHorizontal, BadgeCheck, CalendarCheck,
+  SlidersHorizontal, BadgeCheck, CalendarCheck, ScrollText,
 } from "lucide-react";
 
 export type ViewIntent = "decide" | "clients" | "operate" | "govern" | "configure" | "platform";
@@ -62,6 +62,7 @@ export const VIEWS: View[] = [
   { href: "/studio/protection", label: "Protection", icon: Umbrella, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["insurance", "life cover", "disability", "income protection", "tpd", "gap"] },
   { href: "/studio/risk-profiles", label: "Risk profiles", icon: SlidersHorizontal, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["questionnaire", "tolerance", "capacity", "suitability", "risk score"] },
   { href: "/studio/reviews", label: "Client reviews", icon: CalendarCheck, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["annual review", "cadence", "next review", "overdue", "reverse churning", "ongoing service"] },
+  { href: "/studio/ips", label: "IPS monitoring", icon: ScrollText, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["investment policy", "statement", "breach", "drift", "exception", "limits", "restricted"] },
   { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT], intent: "clients", keywords: ["bias", "nudge"] },
   { href: "/studio/beneficiary-audit", label: "Beneficiary audit", icon: UserCheck, roles: [A, P, PT, C], intent: "clients", keywords: ["registration", "beneficiaries"] },
   { href: "/studio/pipeline", label: "Growth pipeline", icon: TrendingUp, roles: [A, P, PT], intent: "clients", keywords: ["crm", "prospects", "opportunities"] },

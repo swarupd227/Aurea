@@ -1,6 +1,7 @@
 """Drift & Tax-Managed Rebalancing — the lighthouse agent (spec §7.2, Table 10, §14).
 
-Continuously monitors holdings vs the target model, runs whole-portfolio, tax-aware
+Continuously monitors holdings vs the client's accepted IPS, or the target model where none is
+on file, runs whole-portfolio, tax-aware
 optimisation, drafts a multi-custodian order set with a plain-language rationale grounded in
 the firm's house views, and routes it to the adviser for approve / modify / dismiss at
 Tier 2. On approval it routes the draft order set to the (mock) OMS — no live execution."""
@@ -12,7 +13,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import consent, firm_time, harvest_guard, knowledge, licences, markets, tax_india, wash_sale
+from app.aurea_core import consent, firm_time, harvest_guard, ips, knowledge, licences, markets, tax_india, wash_sale
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX as _CAPACITY_EQUITY_MAX
 from app.aurea_core.rebalancing import Lot, Position, WashSaleGuard, optimise
 from app.aurea_core.valuation import latest_prices
@@ -45,11 +46,17 @@ class DriftRebalancingAgent(BaseAgent):
         today = firm_time.today(ctx.firm)
 
         model = await s.get(ModelPortfolio, mandate.model_portfolio_id)
+        # The client's accepted IPS outranks the house model. The model still names what to buy.
+        policy = await ips.in_force(s, mandate.id)
         targets = (
             await s.execute(
                 select(TargetAllocation).where(TargetAllocation.model_id == model.id)
             )
         ).scalars().all()
+        ov = (ctx.config or {}).get("overrides") or {}
+        exclusions = set(ips.exclusions_of(mandate)) | set(ov.get("exclude") or [])
+        if policy:
+            exclusions |= set(policy.restricted or [])
         target_weights: dict[str, float] = {}
         # The instrument the model nominates per class, so a class no account yet holds can
         # still be bought into. TargetAllocation.instrument_id has existed all along and was
@@ -60,12 +67,14 @@ class DriftRebalancingAgent(BaseAgent):
             target_weights[t.asset_class] = target_weights.get(t.asset_class, 0.0) + float(t.target_weight)
             if t.instrument_id and t.asset_class not in model_picks:
                 inst = await s.get(Instrument, t.instrument_id)
-                if inst:
+                if inst and not ips.restricted_by(inst, exclusions):
                     model_picks[t.asset_class] = {
                         "instrument_id": str(inst.id), "symbol": inst.symbol,
                         "name": inst.name, "asset_class": inst.asset_class,
                         "market_type": inst.market_type,
                     }
+        if policy:
+            target_weights = {c: float(w) for c, w in (policy.targets or {}).items()}
 
         accounts = (
             await s.execute(select(Account).where(Account.mandate_id == mandate.id))
@@ -74,8 +83,6 @@ class DriftRebalancingAgent(BaseAgent):
 
         # Adviser revision overrides (from a "Revise with comments" request) — applied for this
         # run only, never mutating the mandate. `protect` = do-not-sell holdings.
-        ov = (ctx.config or {}).get("overrides") or {}
-        exclusions = set((mandate.suitability or {}).get("values_exclusions", [])) | set(ov.get("exclude") or [])
         protect = {s.upper() for s in (ov.get("protect") or [])}
         positions: list[dict] = []
         cash = 0.0
@@ -118,7 +125,8 @@ class DriftRebalancingAgent(BaseAgent):
 
         from app.core import foundation
         pol = await foundation.for_agent(ctx.session, ctx.firm, self.key)
-        drift_band = float(ov["drift_band"]) if ov.get("drift_band") is not None else float(model.drift_band)
+        drift_band = (float(ov["drift_band"]) if ov.get("drift_band") is not None
+                      else float(policy.drift_band if policy else model.drift_band))
         cgt_budget = ov["cgt_budget"] if ov.get("cgt_budget") is not None else (mandate.constraints or {}).get("cgt_budget")
         if cgt_budget is None:  # firm-wide default guardrail when the mandate sets none
             cgt_budget = pol.get("default_cgt_budget")
@@ -132,6 +140,9 @@ class DriftRebalancingAgent(BaseAgent):
             "mandate": {"id": str(mandate.id), "name": mandate.name, "type": mandate.mandate_type},
             "model": {"id": str(model.id), "name": model.name, "drift_band": drift_band},
             "target_weights": target_weights,
+            "ips": {**ips.stamp(policy),
+                    "max_position": float(policy.max_position) if policy.max_position is not None else None,
+                    "min_cash": float(policy.min_cash) if policy.min_cash is not None else None} if policy else None,
             "cgt_budget": cgt_budget,
             "positions": positions,
             "model_picks": [
@@ -190,6 +201,7 @@ class DriftRebalancingAgent(BaseAgent):
         rules = (india["guard"] if india else washed)
         say = markets.money_for(ctx.firm)
         stcg_budget = (india or {}).get("stcg_budget")
+        policy = sensed.get("ips") or {}
         result = optimise(
             wash=WashSaleGuard(no_loss_sale=rules.get("no_loss_sale") or {}, no_buy=rules.get("no_buy") or {},
                                no_sell=rules.get("no_sell") or {}),
@@ -203,6 +215,7 @@ class DriftRebalancingAgent(BaseAgent):
             model_instruments=model_instruments,
             fee_rate=float(exec_cfg.get("fee_bps", 10)) / 10000.0,
             fee_minimum=float(exec_cfg.get("fee_minimum", 5)),
+            min_cash=policy.get("min_cash"), max_position=policy.get("max_position"),
         )
         if not result.needs_rebalance:
             return []
@@ -260,6 +273,7 @@ class DriftRebalancingAgent(BaseAgent):
         payload = {
             "order_set": orders,
             "mandate": {"name": sensed["mandate"]["name"], "type": sensed["mandate"]["type"]},
+            "ips": sensed.get("ips"),
             "summary": {
                 "total_value": result.total_value,
                 "max_drift": result.max_drift,
@@ -351,9 +365,12 @@ class DriftRebalancingAgent(BaseAgent):
             for o in result.orders
         )
         research = "\n".join(f"  - [{c['title']}] {c['excerpt'][:200]}" for c in citations) or "  (none)"
+        policy = sensed.get("ips")
+        measured = (f"its accepted IPS (version {policy['version']})" if policy
+                    else f"the {sensed['model']['name']} model, as no IPS is on file")
         fallback = (
             f"The {sensed['mandate']['name']} mandate has drifted beyond its "
-            f"{result.drift_band:.0%} tolerance (max drift {result.max_drift:.1%}). The proposed "
+            f"{result.drift_band:.0%} tolerance against {measured} (max drift {result.max_drift:.1%}). The proposed "
             f"order set realigns the portfolio to target while managing tax: estimated realised "
             f"gain {say(result.estimated_realised_gain)}"
             + (f", with {say(result.harvested_losses)} of losses harvested" if result.harvested_losses else "")
@@ -376,6 +393,7 @@ class DriftRebalancingAgent(BaseAgent):
             "the firm research excerpts where relevant and reference them by title."
             + revision + "\n\n"
             f"Mandate: {sensed['mandate']['name']} ({sensed['mandate']['type']})\n"
+            f"Targets measured against: {measured}\n"
             f"Allocation drift:\n{drift_lines}\n\n"
             f"Proposed orders:\n{order_lines}\n\n"
             f"Estimated realised gain: {say(result.estimated_realised_gain)}; "
@@ -408,6 +426,13 @@ class DriftRebalancingAgent(BaseAgent):
             refused = await consent.blocked(ctx.session, firm=ctx.firm, rec=recommendation)
             if refused:
                 return {"executed": False, "note": refused}
+            # Sized to the terms in force when it was proposed. The stamp comes from the agent's own
+            # payload, so a modification cannot lose it.
+            newer = await ips.moved_on(ctx.session, mandate, (recommendation.payload or {}).get("ips"))
+            if newer:
+                return {"executed": False,
+                        "note": (f"Nothing was placed: IPS version {newer.version} has been recorded since this was "
+                                 f"proposed. Run the agent again for a fresh set.")}
             household_id = await wash_sale.household_of(ctx.session, mandate)
             household = await ctx.session.get(Household, household_id) if household_id else None
             if harvest_guard.applies(ctx.firm, household.values if household else None):

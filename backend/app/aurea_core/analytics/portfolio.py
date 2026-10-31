@@ -7,7 +7,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import performance, planning
+from app.aurea_core import ips, performance, planning
 from app.aurea_core.analytics._common import gather_brains, goal_projections_all, positions_of
 from app.models.graph import Account, Mandate
 from app.models.portfolio import Holding, Instrument, ModelPortfolio, TargetAllocation
@@ -33,6 +33,10 @@ async def _drift_summary(session: AsyncSession, firm_id: uuid.UUID) -> dict:
         target_w: dict[str, float] = {}
         for t in targets:
             target_w[t.asset_class] = target_w.get(t.asset_class, 0.0) + float(t.target_weight)
+        band = float(model.drift_band)
+        policy = await ips.in_force(session, m.id)
+        if policy:
+            target_w, band = {c: float(w) for c, w in (policy.targets or {}).items()}, float(policy.drift_band)
         accounts = (await session.execute(select(Account).where(Account.mandate_id == m.id))).scalars().all()
         by_class: dict[str, float] = {}
         total = 0.0
@@ -50,11 +54,12 @@ async def _drift_summary(session: AsyncSession, firm_id: uuid.UUID) -> dict:
             continue
         max_drift = max((abs(by_class.get(c, 0.0) / total - target_w.get(c, 0.0))
                          for c in set(by_class) | set(target_w) if c != "cash"), default=0.0)
-        needs = max_drift > float(model.drift_band)
+        needs = max_drift > band
         if needs:
             breached += 1
         rows.append({"mandate": m.name, "max_drift": round(max_drift, 4),
-                     "drift_band": float(model.drift_band), "needs_rebalance": needs,
+                     "drift_band": band, "needs_rebalance": needs,
+                     "measured_against": "ips" if policy else "model",
                      "benchmark_symbol": getattr(model, "benchmark_symbol", None)})
     return {"mandates_monitored": len(rows), "mandates_breached": breached,
             "by_mandate": sorted(rows, key=lambda r: -r["max_drift"])}

@@ -15,8 +15,9 @@ keeps what is on file and says why, because the profile is the suitability recor
 rebalancer's equity ceiling. The questionnaire cannot see wealth against needs, which is often why an
 adviser keeps a different profile, and a decision holds only until the client's next answers.
 
-A mandate is not moved past its model's equity: a mandate over its ceiling breaches on the next
-rebalance, and that is a high-severity failure which pauses the agent for the whole firm.
+A mandate is not moved past the equity it is managed to, its IPS where one is in force and otherwise its
+model: a mandate over its ceiling breaches on the next rebalance, and that is a high-severity failure
+which pauses the agent for the whole firm.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.db import utcnow
 from app.models.graph import Household, LegalEntity, Mandate, Person
-from app.models.portfolio import ModelPortfolio, TargetAllocation
+from app.models.portfolio import InvestmentPolicy, ModelPortfolio, TargetAllocation
 from app.models.risk_assessment import RiskAssessment
 from app.provenance import ledger
 
@@ -105,7 +106,7 @@ def score(answers: dict | None) -> dict:
     }
 
 
-def _on_file(suitability: dict | None) -> tuple[str | None, str | None]:
+def on_file(suitability: dict | None) -> tuple[str | None, str | None]:
     suit = suitability or {}
     profile = str(suit.get("risk_tolerance") or suit.get("risk_profile") or "").strip().lower()
     capacity = str(suit.get("capacity_for_loss") or suit.get("risk_capacity") or "").strip().lower()
@@ -174,7 +175,7 @@ async def _views(session: AsyncSession, firm_id: uuid.UUID, household_id: uuid.U
         row = latest.get(h.id)
         rows = []
         for m in mandates.get(h.id, []):
-            profile, capacity = _on_file(m.suitability)
+            profile, capacity = on_file(m.suitability)
             decision = (m.suitability or {}).get("risk_decision")
             rows.append({
                 "mandate_id": str(m.id), "mandate": m.name, "risk_profile": profile, "capacity_for_loss": capacity,
@@ -273,15 +274,26 @@ async def decide(session: AsyncSession, firm_id: uuid.UUID, mandate_id: uuid.UUI
         raise RiskProfileError("Keeping what is on file needs the reason.")
 
     suit = dict(mandate.suitability or {})
-    profile, capacity = _on_file(suit)
+    profile, capacity = on_file(suit)
     if decision == "adopt":
-        equity = await model_equity(session, mandate.model_portfolio_id)
         ceiling = CAPACITY_EQUITY_MAX[row.capacity]
-        if equity is not None and equity > ceiling:
-            model = await session.get(ModelPortfolio, mandate.model_portfolio_id)
-            raise RiskProfileError(
-                f"The {model.name} model holds {equity:.0%} equity, above the {ceiling:.0%} ceiling for {row.capacity} "
-                f"capacity. Move this mandate to a model within the ceiling first.")
+        # The rebalancer works to the IPS where one is in force, so that is the equity that would breach.
+        policy = (await session.execute(
+            select(InvestmentPolicy).where(InvestmentPolicy.mandate_id == mandate.id)
+            .order_by(InvestmentPolicy.version.desc()).limit(1))).scalars().first()
+        if policy is not None:
+            equity = float((policy.targets or {}).get("equity", 0.0))
+            if equity > ceiling:
+                raise RiskProfileError(
+                    f"IPS version {policy.version} holds {equity:.0%} equity, above the {ceiling:.0%} ceiling for "
+                    f"{row.capacity} capacity. Record a new IPS within the ceiling first.")
+        else:
+            equity = await model_equity(session, mandate.model_portfolio_id)
+            if equity is not None and equity > ceiling:
+                model = await session.get(ModelPortfolio, mandate.model_portfolio_id)
+                raise RiskProfileError(
+                    f"The {model.name} model holds {equity:.0%} equity, above the {ceiling:.0%} ceiling for {row.capacity} "
+                    f"capacity. Move this mandate to a model within the ceiling first.")
         suit["risk_profile"] = row.indicated
         suit["capacity_for_loss"] = row.capacity
         for key, value in (("risk_tolerance", row.indicated), ("risk_capacity", row.capacity)):
@@ -299,7 +311,7 @@ async def decide(session: AsyncSession, firm_id: uuid.UUID, mandate_id: uuid.UUI
         "was": {"risk_profile": profile, "capacity_for_loss": capacity},
         "indicated": row.indicated, "capacity": row.capacity,
     })
-    now_profile, now_capacity = _on_file(suit)
+    now_profile, now_capacity = on_file(suit)
     return {
         "mandate_id": str(mandate.id), "mandate": mandate.name, "decision": decision, "reason": reason,
         "risk_profile": now_profile, "capacity_for_loss": now_capacity, "indicated": row.indicated,

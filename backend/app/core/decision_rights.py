@@ -48,6 +48,10 @@ BILLING_VETO: frozenset[UserRole] = frozenset({UserRole.COMPLIANCE})
 RECON_AGENTS: frozenset[str] = frozenset({AgentKey.RECONCILIATION.value})
 RECON_DECIDERS: frozenset[UserRole] = frozenset({UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM})
 
+# Agents whose approved proposals accept a breach of a client's IPS. No money moves, but it sets aside
+# the client's own terms, so it takes the people who may trade on them, and compliance keeps its veto.
+IPS_AGENTS: frozenset[str] = frozenset({AgentKey.IPS_MONITORING.value})
+
 STAFF: frozenset[UserRole] = frozenset(r for r in UserRole if r != UserRole.CLIENT)
 
 
@@ -61,6 +65,10 @@ def moves_the_book(agent_key: str | AgentKey) -> bool:
 
 def moves_client_cash(agent_key: str | AgentKey) -> bool:
     return str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in CASH_MOVING_AGENTS
+
+
+def _sets_aside_an_ips(agent_key: str | AgentKey) -> bool:
+    return str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in IPS_AGENTS
 
 
 def roles_for(agent_key: str | AgentKey, decision: str) -> frozenset[UserRole]:
@@ -80,7 +88,7 @@ def roles_for(agent_key: str | AgentKey, decision: str) -> frozenset[UserRole]:
                         "revise", "rollback"):
             return RECON_DECIDERS
         return frozenset()
-    if not moves_the_book(agent_key):
+    if not moves_the_book(agent_key) and not _sets_aside_an_ips(agent_key):
         return STAFF
     if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
         return TRADE_APPROVERS
@@ -124,6 +132,10 @@ def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> Non
         raise DecisionForbidden(
             f"This proposal decides reconciliation breaks, so only operations or the portfolio team may {decision} it."
         )
+    if _sets_aside_an_ips(agent_key):
+        who = ("an adviser, the portfolio team or compliance" if decision in ("dismiss", "rollback")
+               else "an adviser or the portfolio team")
+        raise DecisionForbidden(f"This proposal accepts a breach of a client's IPS, so only {who} may {decision} it.")
     if moves_the_book(agent_key):
         if decision in ("dismiss", "rollback"):
             who = "an adviser, the portfolio team or compliance"

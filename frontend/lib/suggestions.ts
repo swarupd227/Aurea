@@ -129,6 +129,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
       { label: "Wash sales", prompt: withRef("Check this household for wash-sale conflicts.", "household", household) },
       { label: "Billing", prompt: withRef("Why was this household billed what it was?", "household", household) },
       { label: "Next review", prompt: withRef("When was this household last reviewed, and when is the next review due?", "household", household) },
+      { label: "Against its IPS", prompt: withRef("How does this household's portfolio sit against its IPS?", "household", household) },
     ];
   }
   const route = pathname.replace(/\/$/, "");
@@ -181,6 +182,12 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Overdue reviews", prompt: "Which client reviews are overdue, and what have those clients paid since?" },
         { label: "No record", prompt: "Which households have no review on record?" },
         h1 ? { label: `${short(h1)}'s review`, prompt: `When was ${the(h1)} last reviewed, and what did it cover?` } : { label: "Due soon", prompt: "Which client reviews fall due in the next month?" },
+      ];
+    case "/studio/ips":
+      return [
+        { label: "In breach", prompt: "Which mandates are outside their IPS, and by how much?" },
+        { label: "No IPS on file", prompt: "Which mandates have no IPS on file, and how do they sit against their model?" },
+        { label: "Check the book", prompt: "Run the IPS monitor over the book." },
       ];
     case "/studio/reconciliation":
       return [

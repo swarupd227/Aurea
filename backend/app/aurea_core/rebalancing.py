@@ -3,7 +3,7 @@
 This is the engine behind the Drift & Tax-Managed Rebalancing lighthouse agent. It is pure
 (no I/O) so it is fully unit-testable and deterministic:
 
-  * detects drift of each asset class vs the target model beyond a tolerance band;
+  * detects drift of each asset class vs its target beyond a tolerance band;
   * for over-weight classes, raises cash by tax-lot selection — harvesting losses first,
     then realising the smallest gains — while respecting a capital-gains-tax budget;
   * for under-weight classes, allocates buys to existing or model instruments, honouring
@@ -226,6 +226,10 @@ def optimise(
     whole_units: bool = False,
     bucket_budgets: dict[str, float] | None = None,
     say_money: Callable[[float], str] = _dollars,
+    # What an IPS holds the mandate to, as fractions of its value: cash no buy may spend, and the most
+    # any one instrument may be after a buy. A breach already on the book is reported, not sold down.
+    min_cash: float | None = None,
+    max_position: float | None = None,
 ) -> RebalanceResult:
     total_value = sum(p.market_value for p in positions) + cash
     if total_value <= 0:
@@ -337,7 +341,8 @@ def optimise(
 
         # Fees are per order, not a blanket percentage of the total, because of the minimum.
         proceeds = sum(_gross(o) - _fee(_gross(o)) for o in orders if o.side == "sell")
-        available = cash + proceeds
+        cash_floor = (min_cash or 0.0) * total_value
+        available = max(0.0, cash + proceeds - cash_floor)
 
         for cls, drift in sorted(drifts.items(), key=lambda kv: kv[1], reverse=True):
             if cls == "cash" or drift >= -drift_band:
@@ -374,7 +379,7 @@ def optimise(
                 continue
             if target_pos is None:
                 limitations.append(
-                    f"The model targets {(-drift):.0%} in '{cls}' but names no instrument to "
+                    f"'{cls}' is {(-drift):.0%} under target, but the model names no instrument to "
                     f"buy and no account holds one — adviser to select manually."
                 )
                 continue
@@ -400,6 +405,18 @@ def optimise(
             if not target_pos.account_id and positions:
                 target_pos = replace(target_pos, account_id=positions[0].account_id,
                                      custodian=positions[0].custodian)
+            capped = False
+            if max_position is not None:
+                already = sum(p.market_value for p in positions if p.instrument_id == target_pos.instrument_id)
+                room = max(0.0, max_position * total_value - already)
+                if buy_value > room:
+                    capped = True
+                    buy_value = room
+                    limitations.append(
+                        f"'{cls}' is {(-drift):.0%} under target, but {target_pos.symbol} is limited to "
+                        f"{max_position:.0%} of this mandate. {say_money(wanted - room)} to allocate to "
+                        f"another instrument - adviser to select."
+                    )
             # Size in quantity and then price it the way settlement will, stepping down a
             # tick if the rounded quantity does not fit. Checking the value alone is not
             # enough: the order carries the quantity, and that is what gets valued.
@@ -409,7 +426,8 @@ def optimise(
             while qty > 0 and (qty * price) + _fee(qty * price) > available + 1e-9:
                 qty = _carried(qty - tick)
             if qty <= 0:
-                underfunded.append((cls, wanted, 0.0))
+                if not capped:
+                    underfunded.append((cls, wanted, 0.0))
                 continue
             buy_value = qty * price
             orders.append(Order(
@@ -422,7 +440,7 @@ def optimise(
             available -= (buy_value + _fee(buy_value))
             # Flooring the quantity always leaves a buy a few cents under what was wanted. That is
             # rounding, not a shortfall, and reporting it told an adviser they were "$0 short".
-            if wanted - buy_value >= _SHORTFALL_WORTH_SAYING:
+            if not capped and wanted - buy_value >= _SHORTFALL_WORTH_SAYING:
                 underfunded.append((cls, wanted, buy_value))
 
     # Say what could not be funded. Silently buying less than the target would look like a
@@ -434,6 +452,8 @@ def optimise(
             f"funded from cash and sale proceeds — {say_money(shortfall)} short. Raising more "
             f"would exceed the CGT budget or the available cash."
         )
+    if min_cash and underfunded:
+        limitations.append(f"Buys stop at {say_money(min_cash * total_value)} of cash, the floor in the IPS.")
 
     if cgt_budget is not None and realised_gain > cgt_budget + 1e-6:
         breaches.append(

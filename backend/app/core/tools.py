@@ -496,6 +496,44 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
+    "read_ips_monitoring": Tool(
+        key="read_ips_monitoring",
+        name="Read IPS Monitoring",
+        speaking_agent="astra",
+        description="Each active mandate read against the IPS its client accepted: its status, the IPS terms and version, current weights, and every term it is outside, with how far. Give a mandate_id for one mandate with its IPS versions, a household_id for one household, or neither for the whole book with breaches first. Status 'breach' has terms outside and nobody has accepted them; 'excepted' has breaches a person accepted for a limited time; 'within' is inside every term; 'not_assessed' has an IPS but nothing to measure; 'no_ips' means no IPS is recorded here, which does not mean the client has none, and such a mandate is measured against its model instead. 'measured_against' says which. A term that an exception covers is under 'excepted', not 'findings'.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("mandate_id", "uuid", "One mandate, or leave out", required=False),
+            ToolInput("household_id", "uuid", "One household, or leave out", required=False),
+        ],
+        output=ToolOutput("object", "Each mandate's IPS status, weights and any terms outside"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_ips": Tool(
+        key="record_ips",
+        name="Record IPS",
+        speaking_agent="astra",
+        description="Record the terms of an IPS a client has accepted, from the document. The rebalancer then works to these terms and not the model, and the IPS monitor checks the mandate against them. Take every term from the user and never work one out. Leave targets or drift_band out only if the user says the IPS follows the model, and leave restricted out to carry the mandate's exclusions. Leave max_position and min_cash out if the IPS sets none. It cannot be edited afterwards: a change is a new version and needs a reason. It is refused if the equity target is above the client's capacity ceiling.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this IPS? The rebalancer and the IPS monitor will work to these terms, and they cannot be edited.",
+        inputs=[
+            ToolInput("mandate_id", "uuid", "The mandate, from read_ips_monitoring", required=True),
+            ToolInput("accepted_on", "string", "The date the client accepted it, YYYY-MM-DD", required=True),
+            ToolInput("document", "string", "Which document these terms come from", required=True),
+            ToolInput("targets", "list[string]", "Target weights as percentages adding up to 100, each like 'equity 60', from: equity, fixed_income, cash, alternatives, property, commodity, multi_asset", required=False),
+            ToolInput("drift_band", "number", "The rebalancing band, as a percentage either side of target", required=False),
+            ToolInput("max_position", "number", "The most any one instrument may be, as a percentage", required=False),
+            ToolInput("min_cash", "number", "The least cash to hold, as a percentage", required=False),
+            ToolInput("restricted", "list[string]", "Symbols or values flags the IPS rules out", required=False),
+            ToolInput("reason", "string", "Why, when this replaces an earlier version", required=False),
+        ],
+        output=ToolOutput("object", "The mandate read against the new terms"),
+        roles_required={UserRole.ADVISER},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

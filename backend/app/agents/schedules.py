@@ -86,6 +86,11 @@ DEFAULT_SCHEDULES: dict[str, tuple[str, str]] = {
         "Each business day, just after the morning price run, so the queue operations opens is "
         "already sorted. Statements arrive on business days; a weekend run would find nothing new.",
     ),
+    AgentKey.IPS_MONITORING: (
+        "45 6 * * 1-5",
+        "Each business day, just after the morning price run, so a breach of a client's own terms "
+        "is in front of someone the day it appears. Holdings only reprice on business days.",
+    ),
     AgentKey.CLIENT_CARE: (
         "0 6 * * *",
         "Volatility and at-risk signals are time-sensitive; before the adviser's day starts.",

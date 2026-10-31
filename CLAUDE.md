@@ -69,6 +69,14 @@ pages are artifact views the agents open. Full guideline, including what is buil
   it; only `seed/client_review_backfill.py` carries one across, and marks what it covered as not recorded. The
   next date comes from a recorded review and the cadence, so no record means no date, and no record does not
   mean no review. A booking sits beside an overdue review and does not clear it.
+- **The client's IPS outranks the model.** `aurea_core/ips.py` holds what a client accepted, added and never
+  edited; a change is a new version. Only an adviser records one, from the document, and no term is worked out.
+  What was accepted at onboarding is the one thing carried, and an IPS draft is not an IPS. Where one is in force
+  the rebalancer works to it, the model only names what to buy, and `act()` places nothing if it has changed since
+  the proposal. No IPS on file means the model, says so, and does not mean no IPS. Neither recording an IPS nor
+  adopting a risk profile may put a mandate's equity over its capacity ceiling. The IPS monitor reports and never
+  trades: approving accepts a breach, with a reason, for a limited time and only as far as it stood, and only an
+  adviser or the portfolio team may (`decision_rights.IPS_AGENTS`), whatever its tier.
 - **A market is resolved in one place, and a country with no rules is refused.** `aurea_core/markets.py` says
   what a jurisdiction fixes; `compliance/ontology.framework_for` matches a regulator as a word. A country with
   no market gets `NO_REGIME`, no tax report and a held activation, never New Zealand's rules. Money in a
@@ -100,7 +108,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_client_reviews`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.
