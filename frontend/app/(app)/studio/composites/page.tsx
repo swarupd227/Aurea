@@ -3,13 +3,14 @@ import { AlertTriangle, Check, BarChart3, FileCheck } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, Empty, Spinner } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
+import { money as firmMoney } from "@/lib/format";
 import { BenchmarkDisclosureView } from "@/app/workspace/components/artifacts/CompositeReportCard";
 
 function pct(n: number | null) {
   return n === null || n === undefined ? "—" : `${(n * 100).toFixed(2)}%`;
 }
 function money(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  return firmMoney(n);
 }
 
 function CompositePresentation({ compositeId }: { compositeId: string }) {

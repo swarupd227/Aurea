@@ -8,6 +8,8 @@ import { Markdown } from "@/app/workspace/components/Markdown";
 import { ConfidenceBar, StatusBadge, TierBadge } from "./ui";
 import { DriftBars } from "./Charts";
 import { ViewLink } from "./views/ViewNav";
+import { ConsentPanel, ConsentChips } from "./ConsentPanel";
+import { BUCKET_TEXT } from "@/app/workspace/components/artifacts/TaxPositionCard";
 
 const pctf = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -97,6 +99,41 @@ function DriftAnalysis({ payload, ev, orders }: { payload: any; ev: any; orders:
             <div className="mt-1.5 text-xs text-ok">No guardrail flags</div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** India: what this proposal does to one taxpayer's year. Lots are the law's, so none are chosen. */
+function IndiaTaxPanel({ tax }: { tax: any }) {
+  const buckets = Object.entries((tax.buckets || {}) as Record<string, number>).filter(([, v]) => v);
+  return (
+    <div className={panel} data-testid="rec-india-tax">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <div className="tile-label flex items-center gap-1.5"><Landmark size={13} /> {tax.taxpayer} · Tax Year {tax.tax_year}</div>
+        <span className={chipMuted}>{tax.lot_method}</span>
+        <span className={`${chipMuted} ml-auto`}>estimate</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {buckets.length === 0 && <span className={chipMuted}>No gain realised</span>}
+        {buckets.map(([k, v]) => (
+          <span key={k} className={`chip ${v < 0 ? "bg-ok-bg text-ok" : "bg-border-soft text-ink-soft"}`}>{BUCKET_TEXT[k] ?? k} {money(v)}</span>
+        ))}
+        <span className={chipMuted}>{tax.estimated_tax < 0 ? `Saves tax ${money(-tax.estimated_tax)}` : `Adds tax ${money(tax.estimated_tax)}`}</span>
+        <span className={chipMuted}>Exemption left {money(tax.exempt_left_after)}</span>
+        {(tax.incomplete || []).map((m: string) => (
+          <span key={m} className="chip text-warn">{m.replace(/_/g, " ")} not on file</span>
+        ))}
+        {(tax.held || []).map((h: any) => (
+          <span key={`${h.side}-${h.symbol}`} className="chip text-warn" title={h.say} data-testid="rec-india-held">
+            {h.symbol} {h.side} held · clears {h.clear_on}
+          </span>
+        ))}
+        {(tax.flags || []).map((f: any) => (
+          <span key={f.symbol} className="chip text-warn" title={`${f.account} · ${f.on}`} data-testid="rec-india-flag">
+            {f.symbol} rebuy after a loss · adviser to judge
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -299,6 +336,11 @@ export default function RecommendationCard({
                 <span className={chipMuted}><Scissors size={11} /> {exclusionsHonoured} exclusion{exclusionsHonoured > 1 ? "s" : ""}</span>
               )}
               {payload.mandate?.type && <span className={`${chipMuted} capitalize`}>{payload.mandate.type}</span>}
+              {payload.licence && (
+                <span className={chipMuted} title={payload.licence.citation} data-testid="rec-licence">
+                  {payload.licence.name} · {payload.licence.per_trade_consent ? "client consents" : "no client consent needed"}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -329,6 +371,7 @@ export default function RecommendationCard({
           )}
 
           {isDrift && <DriftAnalysis payload={payload} ev={ev} orders={orders} />}
+          {isDrift && payload.india_tax && <IndiaTaxPanel tax={payload.india_tax} />}
 
           {orders.length > 0 && (
             <div>
@@ -472,12 +515,12 @@ export default function RecommendationCard({
             <div className="space-y-2">
               <textarea className="input text-sm" rows={2} data-testid="rec-revise-note"
                 aria-label="What should the agent change"
-                placeholder="e.g. Keep realised gains under $10k and don't sell AAPL"
+                placeholder="e.g. Keep realised gains lower and don't sell one of the holdings"
                 value={rev.note} onChange={(e) => setRev({ ...rev, note: e.target.value })} />
               <div className="grid gap-2 cq-sm:grid-cols-3">
                 <div>
-                  <label className="label text-[11px]">CGT cap $</label>
-                  <input className="input text-sm" placeholder="15000" value={rev.cgt} onChange={(e) => setRev({ ...rev, cgt: e.target.value })} />
+                  <label className="label text-[11px]">CGT cap</label>
+                  <input className="input text-sm" value={rev.cgt} onChange={(e) => setRev({ ...rev, cgt: e.target.value })} />
                 </div>
                 <div>
                   <label className="label text-[11px]" title="Largest deviation from target before a holding is rebalanced. Default 5%.">Drift band %</label>
@@ -485,7 +528,7 @@ export default function RecommendationCard({
                 </div>
                 <div>
                   <label className="label text-[11px]">Protect (don&rsquo;t sell)</label>
-                  <input className="input text-sm" placeholder="AAPL, MSFT" value={rev.exclude} onChange={(e) => setRev({ ...rev, exclude: e.target.value })} />
+                  <input className="input text-sm" placeholder={orders[0]?.symbol} value={rev.exclude} onChange={(e) => setRev({ ...rev, exclude: e.target.value })} />
                 </div>
               </div>
               {err && <div className="text-xs text-crit">{err}</div>}
@@ -512,6 +555,12 @@ export default function RecommendationCard({
                 onChange={(e) => setNote(e.target.value)}
               />
               {err && <div className="text-xs text-crit">{err}</div>}
+              {mode !== "dismiss" && payload.licence?.per_trade_consent && (
+                <div className="flex flex-wrap gap-1.5" data-testid="rec-consent-note">
+                  <span className="chip text-warn">No orders until the client consents</span>
+                  <ViewLink href="/studio/licences" className="chip text-ink-muted underline">Waiting on clients</ViewLink>
+                </div>
+              )}
               <div className="flex items-center gap-2 justify-end">
                 <button className="btn-ghost" onClick={() => setMode(null)} disabled={busy}>
                   Cancel
@@ -536,12 +585,17 @@ export default function RecommendationCard({
         </div>
       )}
 
+      {payload.client_consent?.status === "awaiting" && onDecided && (
+        <ConsentPanel recId={rec.id} consent={payload.client_consent} onDone={() => onDecided({ ...rec })} />
+      )}
+
       {reversible && onDecided && (
         <>
           <div className="border-t border-border px-4 py-2 flex flex-wrap items-center justify-between gap-2">
             <span className="flex flex-wrap gap-1.5">
               <span className={chipMuted}>{rec.status === "executed" ? "Executed" : "Approved"}</span>
               <span className={chipMuted}>Ledger</span>
+              <ConsentChips consent={payload.client_consent} />
             </span>
             <div className="flex flex-wrap items-center gap-2">
               <button className="btn-ghost text-xs" onClick={() => { setDraftOpen(!draftOpen); setDraft(null); }}>

@@ -39,6 +39,15 @@ def _household(name: str) -> list[Candidate]:
     ]
 
 
+def _for_india(candidate: Candidate) -> Candidate:
+    """India has no wash-sale rule, so the sentence that follows a household there is its tax."""
+    tool, text = candidate
+    if tool != "check_household_wash_sale":
+        return candidate
+    name = text.removeprefix("Check ").removesuffix(" household for wash-sale conflicts.")
+    return "read_tax_position", f"What is {name}'s tax position this tax year, taxpayer by taxpayer?"
+
+
 def _name_of(result: dict[str, Any]) -> str | None:
     brain = result.get("brain") or {}
     household = brain.get("household") if isinstance(brain.get("household"), dict) else {}
@@ -99,10 +108,12 @@ FOLLOWS: dict[str, Callable[[dict, dict], list[Candidate]]] = {
     "read_compliance_program": lambda i, r: [GOVERNANCE, WAITING],
     "read_ai_governance_summary": lambda i, r: [("read_compliance_program", "Show me the compliance program and any open conflicts."), RUNS],
     "read_beneficiary_audit": lambda i, r: [WAITING],
+    "read_tax_position": lambda i, r: [("read_licences", "Which proposals are waiting for a client's consent?"), WAITING],
+    "read_licences": lambda i, r: [WAITING],
 }
 
 
-def derive(role: UserRole | str, used: list[dict[str, Any]]) -> list[str]:
+def derive(role: UserRole | str, used: list[dict[str, Any]], *, india: bool = False) -> list[str]:
     """Up to four sentences, each answerable by a tool `role` holds, shaped by the tools this turn
     used (most recent first) and finished with the role's general next steps."""
     held = tools_for_role(UserRole(role))
@@ -118,6 +129,8 @@ def derive(role: UserRole | str, used: list[dict[str, Any]]) -> list[str]:
         except (KeyError, TypeError, IndexError):
             continue        # a result of an unexpected shape suggests nothing rather than something wrong
     candidates += [WAITING, AGENTS]
+    if india:
+        candidates = [_for_india(c) for c in candidates]
 
     # Do not offer what the turn has just done.
     seen: set[str] = set()

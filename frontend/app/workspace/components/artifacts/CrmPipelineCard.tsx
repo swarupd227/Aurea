@@ -1,3 +1,4 @@
+import { money as firmMoney } from "@/lib/format";
 const STAGE_COLOR: Record<string, string> = {
   lead: "bg-ink-muted", qualified: "bg-info", proposal: "bg-warn", won: "bg-ok", lost: "bg-crit",
 };
@@ -21,7 +22,7 @@ interface CrmPayload {
 }
 
 function money(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  return firmMoney(n);
 }
 
 export function CrmPipelineCard({ result }: { result: CrmPayload }) {

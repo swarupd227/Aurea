@@ -141,6 +141,15 @@ async def main() -> int:
             settled = ia.payload["execution_result"]
             check("nothing failed to settle", (settled["orders_failed"], settled["settlement_breaks"]), (0, 0))
 
+            print("\n=== The tax agent, through the runtime ===")
+            run = await runtime.run_agent(s, firm=firm, agent_key=AgentKey.TAX_INTELLIGENCE, trigger="seed_scan",
+                                          subject=Subject("firm", firm.id, firm.name), require_human=True)
+            await s.flush()
+            memos = (await s.execute(select(Recommendation).where(Recommendation.run_id == run.id))).scalars().all()
+            check("a proposal per household with something to say", len(memos) >= 3, True)
+            check("each on its household", all(m.subject_type == "household" and m.subject_id for m in memos), True)
+            check("and in rupees", all("₹" in m.summary and "$" not in m.summary for m in memos), True)
+
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)
     finally:

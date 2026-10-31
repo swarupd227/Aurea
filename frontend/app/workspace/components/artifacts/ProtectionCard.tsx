@@ -1,3 +1,5 @@
+import { firmLocale } from "@/lib/format";
+
 export interface ProtectionScenario {
   status: "gap" | "no_gap" | "not_assessed" | "past_retirement";
   missing?: string[];
@@ -53,7 +55,7 @@ interface Book {
 
 export function money(v: number | null | undefined) {
   if (v == null) return "—";
-  return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return v.toLocaleString(firmLocale(), { maximumFractionDigits: 0 });
 }
 
 export const KIND_TEXT: Record<string, string> = { life: "life", tpd: "TPD", income_protection: "income" };

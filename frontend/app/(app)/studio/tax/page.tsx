@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
+import { firmMarket } from "@/lib/format";
+import { TaxPositionCard } from "@/app/workspace/components/artifacts/TaxPositionCard";
 import {
   Receipt, AlertTriangle, TrendingDown, Leaf, Landmark, ArrowDownUp,
   RefreshCw, Home, DollarSign, Clock, Gift, TrendingUp, PiggyBank,
@@ -92,7 +94,7 @@ interface BookResult {
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 function makeFmt(currency: string) {
-  const locale = currency === "GBP" ? "en-GB" : currency === "USD" ? "en-US" : "en-NZ";
+  const locale = currency === "GBP" ? "en-GB" : currency === "USD" ? "en-US" : currency === "INR" ? "en-IN" : "en-NZ";
   return (n: number) =>
     new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
 }
@@ -694,6 +696,48 @@ function UKResultView({ data }: { data: UKResult & { total_portfolio_value: numb
 // Book view (multi-jurisdiction summary)
 // ════════════════════════════════════════════════════════════════════════════════
 
+function IndiaBook({ data }: { data: any }) {
+  const fmt = makeFmt("INR");
+  const rows: any[] = data.in_households || [];
+  const sum = (k: string) => rows.reduce((t, h) => t + (h.summary?.[k] || 0), 0);
+  return (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="tax-india-book">
+        <SummaryCard icon={Receipt} label="Households" value={String(rows.length)} sub={rows[0] ? `Tax Year ${rows[0].tax_year}` : undefined} color="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400" />
+        <SummaryCard icon={Landmark} label="Estimated tax so far" value={fmt(sum("estimated_tax"))} sub="estimate" color="bg-neutral-100 dark:bg-neutral-700 text-ink-muted" />
+        <SummaryCard icon={TrendingDown} label="Harvestable loss" value={fmt(sum("harvestable_loss"))} sub="after FIFO" color="bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400" />
+        <SummaryCard icon={Leaf} label="Exemption unused" value={fmt(sum("exemption_unused"))} sub="across taxpayers" color="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" />
+      </div>
+      <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
+              <th className="px-3 py-2 font-medium">Household</th>
+              <th className="px-3 py-2 text-right font-medium">Taxpayers</th>
+              <th className="px-3 py-2 text-right font-medium">Estimated tax</th>
+              <th className="px-3 py-2 text-right font-medium">Harvestable loss</th>
+              <th className="px-3 py-2 text-right font-medium">Could save</th>
+              <th className="px-3 py-2 text-right font-medium">Exemption unused</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
+            {rows.map((h) => (
+              <tr key={h.household_id}>
+                <td className="px-3 py-2 text-ink">{h.household_name}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{h.summary.taxpayers}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{fmt(h.summary.estimated_tax)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{fmt(h.summary.harvestable_loss)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{fmt(h.summary.estimated_tax_saving)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{fmt(h.summary.exemption_unused)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function BookView({ data }: { data: BookResult }) {
   const fmtNZD = makeFmt("NZD");
   const fmtUSD = makeFmt("USD");
@@ -835,7 +879,9 @@ export default function TaxIntelligencePage() {
     US: "🇺🇸 US — SEC/FINRA",
     UK: "🇬🇧 UK — FCA",
     NZ: "🇳🇿 NZ — FMA",
+    IN: "🇮🇳 IN — Income-tax Act 2025",
   }[(hhData as any).jurisdiction] : null;
+  const india = firmMarket() === "IN";
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -847,7 +893,8 @@ export default function TaxIntelligencePage() {
             {jurisdictionBadge && <span className="text-xs bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 px-2 py-0.5 rounded-full">{jurisdictionBadge}</span>}
           </div>
           <p className="text-sm text-ink-muted dark:text-neutral-400">
-            Jurisdiction-dispatched tax optimisation — NZ (PIE / KiwiSaver / bright-line), US (CGT / RMD / Roth), UK (CGT allowance / ISA / pension).
+            {india ? "Taxpayer by taxpayer, first-in first-out. Estimates for a qualified person to check."
+              : "Jurisdiction-dispatched tax optimisation — NZ (PIE / KiwiSaver / bright-line), US (CGT / RMD / Roth), UK (CGT allowance / ISA / pension)."}
           </p>
         </div>
         <button onClick={() => mode === "book" ? loadBook() : loadHousehold(selectedHH)} disabled={loading}
@@ -880,17 +927,23 @@ export default function TaxIntelligencePage() {
         </div>
       )}
 
-      {!loading && mode === "book" && bookData && <BookView data={bookData} />}
+      {!loading && mode === "book" && bookData && (india ? <IndiaBook data={bookData} /> : <BookView data={bookData} />)}
 
       {!loading && mode === "household" && hhData && (() => {
         const jur = (hhData as any).jurisdiction;
         const currency = (hhData as any).currency || "USD";
         return (
           <div className="space-y-4">
-            {washSale && <WashSaleCalendarPanel data={washSale} currency={currency} />}
+            {washSale && jur !== "IN" && (hhData as any).supported !== false && <WashSaleCalendarPanel data={washSale} currency={currency} />}
+            {(hhData as any).supported === false && (
+              <div className="text-sm text-ink-muted py-8 text-center" data-testid="tax-not-supported">
+                No tax rules on this platform for {jur}.
+              </div>
+            )}
+            {jur === "IN" && <TaxPositionCard result={hhData as any} full />}
             {jur === "US" && <USResultView data={hhData as USResult & any} />}
             {jur === "UK" && <UKResultView data={hhData as UKResult & any} />}
-            {jur !== "US" && jur !== "UK" && <NZResultView data={hhData as NZResult & any} />}
+            {jur === "NZ" && <NZResultView data={hhData as NZResult & any} />}
           </div>
         );
       })()}

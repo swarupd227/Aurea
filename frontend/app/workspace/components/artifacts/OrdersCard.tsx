@@ -1,3 +1,4 @@
+import { money as firmMoney } from "@/lib/format";
 import { Check, X } from "lucide-react";
 
 interface Fill {
@@ -26,8 +27,7 @@ interface OrdersResult {
 }
 
 function money(n: number) {
-  const sign = n < 0 ? "-" : "";
-  return `${sign}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return firmMoney(n, undefined, 2);
 }
 
 export function OrdersCard({ result }: { result: OrdersResult }) {

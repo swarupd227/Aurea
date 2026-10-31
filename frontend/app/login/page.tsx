@@ -5,6 +5,13 @@ import { login, api, setSession } from "@/lib/api";
 import { roleLanding } from "@/lib/roles";
 import { ShieldCheck } from "lucide-react";
 
+const INDIA = [
+  { role: "Adviser", email: "adviser@astra-india.demo", desc: "Client consents to every trade", subtitle: "Investment Adviser's desk." },
+  { role: "Portfolio manager", email: "portfolio@astra-india.demo", desc: "Discretionary mandates", subtitle: "Portfolio Manager's desk." },
+  { role: "Compliance", email: "compliance@astra-india.demo", desc: "Ledger & veto", subtitle: "Your governance dashboard." },
+  { role: "Client", email: "client@astra-india.demo", desc: "Their own household", subtitle: "Your personal wealth view." },
+];
+
 const DEMO = [
   { role: "Adviser", email: "sophie.adviser@aurea.demo", desc: "Studio cockpit", subtitle: "Welcome back to your cockpit." },
   { role: "Compliance", email: "compliance@aurea.demo", desc: "Provenance & governance", subtitle: "Your governance dashboard." },
@@ -224,6 +231,24 @@ export default function LoginPage() {
                 <button
                   key={d.email}
                   data-testid={`login-persona-${d.role.toLowerCase()}`}
+                  onClick={() => pickPersona(d)}
+                  disabled={busy}
+                  className="text-left rounded-lg border border-border px-3 py-2 hover:border-border-soft hover:bg-surface transition disabled:opacity-50"
+                >
+                  <div className="text-sm font-medium text-ink">{d.role}</div>
+                  <div className="text-xs text-ink-muted">{d.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-2 mt-6">
+              India · demonstration firm, invented clients
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {INDIA.map((d) => (
+                <button
+                  key={d.email}
+                  data-testid={`login-persona-in-${d.role.toLowerCase().replace(/ /g, "-")}`}
                   onClick={() => pickPersona(d)}
                   disabled={busy}
                   className="text-left rounded-lg border border-border px-3 py-2 hover:border-border-soft hover:bg-surface transition disabled:opacity-50"

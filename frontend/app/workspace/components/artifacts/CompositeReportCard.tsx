@@ -1,3 +1,4 @@
+import { money as firmMoney } from "@/lib/format";
 interface StdDev {
   value: number | null;
   months_used: number;
@@ -74,7 +75,7 @@ function pct(n: number | null) {
   return n === null ? "—" : `${(n * 100).toFixed(2)}%`;
 }
 function money(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  return firmMoney(n);
 }
 
 export function CompositeReportCard({ result }: { result: CompositeReportPayload }) {

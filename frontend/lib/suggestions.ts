@@ -5,6 +5,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { firmMarket } from "./format";
 import { withRef } from "./refs";
 
 export interface Suggestion {
@@ -66,6 +67,12 @@ function view(h?: string): Suggestion {
 }
 
 function washSale(h?: string): Suggestion {
+  // India has no wash-sale rule. What an adviser asks there is where each taxpayer stands.
+  if (firmMarket() === "IN") {
+    return h
+      ? { label: `${short(h)} tax position`, prompt: `What is ${the(h)} tax position this tax year, taxpayer by taxpayer?` }
+      : { label: "Tax position", prompt: "What is a household's tax position this tax year, taxpayer by taxpayer?" };
+  }
   return h
     ? { label: `${short(h)} wash sales`, prompt: `Which lots could ${the(h)} household not harvest a loss on right now because of a wash sale?` }
     : { label: "Check wash sales", prompt: "Check a household's wash-sale calendar before a loss harvest." };
@@ -76,6 +83,7 @@ export function roleStarters(role: string, ctx: SuggestionContext): Suggestion[]
   const [h1, h2] = ctx.households;
   switch (role) {
     case "adviser":
+      if (firmMarket() === "IN") return [WAITING, { label: "Waiting on clients", prompt: "Which proposals are waiting for a client's consent?" }, washSale(h1), perf(h1)];
       return [WAITING, perf(h1), washSale(h2 ?? h1), AGENTS];
     case "paraplanner":
       return [view(h1), { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }, AGENTS, WAITING];
@@ -149,6 +157,11 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "How fresh are my prices", prompt: "How fresh are my prices, and which ones can't be trusted?" },
         { label: "Fetch prices now", prompt: "Fetch prices now." },
         { label: "Failed symbols", prompt: "Did the last price run fail for any symbol, and why?" },
+      ];
+    case "/studio/licences":
+      return [
+        { label: "Waiting on clients", prompt: "Which proposals are waiting for a client's consent?" },
+        { label: "What may agents do", prompt: "What can the agents do for an Investment Adviser's client, and for a discretionary Portfolio Manager's?" },
       ];
     case "/studio/protection":
       return [

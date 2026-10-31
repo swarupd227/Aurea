@@ -1,3 +1,4 @@
+import { money as firmMoney } from "@/lib/format";
 interface Beneficiary {
   beneficiary_name: string;
   designation_class: string;
@@ -21,7 +22,7 @@ interface RegistrationPayload {
 }
 
 function money(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  return firmMoney(n);
 }
 
 const RMD_COLOR: Record<string, string> = {

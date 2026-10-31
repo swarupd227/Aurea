@@ -1,3 +1,4 @@
+import { money as firmMoney } from "@/lib/format";
 interface Holding {
   symbol: string;
   name: string;
@@ -23,7 +24,7 @@ const ASSET_CLASS_COLOR: Record<string, string> = {
 };
 
 function money(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  return firmMoney(n);
 }
 
 export function PortfolioCard({ result }: { result: PortfolioResult }) {

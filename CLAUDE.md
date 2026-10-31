@@ -76,7 +76,9 @@ pages are artifact views the agents open. Full guideline, including what is buil
 - **India is taxed per taxpayer, first-in first-out.** `aurea_core/tax_india.py` reads each person, HUF or trust
   alone and never nets across a family. Lots are not chosen: a firm's `lot_method` does not apply to a market
   with `statutory_fifo`. `aurea_core/harvest_guard.py` is India's guard and `wash_sale.py` stays US-only; never
-  port the 30-day block, and never say a rebuy is safe. Figures are estimates and carry `NOT_MODELLED`.
+  port the 30-day block, and never say a rebuy is safe. Figures are estimates and carry `NOT_MODELLED`. The
+  Indian firm is `seed/india_demo.py`, marked as a demonstration; its clients are invented and Yahoo's prices
+  are for demonstrating with, not licensed for client use.
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
@@ -93,7 +95,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_markets`, `verify_india_tax`, `verify_licences`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

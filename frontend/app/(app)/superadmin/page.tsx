@@ -14,8 +14,9 @@ const DOMAINS = [
   { value: "US", label: "United States (SEC)" },
   { value: "SG", label: "Singapore (MAS)" },
   { value: "EU", label: "European Union (ESMA)" },
+  { value: "IN", label: "India (SEBI)" },
 ];
-const CURRENCIES = ["NZD", "AUD", "GBP", "USD", "SGD", "EUR"];
+const CURRENCIES = ["NZD", "AUD", "GBP", "USD", "SGD", "EUR", "INR"];
 
 export default function SuperadminPage() {
   const router = useRouter();

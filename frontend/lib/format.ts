@@ -1,9 +1,32 @@
-export function money(n: number | null | undefined, ccy = "NZD"): string {
+import { getUser } from "./api";
+
+/** The signed-in firm's books. A session from before the firm carried these reads as New Zealand. */
+export function firmCurrency(): string {
+  return getUser()?.firm?.base_currency || "NZD";
+}
+export function firmLocale(): string {
+  return getUser()?.firm?.locale || "en-NZ";
+}
+export function firmMarket(): string {
+  return getUser()?.firm?.jurisdiction || "NZ";
+}
+
+export function money(n: number | null | undefined, ccy?: string, digits = 0): string {
   if (n === null || n === undefined || isNaN(n as number)) return "—";
-  return new Intl.NumberFormat("en-NZ", {
+  return new Intl.NumberFormat(firmLocale(), {
     style: "currency",
-    currency: ccy,
-    maximumFractionDigits: 0,
+    currency: ccy || firmCurrency(),
+    maximumFractionDigits: digits,
+  }).format(n);
+}
+
+/** Large amounts in short form: lakh and crore in India, thousands and millions elsewhere. */
+export function moneyShort(n: number, ccy?: string): string {
+  return new Intl.NumberFormat(firmLocale(), {
+    style: "currency",
+    currency: ccy || firmCurrency(),
+    notation: "compact",
+    maximumFractionDigits: 2,
   }).format(n);
 }
 
@@ -13,7 +36,7 @@ export function pct(n: number | null | undefined, digits = 1): string {
 }
 
 export function num(n: number, digits = 0): string {
-  return new Intl.NumberFormat("en-NZ", { maximumFractionDigits: digits }).format(n);
+  return new Intl.NumberFormat(firmLocale(), { maximumFractionDigits: digits }).format(n);
 }
 
 export function titleCase(s: string): string {
@@ -34,7 +57,7 @@ export function timeAgo(iso: string | null): string {
 
 export function formatDateFull(iso: string | null): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleString("en-NZ", {
+  return new Date(iso).toLocaleString(firmLocale(), {
     day: "numeric", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });

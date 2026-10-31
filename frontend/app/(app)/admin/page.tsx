@@ -143,7 +143,8 @@ const JURISDICTION_DEFAULTS: Record<string, { regulator: string; base_currency: 
   NZ:    { regulator: "FMA",       base_currency: "NZD", compliance_regime: "NZ-FMA",    flag: "🇳🇿" },
   US:    { regulator: "SEC/FINRA", base_currency: "USD", compliance_regime: "US-SEC",    flag: "🇺🇸" },
   UK:    { regulator: "FCA",       base_currency: "GBP", compliance_regime: "UK-FCA",    flag: "🇬🇧" },
-  MULTI: { regulator: "",          base_currency: "USD", compliance_regime: "(per client)", flag: "🌐" },
+  IN:    { regulator: "SEBI",      base_currency: "INR", compliance_regime: "IN-SEBI",   flag: "🇮🇳" },
+  MULTI: { regulator: "",          base_currency: "USD", compliance_regime: "none: not supported", flag: "🌐" },
 };
 
 function FirmTab() {
@@ -191,6 +192,7 @@ function FirmTab() {
               <option value="NZ">🇳🇿 NZ — New Zealand (FMA)</option>
               <option value="US">🇺🇸 US — United States (SEC / FINRA)</option>
               <option value="UK">🇬🇧 UK — United Kingdom (FCA)</option>
+              <option value="IN">🇮🇳 IN — India (SEBI)</option>
               <option value="MULTI">🌐 Multi-jurisdiction</option>
             </select>
           </div>
@@ -214,6 +216,7 @@ function FirmTab() {
                 <option value="NZD">NZD — New Zealand Dollar</option>
                 <option value="USD">USD — US Dollar</option>
                 <option value="GBP">GBP — British Pound</option>
+                <option value="INR">INR — Indian Rupee</option>
                 <option value="AUD">AUD — Australian Dollar</option>
                 <option value="EUR">EUR — Euro</option>
               </select>

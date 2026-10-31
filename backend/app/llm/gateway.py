@@ -27,7 +27,7 @@ from typing import Any, AsyncGenerator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time
+from app.aurea_core import firm_time, markets
 from app.core.tools import ToolChangeState, anthropic_tools_for_role, get_tool, validate_tool_call
 from app.models.enums import UserRole
 from app.models.tenant import Firm
@@ -313,7 +313,8 @@ class Gateway:
             return
 
         final_text = "\n\n".join(t for t in accumulated_text if t.strip())
-        suggestions = follow_ups.derive(self.role, used_tools) if final_text else []
+        market = markets.for_firm(await self.session.get(Firm, self.firm_id))
+        suggestions = follow_ups.derive(self.role, used_tools, india=bool(market and market.code == "IN")) if final_text else []
         if astra_msg is None:
             astra_msg = ThreadMessage(
                 thread_id=thread_id, role=MessageRole.ASTRA, text=final_text, suggestions=suggestions,

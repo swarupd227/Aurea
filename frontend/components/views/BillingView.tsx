@@ -5,6 +5,7 @@ import { Receipt } from "lucide-react";
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { InvoiceCard } from "@/app/workspace/components/artifacts/InvoiceCard";
 import { api, getUser } from "@/lib/api";
+import { firmCurrency, firmLocale } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { withRef } from "@/lib/refs";
 import { useViewNav } from "./ViewNav";
@@ -14,8 +15,8 @@ const APPROVERS = ["operations", "branch_leader"];
 const PROPOSERS = ["operations", "branch_leader", "compliance", "admin"];
 const VETO = ["operations", "branch_leader", "compliance"];
 
-function money(n: number, cur = "NZD") {
-  return `${cur} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function money(n: number, cur = firmCurrency()) {
+  return `${cur} ${n.toLocaleString(firmLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 function label(s: string) {
   return s.replace(/_/g, " ");

@@ -71,7 +71,8 @@ B-26 waits for a real custodian statement.
 | B-27 | PPEF1 real valuation | Needs a real figure and its source |
 | B-28 | Credit and rebill the 13 bills issued on stale prices | Moves money again |
 | B-29 | Hartley and Morrison retirement dates | Seeded goals have James Hartley working to 77 and Robert Morrison to 74, which sets their protection figures |
-| B-30 | India alignment: the rest | Rows 1-3 of the investor demo are approved and being built (`reports/India market alignment for Astra.md`). Rows 4-6 and everything for real client data still await approval, and hosting is deferred. The customer's SEBI licences are unknown (D1), and could change B-02, B-04 and B-08 |
+| B-30 | India alignment: the rest | Rows 1-3 of the investor demo are built. Rows 4-6 and everything for real client data still await approval (`reports/India market alignment for Astra.md`), and hosting is deferred. The customer's SEBI licences are unknown (D1), and could change B-02, B-04 and B-08 |
+| B-42 | Tax Intelligence agent on NZ, US and UK | Calls `narrate` positionally, which raises, and reads NZ-only keys for US and UK. Fixing it starts raising proposals on the live firm, so it needs a yes. The India path is separate and works |
 
 ## Built, not yet proven live
 
@@ -89,6 +90,7 @@ B-26 waits for a real custodian statement.
 
 | Item | Commit |
 |---|---|
+| India demo rows 1-3: market layer, licences and consent, per-taxpayer tax, the demonstration firm | `035007d`, `3183767` and the commit that adds this line |
 | Billing and invoices | |
 | Performance: time-weighted and money-weighted returns | |
 | Price refresh | |

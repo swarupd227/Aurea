@@ -11,7 +11,11 @@ export default function RoleSwitcher() {
   const current = typeof window !== "undefined" ? getUser() : null;
 
   useEffect(() => {
-    api("/api/auth/demo-personas").then(setPersonas).catch(() => setPersonas([]));
+    // Stay inside the firm's market: switching role is not switching firm.
+    const market = current?.firm?.jurisdiction === "IN" ? "IN" : "NZ";
+    api<any[]>("/api/auth/demo-personas")
+      .then((all) => setPersonas(all.filter((p) => (p.market || "NZ") === market)))
+      .catch(() => setPersonas([]));
   }, []);
 
   if (!personas.length) return null;

@@ -1,3 +1,4 @@
+import { money as firmMoney } from "@/lib/format";
 import { AlertTriangle, Check } from "lucide-react";
 
 interface FirmDefinitionPayload {
@@ -8,7 +9,7 @@ interface FirmDefinitionPayload {
 }
 
 function money(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  return firmMoney(n);
 }
 
 export function FirmDefinitionCheckCard({ result }: { result: FirmDefinitionPayload }) {

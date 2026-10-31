@@ -1,3 +1,4 @@
+import { firmMarket } from "./format";
 // The one list of pages ("Views") in the product, shared by the classic shell's sidebar, the
 // Astra workspace rail and the command palette so they cannot disagree about who sees what.
 //
@@ -10,7 +11,7 @@ import {
   PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare, MessageSquare, Gauge, Activity,
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
   Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2, ArrowLeftRight, Umbrella,
-  SlidersHorizontal,
+  SlidersHorizontal, BadgeCheck,
 } from "lucide-react";
 
 export type ViewIntent = "decide" | "clients" | "operate" | "govern" | "configure" | "platform";
@@ -24,6 +25,8 @@ export interface View {
   intent: ViewIntent;
   /** Extra words the palette matches on, so "invoice" finds Billing and "kyc" finds Onboarding. */
   keywords?: string[];
+  /** Only for firms in this market. */
+  market?: string;
 }
 
 export const INTENT_TITLES: Record<ViewIntent, string> = {
@@ -55,6 +58,7 @@ export const VIEWS: View[] = [
   { href: "/studio/family", label: "Family aggregate", icon: UserCircle, roles: [A, P, PT], intent: "clients", keywords: ["household wealth", "aggregate"] },
   { href: "/studio/estate", label: "Estate & succession", icon: Landmark, roles: [A, P, PT], intent: "clients", keywords: ["wills", "heirs", "trust"] },
   { href: "/studio/tax", label: "Tax intelligence", icon: Receipt, roles: [A, P, PT], intent: "clients", keywords: ["harvest", "wash sale", "capital gains"] },
+  { href: "/studio/licences", label: "Licences", icon: BadgeCheck, roles: [A, P, PT, C, O, B], intent: "clients", market: "IN", keywords: ["sebi", "consent", "investment adviser", "portfolio manager", "pms", "client consent"] },
   { href: "/studio/protection", label: "Protection", icon: Umbrella, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["insurance", "life cover", "disability", "income protection", "tpd", "gap"] },
   { href: "/studio/risk-profiles", label: "Risk profiles", icon: SlidersHorizontal, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["questionnaire", "tolerance", "capacity", "suitability", "risk score"] },
   { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT], intent: "clients", keywords: ["bias", "nudge"] },
@@ -107,9 +111,10 @@ export const ROLE_PINNED: Record<string, string[]> = {
 
 /** Every view this role may open. Mirrors the old sidebar's rule exactly. */
 export function viewsForRole(role: string): View[] {
-  if (role === "superadmin") return VIEWS.filter((v) => v.roles?.includes("superadmin_only"));
-  if (role === "admin") return VIEWS.filter((v) => !v.roles?.includes("superadmin_only"));
-  return VIEWS.filter((v) => !v.roles || (!v.roles.includes("superadmin_only") && v.roles.includes(role)));
+  const inMarket = VIEWS.filter((v) => !v.market || v.market === firmMarket());
+  if (role === "superadmin") return inMarket.filter((v) => v.roles?.includes("superadmin_only"));
+  if (role === "admin") return inMarket.filter((v) => !v.roles?.includes("superadmin_only"));
+  return inMarket.filter((v) => !v.roles || (!v.roles.includes("superadmin_only") && v.roles.includes(role)));
 }
 
 export function pinnedViews(role: string): View[] {

@@ -1,3 +1,4 @@
+import { firmCurrency, firmLocale } from "@/lib/format";
 interface Check {
   code: string;
   severity: "block" | "warn" | "info";
@@ -37,8 +38,8 @@ interface BillingPayload {
   billed_this_year?: Record<string, number>;
 }
 
-function money(n: number, cur = "NZD") {
-  return `${cur} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function money(n: number, cur = firmCurrency()) {
+  return `${cur} ${n.toLocaleString(firmLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 const STATUS_TONE: Record<string, string> = {

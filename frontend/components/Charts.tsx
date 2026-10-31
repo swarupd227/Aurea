@@ -1,7 +1,7 @@
 "use client";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell as BCell,
   AreaChart, Area, ReferenceLine } from "recharts";
-import { ASSET_COLORS, money, titleCase } from "@/lib/format";
+import { ASSET_COLORS, money, moneyShort, titleCase } from "@/lib/format";
 
 /** Retirement balance fan: p10 / median / p90 portfolio value across retirement age. */
 export function RetirementFan({
@@ -10,7 +10,7 @@ export function RetirementFan({
   data: { age: number; p10: number; median: number; p90: number }[];
   retirementAge?: number;
 }) {
-  const fmt = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}m` : `$${Math.round(v / 1e3)}k`);
+  const fmt = (v: number) => moneyShort(v);
   return (
     <ResponsiveContainer width="100%" height={210}>
       <AreaChart data={data} margin={{ left: 4, right: 8, top: 8 }}>

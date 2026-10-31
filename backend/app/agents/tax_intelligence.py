@@ -9,6 +9,8 @@ Scans all household mandates simultaneously for:
 """
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
@@ -157,7 +159,7 @@ class TaxIntelligenceAgent(BaseAgent):
             rationale=memo,
             confidence=0.8,
             priority=2,
-            subject=Subject(type="household", id=result["household_id"], label=name),
+            subject=Subject(type="household", id=uuid.UUID(result["household_id"]), label=name),
             payload=result,
             evidence={"tax_year": result["tax_year"], "harvestable_loss": s["harvestable_loss"],
                       "estimated_tax_saving": s["estimated_tax_saving"], "exemption_unused": s["exemption_unused"]},

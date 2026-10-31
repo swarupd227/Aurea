@@ -1,3 +1,4 @@
+import { firmLocale } from "@/lib/format";
 import { API_BASE, getToken } from "@/lib/api";
 
 interface Check {
@@ -47,7 +48,7 @@ interface InvoicePayload {
 }
 
 function money(n: number, cur: string) {
-  return `${cur} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${cur} ${n.toLocaleString(firmLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function label(s: string) {

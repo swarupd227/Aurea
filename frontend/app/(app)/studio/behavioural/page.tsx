@@ -1,4 +1,5 @@
 "use client";
+import { moneyShort } from "@/lib/format";
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import {
@@ -257,8 +258,8 @@ function StressPanel({ stress, draft }: { stress: Stress; draft: StressDraft | n
 
       <div className="grid grid-cols-3 gap-3 mb-4">
         {[
-          { label: "Current value", value: `$${(stress.total_value / 1_000_000).toFixed(2)}M` },
-          { label: "Cost basis", value: `$${(stress.total_cost / 1_000_000).toFixed(2)}M` },
+          { label: "Current value", value: moneyShort(stress.total_value) },
+          { label: "Cost basis", value: moneyShort(stress.total_cost) },
           {
             label: "Drawdown",
             value: drawdown >= 0 ? `+${drawdown.toFixed(1)}%` : `${drawdown.toFixed(1)}%`,
