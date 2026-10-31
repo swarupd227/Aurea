@@ -133,27 +133,34 @@ class TaxIntelligenceAgent(BaseAgent):
         s, name = result["summary"], result["household_name"]
         lines = []
         for t in result["taxpayers"]:
-            losses = sum(1 for o in t["opportunities"] if o["kind"] == "loss")
-            room = sum(1 for o in t["opportunities"] if o["kind"] == "exemption")
+            losses = [o for o in t["opportunities"] if o["kind"] == "loss"]
+            room = [o for o in t["opportunities"] if o["kind"] == "exemption"]
             lines.append(
                 f"- {t['name']} ({t['kind']}): estimated tax so far {say(t['estimated_tax'])}, "
-                f"exemption left {say(t['position']['exempt_left'])}, {losses} loss(es) to harvest, "
-                f"{room} gain(s) that fit the exemption")
+                f"exemption left {say(t['position']['exempt_left'])}, {len(losses)} loss(es) to harvest "
+                f"saving {say(sum(o['tax_saved'] for o in losses))} and carrying "
+                f"{say(sum(o['carries_forward'] for o in losses))} forward, {len(room)} gain(s) that fit "
+                f"the exemption saving {say(sum(o['tax_saved'] for o in room))}")
         facts = (
             f"Tax Year {result['tax_year']}, {result['days_to_year_end']} days left. "
             f"{s['taxpayers']} taxpayer(s). Unused long-term exemption {say(s['exemption_unused'])}; "
-            f"harvestable loss {say(s['harvestable_loss'])}; estimated saving {say(s['estimated_tax_saving'])}."
+            f"harvestable loss {say(s['harvestable_loss'])}; estimated saving {say(s['estimated_tax_saving'])} "
+            f"({say(s['saving_from_losses'])} from harvesting losses, {say(s['saving_from_exemption'])} from the exemption)."
         )
+        # "The Sharma Family" as it reads inside a sentence, or the model writes "the The Sharma Family".
+        in_a_sentence = "t" + name[1:] if name.startswith("The ") else name
         memo = await narrate(
             ctx, task="advice", system=firm_voice(ctx),
             prompt=(
-                f"Write a short tax memo for the adviser on {name}.\n{facts}\n" + "\n".join(lines)
+                f"Write a short tax memo for the adviser on {in_a_sentence}.\n{facts}\n" + "\n".join(lines)
                 + "\n\nEach person is a separate taxpayer: never net one against another. Lots go first-in "
                   "first-out and cannot be chosen. India has no wash-sale rule, but never say a rebuy is safe. "
-                  "These are estimates for a qualified person to check. Close with the one action to take "
-                  "before 31 March."
+                  "Credit a saving only to the source shown above: a loss shown saving nothing saves no tax "
+                  "this year and only carries forward. These are estimates for a qualified person to check. "
+                  "Keep it under 250 words. Close with the one action to take before 31 March."
             ),
             fallback=facts + " Estimates for a qualified person to check.",
+            max_tokens=1200,
         )
         return RecommendationDraft(
             title=f"Tax position - {name}",

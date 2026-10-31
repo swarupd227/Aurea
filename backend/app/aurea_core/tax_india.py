@@ -424,6 +424,8 @@ async def report(session: AsyncSession, brain: dict, *, firm, today: date | None
             "estimated_tax": round(sum(t["estimated_tax"] for t in taxpayers), 2),
             "harvestable_loss": round(sum(-o["net_loss"] for o in opportunities if o["kind"] == "loss"), 2),
             "estimated_tax_saving": round(sum(float(o.get("tax_saved") or 0) for o in opportunities), 2),
+            "saving_from_losses": round(sum(float(o["tax_saved"]) for o in opportunities if o["kind"] == "loss"), 2),
+            "saving_from_exemption": round(sum(float(o["tax_saved"]) for o in opportunities if o["kind"] == "exemption"), 2),
             "exemption_unused": round(sum(t["position"]["exempt_left"] for t in taxpayers), 2),
             "turning_long": sum(1 for o in opportunities if o["kind"] == "turning_long"),
         },

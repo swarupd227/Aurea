@@ -4,7 +4,7 @@ export function speak(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
   try {
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
+    const u = new SpeechSynthesisUtterance(text.replace(/[*#`]/g, ""));
     u.rate = 1.0;
     u.pitch = 1.0;
     window.speechSynthesis.speak(u);

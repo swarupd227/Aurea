@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from types import SimpleNamespace
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -21,13 +22,15 @@ import app.models  # noqa: F401  - registers every table on Base.metadata
 from app.agents import _signals
 from app.agents import drift_rebalancing as drift
 from app.agents import tax_intelligence as tax_agent
+from app.api import canvas
 from app.atlas import runtime
 from app.atlas.base import Subject
-from app.aurea_core import disclosures, licences, protection, tax_intelligence
+from app.aurea_core import disclosures, licences, markets, protection, tax_intelligence
 from app.aurea_core.graph import household_brain
 from app.compliance import ontology
 from app.core.db import Base
 from app.core.personas import INDIA_PERSONAS
+from app.llm import redaction
 from app.models.enums import AgentKey, AutonomyTier, HumanAction, RecommendationStatus
 from app.models.governance import Recommendation
 from app.models.graph import Goal, Household, Mandate
@@ -58,10 +61,10 @@ async def main() -> int:
             async def _no_research(*a, **k):
                 return []
 
-            prompts = []
+            calls = []
 
             async def _fallback(ctx, *, fallback, **k):
-                prompts.append(k.get("prompt", ""))
+                calls.append(k)
                 return fallback
 
             drift.knowledge.retrieve = _no_research
@@ -109,6 +112,9 @@ async def main() -> int:
             check("a loss with no gain to meet carries forward", reliance["carries_forward"], -reliance["net_loss"])
             infosys = next(o for o in rajesh["opportunities"] if o["kind"] == "loss")
             check("one the year absorbs carries nothing forward", infosys["carries_forward"], 0)
+            check("a saving is split by where it comes from",
+                  round(r["summary"]["saving_from_losses"] + r["summary"]["saving_from_exemption"], 2),
+                  r["summary"]["estimated_tax_saving"])
 
             print("\n=== Goals ===")
             on_track = {}
@@ -119,6 +125,27 @@ async def main() -> int:
             check("a book with some goals met and some to talk about", sum(on_track.values()), 4)
             check("the client we sign in as has one of each", [v for k, v in sorted(on_track.items()) if "Sharma" in k],
                   [False, True])
+
+            print("\n=== The client's assistant ===")
+            heard = {}
+
+            async def _hear(**k):
+                heard.update(k)
+                return SimpleNamespace(text="A reply.", is_fallback=False)
+
+            canvas.llm_service = SimpleNamespace(generate=_hear)
+            client = (await s.execute(select(User).where(User.email == "client@astra-india.demo"))).scalar_one()
+            await canvas.canvas_assistant({"question": "Am I on track?"}, user=client, firm=firm, db=s)
+            seen, _ = redaction.redact(heard["prompt"])
+            say = markets.money_for(firm)
+            brain = await household_brain(s, sharma.id, firm_id=firm.id)
+            equity = brain["totals"]["by_asset_class"]["equity"]
+            check("the client's equity is one a raw number would lose", "[ID_" in redaction.redact(str(equity))[0], True)
+            check("written as money it reaches the model", say(equity) in seen, True)
+            check("each goal comes with its target and likelihood",
+                  all(f"target {say(g['target_amount'])}, {g['probability']:.0%} likelihood" in seen
+                      for g in _signals.goal_projections(brain)), True)
+            check("and nothing is left masked", "[ID_" in seen, False)
 
             print("\n=== Protection works from what is on file ===")
             view = await protection.for_household(s, sharma.id, firm_id=firm.id)
@@ -170,9 +197,14 @@ async def main() -> int:
             check("each on its household", all(m.subject_type == "household" and m.subject_id for m in memos), True)
             check("and in rupees", all("₹" in m.summary and "$" not in m.summary for m in memos), True)
 
-            asked = [p for p in prompts if "tax memo" in p]
+            asked = [k["prompt"] for k in calls if "tax memo" in k.get("prompt", "")]
             check("the memo names a household once", [p for p in asked if " household." in p.split("\n")[0]], [])
+            check("with no second article for the model to add", [p for p in asked if " on The " in p.split("\n")[0]], [])
             check("and does not call a gain a harvest", all("gain(s) that fit the exemption" in p for p in asked), True)
+            check("it has room to finish", {k["max_tokens"] for k in calls if "tax memo" in k.get("prompt", "")}, {1200})
+            check("and a length that fits it", all("under 250 words" in p for p in asked), True)
+            check("each saving has its source", all("from harvesting losses" in p and "from the exemption" in p for p in asked), True)
+            check("a loss that saves nothing says so", any("saving ₹0 and carrying ₹" in p for p in asked), True)
 
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)

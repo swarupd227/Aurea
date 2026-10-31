@@ -8,6 +8,7 @@ import MessageThread from "@/components/MessageThread";
 import { api, getUser } from "@/lib/api";
 import { money, pct, titleCase } from "@/lib/format";
 import { listenOnce, speak, voiceSupported } from "@/lib/voice";
+import { Markdown } from "@/app/workspace/components/Markdown";
 
 export default function Canvas() {
   const user = typeof window !== "undefined" ? getUser() : null;
@@ -428,7 +429,9 @@ export default function Canvas() {
               </div>
             ) : (
               <div key={i} className="bg-navy-50 rounded-2xl rounded-bl-sm px-4 py-3 max-w-[90%]">
-                <p className={`text-sm whitespace-pre-line ${m.error ? "text-critical" : "text-ink-soft"}`}>{m.answer}</p>
+                {m.error
+                  ? <p className="text-sm whitespace-pre-line text-critical">{m.answer}</p>
+                  : <Markdown text={m.answer} className="text-sm text-ink-soft" />}
                 {!m.error && (
                   <button onClick={() => speak(m.answer)} className="text-xs text-ink-muted hover:text-navy-700 mt-1.5 flex items-center gap-1">
                     <Volume2 size={12} /> Listen

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pydantic import BaseModel
 
+from app.agents import _signals
 from app.api.deps import current_firm
 from app.aurea_core import goal_tradeoff, markets, messages as message_core, planning, retirement
 from app.aurea_core.graph import household_brain
@@ -82,18 +83,7 @@ async def canvas_view(
     total = brain["totals"]["total_value"]
     allocation = brain["totals"]["by_asset_class"]
     # Goal projections — the 'am I on track?' answer.
-    goals = []
-    for g in brain["goals"]:
-        a = g.get("assumptions") or {}
-        proj = planning.project_goal(
-            current_value=total * a.get("funding_share", 1.0 / max(len(brain["goals"]), 1)),
-            allocation=allocation, annual_contribution=a.get("annual_contribution", 0),
-            annual_withdrawal=a.get("annual_withdrawal", 0), years=a.get("years", 15),
-            target_amount=g["target_amount"],
-        )
-        goals.append({"name": g["name"], "kind": g["kind"], "target_amount": g["target_amount"],
-                      "on_track": proj.on_track, "probability": proj.probability_of_success,
-                      "projected_median": proj.projected_median})
+    goals = _signals.goal_projections(brain)
 
     adviser = await _adviser_for(db, firm, brain)
     on_track_count = sum(1 for g in goals if g["on_track"])
@@ -160,10 +150,17 @@ async def canvas_assistant(
     adviser = await _adviser_for(db, firm, brain)
     adviser_name = adviser["name"] if adviser else "your adviser"
 
+    # Money as it is written: a raw 5984000.5 reads as an account number and is masked from the model.
+    say = markets.money_for(firm)
+    invested = ", ".join(f"{k.replace('_', ' ')} {say(v)} ({v / (total or 1):.0%})" for k, v in allocation.items())
+    goals = "; ".join(
+        f"{g['name']}: target {say(g['target_amount'])}, {g['probability']:.0%} likelihood, "
+        f"{'on track' if g['on_track'] else 'one to talk through with the adviser'}"
+        for g in _signals.goal_projections(brain)
+    ) or "none on file"
     context = (
-        f"Total wealth {markets.money_for(firm)(total)}; allocation {allocation}; goals "
-        f"{[g['name'] for g in brain['goals']]}; in a COVID-style shock the portfolio would move "
-        f"{stress['covid_2020']['impact_pct']:.0%}."
+        f"Total wealth {say(total)}; allocation: {invested}; goals: {goals}; in a COVID-style shock the "
+        f"portfolio would move {stress['covid_2020']['impact_pct']:.0%}."
     )
 
     def fallback() -> str:
@@ -180,7 +177,7 @@ async def canvas_assistant(
         system=(f"You are the client-facing assistant for {firm.name}, speaking warmly in the firm's "
                 f"voice on behalf of the client's named adviser, {adviser_name}. Reassure honestly, "
                 "never guarantee returns, and hand off to the adviser for advice. Use only the "
-                "provided figures."),
+                "provided figures. A likelihood is an estimate, not a promise."),
         prompt=f"Client question: {question}\n\nClient's plan snapshot: {context}",
         firm_model_config=firm.model_config_json or {},
         creds=firm_llm_creds(firm), fallback=fallback, max_tokens=gp["max_tokens"],
