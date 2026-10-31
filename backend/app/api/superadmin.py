@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/superadmin", tags=["superadmin"])
 _DEFAULT_SEGMENTS = [
     ("private_wealth", "Private Wealth", 75, 500_000, "High-net-worth individuals and families"),
     ("mass_affluent", "Mass Affluent", 100, 100_000, "Emerging affluent clients"),
-    ("for_purpose", "For Purpose", 50, None, "Charities, foundations, iwi organisations"),
+    ("for_purpose", "For Purpose", 50, None, "Charities, foundations, community and iwi organisations"),
     ("institutional", "Institutional", 25, 5_000_000, "Institutional investors and family offices"),
     ("next_gen", "Next Gen", 100, None, "Next-generation heirs and young investors"),
 ]

@@ -144,7 +144,7 @@ CATALOGUE: dict[str, dict] = {
         "name": "Estate & Succession Planning", "stage": "Manage & optimise",
         "default_tier": AutonomyTier.TIER_1, "subject": "household",
         "senses": "Full family wealth picture: trust structures, heir readiness, private-asset concentration, "
-                  "legacy goals, and NZ Trusts Act 2019 governance obligations.",
+                  "legacy goals, and the governance obligations of the client's jurisdiction.",
         "acts": "Identifies succession gaps, scores trust governance completeness, flags heir mandate gaps, "
                 "and produces an estate health memo for the next adviser–client conversation.",
         "checkpoint": "Adviser reviews gaps and memo before raising in client meeting; no external effect.",
@@ -164,10 +164,10 @@ CATALOGUE: dict[str, dict] = {
     AgentKey.TAX_INTELLIGENCE: {
         "name": "Tax Intelligence", "stage": "Manage & optimise",
         "default_tier": AutonomyTier.TIER_1, "subject": "household",
-        "senses": "All mandates, TaxLots, current prices, and client tax profiles (marginal rate, PIR, "
-                  "KiwiSaver rate, property acquisition dates) across the full book.",
-        "acts": "Scans for loss-harvesting opportunities, PIE fund mismatches, KiwiSaver contribution gaps, "
-                "bright-line property thresholds, and suboptimal withdrawal sequencing. "
+        "senses": "All mandates, tax lots, current prices and client tax profiles across the full book, "
+                  "read on the tax rules of each client's jurisdiction.",
+        "acts": "Scans for loss-harvesting and allowance opportunities, tax wrapper and contribution gaps, "
+                "holding-period thresholds, and suboptimal withdrawal sequencing. "
                 "Produces a per-household tax intelligence memo ranked by saving potential.",
         "checkpoint": "Adviser reviews memo before any restructure or client conversation; no external effect.",
     },
@@ -177,7 +177,7 @@ CATALOGUE: dict[str, dict] = {
         "senses": "Household jurisdiction, estate values, retirement account balances, pension pot values, "
                   "and proximity to critical regulatory deadlines (US estate tax sunset Jan 2026, "
                   "UK IHT pension inclusion April 2027).",
-        "acts": "Surfaces time-critical adviser alerts ranked by urgency and dollar impact. "
+        "acts": "Surfaces time-critical adviser alerts ranked by urgency and financial impact. "
                 "Proposes specific planning actions (SLATs, GRATs, pension drawdown, whole-of-life in trust) "
                 "before regulatory deadlines make planning impossible or more costly.",
         "checkpoint": "Adviser reviews alerts and initiates client conversation; no external effect.",
@@ -197,7 +197,7 @@ CATALOGUE: dict[str, dict] = {
     AgentKey.ASSET_LOCATION: {
         "name": "Asset Location Optimizer", "stage": "Manage & optimise",
         "default_tier": AutonomyTier.TIER_2, "subject": "household",
-        "senses": "All holdings across all accounts (taxable, IRA/RRSP, Roth, trust, ISA) "
+        "senses": "All holdings across all accounts (taxable, tax-advantaged, trust) "
                   "with asset class, account type, and tax lot information.",
         "acts": "Identifies tax-inefficient asset placement — e.g. income-heavy bonds in taxable accounts, "
                 "growth equities in tax-deferred accounts. Produces a repositioning proposal that minimises "

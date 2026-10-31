@@ -258,7 +258,7 @@ async def change_password(
 async def demo_personas(db: AsyncSession = Depends(get_db)):
     """Persona catalogue for the role switcher. Only exposed in the local/demo environment."""
     from app.core.config import settings
-    from app.core.personas import DEMO_PERSONAS
+    from app.core.personas import DEMO_PERSONAS, INDIA_PERSONAS
 
     if settings.app_env not in ("local", "demo"):
         raise HTTPException(status_code=404, detail="Not available")
@@ -269,6 +269,7 @@ async def demo_personas(db: AsyncSession = Depends(get_db)):
     return [
         {"email": p["email"], "role": p["role"], "full_name": p["full_name"],
          "title": p["title"], "description": p["description"],
-         "default_path": p["default_path"], "group": p["group"]}
-        for p in DEMO_PERSONAS if p["email"] in existing
+         "default_path": p["default_path"], "group": p["group"], "market": market}
+        for market, personas in (("NZ", DEMO_PERSONAS), ("IN", INDIA_PERSONAS))
+        for p in personas if p["email"] in existing
     ]

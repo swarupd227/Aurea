@@ -40,6 +40,7 @@ class EntityType(StrEnum):
     IWI = "iwi"  # indigenous / iwi organisation
     SMSF = "smsf"  # self-managed / retirement scheme
     ESTATE = "estate"
+    HUF = "huf"  # Hindu Undivided Family: its own taxpayer in India
 
 
 class ClientSegment(StrEnum):
