@@ -51,7 +51,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   file does not mean no cover. Policies and incomes are recorded by a person from a document.
 - **A report reaches a client only through its proposal.** Research & Reporting drafts and proposes;
   approving that proposal publishes, rolling it back withdraws. `aurea_core/reports.py` publishes nothing,
-  and no tool does. A rerun rewrites the draft still waiting for a decision, so none is stranded. A draft
+  no tool does, and the agent stops at a proposal whatever its tier (`agent_runs.forced_to_proposal`). A rerun rewrites the draft still waiting for a decision, so none is stranded. A draft
   whose proposal is gone, and a seeded report, stay as they are: redraft, don't invent a proposal.
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.

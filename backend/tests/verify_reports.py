@@ -30,6 +30,7 @@ from app.agents import research_reporting as rr
 from app.api import canvas, engage
 from app.atlas.base import AgentContext, Subject
 from app.aurea_core import firm_time, reports
+from app.core import agent_runs
 from app.core.db import Base, utcnow
 from app.core.tools import OPEN_VIEWS, TOOLS, ToolChangeState, tools_for_role
 from app.llm import gateway as gw_mod
@@ -85,6 +86,8 @@ def gating() -> None:
     check("the views open for the same people as the page", OPEN_VIEWS["reports"][2], {R.ADVISER, R.PARAPLANNER, R.RESEARCH_CIO})
     check("  and one report", OPEN_VIEWS["report"][2], {R.ADVISER, R.PARAPLANNER, R.RESEARCH_CIO})
     check("no tool publishes a report directly", [k for k in TOOLS if "publish" in k], [])
+    check("a run stops at a proposal", agent_runs.forced_to_proposal(AGENT), True)
+    check("even at Tier 3, so nobody's report reaches a client unread", agent_runs.acts_on_its_own(AGENT, "tier_3"), False)
 
 
 async def behaviour() -> None:
