@@ -50,22 +50,34 @@ def _waiting(m: Message) -> bool:
     return m.author_role == MessageAuthor.CLIENT and not m.read_by_adviser
 
 
+def reply_owed(rows: list[Message]) -> bool:
+    """Whether a client was the last person to write. `rows` oldest first. An automated notice
+    answers nobody, so a fee notice after a client's question leaves that question owed."""
+    for m in reversed(rows):
+        if m.author_role != MessageAuthor.AGENT:
+            return m.author_role == MessageAuthor.CLIENT
+    return False
+
+
 async def inbox(session: AsyncSession, firm_id: uuid.UUID) -> list[dict]:
-    """One row per household with a message, newest first. A client wrote last: it needs a reply."""
+    """One row per household with a message, newest first."""
     rows = (await session.execute(
         select(Message).where(Message.firm_id == firm_id).order_by(Message.created_at.desc()))).scalars().all()
     names = {h.id: h.name for h in (await session.execute(
         select(Household).where(Household.firm_id == firm_id))).scalars().all()}
     threads: dict = {}
+    newest_first: dict = {}
     for m in rows:
         t = threads.setdefault(m.household_id, {
             "household_id": str(m.household_id), "household_name": names.get(m.household_id),
             "last_body": m.body, "last_at": m.created_at.isoformat() if m.created_at else None,
-            "last_from": m.author_name, "needs_reply": m.author_role == MessageAuthor.CLIENT,
-            "unread": 0, "total": 0,
+            "last_from": m.author_name, "needs_reply": False, "unread": 0, "total": 0,
         })
         t["total"] += 1
         t["unread"] += 1 if _waiting(m) else 0
+        newest_first.setdefault(m.household_id, []).append(m)
+    for household_id, t in threads.items():
+        t["needs_reply"] = reply_owed(newest_first[household_id][::-1])
     return list(threads.values())
 
 

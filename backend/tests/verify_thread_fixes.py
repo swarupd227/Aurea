@@ -201,7 +201,7 @@ async def routes(Session) -> None:
             check(f"{label}: agents you can run", row["count"], len(agent_runs.runnable_agents(u.role)))
             check(f"{label}: and not the size of the toolbox", row["count"] == len(tools_for_role(u.role)), False)
         row = next(r for r in (await T.briefing(user=adviser, session=s))["rows"] if r["id"] == "agents")
-        check("an adviser can run thirteen agents", row["count"], 13)
+        check("an adviser's count is every agent they can run", row["count"], len(agent_runs.runnable_agents(adviser.role)))
 
         print("\n=== (b) the suggestions on a real reply ===")
         thread = Thread(firm_id=firm.id, kind=ThreadKind.ASK_ASTRA, created_by_user_id=adviser.id, title="s")

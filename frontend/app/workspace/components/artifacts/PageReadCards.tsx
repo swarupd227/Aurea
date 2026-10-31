@@ -164,14 +164,14 @@ export function MessagesCard({ result }: { result: MessagesPayload }) {
             <tr key={t.household_id}>
               <td className="w-2/5 truncate px-3 py-1.5 text-ink">{t.household_name ?? "—"}</td>
               <td className="truncate px-3 py-1.5 text-xs text-ink-muted">{t.last_body}</td>
-              <td className={`w-16 px-3 py-1.5 text-right font-mono text-xs tabular-nums ${t.unread ? "text-warn" : "text-ink-muted"}`}>{timeAgo(t.last_at)}</td>
+              <td className={`w-28 px-3 py-1.5 text-right font-mono text-xs tabular-nums whitespace-nowrap ${t.unread ? "text-warn" : "text-ink-muted"}`}>{timeAgo(t.last_at)}</td>
             </tr>
           ))}
           {result.messages?.map((m) => (
             <tr key={m.id}>
               <td className={`w-2/5 truncate px-3 py-1.5 text-xs ${m.author_role === "client" ? "text-ink" : "text-ink-muted"}`}>{m.author_name}</td>
               <td className="truncate px-3 py-1.5 text-xs text-ink-muted">{m.body}</td>
-              <td className="w-16 px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink-muted">{timeAgo(m.created_at)}</td>
+              <td className="w-28 px-3 py-1.5 text-right font-mono text-xs tabular-nums whitespace-nowrap text-ink-muted">{timeAgo(m.created_at)}</td>
             </tr>
           ))}
         </tbody>

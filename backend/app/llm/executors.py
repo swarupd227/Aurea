@@ -1812,7 +1812,7 @@ class ToolExecutors:
             return {
                 "scope": "household", "household_id": str(household.id), "household_name": household.name,
                 "messages": [messages.view(m) for m in shown], "shown": len(shown), "total": len(rows), "unread": waiting,
-                "needs_reply": bool(rows) and rows[-1].author_role == "client",
+                "needs_reply": messages.reply_owed(rows),
                 "message": (f"{len(rows)} message(s) with {household.name}"
                             + (f"; showing the latest {len(shown)}" if len(shown) < len(rows) else "")
                             + f". {waiting} unread."),
