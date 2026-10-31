@@ -53,6 +53,10 @@ Nothing is being built right now.
 | B-52 | Astra blurs "no review on record" | §5.10 | Live on 31 Oct it listed the Chens, reviewed on 14 Sep, among clients paying fees with no review on file. `read_client_reviews` was right. A carried review also reports all four topics as `not_covered` when they are unknown; the page says "not recorded" |
 | B-54 | Approved outreach under the right adviser's name | - | `client_care.act` signs with the first adviser found at the firm, not that client's adviser. Only matters with more than one adviser |
 | B-55 | A report's age at the moment of approval | - | Approving shows the period but no warning. The live Morrison draft is dated 13 Aug, so its figures were 11 weeks old on 31 Oct; a redraft refreshes the same draft |
+| B-57 | Tax memos cut short | - | `narrate` caps at 900 tokens and `tax_intelligence._india` takes that default. Live on 31 Oct the Sharma memo stops at "Any rebuy should" and Kapoor's stops inside its closing action. The firm ceiling is 1200. The Sharma memo also reads "the The Sharma Family": the prompt names it once and the model doubles the article |
+| B-58 | Tax memo credits the saving to the wrong thing | - | The prompt gives one estimated saving, so the model guesses where it comes from. Live, the Banerjee memo says the ₹39,300 loss supports the ₹16,248 saving; that loss saves ₹0 and the two exemption gains are all of it. Give the prompt the saving by kind |
+| B-59 | Client assistant does not know the client's goals | - | `api/canvas.py` gives it goal names only, so live it told the Sharmas it had no targets or progress while the same page showed both. Its allocation is raw numbers and `redaction._LONGNUM` masks any run of 7 digits, which looks like why it could not state their equity: the one figure over ₹10 lakh. Applies to every firm |
+| B-60 | Client assistant shows raw markdown | - | `canvas/page.tsx` prints the reply as plain text, so a client reads `**How your wealth is invested**` with the asterisks |
 
 ## Parked until a client needs it
 
@@ -99,7 +103,7 @@ B-26 waits for a real custodian statement.
 | Item | Commit |
 |---|---|
 | Messages: what the live check found. An automated notice no longer hides an unanswered client message (the Chen thread), Astra reads a thread before describing it. Not deployed yet. Cross-firm Canvas reads were refused both ways between the NZ and Indian firms, live 31 Oct | The commit that adds this line |
-| India demo: what the live check found. The carry-forward on a harvest, memo wording, goals sized with contributions, the client assistant's cut-off replies, a line that read as a data-location claim | The commit that adds this line, with `seed/india_demo_backfill.py` |
+| India demo: what the live check found. The carry-forward on a harvest, memo wording, goals sized with contributions, the client assistant's cut-off replies, a line that read as a data-location claim. Confirmed live 31 Oct, backfill run: ₹0 carried, 4 of 6 goals on track. The memo wording only partly, see B-57 | `8427c73`, with `seed/india_demo_backfill.py` |
 | India demo rows 1-3: market layer, licences and consent, per-taxpayer tax, the demonstration firm | `035007d`, `3183767`, `7a10e46` |
 | Billing and invoices | |
 | Performance: time-weighted and money-weighted returns | |
