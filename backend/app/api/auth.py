@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import markets
 from app.core.config import settings
 from app.core.db import get_db, utcnow
 from app.core.security import (
@@ -67,7 +68,10 @@ def _user_dict(user: User, firm: Firm | None) -> dict:
         "role": user.role, "title": user.title,
         "mfa_enabled": getattr(user, "mfa_enabled", False),
         "firm": {"id": str(firm.id), "name": firm.name, "slug": firm.slug,
-                 "branding": firm.branding} if firm else None,
+                 "branding": firm.branding, "jurisdiction": firm.jurisdiction,
+                 "base_currency": firm.base_currency,
+                 "locale": market.locale if (market := markets.for_firm(firm)) else None,
+                 "demonstration": bool((firm.settings or {}).get("demonstration"))} if firm else None,
     }
 
 

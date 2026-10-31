@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import markets
 from app.aurea_core.analytics import assumptions as A
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
@@ -63,7 +64,7 @@ class WalletShareScoutAgent(BaseAgent):
                 continue  # already well-consolidated
 
             jurisdiction = (hh.get("values") or {}).get("jurisdiction") or ctx.firm.jurisdiction or "NZ"
-            currency = {"US": "USD", "UK": "GBP"}.get(jurisdiction, "NZD")
+            currency = markets.currency(jurisdiction, ctx.firm.base_currency)
 
             # Life-stage context for personalised talking points
             persons = brain.get("persons", [])

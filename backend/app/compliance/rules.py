@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.aurea_core.markets import money
+
 BANNED = ["guarantee", "guaranteed", "risk-free", "riskless", "no risk", "will definitely",
           "can't lose", "cannot lose", "always outperform", "sure thing", "can not lose"]
 
@@ -88,9 +90,10 @@ def cgt_budget(c: CheckContext) -> RuleResult:
     gain = (c.payload or {}).get("estimated_realised_gain")
     if budget is None or gain is None:
         return RuleResult("na", "No CGT budget applies.")
+    ccy = (c.payload or {}).get("currency") or "USD"
     if gain > float(budget) + 1:
-        return RuleResult("fail", f"Realised gain ${gain:,.0f} exceeds the CGT budget ${float(budget):,.0f}.")
-    return RuleResult("pass", f"Realised gain ${gain:,.0f} within the ${float(budget):,.0f} CGT budget.")
+        return RuleResult("fail", f"Realised gain {money(gain, ccy)} exceeds the CGT budget {money(float(budget), ccy)}.")
+    return RuleResult("pass", f"Realised gain {money(gain, ccy)} within the {money(float(budget), ccy)} CGT budget.")
 
 
 def grounding(c: CheckContext) -> RuleResult:
@@ -253,6 +256,43 @@ def narrative_instrument_check(c: CheckContext) -> RuleResult:
         f"{', '.join(sorted(asset_classes))} from the recommendation payload.")
 
 
+def client_consent(c: CheckContext) -> RuleResult:
+    """Which consent this trade needs is settled by the client's licence track (aurea_core/licences.py).
+    A pass here means the gate knows; runtime.decide is what holds the orders back."""
+    licence = (c.payload or {}).get("licence")
+    if not licence:
+        return RuleResult("na", "No licence track on this recommendation.")
+    if licence.get("per_trade_consent"):
+        return RuleResult("pass", f"{licence.get('name')}: no order until the client's consent is on record.")
+    if licence.get("may_execute"):
+        return RuleResult("pass", f"{licence.get('name')}: acts inside the mandate, approved by a named person.")
+    return RuleResult("fail", f"{licence.get('name')} may not execute a trade.")
+
+
+def statutory_fifo(c: CheckContext) -> RuleResult:
+    tax = (c.payload or {}).get("india_tax")
+    if not tax:
+        return RuleResult("na", "No Indian tax position on this recommendation.")
+    if tax.get("lot_method") != "FIFO":
+        return RuleResult("fail", f"Lots relieved by {tax.get('lot_method')}; demat holdings relieve first-in first-out.")
+    return RuleResult("pass", "Lots relieved first-in first-out, account by account.")
+
+
+def india_harvest_guard(c: CheckContext) -> RuleResult:
+    tax = (c.payload or {}).get("india_tax")
+    if not tax:
+        return RuleResult("na", "No Indian tax position on this recommendation.")
+    conflicts = tax.get("conflicts") or []
+    if conflicts:
+        return RuleResult("fail", f"{len(conflicts)} order(s) break the harvest guard: {conflicts[0].get('symbol')}.")
+    held = len(tax.get("held") or [])
+    return RuleResult("pass", f"No same-day round trip or stripped loss{f'; {held} held back' if held else ''}.")
+
+
+def no_regime(c: CheckContext) -> RuleResult:
+    return RuleResult("fail", "This firm's jurisdiction has no rules on this platform, so nothing can be cleared.")
+
+
 REGISTRY = {
     "no_overpromise": no_overpromise, "turnover": turnover, "explainable": explainable,
     "mandate_suitability": mandate_suitability, "within_guardrails": within_guardrails,
@@ -264,4 +304,8 @@ REGISTRY = {
     "wash_sale": wash_sale, "costs_disclosed": costs_disclosed, "target_market": target_market,
     "best_execution": best_execution, "kid_provided": kid_provided, "privacy": privacy,
     "esg_preferences": esg_preferences,
+    # India
+    "client_consent": client_consent, "statutory_fifo": statutory_fifo,
+    "india_harvest_guard": india_harvest_guard,
+    "no_regime": no_regime,
 }

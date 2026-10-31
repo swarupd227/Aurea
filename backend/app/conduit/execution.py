@@ -25,6 +25,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time, markets
 from app.aurea_core import orders as order_engine
 from app.core.logging import get_logger
 from app.models.enums import LotRelief, OrderStatus, SettlementStatus
@@ -175,6 +176,10 @@ def _uuid(v):
 
 
 def lot_method_for_firm(firm: Firm) -> str:
+    """The firm's choice, where it has one. Indian demat holdings relieve first-in first-out by law."""
+    market = markets.for_firm(firm)
+    if market and market.statutory_fifo:
+        return LotRelief.FIFO
     cfg = ((firm.settings or {}).get("execution") or {}) if firm else {}
     return cfg.get("lot_method", LotRelief.FIFO)
 
@@ -245,7 +250,8 @@ async def execute_order_set(
 
         for ex in fills:
             try:
-                result = await order_engine.settle(session, ex, lot_method=lot_method)
+                result = await order_engine.settle(session, ex, lot_method=lot_method,
+                                                   trade_day=firm_time.today(firm))
             except order_engine.SettlementError as exc:
                 reason = str(exc)
                 order.settlement_status = SettlementStatus.FAILED

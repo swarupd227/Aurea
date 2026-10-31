@@ -14,7 +14,9 @@ No live execution — the output is a draft, multi-custodian order set for advis
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from datetime import date
 
 
 # Quantities are carried to four decimal places. Orders are *sized* in value but *carried*
@@ -25,17 +27,25 @@ from dataclasses import dataclass, field, replace
 # cannot exceed the reserved fee either. Trading a fractionally smaller amount is always
 # safe; a fractionally larger one is not.
 _QTY_DP = 4
-_SHORTFALL_WORTH_SAYING = 1.0  # the limitation is written in whole dollars
+_SHORTFALL_WORTH_SAYING = 1.0  # the limitation is written in whole currency units
 
 
 def _floor_qty(qty: float) -> float:
     return math.floor(qty * (10 ** _QTY_DP)) / (10 ** _QTY_DP)
 
 
+def _dollars(value: float) -> str:
+    return f"${value:,.0f}"
+
+
 @dataclass
 class Lot:
     quantity: float
     cost_per_unit: float
+    # Where the law cares when a lot was bought: the date decides the order under FIFO, and the
+    # bucket is the tax treatment of a gain on this lot if it is sold now.
+    acquired_on: date | None = None
+    bucket: str | None = None
 
 
 @dataclass
@@ -61,10 +71,12 @@ class Position:
 @dataclass
 class WashSaleGuard:
     """What the household did in the wash-sale window (aurea_core/wash_sale.py), by instrument id.
-    Each value says when, where and when it clears: {"on", "account", "clear_on"}."""
+    Each value says when, where and when it clears: {"on", "account", "clear_on"}. India's rules take
+    the same shape (aurea_core/harvest_guard.py) and add "say", the limitation in their own words."""
 
     no_loss_sale: dict[str, dict] = field(default_factory=dict)  # bought recently: a loss here is disallowed
     no_buy: dict[str, dict] = field(default_factory=dict)        # sold at a loss recently: buying back disallows it
+    no_sell: dict[str, dict] = field(default_factory=dict)       # bought today: selling it would net
 
 
 @dataclass
@@ -81,6 +93,7 @@ class Order:
     custodian: str
     est_realised_gain: float = 0.0
     reason: str = ""
+    gain_buckets: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -101,27 +114,37 @@ class RebalanceResult:
     max_drift: float
     # What the wash-sale guard kept out of the order set, as figures for the proposal's card.
     wash_sale_held: list[dict] = field(default_factory=list)
+    gains_by_bucket: dict[str, float] = field(default_factory=dict)
 
 
 def _sell_with_lots(
     pos: Position, target_value: float, cgt_remaining: float, *, no_loss: bool = False,
+    fifo: bool = False, whole_units: bool = False, gains: dict[str, float] | None = None,
+    bucket_left: dict[str, float] | None = None,
 ) -> tuple[float, float, float]:
     """Sell up to target_value from a position using tax-optimal lots.
 
     Returns (value_sold, realised_gain, quantity_sold). Harvests losses first, then takes
     the smallest gains, and stops if the next gain lot would breach the remaining CGT budget
     (unless the lot is a loss, which is always allowed). With `no_loss` the loss lots are left
-    alone: inside a wash-sale window the loss would be disallowed."""
+    alone: inside a wash-sale window the loss would be disallowed.
+
+    With `fifo` the law has already chosen: the oldest lot goes first, and a lot that cannot be sold
+    cannot be stepped over, so reaching one ends the sale. Where lots carry a bucket, `gains` collects
+    the gain by bucket and `bucket_left` is a budget per bucket."""
     if pos.price <= 0 or not pos.lots:
         return 0.0, 0.0, 0.0
     # Order lots by gain-per-unit ascending (most negative / losses first).
-    lots = sorted(pos.lots, key=lambda lot: pos.price - lot.cost_per_unit)
+    lots = (sorted(pos.lots, key=lambda lot: lot.acquired_on or date.min) if fifo
+            else sorted(pos.lots, key=lambda lot: pos.price - lot.cost_per_unit))
     value_sold = realised_gain = qty_sold = 0.0
     for lot in lots:
         if value_sold >= target_value - 1e-6:
             break
         gain_per_unit = pos.price - lot.cost_per_unit
         if no_loss and gain_per_unit < 0:
+            if fifo:
+                break
             continue
         remaining_value = target_value - value_sold
         max_qty_by_value = remaining_value / pos.price
@@ -130,20 +153,36 @@ def _sell_with_lots(
             continue
         lot_gain = gain_per_unit * qty
         # Respect CGT budget for gain lots (losses always allowed — they free up budget).
-        if lot_gain > 0 and (realised_gain + lot_gain) > cgt_remaining:
-            allowable_gain = max(0.0, cgt_remaining - realised_gain)
+        room = cgt_remaining - realised_gain
+        if bucket_left is not None and lot.bucket in bucket_left:
+            room = min(room, bucket_left[lot.bucket])
+        capped = lot_gain > 0 and lot_gain > room
+        if capped:
+            allowable_gain = max(0.0, room)
             if gain_per_unit > 0:
                 qty = min(qty, allowable_gain / gain_per_unit)
+                if whole_units:
+                    qty = math.floor(qty + 1e-9)
                 lot_gain = gain_per_unit * qty
             if qty <= 1e-9:
+                if fifo:
+                    break
                 continue
         value_sold += qty * pos.price
         realised_gain += lot_gain
         qty_sold += qty
+        if lot.bucket:
+            if gains is not None:
+                gains[lot.bucket] = gains.get(lot.bucket, 0.0) + lot_gain
+            if bucket_left is not None and lot.bucket in bucket_left and lot_gain > 0:
+                bucket_left[lot.bucket] -= lot_gain
+        if capped and fifo:
+            break
     return value_sold, realised_gain, qty_sold
 
 
-def _hold_loss_lots(pos: Position, want: float, window: dict, held: list[dict], limitations: list[str]) -> None:
+def _hold_loss_lots(pos: Position, want: float, window: dict, held: list[dict], limitations: list[str],
+                    say_money: Callable[[float], str] = _dollars) -> None:
     """Record what the guard kept out of a sale: the loss lots a sale of `want` would have taken."""
     if pos.price <= 0:
         return
@@ -159,11 +198,11 @@ def _hold_loss_lots(pos: Position, want: float, window: dict, held: list[dict], 
     qty = _floor_qty(qty)
     held.append({"side": "sell", "symbol": pos.symbol, "instrument_id": pos.instrument_id,
                  "asset_class": pos.asset_class, "quantity": qty, "loss": round(loss, 2), **window})
-    limitations.append(
+    limitations.append(window.get("say") or (
         f"{qty:g} {pos.symbol} at a loss held back: it was bought on {window['on']} in "
-        f"{window['account']}, so selling now would disallow about ${loss:,.0f} of loss. "
+        f"{window['account']}, so selling now would disallow about {say_money(loss)} of loss. "
         f"Sellable at a loss from {window['clear_on']}."
-    )
+    ))
 
 
 def optimise(
@@ -181,12 +220,23 @@ def optimise(
     fee_rate: float = 0.001,
     fee_minimum: float = 5.0,
     wash: WashSaleGuard | None = None,
+    # What the market fixes. `fifo`: the law picks the lot, so the estimate has to pick the same one.
+    # `whole_units`: a demat holds whole shares. `bucket_budgets`: a gain budget per tax bucket.
+    fifo: bool = False,
+    whole_units: bool = False,
+    bucket_budgets: dict[str, float] | None = None,
+    say_money: Callable[[float], str] = _dollars,
 ) -> RebalanceResult:
     total_value = sum(p.market_value for p in positions) + cash
     if total_value <= 0:
         return RebalanceResult(False, 0, drift_band, {}, target_weights, {}, [], 0, 0, 0, 0, [], [], 0)
     wash = wash or WashSaleGuard()
     held: list[dict] = []
+    bucket_left = dict(bucket_budgets) if bucket_budgets else None
+    gains_by_bucket: dict[str, float] = {}
+
+    def _carried(qty: float) -> float:
+        return math.floor(qty + 1e-6) if whole_units else _floor_qty(qty)
 
     # Current weights by asset class (cash counted as its own class).
     by_class_value: dict[str, float] = {}
@@ -224,10 +274,21 @@ def optimise(
                 if sell_value <= 1e-6:
                     break
                 want = min(sell_value, pos.market_value)
+                barred = wash.no_sell.get(pos.instrument_id)
+                if barred and barred.get("account_id") in (None, pos.account_id):
+                    held.append({"side": "sell", "symbol": pos.symbol, "instrument_id": pos.instrument_id,
+                                 "asset_class": pos.asset_class, "value": round(want, 2), **barred})
+                    limitations.append(barred.get("say") or f"{pos.symbol} cannot be sold today.")
+                    continue
+                if whole_units and pos.price > 0:
+                    want = math.floor(want / pos.price + 1e-9) * pos.price
                 window = wash.no_loss_sale.get(pos.instrument_id)
-                value_sold, lot_gain, qty = _sell_with_lots(pos, want, cgt_remaining, no_loss=bool(window))
+                sale_gains: dict[str, float] = {}
+                value_sold, lot_gain, qty = _sell_with_lots(
+                    pos, want, cgt_remaining, no_loss=bool(window), fifo=fifo, whole_units=whole_units,
+                    gains=sale_gains, bucket_left=bucket_left)
                 if window:
-                    _hold_loss_lots(pos, want, window, held, limitations)
+                    _hold_loss_lots(pos, want, window, held, limitations, say_money)
                 if qty <= 1e-9:
                     continue
                 cgt_remaining -= max(lot_gain, 0.0)
@@ -243,13 +304,18 @@ def optimise(
                 # Value the order the way settlement will — from the quantity actually
                 # carried, not the pre-rounding figure. Otherwise the card shows one number
                 # and the book moves by another.
-                sell_qty = _floor_qty(qty)
+                sell_qty = _carried(qty)
+                if sell_qty <= 0:
+                    continue
+                for bucket, gain in sale_gains.items():
+                    gains_by_bucket[bucket] = gains_by_bucket.get(bucket, 0.0) + gain
                 orders.append(Order(
                     side="sell", symbol=pos.symbol, name=pos.name, instrument_id=pos.instrument_id,
                     asset_class=cls, quantity=sell_qty, est_price=round(pos.price, 4),
                     est_value=round(sell_qty * round(pos.price, 4), 2),
                     account_id=pos.account_id, custodian=pos.custodian,
                     est_realised_gain=round(lot_gain, 2), reason=reason,
+                    gain_buckets={b: round(g, 2) for b, g in sale_gains.items()},
                 ))
 
         # 2. Buy under-weight classes from proceeds + cash — and only from those.
@@ -299,12 +365,12 @@ def optimise(
                 window = wash.no_buy[blocked.instrument_id]
                 held.append({"side": "buy", "symbol": blocked.symbol, "instrument_id": blocked.instrument_id,
                              "asset_class": cls, "value": round(buy_value, 2), **window})
-                limitations.append(
+                limitations.append(window.get("say") or (
                     f"'{cls}' is {(-drift):.0%} under target, but {blocked.symbol} was sold at a loss on "
                     f"{window['on']} in {window['account']} and buying it back now would disallow that "
-                    f"loss. ${buy_value:,.0f} to allocate from {window['clear_on']}, or into another "
+                    f"loss. {say_money(buy_value)} to allocate from {window['clear_on']}, or into another "
                     f"instrument - adviser to select."
-                )
+                ))
                 continue
             if target_pos is None:
                 limitations.append(
@@ -320,7 +386,7 @@ def optimise(
                     f"'{cls}' is {(-drift):.0%} under target. The model's instrument for it "
                     f"({target_pos.symbol} — {target_pos.name}) is a private-market holding, "
                     f"which is subscribed to outside the OMS rather than traded. "
-                    f"${buy_value:,.0f} to allocate — adviser to arrange."
+                    f"{say_money(buy_value)} to allocate — adviser to arrange."
                 )
                 continue
             if target_pos.price <= 0:
@@ -338,10 +404,10 @@ def optimise(
             # tick if the rounded quantity does not fit. Checking the value alone is not
             # enough: the order carries the quantity, and that is what gets valued.
             price = target_pos.price
-            qty = _floor_qty(buy_value / price)
-            tick = 1 / (10 ** _QTY_DP)
+            qty = _carried(buy_value / price)
+            tick = 1 if whole_units else 1 / (10 ** _QTY_DP)
             while qty > 0 and (qty * price) + _fee(qty * price) > available + 1e-9:
-                qty = _floor_qty(qty - tick)
+                qty = _carried(qty - tick)
             if qty <= 0:
                 underfunded.append((cls, wanted, 0.0))
                 continue
@@ -364,8 +430,8 @@ def optimise(
     for cls, wanted, funded in underfunded:
         shortfall = wanted - funded
         limitations.append(
-            f"'{cls}' needs ${wanted:,.0f} to reach target but only ${funded:,.0f} could be "
-            f"funded from cash and sale proceeds — ${shortfall:,.0f} short. Raising more "
+            f"'{cls}' needs {say_money(wanted)} to reach target but only {say_money(funded)} could be "
+            f"funded from cash and sale proceeds — {say_money(shortfall)} short. Raising more "
             f"would exceed the CGT budget or the available cash."
         )
 
@@ -391,4 +457,5 @@ def optimise(
         limitations=limitations,
         max_drift=round(max_drift, 4),
         wash_sale_held=held,
+        gains_by_bucket={b: round(g, 2) for b, g in gains_by_bucket.items()},
     )

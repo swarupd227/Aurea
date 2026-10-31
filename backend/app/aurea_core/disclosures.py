@@ -62,6 +62,23 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
         "Adviser disclosure statement", "NZ FMA",
         "Financial advice provider disclosure — licensing, fees, conflicts and complaints.",
     ),
+    "in_advisory_agreement": (
+        "Investment advisory agreement", "IN SEBI",
+        "IA Regulations and Master Circular — no advice and no fee before a signed agreement.",
+    ),
+    "in_mitc": (
+        "Most Important Terms and Conditions", "IN SEBI",
+        "IA Master Circular (6 Feb 2026) — the MITC go to the client with the agreement.",
+    ),
+    "in_ai_use_disclosure": (
+        "Disclosure of AI use", "IN SEBI",
+        "IA Regulations, Reg 18(9) — the extent of AI use is disclosed at the agreement stage.",
+    ),
+    # What a case in a country with no document set must evidence, and cannot: it holds activation.
+    "jurisdiction_not_supported": (
+        "No disclosure set for this jurisdiction", "—",
+        "This platform holds no required documents for the firm's jurisdiction.",
+    ),
 }
 
 # Baseline required set per firm jurisdiction.
@@ -70,6 +87,7 @@ _BY_JURISDICTION: dict[str, list[str]] = {
     "UK": ["terms_of_business", "kid", "privacy_notice"],
     "NZ": ["disclosure_statement", "soa", "privacy_notice"],
     "AU": ["soa", "privacy_notice"],
+    "IN": ["in_advisory_agreement", "in_mitc", "in_ai_use_disclosure", "privacy_notice"],
 }
 
 # Registration types that add a conditional disclosure on top of the baseline.
@@ -78,7 +96,7 @@ _ROLLOVER_TYPES = {"employer_rollover", "traditional_ira", "roth_ira"}
 
 def required_for(jurisdiction: str | None, registration_type: str | None) -> list[str]:
     """The doc_types this case must evidence before the account can be activated."""
-    base = list(_BY_JURISDICTION.get((jurisdiction or "NZ").upper(), _BY_JURISDICTION["NZ"]))
+    base = list(_BY_JURISDICTION.get((jurisdiction or "NZ").upper(), ["jurisdiction_not_supported"]))
 
     # US rollovers carry the PTE 2020-02 best-interest disclosure as well as the memo.
     if (registration_type or "") in _ROLLOVER_TYPES and (jurisdiction or "").upper() == "US":
@@ -95,6 +113,7 @@ _PER_JURISDICTION_REGIME: dict[str, dict[str, tuple[str, str]]] = {
         "UK": ("UK ICO", "UK GDPR / Data Protection Act 2018 privacy information."),
         "NZ": ("NZ OPC", "Privacy Act 2020 — information privacy principles 3 and 11."),
         "AU": ("AU OAIC", "Privacy Act 1988 — Australian Privacy Principle 5 notification."),
+        "IN": ("IN DPDP", "Digital Personal Data Protection Act 2023 — notice to the data principal."),
     },
 }
 

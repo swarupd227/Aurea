@@ -71,7 +71,7 @@ B-26 waits for a real custodian statement.
 | B-27 | PPEF1 real valuation | Needs a real figure and its source |
 | B-28 | Credit and rebill the 13 bills issued on stale prices | Moves money again |
 | B-29 | Hartley and Morrison retirement dates | Seeded goals have James Hartley working to 77 and Robert Morrison to 74, which sets their protection figures |
-| B-30 | India alignment | Proposals await approval in `reports/India market alignment for Astra.md`; the SEBI licence could change B-02, B-04 and B-08 |
+| B-30 | India alignment: the rest | Rows 1-3 of the investor demo are approved and being built (`reports/India market alignment for Astra.md`). Rows 4-6 and everything for real client data still await approval, and hosting is deferred. The customer's SEBI licences are unknown (D1), and could change B-02, B-04 and B-08 |
 
 ## Built, not yet proven live
 

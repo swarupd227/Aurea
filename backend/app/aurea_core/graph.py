@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.aurea_core.valuation import account_valuation
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person, RelationshipEdge
 from app.models.portfolio import Holding
+from app.models.tenant import Firm
 
 
 async def household_brain(
@@ -86,7 +87,9 @@ async def household_brain(
         if str(e.from_id) in member_node_ids or str(e.to_id) in member_node_ids
     ]
 
+    firm = await session.get(Firm, firm_id)
     return {
+        "currency": firm.base_currency if firm else None,
         "household": {
             "id": str(household.id),
             "name": household.name,
@@ -111,7 +114,8 @@ async def household_brain(
             {"id": str(m.id), "name": m.name, "mandate_type": m.mandate_type,
              "suitability": m.suitability, "constraints": m.constraints,
              "model_portfolio_id": str(m.model_portfolio_id) if m.model_portfolio_id else None,
-             "person_id": str(m.person_id) if m.person_id else None}
+             "person_id": str(m.person_id) if m.person_id else None,
+             "entity_id": str(m.entity_id) if m.entity_id else None}
             for m in mandates
         ],
         "accounts": account_views,

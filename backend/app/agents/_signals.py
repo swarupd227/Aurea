@@ -5,7 +5,7 @@ Client Care so each agent draws on one consistent view (spec 'agents are consume
 client brain, never owners of their own siloed copy')."""
 from __future__ import annotations
 
-from app.aurea_core import planning
+from app.aurea_core import markets, planning
 
 
 def positions_of(brain: dict) -> list[dict]:
@@ -32,7 +32,7 @@ def book_signals(brain: dict) -> list[dict]:
     if losers:
         tot = sum(p["unrealised_gain"] for p in losers)
         out.append({"kind": "loss_harvest", "priority": 2, "confidence": 0.78,
-                    "title": f"Harvest ~${-tot:,.0f} of losses",
+                    "title": f"Harvest ~{markets.money(-tot, brain.get('currency'))} of losses",
                     "detail": f"{len(losers)} position(s) in a loss could offset realised gains.",
                     "payload": {"candidates": [l["instrument"] for l in losers], "total_loss": round(tot, 2)}})
 
@@ -40,7 +40,7 @@ def book_signals(brain: dict) -> list[dict]:
     cash = brain["totals"]["by_asset_class"].get("cash", 0)
     if cash / total > 0.15 and cash > 20000:
         out.append({"kind": "idle_cash", "priority": 3, "confidence": 0.7,
-                    "title": f"${cash:,.0f} cash ({cash/total:.0%}) is uninvested",
+                    "title": f"{markets.money(cash, brain.get('currency'))} cash ({cash/total:.0%}) is uninvested",
                     "detail": "Cash drag above 15% of the portfolio; consider deploying to target.",
                     "payload": {"cash": round(cash, 2)}})
 

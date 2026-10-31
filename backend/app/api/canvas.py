@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.api.deps import current_firm
-from app.aurea_core import goal_tradeoff, messages as message_core, planning, retirement
+from app.aurea_core import goal_tradeoff, markets, messages as message_core, planning, retirement
 from app.aurea_core.graph import household_brain
 from app.core.db import get_db, utcnow
 from app.core.security import get_current_user
@@ -161,14 +161,14 @@ async def canvas_assistant(
     adviser_name = adviser["name"] if adviser else "your adviser"
 
     context = (
-        f"Total wealth ${total:,.0f}; allocation {allocation}; goals "
+        f"Total wealth {markets.money_for(firm)(total)}; allocation {allocation}; goals "
         f"{[g['name'] for g in brain['goals']]}; in a COVID-style shock the portfolio would move "
         f"{stress['covid_2020']['impact_pct']:.0%}."
     )
 
     def fallback() -> str:
         return (
-            f"Here's the short version: your total wealth is about ${total:,.0f}, diversified across "
+            f"Here's the short version: your total wealth is about {markets.money_for(firm)(total)}, diversified across "
             f"{len(allocation)} asset classes. Your plan is built to withstand market dips, and "
             f"{adviser_name} is watching it closely. If anything needs a decision, {adviser_name} "
             "will be in touch — you're not on your own here."

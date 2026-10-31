@@ -7,6 +7,7 @@ are mapped illustratively and are configurable per firm — a firm tunes severit
 own compliance posture (see the Admin → Regulatory console)."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -254,20 +255,120 @@ EU_MIFID = Framework(
     ),
 )
 
-FRAMEWORKS: dict[str, Framework] = {f.regime: f for f in (NZ_FMA, UK_FCA, US_SEC, EU_MIFID)}
+# ── India — SEBI advisers and portfolio managers. A demonstration pack: the rules a proposal is checked
+# against, mapped from the regulations but not reviewed by counsel, and not one pack per licence.
+IN_SEBI = Framework(
+    regime="IN-SEBI",
+    name="SEBI Investment Advisers and Portfolio Managers (demonstration pack)",
+    version="2026.1-demo",
+    effective="2026-04-01",
+    authority="Securities and Exchange Board of India",
+    rules=(
+        Rule("in.ad.no_overpromise", "IA MC para 10",
+             "Master Circular for Investment Advisers (6 Feb 2026), para 10 — Advertisement and communication",
+             "No guaranteed or assured returns", "conduct", "medium", ("*",), "no_overpromise",
+             "Nothing said to or about a client may present an outcome as assured."),
+        Rule("in.ia.reg16c_ai", "Reg 16C",
+             "SEBI (Intermediaries) Regulations 2008, Reg 16C; IA Regulations, Reg 15(14) — sole responsibility for AI output",
+             "The firm answers for what the agent wrote", "disclosure", "medium", ("*",), "explainable",
+             "Agent output is the firm's own: a rationale a person can read and stand behind goes with every recommendation."),
+        Rule("in.ia.reg17_suitability", "IA Reg 17",
+             "SEBI (Investment Advisers) Regulations 2013, Reg 17 — Suitability",
+             "Suitable to the client's mandate", "suitability", "medium",
+             ("drift_rebalancing", "next_best_action", "research_reporting"), "mandate_suitability",
+             "Selection and suitability are documented against the client's mandate."),
+        Rule("in.ia.reg17_guardrails", "IA Reg 17",
+             "SEBI (Investment Advisers) Regulations 2013, Reg 17 — Suitability (acting within agreed limits)",
+             "Within mandate guardrails", "suitability", "high", ("*",), "within_guardrails",
+             "No guardrail breach may remain unresolved."),
+        Rule("in.ia.reg16_risk_profile", "IA Reg 16",
+             "SEBI (Investment Advisers) Regulations 2013, Reg 16 — Risk profiling",
+             "Risk profile inputs collected", "suitability", "low", ("*",), "suitability_complete",
+             "A control that cannot be applied because its input was never collected is reported as a gap."),
+        Rule("in.ia.mitc5_consent", "IA MITC cl 5",
+             "Master Circular for Investment Advisers (6 Feb 2026), Most Important Terms and Conditions, cl 5 — "
+             "no trade without specific and positive consent on every trade",
+             "The licence decides whose consent a trade needs", "conduct", "high", ("drift_rebalancing",),
+             "client_consent",
+             "An adviser's approval is not the client's consent. Only a discretionary mandate acts without it."),
+        Rule("in.tax.s67_fifo", "ITA 2025 s.67(7)(c)",
+             "Income-tax Act 2025, s.67(7)(c) — first-in first-out for securities held in a depository",
+             "Lots relieved first-in first-out", "tax", "high", ("drift_rebalancing",), "statutory_fifo",
+             "Demat holdings have no lot choice: the oldest lot in that account goes first."),
+        Rule("in.tax.harvest_guard", "ITA 2025 ss.175, 180",
+             "Income-tax Act 2025, s.175 (stripping) and s.180(1)(b) (offsetting elements); s.66 (speculative transactions)",
+             "No same-day round trip and no stripped loss", "tax", "high", ("drift_rebalancing",),
+             "india_harvest_guard",
+             "India has no wash-sale rule. What it has is narrower, and this checks that instead."),
+        Rule("in.mandate.cgt_budget", "Mandate budget",
+             "The client's mandate: a capital gains budget agreed with the client, not a statutory limit",
+             "Realised gains within the client's budget", "tax", "high", ("drift_rebalancing",), "cgt_budget",
+             "Tax-managed: realised gains stay inside what the client agreed."),
+        Rule("in.ia.reg19_rationale", "IA Reg 19",
+             "SEBI (Investment Advisers) Regulations 2013, Reg 19 — Records, including the rationale for the advice",
+             "Rationale describes the actual orders", "records", "medium",
+             ("drift_rebalancing", "next_best_action", "research_reporting"), "narrative_instrument_check",
+             "The rationale on record must describe this recommendation, not a generic one."),
+        Rule("in.ia.reg19_grounding", "IA Reg 19",
+             "SEBI (Investment Advisers) Regulations 2013, Reg 19 — Records of the basis for advice",
+             "Advice grounded in firm research", "conduct", "low",
+             ("drift_rebalancing", "research_reporting"), "grounding",
+             "The firm's research basis is cited."),
+        Rule("in.ia.reg16_confidence", "IA Reg 16",
+             "SEBI (Investment Advisers) Regulations 2013, Reg 16 — tools fit for purpose, limitations identified",
+             "Decision confidence above the firm threshold", "suitability", "medium", ("*",), "confidence",
+             "Advice rests on sufficiently reliable data."),
+        Rule("in.pmla.cdd", "PMLA 2002",
+             "Prevention of Money-laundering Act 2002; SEBI AML/CFT Master Circular (June 2024)",
+             "AML screening cleared or escalated", "aml", "high",
+             ("onboarding_kyc_aml", "book_integration"), "aml_screening",
+             "No sanctions match; PEP and adverse-media hits escalated."),
+        Rule("in.ia.reg19_records", "IA Reg 19",
+             "SEBI (Investment Advisers) Regulations 2013, Reg 19 — Records, minimum five years",
+             "Decision written to the tamper-evident ledger", "records", "low", ("*",), "records",
+             "Every recommendation is recorded in the hash-chained decision ledger."),
+    ),
+)
+
+# What a firm in a country with no rules here is checked against: one rule, which fails. Without it
+# such a firm was checked against New Zealand law and told it was clear.
+NO_REGIME = Framework(
+    regime="NOT-SUPPORTED",
+    name="No regime for this jurisdiction",
+    version="-",
+    effective="2026-01-01",
+    authority="-",
+    rules=(
+        Rule("platform.no_regime", "No regime",
+             "This platform holds no rules for the firm's jurisdiction",
+             "A regime applies to this firm", "conduct", "high", ("*",), "no_regime",
+             "Nothing can be cleared against rules that do not exist."),
+    ),
+)
+
+FRAMEWORKS: dict[str, Framework] = {f.regime: f for f in (NZ_FMA, UK_FCA, US_SEC, EU_MIFID, IN_SEBI)}
 
 _EU_JURIS = {"EU", "EUROPE", "DE", "FR", "NL", "IE", "IT", "ES", "LU", "BE", "AT", "FI", "PT",
              "GERMANY", "FRANCE", "IRELAND", "NETHERLANDS", "LUXEMBOURG", "BELGIUM", "SPAIN", "ITALY"}
 
 
+def _names(regulator: str, *words: str) -> bool:
+    """A regulator named as a word. "SEC" in "Securities and Exchange Board of India" is not the SEC."""
+    return any(re.search(rf"\b{word}\b", regulator) for word in words)
+
+
 def framework_for(firm) -> Framework:
-    """Resolve the regime for a firm from its jurisdiction / regulator (default NZ-FMA)."""
+    """The regime for a firm, from its jurisdiction and regulator. NO_REGIME when neither names one."""
     reg = (getattr(firm, "regulator", "") or "").upper()
-    juris = (getattr(firm, "jurisdiction", "") or "").upper()
-    if "FCA" in reg or juris in ("UK", "GB", "UNITED KINGDOM"):
+    juris = (getattr(firm, "jurisdiction", "") or "NZ").strip().upper()
+    if juris in ("IN", "INDIA") or _names(reg, "SEBI", "SECURITIES AND EXCHANGE BOARD OF INDIA"):
+        return FRAMEWORKS["IN-SEBI"]
+    if _names(reg, "FCA") or juris in ("UK", "GB", "UNITED KINGDOM"):
         return FRAMEWORKS["UK-FCA"]
-    if "SEC" in reg or "FINRA" in reg or juris in ("US", "USA", "UNITED STATES"):
+    if _names(reg, "SEC", "FINRA", "SECURITIES AND EXCHANGE COMMISSION") or juris in ("US", "USA", "UNITED STATES"):
         return FRAMEWORKS["US-SEC"]
-    if "ESMA" in reg or "MIFID" in reg or juris in _EU_JURIS:
+    if _names(reg, "ESMA", "MIFID") or juris in _EU_JURIS:
         return FRAMEWORKS["EU-MiFID"]
-    return FRAMEWORKS["NZ-FMA"]
+    if juris in ("NZ", "NEW ZEALAND") or _names(reg, "FMA"):
+        return FRAMEWORKS["NZ-FMA"]
+    return NO_REGIME

@@ -14,6 +14,7 @@ from datetime import date
 
 import numpy as np
 
+from app.aurea_core import markets
 from app.aurea_core.planning import _blended_assumptions
 
 _DISCOUNT_RATE = 0.04   # risk-free rate used to PV human capital
@@ -213,7 +214,7 @@ def compute_tradeoff_matrix(
 
 # ── Insight text ──────────────────────────────────────────────────────────────
 
-def _insight_text(goals: list[dict], human_capital_value: float) -> str:
+def _insight_text(goals: list[dict], human_capital_value: float, ccy: str | None = "USD") -> str:
     if not goals:
         return "No goals defined yet. Add goals to see how your capital stacks up."
 
@@ -222,7 +223,7 @@ def _insight_text(goals: list[dict], human_capital_value: float) -> str:
 
     if not at_risk:
         hc_note = (
-            f" Your career earnings (PV ${human_capital_value:,.0f}) provide a significant buffer."
+            f" Your career earnings (PV {markets.money(human_capital_value, ccy)}) provide a significant buffer."
             if human_capital_value > 50_000 else ""
         )
         return (
@@ -245,7 +246,7 @@ def _insight_text(goals: list[dict], human_capital_value: float) -> str:
     total_shortfall = sum(g.get("shortfall", 0) for g in at_risk)
     return (
         f"{len(at_risk)} of {len(goals)} goals need attention. "
-        f"Combined shortfall at median: ${total_shortfall:,.0f}. "
+        f"Combined shortfall at median: {markets.money(total_shortfall, ccy)}. "
         f"Reprioritise goals or adjust timelines below to find a feasible plan."
     )
 
@@ -359,7 +360,7 @@ async def for_household(
         human_capital_value=hc,
     )
 
-    insight = _insight_text(base["goals"], hc)
+    insight = _insight_text(base["goals"], hc, brain.get("currency"))
 
     return {
         "household": {"id": str(household_id), "name": brain["household"]["name"]},

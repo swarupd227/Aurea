@@ -302,6 +302,52 @@ TOOLS: dict[str, Tool] = {
                        UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
     ),
 
+    "read_tax_position": Tool(
+        key="read_tax_position",
+        name="Read Tax Position",
+        speaking_agent="astra",
+        description="One household's tax position on the firm's tax rules. For India it is taxpayer by taxpayer, because a husband, a wife and their HUF are separate taxpayers and a loss never crosses between them: gains realised this tax year by bucket, what set-off and the Rs 1.25 lakh exemption leave, the estimated tax, and what could be done before 31 March, walking lots first-in first-out because lots cannot be chosen. Figures are estimates for a qualified person to check, and not_modelled says what they leave out. India has no wash-sale rule; never say a rebuy is safe.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, from search_households", required=True),
+        ],
+        output=ToolOutput("object", "The tax report for the household's jurisdiction"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "read_licences": Tool(
+        key="read_licences",
+        name="Read Licences",
+        speaking_agent="astra",
+        description="The firm's SEBI licences, what each lets an agent do, which mandate sits on which service track, and the proposals approved by an adviser and waiting for the client's consent. An Investment Adviser needs the client's consent on every trade; only a discretionary Portfolio Manager acts without it, and a named person still approves. Use it for 'what can the agents do for this client' and 'what is waiting for a client'. A firm with no licences on file is not governed by this.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Licences, mandates by track, consents awaited and recorded"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "record_client_consent": Tool(
+        key="record_client_consent",
+        name="Record Client Consent",
+        speaking_agent="astra",
+        description="Record a client's answer to an approved proposal that is waiting for their consent, from the evidence: the email, call recording or signed document. A yes places the orders; a no closes the proposal. Use only an answer the user tells you the client gave, never assume one. Get recommendation_id from read_licences. The channel 'simulated' is for demonstration firms only and is stamped as simulated on the record.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this answer from the client? A yes places the orders and they cannot be taken back, only offset.",
+        inputs=[
+            ToolInput("recommendation_id", "uuid", "The proposal, from read_licences", required=True),
+            ToolInput("given", "boolean", "True if the client consented, false if they declined", required=True),
+            ToolInput("channel", "string", "email, recorded_call, signed_document, or simulated", required=True),
+            ToolInput("evidence_ref", "string", "Where the answer is on file. Not needed for simulated", required=False),
+            ToolInput("note", "string", "Anything the client said", required=False),
+        ],
+        output=ToolOutput("object", "The answer on record, and what the orders did"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
     "record_protection_policy": Tool(
         key="record_protection_policy",
         name="Record Protection Policy",

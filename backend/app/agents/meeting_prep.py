@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.agents._common import firm_voice, narrate
 from app.agents._signals import book_signals, goal_projections, life_events
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import knowledge
+from app.aurea_core import knowledge, markets
 from app.aurea_core.graph import household_brain
 from app.models.engagement import Meeting
 from app.models.enums import AgentKey, AutonomyTier, MeetingStatus
@@ -74,13 +74,13 @@ class MeetingPrepAgent(BaseAgent):
 
         on_track = sum(1 for g in goals if g["on_track"])
         fallback = (
-            f"Pre-meeting brief for {hh['name']}: portfolio ${totals['total_value']:,.0f}, "
+            f"Pre-meeting brief for {hh['name']}: portfolio {markets.money_for(ctx.firm)(totals['total_value'])}, "
             f"{on_track}/{len(goals)} goals on track, {len(signals)} watch-item(s). Suggested agenda: "
             + "; ".join(agenda) + "."
         )
         prompt = (
             f"Write a 2-3 sentence opening summary for an adviser's pre-meeting brief for household "
-            f"'{hh['name']}'. Portfolio ${totals['total_value']:,.0f}; {on_track}/{len(goals)} goals on "
+            f"'{hh['name']}'. Portfolio {markets.money_for(ctx.firm)(totals['total_value'])}; {on_track}/{len(goals)} goals on "
             f"track; watch-items {[s['title'] for s in signals]}; house views {[c['title'] for c in cites]}. "
             "Be warm, concise and specific."
         )
@@ -88,7 +88,7 @@ class MeetingPrepAgent(BaseAgent):
 
         return [RecommendationDraft(
             title=f"Meeting brief — {sensed['meeting_title']}",
-            summary=f"Portfolio ${totals['total_value']:,.0f} · {on_track}/{len(goals)} goals on track · "
+            summary=f"Portfolio {markets.money_for(ctx.firm)(totals['total_value'])} · {on_track}/{len(goals)} goals on track · "
                     f"{len(signals)} watch-item(s) · {len(agenda)} agenda topics.",
             rationale=rationale, confidence=0.85, priority=3,
             subject=Subject("household", sensed["household_id"], hh["name"]),

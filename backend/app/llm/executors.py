@@ -61,6 +61,9 @@ class ToolExecutors:
             "record_valuation": self.record_valuation,
             "read_price_freshness": self.read_price_freshness,
             "refresh_prices": self.refresh_prices,
+            "read_tax_position": self.read_tax_position,
+            "read_licences": self.read_licences,
+            "record_client_consent": self.record_client_consent,
             "read_protection": self.read_protection,
             "record_protection_policy": self.record_protection_policy,
             "end_protection_policy": self.end_protection_policy,
@@ -211,6 +214,14 @@ class ToolExecutors:
         if result is None:
             raise ExecutorError(f"Household {household_id} not found or access denied")
 
+        from app.aurea_core import harvest_guard
+        from app.models.tenant import Firm
+        household = await self.session.get(Household, household_id)
+        if harvest_guard.applies(await self.session.get(Firm, self.firm_id), household.values if household else None):
+            return {**result, "violations": [], "total_disallowed_loss": 0,
+                    "message": "India has no wash-sale rule, so there is no calendar to check. What applies is "
+                               "the harvest guard on each proposal; read_tax_position has the tax position."}
+
         n = len(result["violations"])
         result["message"] = (
             f"No wash-sale conflicts right now — {result['lots_checked']} lot(s) checked."
@@ -341,6 +352,70 @@ class ToolExecutors:
             result["message"] = (f"Fetched {result['resolved']} of {result['instruments']} instrument(s): "
                                  f"{result['inserted']} new price(s), {result['updated']} updated{fail}{rv}.")
         return result
+
+    async def read_tax_position(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import markets, tax_intelligence
+        from app.models.tenant import Firm
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        firm = await self.session.get(Firm, self.firm_id)
+        result = await tax_intelligence.for_household(self.session, household_id, firm.jurisdiction, firm_id=self.firm_id)
+        if result is None:
+            raise ExecutorError(f"Household {household_id} not found or access denied")
+        if result.get("supported") is False:
+            result["message"] = f"This platform has no tax rules for {result['jurisdiction']}, so there is no report."
+            return result
+        s, say = result["summary"], markets.money_for(firm)
+        if result["jurisdiction"] == "IN":
+            result["message"] = (
+                f"Tax Year {result['tax_year']}: {s['taxpayers']} taxpayer(s), estimated tax {say(s['estimated_tax'])}, "
+                f"{say(s['exemption_unused'])} of exemption unused, {say(s['harvestable_loss'])} of harvestable "
+                f"loss. Estimates for a qualified person to check.")
+        else:
+            result["message"] = f"{s['total_flags']} tax flag(s) for {result['household_name']}."
+        return result
+
+    async def read_licences(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import licences
+        from app.models.tenant import Firm
+
+        result = await licences.overview(self.session, await self.session.get(Firm, self.firm_id))
+        if not result["applies"]:
+            result["message"] = "This firm has no licences on file, so nothing here limits its agents by licence."
+            return result
+        names = ", ".join(l["name"] for l in result["licences"])
+        result["message"] = (f"Licensed as {names}. {len(result['mandates'])} mandate(s); "
+                             f"{len(result['awaiting_consent'])} proposal(s) waiting for a client's consent.")
+        return result
+
+    async def record_client_consent(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.atlas import runtime
+        from app.aurea_core import consent
+        from app.models.governance import Recommendation
+        from app.models.identity import User
+        from app.models.tenant import Firm
+
+        if self.role not in (UserRole.ADVISER, UserRole.PARAPLANNER):
+            raise ExecutorError("Recording a client's answer is for advisers and paraplanners.")
+        rec_id = _parse_uuid(inputs.get("recommendation_id"), "recommendation_id")
+        rec = (await self.session.execute(select(Recommendation).where(
+            Recommendation.id == rec_id, Recommendation.firm_id == self.firm_id))).scalar_one_or_none()
+        if rec is None:
+            raise ExecutorError(f"Proposal {rec_id} not found or access denied")
+        user = await self.session.get(User, self.user_id)
+        try:
+            rec = await runtime.client_response(
+                self.session, firm=await self.session.get(Firm, self.firm_id), recommendation=rec,
+                given=bool(inputs.get("given")), channel=str(inputs.get("channel") or ""),
+                evidence_ref=inputs.get("evidence_ref"), note=inputs.get("note"),
+                actor_label=user.email if user else "unknown")
+        except (consent.ConsentError, runtime.AlreadyDecidedError) as exc:
+            raise ExecutorError(str(exc))
+        outcome = (rec.payload or {}).get("execution_result") or {}
+        state = (rec.payload or {}).get("client_consent") or {}
+        return {"recommendation_id": str(rec.id), "status": rec.status, "client_consent": state,
+                "execution_result": outcome,
+                "message": outcome.get("note") or f"The client's answer is on record: {state.get('status')}."}
 
     async def read_protection(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import protection
@@ -1902,6 +1977,14 @@ class ToolExecutors:
         mandate = await self.session.get(Mandate, mandate_id)
         if not mandate or mandate.firm_id != self.firm_id:
             raise ExecutorError(f"Mandate {mandate_id} not found or access denied")
+
+        # A direct order skips the proposal, so it skips the client's consent. Only a track that
+        # needs none may use it.
+        from app.aurea_core import licences
+        track = licences.track_for(await self.session.get(Firm, self.firm_id), mandate)
+        if track is not None and (track.per_trade_consent or not track.may_execute):
+            raise ExecutorError(f"{track.name}: a trade on this mandate goes through a proposal and the "
+                                "client's consent, not a direct order.")
 
         accounts = (
             await self.session.execute(select(Account).where(Account.mandate_id == mandate_id))

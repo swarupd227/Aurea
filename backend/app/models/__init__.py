@@ -7,6 +7,7 @@ from app.models import (  # noqa: F401
     compliance_program,
     composites,
     connectors,
+    consent,
     corporate_actions,
     crm,
     engagement,

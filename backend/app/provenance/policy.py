@@ -10,8 +10,9 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import licences
 from app.models.enums import AgentKey, AutonomyTier, MandateType
-from app.models.tenant import AgentConfig, AutonomyPolicy
+from app.models.tenant import AgentConfig, AutonomyPolicy, Firm
 
 
 async def resolve_tier(
@@ -20,7 +21,9 @@ async def resolve_tier(
     agent_key: AgentKey,
     mandate_type: MandateType | None,
 ) -> tuple[AutonomyTier, dict]:
-    """Return (tier, guardrails). Mandate-specific policy beats the agent default beats config."""
+    """Return (tier, guardrails). Mandate-specific policy beats the agent default beats config, and
+    a firm's licence caps whichever wins."""
+    firm = await session.get(Firm, firm_id)
     policies = (
         await session.execute(
             select(AutonomyPolicy).where(
@@ -33,7 +36,7 @@ async def resolve_tier(
     default = next((p for p in policies if p.mandate_type is None), None)
     chosen = specific or default
     if chosen:
-        return chosen.tier, dict(chosen.guardrails or {})
+        return licences.cap(firm, chosen.tier), dict(chosen.guardrails or {})
 
     cfg = (
         await session.execute(
@@ -42,7 +45,7 @@ async def resolve_tier(
             )
         )
     ).scalar_one_or_none()
-    return (cfg.default_tier if cfg else AutonomyTier.TIER_1), {}
+    return licences.cap(firm, cfg.default_tier if cfg else AutonomyTier.TIER_1), {}
 
 
 async def agent_paused(session: AsyncSession, firm_id: uuid.UUID, agent_key: AgentKey) -> tuple[bool, str | None]:

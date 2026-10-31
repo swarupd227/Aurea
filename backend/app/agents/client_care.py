@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
 from app.aurea_core.planning import stress_test
 from app.models.client_experience import Message
@@ -77,13 +78,13 @@ class ClientCareAgent(BaseAgent):
         impact_val = stress.get("impact_value", 0)
         fallback = (
             f"Proactive reassurance for {hh['name']}. Under a '{scenario}' stress the portfolio would "
-            f"move {impact_pct:.0%} (${impact_val:,.0f}). The message explains what the plan says to do "
+            f"move {impact_pct:.0%} ({markets.money_for(ctx.firm)(impact_val)}). The message explains what the plan says to do "
             "and reinforces the named adviser relationship — sent only on approval."
         )
         prompt = (
             f"Draft a warm, reassuring outreach message for household '{hh['name']}' during market "
             f"volatility, grounded in a '{scenario}' stress result of {impact_pct:.0%} "
-            f"(${impact_val:,.0f}). Explain what the plan says to do; no alarm; reinforce the adviser. "
+            f"({markets.money_for(ctx.firm)(impact_val)}). Explain what the plan says to do; no alarm; reinforce the adviser. "
             "The adviser approves before sending."
         )
         rationale = await narrate(ctx, task="narrative", system=firm_voice(ctx), prompt=prompt, fallback=fallback)

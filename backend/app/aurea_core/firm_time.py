@@ -15,7 +15,7 @@ from app.models.tenant import Firm
 # A firm that needs another zone sets settings["timezone"]; US firms in particular span several.
 JURISDICTION_ZONES = {
     "NZ": "Pacific/Auckland", "AU": "Australia/Sydney", "UK": "Europe/London", "GB": "Europe/London",
-    "US": "America/New_York",
+    "US": "America/New_York", "IN": "Asia/Kolkata",
 }
 
 

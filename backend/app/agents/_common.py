@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.atlas.base import AgentContext
+from app.aurea_core import markets
 from app.llm import usage as usage_mod
 from app.llm.service import firm_llm_creds, llm_service
 
@@ -39,9 +40,11 @@ async def narrate(
 
 def firm_voice(ctx: AgentContext) -> str:
     b = ctx.firm.branding or {}
+    market = markets.for_firm(ctx.firm)
     return (
         f"You are a governed AI agent inside {ctx.firm.name}, an advice-led wealth firm "
-        f"regulated by the {ctx.firm.regulator or 'local regulator'} in {ctx.firm.jurisdiction}. "
+        f"regulated by the {ctx.firm.regulator or 'local regulator'} in {market.name if market else ctx.firm.jurisdiction}. "
+        f"State money in {ctx.firm.base_currency}. "
         "Write in the firm's professional, measured voice. Be precise, cite the firm's own "
         "research where provided, never give the impression of final authority — the named "
         "human adviser always decides. Avoid hype and absolute guarantees."

@@ -162,6 +162,7 @@ def _relieve(lots: list[TaxLot], quantity: Decimal, method: str) -> tuple[list[t
 
 async def settle(
     session: AsyncSession, execution: Execution, *, lot_method: str = LotRelief.FIFO,
+    trade_day: date | None = None,
 ) -> dict:
     """Apply a fill to the book: cash, position, tax lots and the txn ledger.
 
@@ -188,6 +189,8 @@ async def settle(
     )).scalar_one_or_none()
 
     realised = Decimal(0)
+    trade_day = trade_day or date.today()
+    relieved: list[dict] = []
 
     if str(order.side) == OrderSide.BUY:
         cash_delta = -(gross + fee)
@@ -215,7 +218,7 @@ async def settle(
         holding.cost_basis = _d(holding.cost_basis) + gross + fee
         session.add(TaxLot(
             firm_id=order.firm_id, holding_id=holding.id, quantity=qty,
-            cost_per_unit=(gross + fee) / qty, acquired_on=date.today(),
+            cost_per_unit=(gross + fee) / qty, acquired_on=trade_day,
         ))
     else:
         if holding is None:
@@ -228,6 +231,9 @@ async def settle(
             select(TaxLot).where(TaxLot.holding_id == holding.id)
         )).scalars().all()
         consumed, cost_relieved = _relieve(lots, qty, lot_method)
+        # A lot's date goes when the lot does, and it is what decides the tax on this sale.
+        relieved = [{"acquired_on": lot.acquired_on.isoformat(), "quantity": float(take), "cost": float(lot_cost)}
+                    for lot, take, lot_cost in consumed]
         for lot, take, _lot_cost in consumed:
             lot.quantity = _d(lot.quantity) - take
             if _d(lot.quantity) <= 0:
@@ -246,10 +252,10 @@ async def settle(
     session.add(Transaction(
         firm_id=order.firm_id, account_id=order.account_id,
         instrument_id=order.instrument_id, txn_type=str(order.side),
-        quantity=qty, price=px, amount=gross, trade_date=date.today(),
+        quantity=qty, price=px, amount=gross, trade_date=trade_day,
         lineage={"order_id": str(order.id), "execution_id": str(execution.id),
                  "venue": execution.venue, "fees": float(fee),
-                 "realised_gain": float(realised), "lot_method": str(lot_method)},
+                 "realised_gain": float(realised), "lot_method": str(lot_method), "lots": relieved},
     ))
 
     execution.settled = True

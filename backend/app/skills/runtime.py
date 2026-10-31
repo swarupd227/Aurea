@@ -12,6 +12,7 @@ import re
 from app.atlas import activity
 from app.atlas.base import Subject
 from app.atlas.runtime import _ledger_content
+from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
 from app.core.db import utcnow
 from app.core.logging import get_logger
@@ -39,7 +40,7 @@ def _snapshot(brain: dict) -> str:
     totals = brain["totals"]
     total = totals.get("total_value") or 1.0
     mix = totals.get("by_asset_class") or {}
-    lines = [f"Total portfolio: ${total:,.0f}", f"Segment: {brain['household'].get('segment')}"]
+    lines = [f"Total portfolio: {markets.money(total, brain.get('currency'))}", f"Segment: {brain['household'].get('segment')}"]
     for cls, v in mix.items():
         lines.append(f"  {cls}: {v / total:.0%}")
     positions = [p for acc in brain.get("accounts", []) for p in acc.get("positions", [])]

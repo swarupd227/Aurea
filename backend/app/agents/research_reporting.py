@@ -10,7 +10,7 @@ import uuid
 from app.agents._common import firm_voice, narrate
 from app.agents._signals import goal_projections, positions_of
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import firm_time, knowledge, planning, reports
+from app.aurea_core import firm_time, knowledge, markets, planning, reports
 from app.aurea_core.graph import household_brain
 from app.core.db import utcnow
 from app.models.engagement import ClientReport
@@ -60,7 +60,7 @@ class ResearchReportingAgent(BaseAgent):
 
         sections = [
             {"heading": "Portfolio overview",
-             "body": f"Your total portfolio is valued at ${totals['total_value']:,.0f}, diversified across "
+             "body": f"Your total portfolio is valued at {markets.money_for(ctx.firm)(totals['total_value'])}, diversified across "
                      f"{n_classes} asset classes ({mix_str})."},
             {"heading": "Positioning & house view", "body": commentary},
             {"heading": "Goals — are you on track?",
@@ -68,7 +68,7 @@ class ResearchReportingAgent(BaseAgent):
                                f"({g['probability']:.0%} likelihood)" for g in goals) or "No goals modelled."},
             {"heading": "Scenario & stress testing",
              "body": "Against historical shocks, your plan would move: " + "; ".join(stress_parts)
-                     + f". Estimated 1-year 95% value-at-risk is ${risk['var_95_1y']:,.0f}."},
+                     + f". Estimated 1-year 95% value-at-risk is {markets.money_for(ctx.firm)(risk['var_95_1y'])}."},
             {"heading": "Values alignment",
              "body": (f"Your portfolio is framed against your stated values"
                       + (f" ({', '.join(values.get('themes', []))})" if values.get("themes") else "")
@@ -111,7 +111,7 @@ class ResearchReportingAgent(BaseAgent):
         )
         prompt = (
             f"Write a warm, client-ready 'positioning & house view' paragraph for household '{hh['name']}' "
-            f"(total ${totals['total_value']:,.0f}; values {values}). Ground it in this firm research and "
+            f"(total {markets.money_for(ctx.firm)(totals['total_value'])}; values {values}). Ground it in this firm research and "
             f"cite by title: " + "; ".join(f"[{c['title']}] {c['excerpt'][:160]}" for c in cites)
             + ". Be precise, no guarantees."
         )

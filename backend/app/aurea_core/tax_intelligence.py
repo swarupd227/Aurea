@@ -4,6 +4,8 @@ Jurisdiction routing:
   NZ  — 5 modules: loss-harvest, PIE regime, KiwiSaver, bright-line, withdrawal sequencing
   US  — 5 modules: CGT classification + NIIT, RMD planning, gift tracker, Roth conversion, withdrawal sequencing
   UK  — 6 modules: CGT annual exempt amount, ISA allowance, pension allowance, PET clock, dividend allowance, withdrawal sequencing
+  IN  — per taxpayer and per demat: aurea_core/tax_india.py
+Any other country has no report, and says so.
 """
 from __future__ import annotations
 
@@ -13,9 +15,11 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import markets, tax_india
 from app.aurea_core.graph import household_brain, list_households
 from app.aurea_core.wash_sale import WINDOW_DAYS
 from app.models.portfolio import Holding, Instrument, TaxLot
+from app.models.tenant import Firm
 
 # ── NZ constants ──────────────────────────────────────────────────────────────
 _GOVT_TOPUP_MAX = 521.43
@@ -1138,15 +1142,20 @@ async def for_household(
     if not brain:
         return None
 
-    jurisdiction = (brain["household"]["values"] or {}).get("jurisdiction") or firm_jurisdiction
-    lots = await _load_lots(session, brain)
+    jurisdiction = markets.code((brain["household"]["values"] or {}).get("jurisdiction") or firm_jurisdiction)
+    market = markets.get(jurisdiction)
 
-    if jurisdiction == "US":
-        result = _us_tax_report(brain, lots)
+    if market is None or not market.tax_report:
+        result = {"jurisdiction": jurisdiction, "supported": False,
+                  "summary": {"total_flags": 0, "harvestable_loss": 0, "estimated_tax_saving": 0}}
+    elif jurisdiction == "IN":
+        result = await tax_india.report(session, brain, firm=await session.get(Firm, firm_id))
+    elif jurisdiction == "US":
+        result = _us_tax_report(brain, await _load_lots(session, brain))
     elif jurisdiction == "UK":
-        result = _uk_tax_report(brain, lots)
+        result = _uk_tax_report(brain, await _load_lots(session, brain))
     else:
-        result = _nz_tax_report(brain, lots)
+        result = _nz_tax_report(brain, await _load_lots(session, brain))
 
     result.update({
         "household_id": str(household_id),
@@ -1167,6 +1176,8 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction:
     nz_bright: list[dict] = []
     us_results: list[dict] = []
     uk_results: list[dict] = []
+    in_results: list[dict] = []
+    not_supported = 0
 
     for h in households:
         hh_id = uuid.UUID(h["id"])
@@ -1190,6 +1201,10 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction:
             us_results.append({**result, **hh_ctx})
         elif jur == "UK":
             uk_results.append({**result, **hh_ctx})
+        elif jur == "IN":
+            in_results.append({**result, **hh_ctx})
+        else:
+            not_supported += 1
 
     nz_harvest.sort(key=lambda x: x["unrealised_loss"])
     nz_bright.sort(key=lambda x: x["days_until_safe"])
@@ -1197,9 +1212,11 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction:
     return {
         "total_households_scanned": len(households),
         "jurisdictions": {
-            "NZ": len([h for h in households]) - len(us_results) - len(uk_results),
+            "NZ": len([h for h in households]) - len(us_results) - len(uk_results) - len(in_results) - not_supported,
             "US": len(us_results),
             "UK": len(uk_results),
+            "IN": len(in_results),
+            "not_supported": not_supported,
         },
         # NZ aggregates (backward compat)
         "loss_harvest": {
@@ -1229,6 +1246,14 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction:
                 "summary": r["summary"], "currency": "GBP",
             }
             for r in uk_results
+        ],
+        "in_households": [
+            {
+                "household_id": r["household_id"], "household_name": r["household_name"],
+                "total_portfolio_value": r["total_portfolio_value"], "tax_year": r["tax_year"],
+                "summary": r["summary"], "currency": "INR",
+            }
+            for r in in_results
         ],
         "generated_at": date.today().isoformat(),
     }

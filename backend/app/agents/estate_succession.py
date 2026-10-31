@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
 from app.models.graph import LegalEntity, Mandate
@@ -56,6 +57,11 @@ def _trust_review_recommendation(jurisdiction: str) -> str:
             "reviewed following major life events, tax law changes (TCJA sunset 2026), or changes in "
             "state of domicile. Ensure pour-over will and beneficiary designations are current."
         )
+    elif jurisdiction == "IN":
+        return (
+            "Schedule a review of the trust deed with counsel under the Indian Trusts Act 1882, and "
+            "check that nominations on each demat, folio and policy agree with the will."
+        )
     else:
         return (
             "Schedule a trust review; update deed to meet NZ Trusts Act 2019 §23 obligations. "
@@ -68,6 +74,8 @@ def _trust_governance_recommendation(jurisdiction: str) -> str:
         return "Update trust governance and register with HMRC Trust Registration Service (TRS) — mandatory for UK express trusts."
     elif jurisdiction == "US":
         return "Update trust deed; review pour-over will, health care proxies, and durable power of attorney. Confirm step-up in basis planning."
+    elif jurisdiction == "IN":
+        return "Update the trust deed under the Indian Trusts Act 1882 and record the trustees' decision rules."
     else:
         return "Schedule a trust review; update deed to meet NZ Trusts Act 2019 §23 obligations."
 
@@ -347,9 +355,11 @@ class EstateSucessionAgent(BaseAgent):
                 "US": "relevant US estate tax rules (post-TCJA sunset, Reg BI, step-up in basis, SECURE 2.0 RMDs)",
                 "UK": "relevant UK regulatory context (IHT nil-rate bands, Trustee Act 2000, TRS registration, LPA obligations)",
                 "NZ": "relevant NZ regulatory context (Trusts Act 2019, FMC Act)",
+                "IN": "relevant Indian context (the personal law that governs the family, the nominee "
+                      "as distinct from the legal heir, HUF membership, no estate duty)",
             }.get(jurisdiction, "relevant regulatory context")
 
-            currency_code = {"US": "USD", "UK": "GBP"}.get(jurisdiction, "NZD")
+            currency_code = markets.currency(jurisdiction, ctx.firm.base_currency)
 
             fallback = (
                 f"Estate review for {hh['name']}: {len(gaps)} succession gap(s) identified "

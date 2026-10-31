@@ -64,6 +64,19 @@ pages are artifact views the agents open. Full guideline, including what is buil
   adviser adopts it or keeps what is on file with a reason, and new answers reopen that. Adopting is refused
   above the model's equity, because a mandate over its ceiling pauses the rebalancer for the whole firm.
   Every questionnaire stays on record in `risk_assessment`; a client is not shown the result.
+- **A market is resolved in one place, and a country with no rules is refused.** `aurea_core/markets.py` says
+  what a jurisdiction fixes; `compliance/ontology.framework_for` matches a regulator as a word. A country with
+  no market gets `NO_REGIME`, no tax report and a held activation, never New Zealand's rules. Money in a
+  sentence is `markets.money`, not a dollar sign.
+- **In India the licence decides, and an adviser's approval is not a client's consent.** `aurea_core/licences.py`
+  caps every tier a licensed firm reads, in `policy.resolve_tier`, and no Indian licence reaches Tier 3. On a
+  track that needs it, `runtime.decide` places nothing: the orders wait for `runtime.client_response`, bound to
+  those exact orders by `aurea_core/consent.py`, and `act()` asks again. Staff record the answer from the
+  evidence, so clients still hold no state-changing tools. `simulated` is for demonstration firms and says so.
+- **India is taxed per taxpayer, first-in first-out.** `aurea_core/tax_india.py` reads each person, HUF or trust
+  alone and never nets across a family. Lots are not chosen: a firm's `lot_method` does not apply to a market
+  with `statutory_fifo`. `aurea_core/harvest_guard.py` is India's guard and `wash_sale.py` stays US-only; never
+  port the 30-day block, and never say a rebuy is safe. Figures are estimates and carry `NOT_MODELLED`.
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
@@ -80,7 +93,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_markets`, `verify_india_tax`, `verify_licences`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

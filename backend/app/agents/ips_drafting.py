@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
 
@@ -82,7 +83,7 @@ def _rrttllu(brain: dict) -> dict:
         "unique_preferences": unique,
         "current_allocation": current_alloc,
         "total_value": total_val,
-        "jurisdiction": (household.get("values") or {}).get("jurisdiction") or "NZ",
+        "jurisdiction": (household.get("values") or {}).get("jurisdiction"),
     }
 
 
@@ -107,7 +108,8 @@ class IPSDraftingAgent(BaseAgent):
         for brain in sensed["brains"]:
             hh = brain["household"]
             dims = _rrttllu(brain)
-            currency = {"US": "USD", "UK": "GBP"}.get(dims["jurisdiction"], "NZD")
+            dims["jurisdiction"] = dims["jurisdiction"] or ctx.firm.jurisdiction
+            currency = markets.currency(dims["jurisdiction"], ctx.firm.base_currency)
 
             prompt = f"""Draft a formal Investment Policy Statement (IPS) for the adviser's review.
 

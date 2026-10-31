@@ -16,7 +16,7 @@ from sqlalchemy import delete as sql_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
-from app.aurea_core import knowledge
+from app.aurea_core import knowledge, licences
 from app.core.config import settings
 from app.core.db import get_db, utcnow
 from app.core.security import UserRole, hash_password, require_roles
@@ -456,6 +456,8 @@ async def update_agent_config(
             )
         )
     ).scalar_one_or_none()
+    if body.default_tier is not None and (refused := licences.refusal(firm, body.default_tier)):
+        raise HTTPException(status_code=422, detail=refused)
     if not cfg:
         cfg = AgentConfig(firm_id=firm.id, agent_key=agent_key)
         db.add(cfg)
@@ -536,6 +538,8 @@ async def upsert_policy(
     body: PolicyUpsert, user: User = AdminDep,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
+    if refused := licences.refusal(firm, body.tier):
+        raise HTTPException(status_code=422, detail=refused)
     existing = (
         await db.execute(
             select(AutonomyPolicy).where(

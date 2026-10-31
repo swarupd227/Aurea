@@ -13,6 +13,7 @@ from app.agents.catalogue import CATALOGUE
 from app.atlas import activity, proposals
 from app.atlas.base import AgentContext, Subject
 from app.atlas.registry import get_agent
+from app.aurea_core import consent
 from app.core.db import utcnow
 from app.core.logging import get_logger
 from app.models.enums import (
@@ -309,7 +310,9 @@ async def decide(
             session=session, firm=firm, run=run, tier=tier, guardrails=guardrails,
             config={}, subject=Subject(rec.subject_type, rec.subject_id, rec.subject_label),
         )
-        if agent:
+        # An adviser's approval is not a client's consent. Where the licence asks for one, the
+        # proposal stays approved and places nothing until client_response has the answer.
+        if agent and await consent.hold(session, firm=firm, rec=rec, requested_by=actor_label) is None:
             await _execute(session, agent, ctx, rec, actor=actor_label, action=action)
 
     await ledger.append_entry(
@@ -345,6 +348,64 @@ async def decide(
 
     await session.flush()
     log.info("decision", agent=rec.agent_key, action=action.value, status=rec.status)
+    return rec
+
+
+async def client_response(
+    session: AsyncSession,
+    *,
+    firm: Firm,
+    recommendation: Recommendation,
+    given: bool,
+    channel: str,
+    evidence_ref: str | None,
+    note: str | None,
+    actor_label: str,
+) -> Recommendation:
+    """Record a client's answer to an approved proposal, and place the orders if it is yes.
+
+    Exactly once, for the reason decide() is: a consent places orders. The row is locked, its status
+    re-read, and consent.record refuses a second answer. A person records this from the evidence; it
+    is neither a decision (the approval was) nor the client's own action in the platform.
+    """
+    rec = (await session.execute(
+        select(Recommendation)
+        .where(Recommendation.id == recommendation.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )).scalar_one()
+    if rec.status not in (RecommendationStatus.APPROVED, RecommendationStatus.MODIFIED):
+        raise AlreadyDecidedError(rec.status)
+
+    row = await consent.record(session, firm=firm, rec=rec, given=given, channel=channel,
+                               evidence_ref=evidence_ref, recorded_by=actor_label, note=note)
+    await ledger.append_entry(
+        session, firm_id=firm.id, event_type="client_consent", agent_key=rec.agent_key, run_id=rec.run_id,
+        recommendation_id=rec.id, actor=actor_label,
+        content={"recommendation": rec.title, "answer": row.status, "channel": row.channel,
+                 "evidence_ref": row.evidence_ref, "simulated": row.simulated, "orders": row.orders,
+                 "order_digest": row.order_digest, "licence": row.licence},
+    )
+    await activity.emit(
+        session, firm_id=firm.id, agent_key=rec.agent_key, kind=ActivityKind.DECIDED,
+        summary=f"Client {row.status} consent: {rec.title}", subject_label=rec.subject_label,
+        meta={"recommendation_id": str(rec.id), "simulated": row.simulated},
+    )
+
+    if not given:
+        rec.status = RecommendationStatus.DISMISSED
+        rec.decision_note = note or "The client declined."
+    else:
+        agent = get_agent(AgentKey(rec.agent_key))
+        tier, guardrails = await policy.resolve_tier(session, firm.id, AgentKey(rec.agent_key), None)
+        run = await session.get(AgentRun, rec.run_id)
+        ctx = AgentContext(
+            session=session, firm=firm, run=run, tier=tier, guardrails=guardrails, config={},
+            subject=Subject(rec.subject_type, rec.subject_id, rec.subject_label),
+        )
+        await _execute(session, agent, ctx, rec, actor=actor_label, action=HumanAction.APPROVE)
+    await session.flush()
+    log.info("client_consent", answer=row.status, status=rec.status, simulated=row.simulated)
     return rec
 
 

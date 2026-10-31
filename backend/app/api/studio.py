@@ -12,6 +12,7 @@ from app.api.deps import current_firm
 from app.atlas import history as history_svc
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
+from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
 from app.core.db import get_db
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
@@ -275,7 +276,7 @@ async def draft_communication(
         f"Recommendation title: {rec.title}\n"
         f"Summary: {rec.summary}\n"
         f"Rationale: {rec.rationale}\n\n"
-        f"Tone: {tone_desc}. Do not include specific dollar amounts or order details. "
+        f"Tone: {tone_desc}. Do not include specific amounts of money or order details. "
         f"Use plain language the client will understand. "
         f"If writing an email or letter, begin with a subject line prefixed 'Subject: '."
     )
@@ -325,6 +326,7 @@ async def ask_your_book(
     # Build a compact, governed snapshot of the book to ground the answer.
     snapshot_lines = []
     structured = []
+    say = markets.money_for(firm)
     for h in households[:40]:
         brain = await household_brain(db, uuid.UUID(h["id"]), firm_id=firm.id)
         if not brain:
@@ -341,9 +343,9 @@ async def ask_your_book(
             "loss_total": round(sum(p["unrealised_gain"] for p in losers), 2),
         })
         snapshot_lines.append(
-            f"- {h['name']}: total ${total:,.0f}; equity {equity_pct:.0%}; "
+            f"- {h['name']}: total {say(total)}; equity {equity_pct:.0%}; "
             f"{'has' if losers else 'no'} harvestable losses "
-            f"(${-sum(p['unrealised_gain'] for p in losers):,.0f})."
+            f"({say(-sum(p['unrealised_gain'] for p in losers))})."
         )
 
     snapshot = "\n".join(snapshot_lines) or "No client data."

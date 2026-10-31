@@ -6,18 +6,20 @@ the firm's house views, and routes it to the adviser for approve / modify / dism
 Tier 2. On approval it routes the draft order set to the (mock) OMS — no live execution."""
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import knowledge, wash_sale
+from app.aurea_core import consent, firm_time, harvest_guard, knowledge, licences, markets, tax_india, wash_sale
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX as _CAPACITY_EQUITY_MAX
 from app.aurea_core.rebalancing import Lot, Position, WashSaleGuard, optimise
 from app.aurea_core.valuation import latest_prices
 import uuid
 
 from app.models.enums import AgentKey, AutonomyTier, MarketType
-from app.models.graph import Account, Mandate
+from app.models.graph import Account, Household, Mandate
 from app.models.portfolio import Holding, Instrument, ModelPortfolio, TargetAllocation, TaxLot
 
 
@@ -33,6 +35,14 @@ class DriftRebalancingAgent(BaseAgent):
         mandate = await s.get(Mandate, ctx.subject.id) if ctx.subject.id else None
         if mandate is None or mandate.model_portfolio_id is None:
             return {"applicable": False, "reason": "No mandate or target model."}
+        # Orders already approved and waiting for the client: a second set would race the first.
+        if await consent.waiting_on_mandate(s, mandate.id):
+            return {"applicable": False, "reason": "An approved proposal is waiting for the client's consent."}
+
+        household_id = await wash_sale.household_of(s, mandate)
+        household = await s.get(Household, household_id) if household_id else None
+        india = harvest_guard.applies(ctx.firm, household.values if household else None)
+        today = firm_time.today(ctx.firm)
 
         model = await s.get(ModelPortfolio, mandate.model_portfolio_id)
         targets = (
@@ -89,6 +99,7 @@ class DriftRebalancingAgent(BaseAgent):
                 tags = (inst.values_tags or {}) if inst else {}
                 excluded = bool(tags.get("sin")) or any(t in exclusions for t in tags.get("flags", [])) \
                     or (inst.symbol in exclusions if inst else False)
+                tax_class = tax_india.tax_class_of(inst) if india else None
                 positions.append({
                     "holding_id": str(h.id), "instrument_id": str(h.instrument_id),
                     "symbol": inst.symbol if inst else "?", "name": inst.name if inst else "",
@@ -99,7 +110,9 @@ class DriftRebalancingAgent(BaseAgent):
                     "excluded": excluded, "protected": bool(inst and inst.symbol in protect),
                     "tradeable": bool(inst and inst.market_type == MarketType.PUBLIC),
                     "confidence": float(h.confidence or 1.0),
-                    "lots": [{"quantity": float(lt.quantity), "cost_per_unit": float(lt.cost_per_unit)}
+                    "lots": [{"quantity": float(lt.quantity), "cost_per_unit": float(lt.cost_per_unit),
+                              "acquired_on": lt.acquired_on.isoformat(),
+                              "bucket": tax_india.bucket(tax_class, lt.acquired_on, today) if india else None}
                              for lt in lots_by_holding.get(h.id, [])],
                 })
 
@@ -129,6 +142,12 @@ class DriftRebalancingAgent(BaseAgent):
             "revision_note": ov.get("note"),
             "capacity_for_loss": capacity_for_loss,
             "wash_sale": await wash_sale.guard(s, ctx.firm, mandate),
+            "licence": licences.describe(licences.track_for(ctx.firm, mandate)),
+            "india": {
+                "guard": await harvest_guard.guard(s, ctx.firm, mandate, today=today),
+                "position": await tax_india.position_for(s, ctx.firm, mandate, today=today),
+                "stcg_budget": (mandate.constraints or {}).get("stcg_budget"),
+            } if india else None,
         }
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
@@ -142,7 +161,9 @@ class DriftRebalancingAgent(BaseAgent):
                 price=p["price"], cost_basis=p["cost_basis"], account_id=p["account_id"],
                 custodian=p["custodian"], excluded=p["excluded"], protected=p.get("protected", False),
                 tradeable=p.get("tradeable", True),
-                lots=[Lot(l["quantity"], l["cost_per_unit"]) for l in p["lots"]],
+                lots=[Lot(l["quantity"], l["cost_per_unit"],
+                          acquired_on=date.fromisoformat(l["acquired_on"]) if l.get("acquired_on") else None,
+                          bucket=l.get("bucket")) for l in p["lots"]],
             )
             for p in sensed["positions"]
         ]
@@ -165,8 +186,15 @@ class DriftRebalancingAgent(BaseAgent):
         # charge rather than assuming the default.
         exec_cfg = ((ctx.firm.settings or {}).get("execution") or {})
         washed = sensed.get("wash_sale") or {}
+        india = sensed.get("india")
+        rules = (india["guard"] if india else washed)
+        say = markets.money_for(ctx.firm)
+        stcg_budget = (india or {}).get("stcg_budget")
         result = optimise(
-            wash=WashSaleGuard(no_loss_sale=washed.get("no_loss_sale") or {}, no_buy=washed.get("no_buy") or {}),
+            wash=WashSaleGuard(no_loss_sale=rules.get("no_loss_sale") or {}, no_buy=rules.get("no_buy") or {},
+                               no_sell=rules.get("no_sell") or {}),
+            fifo=bool(india), whole_units=bool(india), say_money=say,
+            bucket_budgets={tax_india.ST_EQUITY: float(stcg_budget)} if stcg_budget is not None else None,
             positions=positions,
             target_weights=sensed["target_weights"],
             cash=sensed["cash"],
@@ -248,8 +276,27 @@ class DriftRebalancingAgent(BaseAgent):
             "harvested_losses": result.harvested_losses,
             "cgt_budget": sensed.get("cgt_budget"),
             "wash_sale": {"applies": bool(washed.get("applies")), "jurisdiction": washed.get("jurisdiction"),
-                          "held": result.wash_sale_held},
+                          "held": [] if india else result.wash_sale_held},
+            "currency": ctx.firm.base_currency,
         }
+        if sensed.get("licence"):
+            payload["licence"] = sensed["licence"]
+        if india:
+            position = india["position"]
+            payload["india_tax"] = {
+                "lot_method": "FIFO", "law": tax_india.LAW, "tax_year": position["tax_year"],
+                "taxpayer": position["taxpayer"], "buckets": result.gains_by_bucket,
+                **tax_india.proposal_tax(result.gains_by_bucket, position),
+                "held": result.wash_sale_held, "conflicts": harvest_guard.conflicts(orders, india["guard"]),
+                "flags": harvest_guard.flags(orders, india["guard"]),
+                "benefit": {"used": position["benefit_used"], "limit": position["benefit_limit"]},
+                "on_exchange": True,
+            }
+            if position["benefit_used"] > position["benefit_limit"]:
+                result.guardrail_breaches.append(
+                    f"The year's tax benefit from losses for {position['taxpayer']} is above the "
+                    f"{say(position['benefit_limit'])} GAAR threshold. Escalate before harvesting more."
+                )
         if sensed.get("revision_note"):
             payload["revision_note"] = sensed["revision_note"]
         evidence = {
@@ -278,9 +325,9 @@ class DriftRebalancingAgent(BaseAgent):
         )
         summary = (
             f"{len(sells)} sell / {len(buys)} buy orders, turnover "
-            f"${result.turnover:,.0f} ({result.turnover_pct:.1%}). Estimated realised gain "
-            f"${result.estimated_realised_gain:,.0f}"
-            + (f", harvesting ${result.harvested_losses:,.0f} of losses" if result.harvested_losses else "")
+            f"{say(result.turnover)} ({result.turnover_pct:.1%}). Estimated realised gain "
+            f"{say(result.estimated_realised_gain)}"
+            + (f", harvesting {say(result.harvested_losses)} of losses" if result.harvested_losses else "")
             + "."
         )
 
@@ -296,9 +343,11 @@ class DriftRebalancingAgent(BaseAgent):
             f"(drift {result.drifts.get(c,0):+.1%})"
             for c in result.target_weights
         )
+        say = markets.money_for(ctx.firm)
+        india = sensed.get("india")
         order_lines = "\n".join(
-            f"  - {o.side.upper()} {o.quantity:g} {o.symbol} (~${o.est_value:,.0f}; "
-            f"gain ${o.est_realised_gain:,.0f}; {o.reason})"
+            f"  - {o.side.upper()} {o.quantity:g} {o.symbol} (~{say(o.est_value)}; "
+            f"gain {say(o.est_realised_gain)}; {o.reason})"
             for o in result.orders
         )
         research = "\n".join(f"  - [{c['title']}] {c['excerpt'][:200]}" for c in citations) or "  (none)"
@@ -306,10 +355,13 @@ class DriftRebalancingAgent(BaseAgent):
             f"The {sensed['mandate']['name']} mandate has drifted beyond its "
             f"{result.drift_band:.0%} tolerance (max drift {result.max_drift:.1%}). The proposed "
             f"order set realigns the portfolio to target while managing tax: estimated realised "
-            f"gain ${result.estimated_realised_gain:,.0f}"
-            + (f", with ${result.harvested_losses:,.0f} of losses harvested" if result.harvested_losses else "")
-            + f", on ${result.turnover:,.0f} turnover. Tax lots were selected losses-first to "
-            "minimise the tax cost. The adviser should review and approve, modify or dismiss."
+            f"gain {say(result.estimated_realised_gain)}"
+            + (f", with {say(result.harvested_losses)} of losses harvested" if result.harvested_losses else "")
+            + f", on {say(result.turnover)} turnover. "
+            + ("Lots are relieved first-in first-out, as the law requires for demat holdings, and tax is "
+               "worked out for this taxpayer alone. " if india else
+               "Tax lots were selected losses-first to minimise the tax cost. ")
+            + "The adviser should review and approve, modify or dismiss."
         )
         revision = ""
         if sensed.get("revision_note"):
@@ -318,14 +370,16 @@ class DriftRebalancingAgent(BaseAgent):
         prompt = (
             "Draft a concise, plain-language rationale (2 short paragraphs) for the following "
             "rebalancing recommendation, for an adviser to review. Explain WHY (drift vs target) "
-            "and HOW tax was managed (lot selection, loss harvesting, CGT budget). Ground it in "
+            + ("and HOW tax was managed (first-in first-out relief, which the law fixes, and which tax "
+               "bucket the gains fall in; never say a lot was chosen). Ground it in "
+               if india else "and HOW tax was managed (lot selection, loss harvesting, CGT budget). Ground it in ") +
             "the firm research excerpts where relevant and reference them by title."
             + revision + "\n\n"
             f"Mandate: {sensed['mandate']['name']} ({sensed['mandate']['type']})\n"
             f"Allocation drift:\n{drift_lines}\n\n"
             f"Proposed orders:\n{order_lines}\n\n"
-            f"Estimated realised gain: ${result.estimated_realised_gain:,.0f}; "
-            f"harvested losses: ${result.harvested_losses:,.0f}; "
+            f"Estimated realised gain: {say(result.estimated_realised_gain)}; "
+            f"harvested losses: {say(result.harvested_losses)}; "
             f"CGT budget: {sensed.get('cgt_budget')}\n\n"
             f"Firm research excerpts:\n{research}\n"
         )
@@ -351,6 +405,19 @@ class DriftRebalancingAgent(BaseAgent):
         # placed rather than part of it; a fresh run re-sizes around whatever changed.
         mandate = await ctx.session.get(Mandate, ctx.subject.id) if ctx.subject.type == "mandate" else None
         if mandate is not None:
+            refused = await consent.blocked(ctx.session, firm=ctx.firm, rec=recommendation)
+            if refused:
+                return {"executed": False, "note": refused}
+            household_id = await wash_sale.household_of(ctx.session, mandate)
+            household = await ctx.session.get(Household, household_id) if household_id else None
+            if harvest_guard.applies(ctx.firm, household.values if household else None):
+                rules = await harvest_guard.guard(ctx.session, ctx.firm, mandate, today=firm_time.today(ctx.firm))
+                barred = harvest_guard.conflicts(order_set, rules)
+                if barred:
+                    names = ", ".join(sorted({c["symbol"] for c in barred}))
+                    return {"executed": False, "harvest_guard_held": barred,
+                            "note": (f"Nothing was placed: {names} is barred by the harvest guard since this was "
+                                     f"proposed. Run the agent again for a fresh set.")}
             clash = wash_sale.conflicts(order_set, await wash_sale.guard(ctx.session, ctx.firm, mandate))
             if clash:
                 names = ", ".join(sorted({c["symbol"] for c in clash}))
@@ -413,5 +480,5 @@ def _order_dict(o) -> dict:
         "side": o.side, "symbol": o.symbol, "name": o.name, "instrument_id": o.instrument_id,
         "asset_class": o.asset_class, "quantity": o.quantity, "est_price": o.est_price,
         "est_value": o.est_value, "account_id": o.account_id, "custodian": o.custodian,
-        "est_realised_gain": o.est_realised_gain, "reason": o.reason,
+        "est_realised_gain": o.est_realised_gain, "reason": o.reason, "gain_buckets": o.gain_buckets,
     }

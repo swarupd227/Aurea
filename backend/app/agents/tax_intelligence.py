@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.agents._common import narrate
+from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import tax_intelligence
+from app.aurea_core import markets, tax_intelligence
 from app.aurea_core.graph import list_households
 from app.models.enums import AgentKey, AutonomyTier
 from app.models.graph import Household
@@ -51,6 +51,10 @@ class TaxIntelligenceAgent(BaseAgent):
             summary = result["summary"]
 
             if summary["total_flags"] == 0:
+                continue
+
+            if result.get("jurisdiction") == "IN":
+                drafts.append(await self._india(ctx, result))
                 continue
 
             # Build a concise memo for the adviser
@@ -120,3 +124,41 @@ class TaxIntelligenceAgent(BaseAgent):
             ))
 
         return drafts
+
+    async def _india(self, ctx: AgentContext, result: dict) -> RecommendationDraft:
+        """One household's Indian position: an estimate, taxpayer by taxpayer, for a person to check."""
+        say = markets.money_for(ctx.firm)
+        s, name = result["summary"], result["household_name"]
+        lines = []
+        for t in result["taxpayers"]:
+            found = [o for o in t["opportunities"] if o["kind"] in ("loss", "exemption")]
+            lines.append(
+                f"- {t['name']} ({t['kind']}): estimated tax so far {say(t['estimated_tax'])}, "
+                f"exemption left {say(t['position']['exempt_left'])}, {len(found)} opportunity(ies)")
+        facts = (
+            f"Tax Year {result['tax_year']}, {result['days_to_year_end']} days left. "
+            f"{s['taxpayers']} taxpayer(s). Unused long-term exemption {say(s['exemption_unused'])}; "
+            f"harvestable loss {say(s['harvestable_loss'])}; estimated saving {say(s['estimated_tax_saving'])}."
+        )
+        memo = await narrate(
+            ctx, task="advice", system=firm_voice(ctx),
+            prompt=(
+                f"Write a short tax memo for the adviser on the {name} household.\n{facts}\n" + "\n".join(lines)
+                + "\n\nEach person is a separate taxpayer: never net one against another. Lots go first-in "
+                  "first-out and cannot be chosen. India has no wash-sale rule, but never say a rebuy is safe. "
+                  "These are estimates for a qualified person to check. Close with the one action to take "
+                  "before 31 March."
+            ),
+            fallback=facts + " Estimates for a qualified person to check.",
+        )
+        return RecommendationDraft(
+            title=f"Tax position - {name}",
+            summary=facts,
+            rationale=memo,
+            confidence=0.8,
+            priority=2,
+            subject=Subject(type="household", id=result["household_id"], label=name),
+            payload=result,
+            evidence={"tax_year": result["tax_year"], "harvestable_loss": s["harvestable_loss"],
+                      "estimated_tax_saving": s["estimated_tax_saving"], "exemption_unused": s["exemption_unused"]},
+        )

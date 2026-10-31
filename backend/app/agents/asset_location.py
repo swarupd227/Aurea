@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
 
@@ -117,7 +118,7 @@ class AssetLocationAgent(BaseAgent):
             medium = [f for f in findings if f["severity"] == "medium"]
             total_mislocated = sum(f["market_value"] for f in findings if f["issue"] == "tax_inefficient_in_taxable")
             jurisdiction = (hh.get("values") or {}).get("jurisdiction") or ctx.firm.jurisdiction or "NZ"
-            currency = {"US": "USD", "UK": "GBP"}.get(jurisdiction, "NZD")
+            currency = markets.currency(jurisdiction, ctx.firm.base_currency)
 
             finding_text = "\n".join(
                 f"- [{f['severity'].upper()}] {f['instrument']} in {f['account']}: {f['recommendation']}"
