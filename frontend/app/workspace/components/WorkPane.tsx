@@ -20,6 +20,7 @@ import { ReportsView } from "@/components/views/ReportsView";
 import { ReportView } from "@/components/views/ReportView";
 import { MessagesView } from "@/components/views/MessagesView";
 import { MessageThreadView } from "@/components/views/MessageThreadView";
+import { IpsView } from "@/components/views/IpsView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
 
@@ -75,6 +76,8 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <MessagesView />;
     case "message_thread":
       return pane.id ? <MessageThreadView key={pane.id} householdId={pane.id} /> : null;
+    case "ips":
+      return <IpsView />;
   }
 }
 

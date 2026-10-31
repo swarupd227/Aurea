@@ -660,6 +660,9 @@ async def main() -> int:
                 {"mandate_id": str(lea_m.id)}), "not found")
             mid = await ex.read_ips_monitoring({"mandate_id": str(bare_m.id)})
             check("no IPS is said as no record here", "no IPS recorded here" in mid["message"], True)
+            check("Astra opens it beside the conversation", (await ex.open_view({"view": "ips"}))["view"], "/studio/ips")
+            check("for compliance too", (await ToolExecutors(s, david.id, david.role, firm.id).open_view({"view": "ips"}))["view"], "/studio/ips")
+            await refused("not for a role that does not read it", ToolExecutors(s, research.id, research.role, firm.id).open_view({"view": "ips"}), "not one this role opens")
 
             print("\n=== The drafter reads the assessment and the terms ===")
             mia_h, mia_m, mia_a = await client_of("Mia", exclude=["BTI"])

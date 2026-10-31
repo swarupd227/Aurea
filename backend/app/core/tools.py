@@ -734,8 +734,8 @@ TOOLS: dict[str, Tool] = {
             "invoice_id to open one bill), valuations (private holdings and their stated values), onboarding (the "
             "onboarding board), onboarding_case (one case; give case_id), meetings (the meeting list), meeting (one "
             "meeting's brief, transcript and notes; give meeting_id), tasks (the follow-ups), reports (the client reports), "
-            "report (one report; give report_id), messages (the client inbox) or message_thread (one client's secure "
-            "messages; give household_id). It returns no data and states nothing - answer "
+            "report (one report; give report_id), messages (the client inbox), message_thread (one client's secure "
+            "messages; give household_id) or ips (each mandate against its accepted IPS). It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages); an id from memory or an earlier turn is refused."
@@ -1293,6 +1293,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "report": ("/studio/reports", "Report", {_A, _P, _R}),
     "messages": ("/studio/messages", "Messages", {_A, _P}),
     "message_thread": ("/studio/messages", "Messages", {_A, _P}),
+    "ips": ("/studio/ips", "IPS monitoring", {_A, _P, _PT, _C, _O, _B}),
 }
 
 

@@ -106,7 +106,10 @@ function Rows({ rows }: { rows: IpsMandate[] }) {
               <div className="text-xs text-ink-muted">{m.household ?? "—"}</div>
             </td>
             <td className="px-3 py-1.5 font-mono text-xs text-ink-muted">{measuredText(m)}</td>
-            <td className="px-3 py-1.5"><IpsFindings row={m} /></td>
+            <td className="px-3 py-1.5">
+              <IpsFindings row={m} />
+              {m.model_drift?.outside && <span className="chip text-warn">model drift {share(m.model_drift.max_drift)}</span>}
+            </td>
             <td className="px-3 py-1.5 text-right"><IpsStatusChip status={m.status} /></td>
           </tr>
         ))}

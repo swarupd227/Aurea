@@ -10,7 +10,7 @@ import { viewsForRole } from "./nav";
 
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
-  | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread";
+  | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -38,6 +38,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "report", pattern: /^\/studio\/reports\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/reports", label: "Report" },
   { key: "messages", pattern: /^\/studio\/messages\/?$/, base: "/studio/messages", label: "Messages" },
   { key: "message_thread", pattern: /^\/studio\/messages\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/messages", label: "Messages" },
+  { key: "ips", pattern: /^\/studio\/ips\/?$/, base: "/studio/ips", label: "IPS monitoring" },
 ];
 
 /** The list a single-item view sits under, so one opened straight from the conversation still has
@@ -132,6 +133,9 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_messages":
     case "send_client_message":
       return r.scope === "household" && typeof r.household_id === "string" ? `/studio/messages/${r.household_id}` : "/studio/messages";
+    case "read_ips_monitoring":
+    case "record_ips":
+      return "/studio/ips";
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";
