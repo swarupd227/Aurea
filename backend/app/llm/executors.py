@@ -96,6 +96,8 @@ class ToolExecutors:
             "create_task": self.create_task,
             "read_reports": self.read_reports,
             "withdraw_report": self.withdraw_report,
+            "read_messages": self.read_messages,
+            "send_client_message": self.send_client_message,
             "read_provenance": self.read_provenance,
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
@@ -1227,6 +1229,8 @@ class ToolExecutors:
             route = f"{route}/{await grounded('meeting_id', Meeting)}"
         elif view == "report":
             route = f"{route}/{await grounded('report_id', ClientReport)}"
+        elif view == "message_thread":
+            route = f"{route}/{await grounded('household_id', Household)}"
 
         return {"view": route, "kind": view, "message": f"The {label} view is open beside the conversation."}
 
@@ -1579,6 +1583,60 @@ class ToolExecutors:
         return {"reports": [view], "shown": 1, "total": 1, "status": view["status"], "drafts": 1, "client_ready": 0,
                 "awaiting_decision": 0, "message": f"'{report.title}' is withdrawn: {view['household_name']} can no longer read it."}
 
+    async def read_messages(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The Messages page's inbox and one thread (api.engage.message_inbox / message_thread).
+        Only this firm's, and it marks nothing read: that is for a person opening the thread."""
+        from app.aurea_core import messages
+
+        limit = self._limit(inputs.get("limit"), 20, 50)
+        if inputs.get("household_id"):
+            household = await self._own_household(inputs["household_id"])
+            rows = await messages.thread(self.session, self.firm_id, household.id)
+            shown = rows[-limit:]
+            waiting = messages.unread(rows)
+            return {
+                "scope": "household", "household_id": str(household.id), "household_name": household.name,
+                "messages": [messages.view(m) for m in shown], "shown": len(shown), "total": len(rows), "unread": waiting,
+                "needs_reply": bool(rows) and rows[-1].author_role == "client",
+                "message": (f"{len(rows)} message(s) with {household.name}"
+                            + (f"; showing the latest {len(shown)}" if len(shown) < len(rows) else "")
+                            + f". {waiting} unread."),
+            }
+        threads = await messages.inbox(self.session, self.firm_id)
+        shown = threads[:limit]
+        waiting = sum(t["unread"] for t in threads)
+        owed = sum(1 for t in threads if t["needs_reply"])
+        return {
+            "scope": "firm", "threads": shown, "shown": len(shown), "total": len(threads),
+            "unread": waiting, "needs_reply": owed,
+            "message": (f"{len(threads)} client thread(s)" + (f"; showing {len(shown)}" if len(shown) < len(threads) else "")
+                        + f". {waiting} unread, {owed} waiting for a reply."),
+        }
+
+    async def _client_message(self, inputs: dict[str, Any]):
+        """The household and the words, checked. Shared by the Confirm card and the send."""
+        from app.aurea_core import messages
+
+        household = await self._own_household(inputs.get("household_id") or "")
+        try:
+            return household, messages.clean(inputs.get("body"))
+        except messages.MessageError as exc:
+            raise ExecutorError(str(exc))
+
+    async def send_client_message(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import messages
+        from app.models.identity import User
+
+        household, body = await self._client_message(inputs)
+        user = await self.session.get(User, self.user_id)
+        sent = messages.from_firm(self.firm_id, household.id, body, author=user.full_name)
+        self.session.add(sent)
+        await self.session.flush()
+        rows = await messages.thread(self.session, self.firm_id, household.id)
+        return {"scope": "household", "household_id": str(household.id), "household_name": household.name,
+                "messages": [messages.view(sent)], "shown": 1, "total": len(rows), "unread": messages.unread(rows),
+                "needs_reply": False, "message": f"Sent to {household.name}."}
+
     async def _report_decision_preview(self, inputs: dict[str, Any]) -> dict[str, Any] | None:
         """A decision on a report's proposal names the report, because approving it puts it in front
         of the client. Any other proposal, or an id that does not resolve, keeps the plain card and
@@ -1623,6 +1681,12 @@ class ToolExecutors:
                         ("Period", report.period),
                         ("Published", firm_time.spoken(firm_time.today(await self._firm(), report.published_at))
                          if report.published_at else None))
+        if tool_key == "send_client_message":
+            from app.models.identity import User
+
+            household, body = await self._client_message(inputs)
+            sender = await self.session.get(User, self.user_id)
+            return rows(("To", household.name), ("From", sender.full_name if sender else None), ("Message", body))
         if tool_key not in ("complete_task", "assign_task", "create_task"):
             return None
 

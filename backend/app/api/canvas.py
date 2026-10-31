@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.api.deps import current_firm
-from app.aurea_core import goal_tradeoff, planning, retirement
+from app.aurea_core import goal_tradeoff, messages as message_core, planning, retirement
 from app.aurea_core.graph import household_brain
 from app.core.db import get_db, utcnow
 from app.core.security import get_current_user
@@ -22,7 +22,7 @@ from app.llm.service import firm_llm_creds, llm_service
 from app.models.client_experience import HeirJourney, Message, default_heir_steps
 from app.models.engagement import ClientReport, Task
 from app.models.enums import HeirJourneyStatus, MessageAuthor, ReportStatus, UserRole
-from app.models.graph import Person, RelationshipEdge
+from app.models.graph import Household, Person, RelationshipEdge
 from app.models.identity import User
 from app.models.tenant import Firm
 from sqlalchemy import func
@@ -34,13 +34,18 @@ router = APIRouter(prefix="/api/canvas", tags=["canvas"])
 async def _resolve_household(
     db: AsyncSession, user: User, household_id: uuid.UUID | None
 ) -> uuid.UUID:
-    if user.role == UserRole.CLIENT and user.person_id:
-        person = await db.get(Person, user.person_id)
+    """The household this request is about: a client's own, whatever they ask for, or for staff the
+    one named, inside their firm. A client tied to no household gets none, not the staff path."""
+    if user.role == UserRole.CLIENT:
+        person = await db.get(Person, user.person_id) if user.person_id else None
         if person and person.household_id:
             return person.household_id
         raise HTTPException(status_code=404, detail="No household linked to this client.")
     if household_id is None:
         raise HTTPException(status_code=400, detail="household_id required for staff preview.")
+    hh = await db.get(Household, household_id)
+    if hh is None or hh.firm_id != user.firm_id:
+        raise HTTPException(status_code=404, detail="Household not found")
     return household_id
 
 
@@ -195,12 +200,6 @@ class MessageIn(BaseModel):
     household_id: uuid.UUID | None = None
 
 
-def _msg_dict(m: Message) -> dict:
-    return {"id": str(m.id), "author_role": m.author_role, "author_name": m.author_name,
-            "body": m.body, "from_agent": m.source_recommendation_id is not None,
-            "created_at": m.created_at.isoformat() if m.created_at else None}
-
-
 @router.get("/retirement")
 async def canvas_retirement(
     household_id: uuid.UUID | None = None,
@@ -249,17 +248,15 @@ async def get_messages(
     db: AsyncSession = Depends(get_db),
 ):
     hid = await _resolve_household(db, user, household_id)
-    msgs = (
-        await db.execute(select(Message).where(Message.household_id == hid).order_by(Message.created_at.asc()))
-    ).scalars().all()
+    msgs = await message_core.thread(db, firm.id, hid)
     # Mark the other party's messages read for the viewer.
-    is_client = user.role == UserRole.CLIENT
-    for m in msgs:
-        if is_client and m.author_role != MessageAuthor.CLIENT:
-            m.read_by_client = True
-        elif not is_client and m.author_role == MessageAuthor.CLIENT:
-            m.read_by_adviser = True
-    return [_msg_dict(m) for m in msgs]
+    if user.role == UserRole.CLIENT:
+        for m in msgs:
+            if m.author_role != MessageAuthor.CLIENT:
+                m.read_by_client = True
+    else:
+        message_core.mark_read_by_adviser(msgs, user.role)
+    return [message_core.view(m) for m in msgs]
 
 
 @router.post("/messages")
@@ -269,15 +266,20 @@ async def post_message(
 ):
     hid = await _resolve_household(db, user, body.household_id)
     is_client = user.role == UserRole.CLIENT
-    m = Message(
-        firm_id=firm.id, household_id=hid,
-        author_role=MessageAuthor.CLIENT if is_client else MessageAuthor.ADVISER,
-        author_name=user.full_name, body=body.body.strip(),
-        read_by_client=is_client, read_by_adviser=not is_client,
-    )
+    if not is_client and user.role not in message_core.WRITERS:
+        raise HTTPException(status_code=403, detail="Only an adviser or paraplanner may write to a client.")
+    try:
+        if is_client:
+            m = Message(firm_id=firm.id, household_id=hid, author_role=MessageAuthor.CLIENT,
+                        author_name=user.full_name, body=message_core.clean(body.body),
+                        read_by_client=True, read_by_adviser=False)
+        else:
+            m = message_core.from_firm(firm.id, hid, body.body, author=user.full_name)
+    except message_core.MessageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     db.add(m)
     await db.flush()
-    return _msg_dict(m)
+    return message_core.view(m)
 
 
 # ── Reports (client-ready) ────────────────────────────────────────────────────

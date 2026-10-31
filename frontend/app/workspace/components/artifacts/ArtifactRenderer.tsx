@@ -23,7 +23,7 @@ import { RecommendationsCard } from "./RecommendationsCard";
 import { AgentsCard } from "./AgentsCard";
 import { AgentRunCard, isAgentRunData } from "./AgentRunCard";
 import {
-  AgentHistoryCard, AnalyticsCard, CapacityCard, OnboardingCasesCard, ProvenanceCard, ReportsCard, TasksCard,
+  AgentHistoryCard, AnalyticsCard, CapacityCard, MessagesCard, OnboardingCasesCard, ProvenanceCard, ReportsCard, TasksCard,
 } from "./PageReadCards";
 import type { Artifact, MessageCard } from "../../types";
 
@@ -160,6 +160,10 @@ export function artifactCard(artifact: Artifact) {
       case "withdraw_report":
         if (!Array.isArray(artifact.result?.reports)) return null;
         return <ReportsCard result={artifact.result as any} />;
+      case "read_messages":
+      case "send_client_message":
+        if (!Array.isArray(artifact.result?.threads) && !Array.isArray(artifact.result?.messages)) return null;
+        return <MessagesCard result={artifact.result as any} />;
       case "read_provenance":
         if (typeof artifact.result?.ledger?.valid !== "boolean" || !Array.isArray(artifact.result?.surveillance?.flags) || !artifact.result?.surveillance?.by_severity || !Array.isArray(artifact.result?.evaluations) || !Array.isArray(artifact.result?.autonomy_changes)) return null;
         return <ProvenanceCard result={artifact.result as any} />;

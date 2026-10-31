@@ -44,6 +44,7 @@ PAGES = {
     "read_meetings": "/studio/meetings",
     "read_tasks": "/studio/tasks",
     "read_reports": "/studio/reports",
+    "read_messages": "/studio/messages",
     "read_provenance": "/provenance",
 }
 

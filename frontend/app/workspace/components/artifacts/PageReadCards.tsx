@@ -137,6 +137,49 @@ export function ReportsCard({ result }: { result: ReportsPayload }) {
   );
 }
 
+// ── Messages ────────────────────────────────────────────────────────────────────────────────
+export interface MessagesPayload {
+  shown: number;
+  total: number;
+  unread: number;
+  needs_reply: number | boolean;
+  household_name?: string;
+  threads?: { household_id: string; household_name: string | null; last_body: string; last_at: string | null; unread: number; needs_reply: boolean }[];
+  messages?: { id: string; author_name: string; author_role: string; body: string; created_at: string | null }[];
+}
+
+export function MessagesCard({ result }: { result: MessagesPayload }) {
+  const owed = typeof result.needs_reply === "number" ? result.needs_reply : result.needs_reply ? 1 : 0;
+  return (
+    <Frame title={result.household_name ?? "Messages"} count={result.total > result.shown ? `${result.shown} of ${result.total}` : result.total} testId="messages-card">
+      {(result.unread > 0 || owed > 0) && (
+        <div className="flex flex-wrap gap-1.5 border-b border-border-soft px-3 py-1.5">
+          {result.unread > 0 && <Chip tone="text-warn">Unread {result.unread}</Chip>}
+          {owed > 0 && <Chip>Reply owed {owed}</Chip>}
+        </div>
+      )}
+      <table className="w-full table-fixed text-sm">
+        <tbody className="divide-y divide-border-soft">
+          {result.threads?.map((t) => (
+            <tr key={t.household_id}>
+              <td className="w-2/5 truncate px-3 py-1.5 text-ink">{t.household_name ?? "—"}</td>
+              <td className="truncate px-3 py-1.5 text-xs text-ink-muted">{t.last_body}</td>
+              <td className={`w-16 px-3 py-1.5 text-right font-mono text-xs tabular-nums ${t.unread ? "text-warn" : "text-ink-muted"}`}>{timeAgo(t.last_at)}</td>
+            </tr>
+          ))}
+          {result.messages?.map((m) => (
+            <tr key={m.id}>
+              <td className={`w-2/5 truncate px-3 py-1.5 text-xs ${m.author_role === "client" ? "text-ink" : "text-ink-muted"}`}>{m.author_name}</td>
+              <td className="truncate px-3 py-1.5 text-xs text-ink-muted">{m.body}</td>
+              <td className="w-16 px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink-muted">{timeAgo(m.created_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Frame>
+  );
+}
+
 // ── Capacity ────────────────────────────────────────────────────────────────────────────────
 export interface CapacityPayload {
   total_agent_runs: number;

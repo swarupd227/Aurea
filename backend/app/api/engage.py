@@ -12,12 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_firm
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
-from app.aurea_core import firm_time, reports as report_core, tasks as task_core
+from app.aurea_core import firm_time, messages as message_core, reports as report_core, tasks as task_core
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
-from app.models.client_experience import Message
 from app.models.engagement import Meeting
-from app.models.enums import AgentKey, MessageAuthor
+from app.models.enums import AgentKey
 from app.models.governance import Recommendation
 from app.models.graph import Household
 from app.models.identity import User
@@ -182,19 +181,20 @@ async def complete_task(task_id: uuid.UUID, user: User = Depends(require_roles(*
 @router.get("/messages")
 async def message_inbox(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     """Per-household message threads with unread (client→adviser) counts."""
-    msgs = (
-        await db.execute(select(Message).where(Message.firm_id == firm.id).order_by(Message.created_at.desc()))
-    ).scalars().all()
-    names = {h.id: h.name for h in (await db.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all()}
-    threads: dict = {}
-    for m in msgs:
-        t = threads.setdefault(m.household_id, {"household_id": str(m.household_id),
-                                                "household_name": names.get(m.household_id),
-                                                "last_body": m.body, "last_at": m.created_at.isoformat() if m.created_at else None,
-                                                "unread": 0})
-        if m.author_role == MessageAuthor.CLIENT and not m.read_by_adviser:
-            t["unread"] += 1
-    return list(threads.values())
+    return await message_core.inbox(db, firm.id)
+
+
+@router.get("/messages/{household_id}")
+async def message_thread(household_id: uuid.UUID, user: User = Depends(get_current_user),
+                         firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """One household's thread, oldest first. Opening it clears its unread for those who reply."""
+    try:
+        hh = await message_core.household(db, firm.id, household_id)
+    except message_core.MessageError:
+        raise HTTPException(status_code=404, detail="Household not found")
+    rows = await message_core.thread(db, firm.id, hh.id)
+    message_core.mark_read_by_adviser(rows, user.role)
+    return {"household_id": str(hh.id), "household_name": hh.name, "messages": [message_core.view(m) for m in rows]}
 
 
 # ── Client reports ────────────────────────────────────────────────────────────

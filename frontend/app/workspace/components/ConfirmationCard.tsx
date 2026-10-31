@@ -111,7 +111,7 @@ export function ConfirmationCard({
           {changes.map((r) => (
             <div key={r.label} className="flex gap-3 px-3 py-1.5">
               <dt className="w-20 shrink-0 font-mono text-[11px] uppercase tracking-wider text-ink-muted">{r.label}</dt>
-              <dd className="min-w-0 text-ink">{r.value}</dd>
+              <dd className="min-w-0 whitespace-pre-line break-words text-ink">{r.value}</dd>
             </div>
           ))}
         </dl>
