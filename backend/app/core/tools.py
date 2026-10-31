@@ -553,20 +553,22 @@ TOOLS: dict[str, Tool] = {
             "household; give household_id), billing (the run awaiting approval, held and unpaid bills; give "
             "invoice_id to open one bill), valuations (private holdings and their stated values), onboarding (the "
             "onboarding board), onboarding_case (one case; give case_id), meetings (the meeting list), meeting (one "
-            "meeting's brief, transcript and notes; give meeting_id) or tasks (the follow-ups). It returns no data and states nothing - answer "
+            "meeting's brief, transcript and notes; give meeting_id), tasks (the follow-ups), reports (the client reports) "
+            "or report (one report; give report_id). It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
-            "read_onboarding_cases, read_meetings); an id from memory or an earlier turn is refused."
+            "read_onboarding_cases, read_meetings, read_reports); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings or meeting", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports or report", required=True),
             ToolInput("household_id", "uuid", "For client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
             ToolInput("meeting_id", "uuid", "For meeting: the meeting, as read_meetings returned it this turn", required=False),
+            ToolInput("report_id", "uuid", "For report: the report, as read_reports returned it this turn", required=False),
         ],
         output=ToolOutput("object", "The view's route - nothing about what it shows"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
@@ -710,6 +712,44 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
+    "read_reports": Tool(
+        key="read_reports",
+        name="Read Reports",
+        speaking_agent="astra",
+        description=(
+            "Client reports, newest first: title, client, period, whether it is a draft or with the client, and whether a "
+            "proposal is waiting for a decision. Give report_id to read one report's sections. A draft reaches a client "
+            "only by approving its proposal (recommendation_id) with decide_recommendation. A draft whose proposal was "
+            "dismissed, or that has none, cannot be published: draft a fresh one by running research_reporting on the "
+            "household."
+        ),
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("report_id", "uuid", "One report, to read its sections (from an earlier read_reports)", required=False),
+            ToolInput("status", "string", "all (default), draft or client_ready", required=False),
+            ToolInput("household_id", "uuid", "Only this household's reports (from search_households)", required=False),
+            ToolInput("limit", "number", "Max reports to return (default 20, at most 50)", required=False),
+        ],
+        output=ToolOutput("object", "Reports with their status and proposal, and how many are drafts, with clients or awaiting a decision"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.RESEARCH_CIO, UserRole.ADMIN},
+    ),
+
+    "withdraw_report": Tool(
+        key="withdraw_report",
+        name="Withdraw Report",
+        speaking_agent="astra",
+        description="Take a report back from the client: it returns to draft and they can no longer read it. Find it with read_reports first; only a report whose result says can_withdraw can be taken back.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Take this report back from the client?",
+        inputs=[
+            ToolInput("report_id", "uuid", "The report, from read_reports", required=True),
+            ToolInput("note", "string", "Why it is being withdrawn, in the person's own words", required=False),
+        ],
+        output=ToolOutput("object", "The report as it now stands"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.RESEARCH_CIO},
+    ),
+
     "read_provenance": Tool(
         key="read_provenance",
         name="Read Provenance",
@@ -769,7 +809,7 @@ TOOLS: dict[str, Tool] = {
         ],
         output=ToolOutput("object", "Decision record with ledger entry"),
         # Only adviser and portfolio team may approve trades; compliance may veto; see CLAUDE.md
-        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.RESEARCH_CIO,
                        UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.ADMIN},
     ),
 
@@ -1028,6 +1068,8 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "meetings": ("/studio/meetings", "Meetings", {_A, _P}),
     "meeting": ("/studio/meetings", "Meeting", {_A, _P}),
     "tasks": ("/studio/tasks", "Tasks", {_A, _P}),
+    "reports": ("/studio/reports", "Reports", {_A, _P, _R}),
+    "report": ("/studio/reports", "Report", {_A, _P, _R}),
 }
 
 

@@ -288,8 +288,8 @@ async def canvas_report(report_id: uuid.UUID, user: User = Depends(get_current_u
     if not r or r.firm_id != firm.id or r.status != ReportStatus.CLIENT_READY:
         raise HTTPException(status_code=404, detail="Report not available")
     # A client may only read their own household's report.
-    if user.role == UserRole.CLIENT and user.person_id:
-        person = await db.get(Person, user.person_id)
+    if user.role == UserRole.CLIENT:
+        person = await db.get(Person, user.person_id) if user.person_id else None
         if not person or person.household_id != r.household_id:
             raise HTTPException(status_code=403, detail="Not your report")
     return {"id": str(r.id), "title": r.title, "period": r.period, "sections": r.sections,

@@ -75,6 +75,7 @@ const STATUS_STYLES: Record<string, string> = {
   completed: "bg-ok-bg text-ok",
   failed: "bg-crit-bg text-crit",
   paused: "bg-crit-bg text-crit",
+  client_ready: "bg-ok-bg text-ok",
 };
 export function StatusBadge({ status }: { status: string }) {
   return <span className={`chip ${STATUS_STYLES[status] || "bg-surface text-ink-muted"}`}>{titleCase(status)}</span>;

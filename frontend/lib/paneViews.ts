@@ -10,7 +10,7 @@ import { viewsForRole } from "./nav";
 
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
-  | "meetings" | "meeting" | "tasks";
+  | "meetings" | "meeting" | "tasks" | "reports" | "report";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -34,6 +34,8 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "meetings", pattern: /^\/studio\/meetings\/?$/, base: "/studio/meetings", label: "Meetings" },
   { key: "meeting", pattern: /^\/studio\/meetings\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/meetings", label: "Meeting" },
   { key: "tasks", pattern: /^\/studio\/tasks\/?$/, base: "/studio/tasks", label: "Tasks" },
+  { key: "reports", pattern: /^\/studio\/reports\/?$/, base: "/studio/reports", label: "Reports" },
+  { key: "report", pattern: /^\/studio\/reports\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/reports", label: "Report" },
 ];
 
 /** The list a single-item view sits under, so one opened straight from the conversation still has
@@ -42,6 +44,7 @@ export const PANE_PARENT: Partial<Record<PaneViewKey, string>> = {
   client: "/studio/clients",
   onboarding_case: "/studio/onboarding",
   meeting: "/studio/meetings",
+  report: "/studio/reports",
 };
 
 export interface PaneMatch {
@@ -118,6 +121,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "assign_task":
     case "create_task":
       return "/studio/tasks";
+    case "read_reports":
+    case "withdraw_report": {
+      const rs = Array.isArray(r.reports) ? r.reports : [];
+      return rs.length === 1 && rs[0]?.id ? `/studio/reports/${rs[0].id}` : "/studio/reports";
+    }
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";

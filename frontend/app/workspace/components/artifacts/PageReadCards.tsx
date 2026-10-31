@@ -101,6 +101,42 @@ export function TasksCard({ result }: { result: TasksPayload }) {
   );
 }
 
+// ── Reports ─────────────────────────────────────────────────────────────────────────────────
+export interface ReportsPayload {
+  shown: number;
+  total: number;
+  drafts: number;
+  client_ready: number;
+  awaiting_decision: number;
+  reports: { id: string; title: string; household_name: string | null; period: string | null; status: string; awaiting_decision: boolean }[];
+}
+
+export function ReportsCard({ result }: { result: ReportsPayload }) {
+  return (
+    <Frame title="Reports" count={result.total > result.shown ? `${result.shown} of ${result.total}` : result.total} testId="reports-card">
+      <div className="flex flex-wrap gap-1.5 border-b border-border-soft px-3 py-1.5">
+        <Chip>Draft {result.drafts}</Chip>
+        <Chip>With clients {result.client_ready}</Chip>
+        {result.awaiting_decision > 0 && <Chip tone="text-warn">Awaiting decision {result.awaiting_decision}</Chip>}
+      </div>
+      <table className="w-full text-sm">
+        <tbody className="divide-y divide-border-soft">
+          {result.reports.map((r) => (
+            <tr key={r.id}>
+              <td className="px-3 py-1.5 text-ink">{r.title}</td>
+              <td className="px-3 py-1.5 text-xs text-ink-muted">{r.household_name ?? "—"}</td>
+              <td className="px-3 py-1.5 font-mono text-xs tabular-nums text-ink-muted whitespace-nowrap">{r.period ?? "—"}</td>
+              <td className={`px-3 py-1.5 text-right text-xs ${r.awaiting_decision ? "text-warn" : r.status === "client_ready" ? "text-ok" : "text-ink-muted"}`}>
+                {r.awaiting_decision ? "Awaiting decision" : titleCase(r.status)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Frame>
+  );
+}
+
 // ── Capacity ────────────────────────────────────────────────────────────────────────────────
 export interface CapacityPayload {
   total_agent_runs: number;

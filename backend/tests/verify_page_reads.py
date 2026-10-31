@@ -43,6 +43,7 @@ PAGES = {
     "read_onboarding_cases": "/studio/onboarding",
     "read_meetings": "/studio/meetings",
     "read_tasks": "/studio/tasks",
+    "read_reports": "/studio/reports",
     "read_provenance": "/provenance",
 }
 

@@ -94,6 +94,8 @@ class ToolExecutors:
             "complete_task": self.complete_task,
             "assign_task": self.assign_task,
             "create_task": self.create_task,
+            "read_reports": self.read_reports,
+            "withdraw_report": self.withdraw_report,
             "read_provenance": self.read_provenance,
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
@@ -1185,7 +1187,7 @@ class ToolExecutors:
 
         from app.core.tools import OPEN_VIEWS
         from app.models.billing import Invoice
-        from app.models.engagement import Meeting
+        from app.models.engagement import ClientReport, Meeting
         from app.models.governance import Recommendation
         from app.models.onboarding import OnboardingCase
 
@@ -1200,7 +1202,7 @@ class ToolExecutors:
         seen = json.dumps([t.get("result") for t in (turn or [])], default=str)
 
         finder = {Household: "search_households", Recommendation: "read_recommendations", Invoice: "read_billing",
-                  OnboardingCase: "read_onboarding_cases", Meeting: "read_meetings"}
+                  OnboardingCase: "read_onboarding_cases", Meeting: "read_meetings", ClientReport: "read_reports"}
 
         async def grounded(field: str, model) -> uuid.UUID:
             value = _parse_uuid(inputs.get(field) or "", field)
@@ -1223,6 +1225,8 @@ class ToolExecutors:
             route = f"{route}/{await grounded('case_id', OnboardingCase)}"
         elif view == "meeting":
             route = f"{route}/{await grounded('meeting_id', Meeting)}"
+        elif view == "report":
+            route = f"{route}/{await grounded('report_id', ClientReport)}"
 
         return {"view": route, "kind": view, "message": f"The {label} view is open beside the conversation."}
 
@@ -1390,7 +1394,7 @@ class ToolExecutors:
             raise ExecutorError(f"There is no task status '{status}'. Use {', '.join(tasks.STATUSES)}.")
         household_id = None
         if inputs.get("household_id"):
-            household_id = (await self._task_household(inputs["household_id"])).id
+            household_id = (await self._own_household(inputs["household_id"])).id
         rows = await tasks.for_firm(self.session, self.firm_id, status=status, household_id=household_id,
                                     assigned_to=self.user_id if inputs.get("assigned_to_me") else None)
         today = await self._today()
@@ -1406,7 +1410,7 @@ class ToolExecutors:
                         + f". {overdue} overdue, {unassigned} unassigned."),
         }
 
-    async def _task_household(self, value: Any) -> Household:
+    async def _own_household(self, value: Any) -> Household:
         hid = _parse_uuid(value, "household_id")
         hh = await self.session.get(Household, hid)
         if hh is None or hh.firm_id != self.firm_id:
@@ -1489,7 +1493,7 @@ class ToolExecutors:
     async def _new_task(self, inputs: dict[str, Any]):
         from app.aurea_core import tasks
 
-        household = await self._task_household(inputs["household_id"]) if inputs.get("household_id") else None
+        household = await self._own_household(inputs["household_id"]) if inputs.get("household_id") else None
         assignee = await self._task_assignee(inputs.get("assignee_name") or "me")
         due = await self._task_due(inputs.get("due_date"))
         try:
@@ -1503,6 +1507,104 @@ class ToolExecutors:
         self.session.add(task)
         return await self._task_result(task, f"Added '{task.title}'.")
 
+    async def _report(self, inputs: dict[str, Any]):
+        from app.aurea_core import reports
+
+        try:
+            return await reports.get(self.session, self.firm_id, _parse_uuid(inputs.get("report_id") or "", "report_id"))
+        except reports.ReportError as exc:
+            raise ExecutorError(str(exc))
+
+    async def read_reports(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The Reports page's list and one report (api.engage.list_reports / get_report). Only this
+        firm's reports, and a household is read back inside the firm before it filters anything."""
+        from app.aurea_core import reports
+
+        if inputs.get("report_id"):
+            report = await self._report(inputs)
+            view = (await reports.views(self.session, self.firm_id, [report], full=True))[0]
+            return {"reports": [view], "shown": 1, "total": 1, "status": view["status"],
+                    "drafts": int(view["status"] == "draft"), "client_ready": int(view["status"] == "client_ready"),
+                    "awaiting_decision": int(view["awaiting_decision"]),
+                    "message": f"'{report.title}' for {view['household_name']}, {view['n_sections']} section(s)."}
+        status = str(inputs.get("status") or "all").strip().lower()
+        if status not in reports.STATUSES:
+            raise ExecutorError(f"There is no report status '{status}'. Use {', '.join(reports.STATUSES)}.")
+        household_id = (await self._own_household(inputs["household_id"])).id if inputs.get("household_id") else None
+        rows = await reports.for_firm(self.session, self.firm_id, status=status, household_id=household_id)
+        all_views = await reports.views(self.session, self.firm_id, rows)
+        shown = all_views[:self._limit(inputs.get("limit"), 20, 50)]
+        drafts = sum(1 for v in all_views if v["status"] == "draft")
+        ready = sum(1 for v in all_views if v["status"] == "client_ready")
+        waiting = sum(1 for v in all_views if v["awaiting_decision"])
+        return {
+            "reports": shown, "shown": len(shown), "total": len(all_views), "status": status,
+            "drafts": drafts, "client_ready": ready, "awaiting_decision": waiting,
+            "message": (f"{len(all_views)} report(s)" + (f"; showing {len(shown)}" if len(shown) < len(all_views) else "")
+                        + f". {drafts} draft, {ready} with clients, {waiting} awaiting a decision."),
+        }
+
+    async def _withdrawal(self, inputs: dict[str, Any]):
+        """The report and the proposal that put it with the client, or why it cannot be taken back."""
+        from app.aurea_core import reports
+
+        report = await self._report(inputs)
+        if str(report.status) != "client_ready":
+            raise ExecutorError(f"'{report.title}' is not with the client.")
+        rec = (await reports.proposals(self.session, self.firm_id)).get(str(report.id))
+        if not reports.withdrawable(report, rec):
+            raise ExecutorError(f"'{report.title}' has no approved proposal on record, so it cannot be withdrawn here.")
+        return report, rec
+
+    async def withdraw_report(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Roll back the proposal that published the report, through the same exactly-once,
+        role-checked path the Recommendations page uses (app.atlas.runtime.rollback)."""
+        from app.atlas.runtime import rollback
+        from app.aurea_core import reports
+        from app.core import decision_rights
+        from app.models.identity import User
+
+        report, rec = await self._withdrawal(inputs)
+        try:
+            decision_rights.check(self.role, rec.agent_key, "rollback")
+        except decision_rights.DecisionForbidden as exc:
+            raise ExecutorError(str(exc))
+        user = await self.session.get(User, self.user_id)
+        try:
+            await rollback(self.session, firm=await self._firm(), recommendation=rec, actor_id=self.user_id,
+                           actor_label=f"{user.full_name} ({user.role})", note=inputs.get("note"))
+        except ValueError as exc:
+            raise ExecutorError(str(exc))
+        view = (await reports.views(self.session, self.firm_id, [report]))[0]
+        return {"reports": [view], "shown": 1, "total": 1, "status": view["status"], "drafts": 1, "client_ready": 0,
+                "awaiting_decision": 0, "message": f"'{report.title}' is withdrawn: {view['household_name']} can no longer read it."}
+
+    async def _report_decision_preview(self, inputs: dict[str, Any]) -> dict[str, Any] | None:
+        """A decision on a report's proposal names the report, because approving it puts it in front
+        of the client. Any other proposal, or an id that does not resolve, keeps the plain card and
+        fails, if it fails, where it always has."""
+        from app.aurea_core import reports
+        from app.models.enums import AgentKey
+        from app.models.governance import Recommendation
+
+        try:
+            rec = await self.session.get(Recommendation, _parse_uuid(inputs.get("recommendation_id") or "", "recommendation_id"))
+        except ExecutorError:
+            return None
+        if rec is None or rec.firm_id != self.firm_id or str(rec.agent_key) != AgentKey.RESEARCH_REPORTING.value:
+            return None
+        report = await reports.of_proposal(self.session, self.firm_id, rec.payload)
+        if report is None:
+            return None
+        if str(rec.status) != "proposed":
+            raise ExecutorError(f"Already {rec.status}")
+        household = await self.session.get(Household, report.household_id)
+        action = str(inputs.get("action") or "")
+        return {"rows": [{"label": k, "value": str(v)} for k, v in (
+            ("Report", report.title), ("Client", household.name if household else None), ("Period", report.period),
+            ("Decision", "Approve, and the client can read it" if action == "approve" else action.title()),
+        ) if v]}
+
     async def preview_change(self, tool_key: str, inputs: dict[str, Any]) -> dict[str, Any] | None:
         """What a Confirm card names, so a person confirms this task and not "a task": the record
         and the change, read now, as label and value rows. Raises what executing would raise, so
@@ -1510,9 +1612,19 @@ class ToolExecutors:
         def rows(*pairs: tuple[str, Any]) -> dict[str, Any]:
             return {"rows": [{"label": k, "value": str(v)} for k, v in pairs if v]}
 
+        from app.aurea_core import firm_time, tasks
+
+        if tool_key == "decide_recommendation":
+            return await self._report_decision_preview(inputs)
+        if tool_key == "withdraw_report":
+            report, _ = await self._withdrawal(inputs)
+            household = await self.session.get(Household, report.household_id)
+            return rows(("Report", report.title), ("Client", household.name if household else None),
+                        ("Period", report.period),
+                        ("Published", firm_time.spoken(firm_time.today(await self._firm(), report.published_at))
+                         if report.published_at else None))
         if tool_key not in ("complete_task", "assign_task", "create_task"):
             return None
-        from app.aurea_core import firm_time, tasks
 
         def due(task) -> str | None:
             return firm_time.spoken(task.due_date) if task.due_date else None

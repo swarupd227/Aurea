@@ -16,6 +16,8 @@ import { OnboardingCaseView } from "@/components/views/OnboardingCaseView";
 import { MeetingsView } from "@/components/views/MeetingsView";
 import { MeetingView } from "@/components/views/MeetingView";
 import { TasksView } from "@/components/views/TasksView";
+import { ReportsView } from "@/components/views/ReportsView";
+import { ReportView } from "@/components/views/ReportView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
 
@@ -63,6 +65,10 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return pane.id ? <MeetingView key={pane.id} id={pane.id} /> : null;
     case "tasks":
       return <TasksView />;
+    case "reports":
+      return <ReportsView />;
+    case "report":
+      return pane.id ? <ReportView key={pane.id} id={pane.id} /> : null;
   }
 }
 

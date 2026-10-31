@@ -5,10 +5,12 @@ goals-based projections, scenario/stress outcomes, and values-aligned framing. P
 ClientReport (draft); on approval it is marked client-ready and surfaces in Canvas."""
 from __future__ import annotations
 
+import uuid
+
 from app.agents._common import firm_voice, narrate
 from app.agents._signals import goal_projections, positions_of
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import knowledge, planning
+from app.aurea_core import firm_time, knowledge, planning, reports
 from app.aurea_core.graph import household_brain
 from app.core.db import utcnow
 from app.models.engagement import ClientReport
@@ -74,20 +76,27 @@ class ResearchReportingAgent(BaseAgent):
                          if excluded_present else ". No holdings conflict with your stated exclusions."))},
         ]
 
-        # Persist the report as a draft.
-        period = f"As at {utcnow().date().isoformat()}"
-        report = ClientReport(firm_id=ctx.firm.id, household_id=sensed["household_id"],
-                              title=f"Portfolio review — {hh['name']}", period=period,
-                              status=ReportStatus.DRAFT, sections=sections,
-                              data={"allocation": allocation, "risk": risk, "stress": stress, "goals": goals})
-        ctx.session.add(report)
+        # Persist the report as a draft. One still waiting for a decision is rewritten rather than
+        # left behind: the open proposal only follows the newest, so an older draft could never be
+        # approved and would sit in the list for good.
+        hid = uuid.UUID(str(sensed["household_id"]))
+        period = f"As at {firm_time.today(ctx.firm).isoformat()}"
+        title = f"Portfolio review — {hh['name']}"
+        data = {"allocation": allocation, "risk": risk, "stress": stress, "goals": goals}
+        report = await reports.waiting_draft(ctx.session, ctx.firm.id, hid)
+        if report:
+            report.title, report.period, report.sections, report.data = title, period, sections, data
+        else:
+            report = ClientReport(firm_id=ctx.firm.id, household_id=hid, title=title, period=period,
+                                  status=ReportStatus.DRAFT, sections=sections, data=data)
+            ctx.session.add(report)
         await ctx.session.flush()
 
         return [RecommendationDraft(
             title=f"Client report — {hh['name']}",
             summary=f"Client-ready report drafted: {len(sections)} sections, values-aligned, grounded in firm research.",
             rationale=commentary, confidence=0.82, priority=3,
-            subject=Subject("household", sensed["household_id"], hh["name"]),
+            subject=Subject("household", hid, hh["name"]),
             payload={"report_id": str(report.id), "sections": sections, "period": period},
             evidence={"data_confidence": totals["data_confidence"], "var_95_1y": risk["var_95_1y"]},
             citations=cites,
@@ -111,7 +120,7 @@ class ResearchReportingAgent(BaseAgent):
 
     async def act(self, ctx: AgentContext, recommendation) -> dict:
         payload = recommendation.modified_payload or recommendation.payload or {}
-        report = await ctx.session.get(ClientReport, payload.get("report_id"))
+        report = await reports.of_proposal(ctx.session, ctx.firm.id, payload)
         if report:
             report.status = ReportStatus.CLIENT_READY
             report.published_at = utcnow()
@@ -121,8 +130,7 @@ class ResearchReportingAgent(BaseAgent):
         return {"executed": False, "note": "Report not found."}
 
     async def rollback(self, ctx: AgentContext, recommendation) -> dict:
-        payload = recommendation.payload or {}
-        report = await ctx.session.get(ClientReport, payload.get("report_id"))
+        report = await reports.of_proposal(ctx.session, ctx.firm.id, recommendation.payload)
         if report:
             report.status = ReportStatus.DRAFT
             report.published_at = None

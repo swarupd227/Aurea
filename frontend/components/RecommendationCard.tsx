@@ -7,6 +7,7 @@ import { money, titleCase } from "@/lib/format";
 import { Markdown } from "@/app/workspace/components/Markdown";
 import { ConfidenceBar, StatusBadge, TierBadge } from "./ui";
 import { DriftBars } from "./Charts";
+import { ViewLink } from "./views/ViewNav";
 
 const pctf = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -135,10 +136,13 @@ export default function RecommendationCard({
   rec,
   onDecided,
   defaultOpen = false,
+  inReport = false,
 }: {
   rec: any;
   onDecided?: (r: any) => void;
   defaultOpen?: boolean;
+  /** Shown under the report it is about, so it needs no link to that report. */
+  inReport?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen || rec.status === "proposed");
   const [mode, setMode] = useState<null | "approve" | "modify" | "dismiss" | "revise">(null);
@@ -272,6 +276,12 @@ export default function RecommendationCard({
           </div>
           <h3 className="font-semibold text-ink mt-2">{rec.title}</h3>
           {rec.subject_label && <div className="mt-1 text-xs text-ink-muted">{rec.subject_label}</div>}
+          {payload.report_id && !inReport && (
+            <ViewLink href={`/studio/reports/${payload.report_id}`} data-testid="rec-open-report"
+              className="mt-2 inline-flex items-center gap-1 text-xs text-ink underline">
+              <FileText size={12} aria-hidden /> Read the report
+            </ViewLink>
+          )}
           {payload.revision_note && (
             <div className="mt-2">
               <span className={chipMuted} title="Your revision instruction"><Wand2 size={12} /> Revised: “{payload.revision_note}”</span>
@@ -670,8 +680,8 @@ function MeetingBriefView({ brief }: { brief: any }) {
 }
 
 // "refreshed" is bookkeeping (how often a scheduled run re-found this, and the run's id), shown as a
-// chip in the header rather than as a row with a raw id in it.
-const NOISY_KEYS = ["execution_result", "rollback_result", "meeting_id", "signal", "brief", "refreshed"];
+// chip in the header rather than as a row with a raw id in it. A report's text is read on the report.
+const NOISY_KEYS = ["execution_result", "rollback_result", "meeting_id", "signal", "brief", "refreshed", "report_id", "sections"];
 
 function renderVal(v: any): string {
   if (v === null || v === undefined) return "—";

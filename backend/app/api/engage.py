@@ -12,11 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_firm
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
-from app.aurea_core import firm_time, tasks as task_core
+from app.aurea_core import firm_time, reports as report_core, tasks as task_core
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
 from app.models.client_experience import Message
-from app.models.engagement import ClientReport, Meeting
+from app.models.engagement import Meeting
 from app.models.enums import AgentKey, MessageAuthor
 from app.models.governance import Recommendation
 from app.models.graph import Household
@@ -200,21 +200,13 @@ async def message_inbox(firm: Firm = Depends(current_firm), db: AsyncSession = D
 # ── Client reports ────────────────────────────────────────────────────────────
 @router.get("/reports")
 async def list_reports(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    rows = (
-        await db.execute(select(ClientReport).where(ClientReport.firm_id == firm.id).order_by(ClientReport.created_at.desc()))
-    ).scalars().all()
-    names = {h.id: h.name for h in (await db.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all()}
-    return [{"id": str(r.id), "title": r.title, "period": r.period, "status": r.status,
-             "household_id": str(r.household_id), "household_name": names.get(r.household_id),
-             "n_sections": len(r.sections or [])} for r in rows]
+    return await report_core.views(db, firm.id, await report_core.for_firm(db, firm.id))
 
 
 @router.get("/reports/{report_id}")
 async def get_report(report_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    r = await db.get(ClientReport, report_id)
-    if not r or r.firm_id != firm.id:
+    try:
+        r = await report_core.get(db, firm.id, report_id)
+    except report_core.ReportError:
         raise HTTPException(status_code=404, detail="Report not found")
-    hh = await db.get(Household, r.household_id)
-    return {"id": str(r.id), "title": r.title, "period": r.period, "status": r.status,
-            "household_name": hh.name if hh else None, "sections": r.sections, "data": r.data,
-            "published_at": r.published_at.isoformat() if r.published_at else None}
+    return (await report_core.views(db, firm.id, [r], full=True))[0]
