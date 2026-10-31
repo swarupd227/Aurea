@@ -14,10 +14,7 @@ Status last checked against the code: **2026-10-31**, by keyword search and read
 
 ## In progress
 
-| ID | Item | State |
-|---|---|---|
-| B-01 | Not now and Messages live | Pushed in `8c9e5a3`, `03c04d2`; not confirmed live. Protection from the same deploy is confirmed |
-| B-02 | Risk questionnaire scoring | Built and tested, not deployed. Needs `seed.risk_assessment_backfill` and `seed.ai_governance_backfill` |
+Nothing is being built right now.
 
 ## Next, in order
 
@@ -49,6 +46,8 @@ Status last checked against the code: **2026-10-31**, by keyword search and read
 | B-38 | Capacity from wealth against needs | §5.2 | The questionnaire cannot see it, so capacity comes from horizon, income stability and liquidity alone |
 | B-39 | Questionnaire by person or entity | §5.2 | One set of answers per household, compared with every mandate; a trust is not asked separately |
 | B-40 | IPS drafting reads the assessment | §5.5 | `ips_drafting` reads the mandate's profile, not the scored tolerance and capacity. Do with B-04 |
+| B-43 | A decided Confirm card stays in the thread | - | `api/threads.py:469` keeps only cards still waiting, so the "Confirmed" and "Not now" chips never show. A declined message leaves only "I'll send that now" in the thread, even after a reload. Astra itself knows it was declined |
+| B-44 | Astra overstates "not taken" | §5.2 | Live on 31 Oct it said nothing on file supports a mandate's profile. The tool knows only that no questionnaire is recorded here; a firm may hold one elsewhere |
 
 ## Parked until a client needs it
 
@@ -80,11 +79,11 @@ B-26 waits for a real custodian statement.
 |---|---|---|
 | B-31 | Wash-sale guard holding a trade back | Tests only; on the 00:00 UTC run on 31 Oct it applied to Morrison and held nothing |
 | B-32 | Protection record, end and income Confirm flows | Tests only |
-| B-33 | Three protection tools in the AI inventory | Not checked; needs an admin session |
 | B-34 | Reconciliation import and resolve Confirm cards in chat, and a real proposal | Tests only |
 | B-35 | Tasks Confirm write | Tests only |
 | B-36 | Crediting an invoice, and Astra's prepare-run and credit tools | Tests only |
 | B-41 | A real questionnaire through to an adviser's decision | Tests only; no client answers are seeded and none should be invented |
+| B-45 | India demo through Astra's chat and a real consent | The firm, its 5 households and the licences API are live on 31 Oct; chat and consent not tried there |
 
 ## Done
 
@@ -101,4 +100,6 @@ B-26 waits for a real custodian statement.
 | Tasks in the conversation | `e424ae8` |
 | Protection slice 1 and its fixes, confirmed live 31 Oct | `7a06b89`, `569bc13`, `3028117` |
 | Reports in the conversation | `8326cd9` |
-| Messages in the conversation | `03c04d2` |
+| B-01: Messages in the conversation, and Astra hearing Not now, confirmed live 31 Oct | `03c04d2`, `8c9e5a3` |
+| B-02: Risk questionnaire scoring, confirmed live 31 Oct; a real questionnaire through to a decision is B-41 | `aef1e1a` |
+| B-33: Three protection tools in the AI inventory, confirmed live 31 Oct | `7a06b89` |
