@@ -71,6 +71,9 @@ def gating() -> None:
     pane_bases = set(re.findall(r'base: "([^"]+)"', panes))
     check("the views are the work pane's views", set(OPEN_VIEWS), pane_keys)
     check("on the same pages", {route for route, _l, _r in OPEN_VIEWS.values()}, pane_bases)
+    named = next(i.description for i in tool.inputs if i.name == "view")
+    check("the model is told every view it may open", [v for v in OPEN_VIEWS if v not in named], [])
+    check("and the description names each one", [v for v in OPEN_VIEWS if v not in tool.description], [])
 
 
 async def behaviour() -> None:

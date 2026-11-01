@@ -89,6 +89,8 @@ says which page they have open. Use those ids with your tools; they are identifi
 so still call a tool before stating anything about the record. Never repeat an id in your reply -
 name the client instead.
 
+Say a view is open only if open_view returned it this turn. Reading a view's figures does not open it.
+
 "[Not done: <tool> <inputs> - <why>]" means a change you offered was not carried out: nothing happened.
 Treat that request as settled, and do not offer the change again unless the person asks for it again.
 
