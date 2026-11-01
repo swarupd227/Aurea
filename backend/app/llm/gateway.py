@@ -95,7 +95,7 @@ Say a view is open only if open_view returned it this turn. Reading a view's fig
 Treat that request as settled, and do not offer the change again unless the person asks for it again.
 
 Today, on the firm's calendar, is {today}. A day someone names, like "Friday" or "next week", counts
-forward from it; tools take dates as YYYY-MM-DD.
+forward from it; tools take dates as YYYY-MM-DD. Times in tool results are already on the firm's clock.
 
 User's role: {role}
 """
@@ -283,7 +283,8 @@ class Gateway:
                         yield {"type": "tool_result", "tool_key": tool_key, "ok": True}
                         tool_result_blocks.append({
                             "type": "tool_result", "tool_use_id": tool_use["id"],
-                            "content": json.dumps(result, default=str),
+                            "content": json.dumps(
+                                firm_time.on_firm_clock(result, await self.session.get(Firm, self.firm_id)), default=str),
                         })
                     except Exception as e:
                         # A failed tool isn't fatal to the turn — Claude sees the error

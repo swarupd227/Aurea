@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -38,7 +38,7 @@ from app.models.enums import MessageAuthor, UserRole
 from app.models.graph import Household, Person
 from app.models.identity import User
 from app.models.tenant import Firm
-from app.models.thread import PendingAction, Thread, ThreadKind, ToolCall, ToolCallStatus
+from app.models.thread import PendingAction, Thread, ThreadKind, ToolCall, ToolCall, ToolCallStatus
 
 PASS, FAIL = [], []
 R = UserRole
@@ -311,6 +311,28 @@ async def behaviour() -> None:
             check("a client who names another household still gets only their own", "Your report is ready" in [m["body"] for m in own], False)
             check("no message reached the other firm", (await s.execute(select(func.count()).select_from(Message).where(
                 Message.household_id == their_hh.id))).scalar_one(), 1)
+
+            print("\n=== the model reads a time on the firm's clock, and the record keeps it in UTC ===")
+            s.add(Message(id=uuid.uuid4(), firm_id=mine.id, household_id=quiet.id, author_role=MessageAuthor.AGENT, author_name="Billing",
+                          body="Your fee invoice has been issued.", created_at=datetime(2026, 10, 26, 19, 34, 12, tzinfo=timezone.utc)))
+            told: list = []
+            rounds = iter([tool_round("read_messages", {"household_id": str(quiet.id)}), say("Sent on the 27th.")])
+
+            async def listening(**kw):
+                told.append([*kw["messages"]])
+                for ev in next(rounds):
+                    yield ev
+            t9 = Thread(firm_id=mine.id, kind=ThreadKind.ASK_ASTRA, created_by_user_id=sophie.id, title="t9")
+            s.add(t9)
+            await s.commit()
+            gw_mod.llm_service.stream = listening
+            async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t9.id, "When was that sent?"):
+                pass
+            handed = str(told[-1][-1]["content"])
+            check("the model is handed the firm's day", "2026-10-27T08:34:12+13:00" in handed, True)
+            check("  and not the server's", "2026-10-26T19:34" in handed, False)
+            stored = (await s.execute(select(ToolCall).where(ToolCall.tool_key == "read_messages").order_by(ToolCall.started_at.desc(), ToolCall.id))).scalars().all()
+            check("the stored result is untouched", any(str((c.result or {}).get("messages", [{}])[0].get("created_at", "")).startswith("2026-10-26T19:34") for c in stored if (c.result or {}).get("messages")), True)
     finally:
         await engine.dispose()
 

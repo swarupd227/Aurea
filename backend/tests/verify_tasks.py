@@ -324,6 +324,19 @@ async def behaviour() -> None:
             async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t9.id, "When is Friday?"):
                 pass
             check("the model is told today without a tool", f"Today, on the firm's calendar, is {firm_time.spoken(today)}." in seen.get("system", ""), True)
+
+            print("\n=== a moment in a tool result reads on the firm's clock ===")
+            nz, ny = Firm(jurisdiction="NZ"), Firm(jurisdiction="US")
+            sent = "2026-10-26T19:34:12.444892+00:00"
+            check("the live fee notice is the 27th in Auckland", firm_time.on_firm_clock(sent, nz), "2026-10-27T08:34:12+13:00")
+            check("and the 26th in New York", firm_time.on_firm_clock(sent, ny), "2026-10-26T15:34:12-04:00")
+            check("no offset means UTC", firm_time.on_firm_clock("2026-10-26T19:34:12", nz), "2026-10-27T08:34:12+13:00")
+            check("a Z too", firm_time.on_firm_clock("2026-10-26T19:34:12Z", nz), "2026-10-27T08:34:12+13:00")
+            check("a datetime object too", firm_time.on_firm_clock(datetime(2026, 10, 26, 19, 34, 12, tzinfo=timezone.utc), nz), "2026-10-27T08:34:12+13:00")
+            check("deep in a result", firm_time.on_firm_clock({"a": [{"at": sent}]}, nz), {"a": [{"at": "2026-10-27T08:34:12+13:00"}]})
+            kept = {"due": "2026-10-26", "id": "19f28514-7587-4d09-b9f3-6015891ef375", "n": 3, "gone": None, "flag": True,
+                    "body": f"Sent at {sent} to you", "bad": "2026-13-45T99:99:99"}
+            check("a date, an id, a figure, a sentence and a non-date stay as they are", firm_time.on_firm_clock(kept, nz), kept)
     finally:
         await engine.dispose()
 
