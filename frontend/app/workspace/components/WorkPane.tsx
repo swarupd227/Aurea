@@ -21,6 +21,10 @@ import { ReportView } from "@/components/views/ReportView";
 import { MessagesView } from "@/components/views/MessagesView";
 import { MessageThreadView } from "@/components/views/MessageThreadView";
 import { IpsView } from "@/components/views/IpsView";
+import { ReviewsView } from "@/components/views/ReviewsView";
+import { ProtectionView } from "@/components/views/ProtectionView";
+import { RiskProfilesView } from "@/components/views/RiskProfilesView";
+import { ReconciliationView } from "@/components/views/ReconciliationView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
 
@@ -78,6 +82,14 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return pane.id ? <MessageThreadView key={pane.id} householdId={pane.id} /> : null;
     case "ips":
       return <IpsView />;
+    case "reviews":
+      return <ReviewsView />;
+    case "protection":
+      return <ProtectionView />;
+    case "risk_profiles":
+      return <RiskProfilesView />;
+    case "reconciliation":
+      return <ReconciliationView />;
   }
 }
 

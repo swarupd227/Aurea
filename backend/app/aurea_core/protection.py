@@ -295,12 +295,13 @@ async def _person(session: AsyncSession, firm_id: uuid.UUID, person_id: uuid.UUI
     return person
 
 
-async def record_policy(
+async def prepare_policy(
     session: AsyncSession, firm_id: uuid.UUID, *, person_id: uuid.UUID, kind: str, provider: str,
-    source_document: str, recorded_by: str, sum_insured=None, annual_benefit=None, benefit_to_age=None,
-    annual_premium=None, policy_number: str | None = None, expires_on: date | None = None,
-    currency: str | None = None, today: date | None = None,
+    source_document: str, sum_insured=None, annual_benefit=None, benefit_to_age=None, annual_premium=None,
+    expires_on: date | None = None, today: date | None = None,
 ) -> dict:
+    """Everything recording a policy would refuse, refused without writing, so a Confirm card that
+    would only fail is not shown. Returns what would be written."""
     today = today or utcnow().date()
     person = await _person(session, firm_id, person_id)
     if person.household_id is None:
@@ -322,18 +323,47 @@ async def record_policy(
         benefit, benefit_to_age = None, None
     if expires_on is not None and expires_on < today:
         raise ProtectionError(f"This policy expired on {expires_on.isoformat()}, so it is not cover.")
+    return {"person": person, "kind": kind, "provider": provider.strip()[:120], "source": source, "sum_insured": lump,
+            "annual_benefit": benefit, "benefit_to_age": int(benefit_to_age) if benefit_to_age else None,
+            "annual_premium": premium, "expires_on": expires_on}
+
+
+async def record_policy(
+    session: AsyncSession, firm_id: uuid.UUID, *, person_id: uuid.UUID, kind: str, provider: str,
+    source_document: str, recorded_by: str, sum_insured=None, annual_benefit=None, benefit_to_age=None,
+    annual_premium=None, policy_number: str | None = None, expires_on: date | None = None,
+    currency: str | None = None, today: date | None = None,
+) -> dict:
+    ready = await prepare_policy(session, firm_id, person_id=person_id, kind=kind, provider=provider,
+                                 source_document=source_document, sum_insured=sum_insured, annual_benefit=annual_benefit,
+                                 benefit_to_age=benefit_to_age, annual_premium=annual_premium, expires_on=expires_on,
+                                 today=today)
+    person = ready["person"]
     firm = await session.get(Firm, firm_id)
     row = ProtectionPolicy(
         firm_id=firm_id, household_id=person.household_id, person_id=person.id, kind=kind,
-        provider=provider.strip()[:120], policy_number=(policy_number or "").strip()[:64] or None,
-        sum_insured=lump, annual_benefit=benefit, benefit_to_age=int(benefit_to_age) if benefit_to_age else None,
-        annual_premium=premium, currency=(currency or firm.base_currency or "NZD").upper()[:3], expires_on=expires_on,
-        status="in_force", source_document=source, recorded_by=recorded_by,
+        provider=ready["provider"], policy_number=(policy_number or "").strip()[:64] or None,
+        sum_insured=ready["sum_insured"], annual_benefit=ready["annual_benefit"], benefit_to_age=ready["benefit_to_age"],
+        annual_premium=ready["annual_premium"], currency=(currency or firm.base_currency or "NZD").upper()[:3],
+        expires_on=expires_on, status="in_force", source_document=ready["source"], recorded_by=recorded_by,
     )
     session.add(row)
     await session.flush()
     return {"policy_id": str(row.id), "person": person.full_name, "household_id": str(person.household_id),
-            "kind": kind, "provider": row.provider, "sum_insured": lump, "annual_benefit": benefit}
+            "kind": kind, "provider": row.provider, "sum_insured": ready["sum_insured"],
+            "annual_benefit": ready["annual_benefit"]}
+
+
+async def prepare_end(session: AsyncSession, firm_id: uuid.UUID, policy_id: uuid.UUID, *, reason: str) -> dict:
+    """What ending would refuse, refused without writing, and the policy it would end."""
+    if len((reason or "").strip()) < 3:
+        raise ProtectionError("Say why this cover ended - lapsed, cancelled, claimed, replaced.")
+    row = await session.get(ProtectionPolicy, policy_id)
+    if row is None or row.firm_id != firm_id:
+        raise ProtectionError("That policy was not found.")
+    if row.status != "in_force":
+        raise ProtectionError("This policy has already ended.")
+    return {"policy": row, "person": await session.get(Person, row.person_id), "reason": reason.strip()[:255]}
 
 
 async def end_policy(session: AsyncSession, firm_id: uuid.UUID, policy_id: uuid.UUID, *, reason: str, by: str,
@@ -355,14 +385,22 @@ async def end_policy(session: AsyncSession, firm_id: uuid.UUID, policy_id: uuid.
     return {"policy_id": str(row.id), "status": "ended", "provider": row.provider, "kind": row.kind}
 
 
-async def record_income(session: AsyncSession, firm_id: uuid.UUID, *, person_id: uuid.UUID, annual_income,
-                        source_document: str, recorded_by: str) -> dict:
-    """Record a person's income where the tax modules already read it, with where it came from."""
+async def prepare_income(session: AsyncSession, firm_id: uuid.UUID, *, person_id: uuid.UUID, annual_income,
+                         source_document: str) -> dict:
+    """What recording an income would refuse, refused without writing, and what it would replace."""
     person = await _person(session, firm_id, person_id)
     amount = _money(annual_income, "The annual income")
     if amount is None:
         raise ProtectionError("Give the annual income.")
-    source = _source(source_document)
+    return {"person": person, "amount": amount, "source": _source(source_document), "previous": income_of(person)}
+
+
+async def record_income(session: AsyncSession, firm_id: uuid.UUID, *, person_id: uuid.UUID, annual_income,
+                        source_document: str, recorded_by: str) -> dict:
+    """Record a person's income where the tax modules already read it, with where it came from."""
+    ready = await prepare_income(session, firm_id, person_id=person_id, annual_income=annual_income,
+                                 source_document=source_document)
+    person, amount, source = ready["person"], ready["amount"], ready["source"]
     profile = dict(person.profile or {})
     tax = dict(profile.get("tax") or {})
     previous = tax.get("annual_income")

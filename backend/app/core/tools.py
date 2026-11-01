@@ -735,7 +735,10 @@ TOOLS: dict[str, Tool] = {
             "onboarding board), onboarding_case (one case; give case_id), meetings (the meeting list), meeting (one "
             "meeting's brief, transcript and notes; give meeting_id), tasks (the follow-ups), reports (the client reports), "
             "report (one report; give report_id), messages (the client inbox), message_thread (one client's secure "
-            "messages; give household_id) or ips (each mandate against its accepted IPS). It returns no data and states nothing - answer "
+            "messages; give household_id), ips (each mandate against its accepted IPS), reviews (when each client was last "
+            "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
+            "(questionnaire results beside what is on file) or reconciliation (the book against custodian statements, and "
+            "its breaks). It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages); an id from memory or an earlier turn is refused."
@@ -1294,6 +1297,10 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "messages": ("/studio/messages", "Messages", {_A, _P}),
     "message_thread": ("/studio/messages", "Messages", {_A, _P}),
     "ips": ("/studio/ips", "IPS monitoring", {_A, _P, _PT, _C, _O, _B}),
+    "reviews": ("/studio/reviews", "Client reviews", {_A, _P, _PT, _C, _O, _B}),
+    "protection": ("/studio/protection", "Protection", {_A, _P, _PT, _C, _O, _B}),
+    "risk_profiles": ("/studio/risk-profiles", "Risk profiles", {_A, _P, _PT, _C, _O, _B}),
+    "reconciliation": ("/studio/reconciliation", "Reconciliation", {_PT, _C, _O, _B}),
 }
 
 

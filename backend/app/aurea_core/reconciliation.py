@@ -259,16 +259,13 @@ def _clean_positions(rows) -> dict[str, Decimal]:
     return out
 
 
-async def import_statement(
-    session: AsyncSession, firm_id: uuid.UUID, *, account_id: uuid.UUID, as_of: date,
-    positions, cash_balance=None, currency: str | None = None, custodian: str | None = None,
-    source_document: str, imported_by: str, today: date | None = None,
+async def prepare_statement(
+    session: AsyncSession, firm_id: uuid.UUID, *, account_id: uuid.UUID, as_of: date, positions, cash_balance=None,
+    currency: str | None = None, source_document: str, today: date | None = None,
 ) -> dict:
-    """Record the custodian's statement for an account and compare it with the book.
-
-    Refused when it cannot be taken at face value: no source document, a date in the future, a
-    currency other than the account's, a statement older than the one already on file, or
-    nothing on it to compare. A second statement for the same date replaces the first."""
+    """Refused when a statement cannot be taken at face value: no source document, a date in the
+    future, a currency other than the account's, a statement older than the one already on file, or
+    nothing on it to compare. Writes nothing, so a Confirm card that would only fail is not shown."""
     today = today or utcnow().date()
     account = await session.get(Account, account_id)
     if account is None or account.firm_id != firm_id:
@@ -295,7 +292,22 @@ async def import_statement(
         newest = max(p.as_of for p in prior)
         raise ReconciliationError(f"A statement dated {newest.isoformat()} is already on file for this "
                                   f"account, which is newer than {as_of.isoformat()}.")
-    for p in prior:
+    return {"account": account, "cleaned": cleaned, "cash": cash, "currency": cur, "prior": prior}
+
+
+async def import_statement(
+    session: AsyncSession, firm_id: uuid.UUID, *, account_id: uuid.UUID, as_of: date,
+    positions, cash_balance=None, currency: str | None = None, custodian: str | None = None,
+    source_document: str, imported_by: str, today: date | None = None,
+) -> dict:
+    """Record the custodian's statement for an account and compare it with the book. A second
+    statement for the same date replaces the first."""
+    today = today or utcnow().date()
+    ready = await prepare_statement(session, firm_id, account_id=account_id, as_of=as_of, positions=positions,
+                                    cash_balance=cash_balance, currency=currency, source_document=source_document,
+                                    today=today)
+    account, cleaned, cash, cur = ready["account"], ready["cleaned"], ready["cash"], ready["currency"]
+    for p in ready["prior"]:
         p.status = "superseded"      # the same date, replaced; an older date, no longer the current one
 
     stmt = CustodyStatement(
@@ -615,15 +627,32 @@ async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | N
     }
 
 
-async def resolve_break(session: AsyncSession, firm_id: uuid.UUID, break_id: uuid.UUID, *,
-                        action: str, note: str | None, by: str) -> dict:
-    """Move a break on. The row is locked and its status re-read, so two people acting on the
-    same break cannot both succeed; the second is told where it already stands."""
+def _decision(action: str, note: str | None) -> str | None:
     if action not in ACTIONS:
         raise ReconciliationError(f"Unknown action '{action}'. Choose one of: {', '.join(ACTIONS)}.")
     note = (note or "").strip() or None
     if action in NOTE_REQUIRED and not note:
         raise ReconciliationError("Say why - a break set aside or marked fixed needs a reason on the record.")
+    return note
+
+
+async def prepare_resolution(session: AsyncSession, firm_id: uuid.UUID, break_id: uuid.UUID, *, action: str,
+                             note: str | None) -> dict:
+    """What moving a break on would refuse, refused without writing, and the break and its account."""
+    note = _decision(action, note)
+    row = await session.get(ReconBreak, break_id)
+    if row is None or row.firm_id != firm_id:
+        raise ReconciliationError("That break was not found.")
+    if str(row.status) not in ACTIONS[action]:
+        raise ReconciliationError(f"This break is already {row.status}, so it cannot be marked {action}.")
+    return {"break": row, "account": await session.get(Account, row.account_id), "note": note}
+
+
+async def resolve_break(session: AsyncSession, firm_id: uuid.UUID, break_id: uuid.UUID, *,
+                        action: str, note: str | None, by: str) -> dict:
+    """Move a break on. The row is locked and its status re-read, so two people acting on the
+    same break cannot both succeed; the second is told where it already stands."""
+    note = _decision(action, note)
     row = (await session.execute(
         select(ReconBreak).where(ReconBreak.id == break_id, ReconBreak.firm_id == firm_id)
         .with_for_update().execution_options(populate_existing=True)

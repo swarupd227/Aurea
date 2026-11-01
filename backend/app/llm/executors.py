@@ -454,7 +454,7 @@ class ToolExecutors:
         except protection.ProtectionError as exc:
             raise ExecutorError(str(exc))
 
-    async def record_protection_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
+    def _policy_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from datetime import date as _date
 
         expires = None
@@ -463,14 +463,47 @@ class ToolExecutors:
                 expires = _date.fromisoformat(str(inputs["expires_on"]))
             except ValueError:
                 raise ExecutorError("expires_on must be a date, YYYY-MM-DD.")
-        person_id = _parse_uuid(inputs.get("person_id"), "person_id")
+        return {"person_id": _parse_uuid(inputs.get("person_id"), "person_id"),
+                "kind": str(inputs.get("kind") or "").strip().lower(), "provider": inputs.get("provider") or "",
+                "source_document": inputs.get("source_document") or "", "sum_insured": inputs.get("sum_insured"),
+                "annual_benefit": inputs.get("annual_benefit"), "benefit_to_age": inputs.get("benefit_to_age"),
+                "expires_on": expires}
+
+    async def record_protection_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        args = self._policy_args(inputs)
         result = await self._protection_write(lambda p, by: p.record_policy(
-            self.session, self.firm_id, person_id=person_id, kind=str(inputs.get("kind") or "").strip().lower(),
-            provider=inputs.get("provider") or "", source_document=inputs.get("source_document") or "", recorded_by=by,
-            sum_insured=inputs.get("sum_insured"), annual_benefit=inputs.get("annual_benefit"),
-            benefit_to_age=inputs.get("benefit_to_age"), expires_on=expires))
+            self.session, self.firm_id, recorded_by=by, **args))
         result["message"] = f"Recorded {result['kind']} cover with {result['provider']} for {result['person']}."
         return result
+
+    async def _protection_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What a protection Confirm card names, refused for the reasons doing it would be refused."""
+        from app.aurea_core import markets, protection
+
+        firm = await self._firm()
+        say = markets.money_for(firm)
+        kinds = {"life": "Life", "tpd": "Total and permanent disablement", "income_protection": "Income protection"}
+        try:
+            if tool_key == "record_protection_policy":
+                r = await protection.prepare_policy(self.session, self.firm_id, **self._policy_args(inputs))
+                return [("Insured", r["person"].full_name), ("Cover", kinds.get(r["kind"], r["kind"])), ("Provider", r["provider"]),
+                        ("Sum insured", say(r["sum_insured"]) if r["sum_insured"] else None),
+                        ("Annual benefit", say(r["annual_benefit"]) if r["annual_benefit"] else None),
+                        ("Benefit to age", r["benefit_to_age"]), ("Ends on", r["expires_on"]), ("Document", r["source"])]
+            if tool_key == "end_protection_policy":
+                r = await protection.prepare_end(self.session, self.firm_id, _parse_uuid(inputs.get("policy_id"), "policy_id"),
+                                                 reason=inputs.get("reason") or "")
+                p = r["policy"]
+                amount = p.sum_insured if p.sum_insured is not None else p.annual_benefit
+                return [("Insured", r["person"].full_name if r["person"] else None), ("Cover", kinds.get(p.kind, p.kind)),
+                        ("Provider", p.provider), ("Amount", say(float(amount)) if amount is not None else None),
+                        ("Reason", r["reason"])]
+            r = await protection.prepare_income(self.session, self.firm_id, person_id=_parse_uuid(inputs.get("person_id"), "person_id"),
+                                                annual_income=inputs.get("annual_income"), source_document=inputs.get("source_document") or "")
+            return [("Person", r["person"].full_name), ("Income", say(r["amount"])),
+                    ("Replaces", say(r["previous"]) if r["previous"] is not None else "Nothing on file"), ("Document", r["source"])]
+        except protection.ProtectionError as exc:
+            raise ExecutorError(str(exc))
 
     async def end_protection_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
         policy_id = _parse_uuid(inputs.get("policy_id"), "policy_id")
@@ -523,6 +556,22 @@ class ToolExecutors:
         result["message"] = (f"{result['mandate']} is now {result['risk_profile']} with {result['capacity_for_loss']} capacity."
                              if result["decision"] == "adopt" else f"{result['mandate']} keeps its {result['risk_profile']} profile.")
         return result
+
+    async def _risk_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What the risk decision's Confirm card names, refused for the reasons deciding would be refused."""
+        from app.aurea_core import risk_profile
+
+        decision = str(inputs.get("decision") or "").strip().lower()
+        try:
+            r = await risk_profile.prepare_decision(self.session, self.firm_id, _parse_uuid(inputs.get("mandate_id"), "mandate_id"),
+                                                    decision=decision, reason=inputs.get("reason"))
+        except risk_profile.RiskProfileError as exc:
+            raise ExecutorError(str(exc))
+        a = r["assessment"]
+        on_file = f"{r['profile'] or 'None'} · {r['capacity'] or 'no capacity'}"
+        return [("Mandate", r["mandate"].name), ("Decision", "Adopt the questionnaire" if decision == "adopt" else "Keep what is on file"),
+                ("On file", on_file), ("Questionnaire", f"{a.indicated} · {a.capacity}"),
+                ("Becomes", f"{a.indicated} · {a.capacity}" if decision == "adopt" else on_file), ("Reason", r["reason"])]
 
     async def read_client_reviews(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import reviews
@@ -721,18 +770,54 @@ class ToolExecutors:
         result["message"] = "; ".join(parts) + "."
         return result
 
-    async def import_custody_statement(self, inputs: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _statement_day(inputs: dict[str, Any]):
         from datetime import date as _date
 
+        try:
+            return _date.fromisoformat(str(inputs.get("as_of") or ""))
+        except ValueError:
+            raise ExecutorError("as_of must be a date, YYYY-MM-DD.")
+
+    async def _recon_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What a reconciliation Confirm card names, refused for the reasons doing it would be refused."""
+        from app.aurea_core import firm_time, markets, reconciliation
+
+        firm = await self._firm()
+        say = markets.money_for(firm)
+        try:
+            if tool_key == "import_custody_statement":
+                as_of = self._statement_day(inputs)
+                r = await reconciliation.prepare_statement(
+                    self.session, self.firm_id, account_id=_parse_uuid(inputs.get("account_id"), "account_id"), as_of=as_of,
+                    positions=inputs.get("positions"), cash_balance=inputs.get("cash_balance"),
+                    source_document=inputs.get("source_document") or "")
+                held = ", ".join(f"{s} {float(q):g}" for s, q in r["cleaned"].items())
+                return [("Account", r["account"].name), ("Custodian", r["account"].custodian), ("As at", firm_time.spoken(as_of)),
+                        ("Positions", f"{len(r['cleaned'])}: {held}" if r["cleaned"] else "None"),
+                        ("Cash", say(float(r["cash"])) if r["cash"] is not None else "Not on the statement"),
+                        ("Document", (inputs.get("source_document") or "").strip())]
+            action = str(inputs.get("action") or "").strip().lower()
+            r = await reconciliation.prepare_resolution(self.session, self.firm_id, _parse_uuid(inputs.get("break_id"), "break_id"),
+                                                        action=action, note=inputs.get("note"))
+            b = r["break"]
+            cash = b.symbol is None
+            show = (lambda v: say(float(v))) if cash else (lambda v: f"{float(v):g}")
+            return [("Break", b.symbol or "Cash"), ("Account", r["account"].name if r["account"] else None),
+                    ("Book", show(b.book_value)), ("Custodian", show(b.custodian_value)), ("Difference", show(b.difference)),
+                    ("Decision", {"explained": "Accept as explained", "escalated": "Escalate to the custodian",
+                                  "dismissed": "Set aside", "resolved": "Mark as fixed"}[action]),
+                    ("Reason", r["note"])]
+        except reconciliation.ReconciliationError as exc:
+            raise ExecutorError(str(exc))
+
+    async def import_custody_statement(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import reconciliation
         from app.models.identity import User
 
         if self.role not in (UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM):
             raise ExecutorError("Importing a custodian statement is for operations and the portfolio team.")
-        try:
-            as_of = _date.fromisoformat(str(inputs.get("as_of") or ""))
-        except ValueError:
-            raise ExecutorError("as_of must be a date, YYYY-MM-DD.")
+        as_of = self._statement_day(inputs)
         user = await self.session.get(User, self.user_id)
         try:
             result = await reconciliation.import_statement(
@@ -2015,6 +2100,12 @@ class ToolExecutors:
             return rows(*await self._review_preview(tool_key, inputs))
         if tool_key == "record_ips":
             return rows(*await self._ips_preview(inputs))
+        if tool_key in ("record_protection_policy", "end_protection_policy", "record_income"):
+            return rows(*await self._protection_preview(tool_key, inputs))
+        if tool_key == "decide_risk_profile":
+            return rows(*await self._risk_preview(inputs))
+        if tool_key in ("import_custody_statement", "resolve_recon_break"):
+            return rows(*await self._recon_preview(tool_key, inputs))
         if tool_key not in ("complete_task", "assign_task", "create_task"):
             return None
 

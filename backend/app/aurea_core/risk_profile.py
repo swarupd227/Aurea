@@ -254,9 +254,10 @@ async def model_equity(session: AsyncSession, model_id: uuid.UUID | None) -> flo
     return sum(float(w) for w in weights)
 
 
-async def decide(session: AsyncSession, firm_id: uuid.UUID, mandate_id: uuid.UUID, *, decision: str,
-                 reason: str | None, by: str) -> dict:
-    """An adviser's decision on the household's latest answers, for one mandate."""
+async def prepare_decision(session: AsyncSession, firm_id: uuid.UUID, mandate_id: uuid.UUID, *, decision: str,
+                           reason: str | None) -> dict:
+    """Everything a decision would refuse, refused without writing, so a Confirm card that would only
+    fail is not shown. Returns the mandate, the answers it rests on and what is on file now."""
     if decision not in DECISIONS:
         raise RiskProfileError(f"The decision must be one of: {', '.join(DECISIONS)}.")
     mandate = await session.get(Mandate, mandate_id)
@@ -294,6 +295,17 @@ async def decide(session: AsyncSession, firm_id: uuid.UUID, mandate_id: uuid.UUI
                 raise RiskProfileError(
                     f"The {model.name} model holds {equity:.0%} equity, above the {ceiling:.0%} ceiling for {row.capacity} "
                     f"capacity. Move this mandate to a model within the ceiling first.")
+    return {"mandate": mandate, "assessment": row, "reason": reason, "profile": profile, "capacity": capacity}
+
+
+async def decide(session: AsyncSession, firm_id: uuid.UUID, mandate_id: uuid.UUID, *, decision: str,
+                 reason: str | None, by: str) -> dict:
+    """An adviser's decision on the household's latest answers, for one mandate."""
+    ready = await prepare_decision(session, firm_id, mandate_id, decision=decision, reason=reason)
+    mandate, row, reason = ready["mandate"], ready["assessment"], ready["reason"]
+    profile, capacity = ready["profile"], ready["capacity"]
+    suit = dict(mandate.suitability or {})
+    if decision == "adopt":
         suit["risk_profile"] = row.indicated
         suit["capacity_for_loss"] = row.capacity
         for key, value in (("risk_tolerance", row.indicated), ("risk_capacity", row.capacity)):

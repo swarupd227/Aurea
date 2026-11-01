@@ -10,7 +10,8 @@ import { viewsForRole } from "./nav";
 
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
-  | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips";
+  | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -39,6 +40,10 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "messages", pattern: /^\/studio\/messages\/?$/, base: "/studio/messages", label: "Messages" },
   { key: "message_thread", pattern: /^\/studio\/messages\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/messages", label: "Messages" },
   { key: "ips", pattern: /^\/studio\/ips\/?$/, base: "/studio/ips", label: "IPS monitoring" },
+  { key: "reviews", pattern: /^\/studio\/reviews\/?$/, base: "/studio/reviews", label: "Client reviews" },
+  { key: "protection", pattern: /^\/studio\/protection\/?$/, base: "/studio/protection", label: "Protection" },
+  { key: "risk_profiles", pattern: /^\/studio\/risk-profiles\/?$/, base: "/studio/risk-profiles", label: "Risk profiles" },
+  { key: "reconciliation", pattern: /^\/studio\/reconciliation\/?$/, base: "/studio/reconciliation", label: "Reconciliation" },
 ];
 
 /** The list a single-item view sits under, so one opened straight from the conversation still has
@@ -136,6 +141,23 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_ips_monitoring":
     case "record_ips":
       return "/studio/ips";
+    case "read_client_reviews":
+    case "record_client_review":
+    case "set_review_cadence":
+    case "book_client_review":
+      return "/studio/reviews";
+    case "read_protection":
+    case "record_protection_policy":
+    case "end_protection_policy":
+    case "record_income":
+      return "/studio/protection";
+    case "read_risk_profiles":
+    case "decide_risk_profile":
+      return "/studio/risk-profiles";
+    case "read_reconciliation":
+    case "import_custody_statement":
+    case "resolve_recon_break":
+      return "/studio/reconciliation";
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";
