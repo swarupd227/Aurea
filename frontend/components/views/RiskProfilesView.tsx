@@ -7,13 +7,14 @@ import { useApi } from "@/lib/hooks";
 import { withRef } from "@/lib/refs";
 import { RiskStatusChip, type RiskHousehold, type RiskMandate } from "@/app/workspace/components/artifacts/RiskProfileCard";
 import { ViewLink, useViewNav } from "./ViewNav";
-import { ViewHeader } from "./ViewHeader";
+import { AllClients, ViewHeader } from "./ViewHeader";
 
 const OPEN = ["more_risk", "less_risk", "none_on_file"];
 
-/** What each client's questionnaire indicates, beside what is on file. In the work pane, a decision
- * is the conversation's tool behind its Confirm card; on a page the controls act directly. */
-export function RiskProfilesView() {
+/** What each client's questionnaire indicates, beside what is on file, or one client's when opened on
+ * it. In the work pane, a decision is the conversation's tool behind its Confirm card; on a page the
+ * controls act directly. */
+export function RiskProfilesView({ household = null }: { household?: string | null }) {
   const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any>("/api/risk-profiles");
   const [msg, setMsg] = useState<string | null>(null);
@@ -24,7 +25,8 @@ export function RiskProfilesView() {
   if (loading || !data) return <div className="view-container"><SkeletonList count={4} /></div>;
   const s = data.summary;
   const canDecide: boolean = data.can_decide;
-  const homes: RiskHousehold[] = data.households;
+  const homes: RiskHousehold[] = household ? data.households.filter((h: RiskHousehold) => h.household_id === household) : data.households;
+  const one = household ? homes[0] ?? null : null;
   const rows = homes.flatMap((h) => (h.mandates.length ? h.mandates.map((m) => ({ h, m })) : [{ h, m: null as RiskMandate | null }]));
 
   async function decide() {
@@ -57,28 +59,30 @@ export function RiskProfilesView() {
 
   return (
     <div className="view-container">
-      <ViewHeader title="Risk profiles" />
+      <ViewHeader title={one ? `Risk profiles · ${one.household}` : "Risk profiles"} actions={one ? <AllClients href="/studio/risk-profiles" /> : undefined} />
       {msg && <div className="mb-4 font-mono text-xs text-ink-muted" role="status" data-testid="risk-profile-status">{msg}</div>}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="risk-profile-summary">
-        {[
-          ["More risk than answers", s.more_risk, s.more_risk ? "text-crit" : "text-ink-muted"],
-          ["Less risk than answers", s.less_risk, s.less_risk ? "text-warn" : "text-ink-muted"],
-          ["Aligned", s.aligned + s.kept, "text-ok"],
-          ["Not taken", s.not_taken + s.not_scored, s.not_taken + s.not_scored ? "text-warn" : "text-ink-muted"],
-        ].map(([label, v, tone]: any) => (
-          <Card key={label}>
-            <div className="tile-label">{label}</div>
-            <div className={`font-mono text-2xl tabular-nums ${tone}`}>{v}</div>
-          </Card>
-        ))}
-      </div>
+      {!household && (
+        <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="risk-profile-summary">
+          {[
+            ["More risk than answers", s.more_risk, s.more_risk ? "text-crit" : "text-ink-muted"],
+            ["Less risk than answers", s.less_risk, s.less_risk ? "text-warn" : "text-ink-muted"],
+            ["Aligned", s.aligned + s.kept, "text-ok"],
+            ["Not taken", s.not_taken + s.not_scored, s.not_taken + s.not_scored ? "text-warn" : "text-ink-muted"],
+          ].map(([label, v, tone]: any) => (
+            <Card key={label}>
+              <div className="tile-label">{label}</div>
+              <div className={`font-mono text-2xl tabular-nums ${tone}`}>{v}</div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Card className="mb-4">
         <div className="flex flex-wrap gap-1.5" data-testid="risk-profile-basis">
           <span className="chip text-ink-muted">indicated: lower of tolerance and capacity</span>
           <span className="chip text-ink-muted">equity ceiling: low 40% · medium 70% · high 100%</span>
-          {s.tension > 0 && <span className="chip text-warn">{s.tension} with tolerance and capacity apart</span>}
+          {!household && s.tension > 0 && <span className="chip text-warn">{s.tension} with tolerance and capacity apart</span>}
         </div>
       </Card>
 

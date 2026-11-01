@@ -11,7 +11,7 @@ import {
   BasisChip, CashFlowChip, kindText, outsideBook, type BalanceItem, type BalanceSheet,
 } from "@/app/workspace/components/artifacts/BalanceSheetCard";
 import { ViewLink, useViewNav } from "./ViewNav";
-import { ViewHeader } from "./ViewHeader";
+import { AllClients, ViewHeader } from "./ViewHeader";
 
 interface Panel {
   b: BalanceSheet;
@@ -42,9 +42,10 @@ function spoken(p: Panel): string {
   return p.person_id ? withRef(withHousehold, "person", p.person_id) : withHousehold;
 }
 
-/** What each household owns, owes and spends beyond the managed book. In the work pane, a change is
- * the conversation's tool behind its Confirm card; on a page the form acts directly. */
-export function NetWorthView() {
+/** What each household owns, owes and spends beyond the managed book, or one household's when opened
+ * on it. In the work pane, a change is the conversation's tool behind its Confirm card; on a page the
+ * form acts directly. */
+export function NetWorthView({ household = null }: { household?: string | null }) {
   const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any>("/api/balance-sheet");
   const [msg, setMsg] = useState<string | null>(null);
@@ -56,7 +57,8 @@ export function NetWorthView() {
   if (error) return <div className="view-container"><Card><ErrorState what="net worth" message={error} onRetry={refetch} /></Card></div>;
   if (loading || !data) return <div className="view-container"><SkeletonList count={4} /></div>;
   const s = data.summary;
-  const rows: BalanceSheet[] = data.households;
+  const rows: BalanceSheet[] = household ? data.households.filter((b: BalanceSheet) => b.household_id === household) : data.households;
+  const one = household ? rows[0] ?? null : null;
   const kinds: Record<string, string[]> = data.kinds;
   const canRecord: boolean = data.can_record;
   const isDebt = !!panel && kinds.liability.includes(panel.kind);
@@ -121,19 +123,24 @@ export function NetWorthView() {
 
   return (
     <div className="view-container">
-      <ViewHeader title="Net worth" />
+      <ViewHeader title={one ? `Net worth · ${one.household}` : "Net worth"} actions={one ? <AllClients href="/studio/net-worth" /> : undefined} />
       {msg && <div className="mb-4 font-mono text-xs text-ink-muted" role="status" data-testid="balance-status">{msg}</div>}
 
       <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="balance-summary">
-        {[
+        {(one ? [
+          ["Managed", money(one.assets.managed), "text-ink-muted"],
+          ["Outside the book", money(outsideBook(one)), "text-ink-muted"],
+          ["Owed", one.basis === "assets_only" ? "—" : money(one.liabilities.total), "text-ink-muted"],
+          ["Net worth", money(one.net_worth), "text-ink"],
+        ] : [
           ["With debts on file", s.with_liabilities, "text-ok"],
           ["Assets only", s.assets_only, s.assets_only ? "text-warn" : "text-ink-muted"],
           ["Cash flow assessed", s.cash_flow_assessed, "text-ink-muted"],
           ["Not converted", s.not_converted, s.not_converted ? "text-warn" : "text-ink-muted"],
-        ].map(([label, v, tone]: any) => (
+        ]).map(([label, v, tone]: any) => (
           <Card key={label}>
             <div className="tile-label">{label}</div>
-            <div className={`font-mono text-2xl tabular-nums ${tone}`}>{v}</div>
+            <div className={`font-mono tabular-nums ${one ? "text-lg" : "text-2xl"} ${tone}`}>{v}</div>
           </Card>
         ))}
       </div>
@@ -153,10 +160,14 @@ export function NetWorthView() {
               <thead>
                 <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
                   <th className="px-4 py-2 font-medium">Client</th>
-                  <th className="px-4 py-2 text-right font-medium">Managed</th>
-                  <th className="px-4 py-2 text-right font-medium">Outside the book</th>
-                  <th className="px-4 py-2 text-right font-medium">Owed</th>
-                  <th className="px-4 py-2 text-right font-medium">Net worth</th>
+                  {!one && (
+                    <>
+                      <th className="px-4 py-2 text-right font-medium">Managed</th>
+                      <th className="px-4 py-2 text-right font-medium">Outside the book</th>
+                      <th className="px-4 py-2 text-right font-medium">Owed</th>
+                      <th className="px-4 py-2 text-right font-medium">Net worth</th>
+                    </>
+                  )}
                   <th className="px-4 py-2 font-medium">Status</th>
                   <th className="px-4 py-2 text-right font-medium">Act</th>
                 </tr>
@@ -164,18 +175,22 @@ export function NetWorthView() {
               <tbody className="divide-y divide-border-soft">
                 {rows.map((b) => {
                   const open = panel?.b.household_id === b.household_id ? panel : null;
-                  const showing = opened === b.household_id;
+                  const showing = !!one || opened === b.household_id;
                   return (
                     <Fragment key={b.household_id}>
                       <tr>
                         <td className="px-4 py-2">
                           <ViewLink href={`/studio/clients/${b.household_id}`} className="text-ink hover:underline" data-testid="balance-client">{b.household}</ViewLink>
                         </td>
-                        <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{money(b.assets.managed)}</td>
-                        <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted"
-                          title={`held away ${money(b.assets.held_away)} · retirement ${money(b.assets.retirement_accounts)} · cash ${money(b.assets.cash)} · property ${money(b.assets.property)}`}>{money(outsideBook(b))}</td>
-                        <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{b.basis === "assets_only" ? "—" : money(b.liabilities.total)}</td>
-                        <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink">{money(b.net_worth)}</td>
+                        {!one && (
+                          <>
+                            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{money(b.assets.managed)}</td>
+                            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted"
+                              title={`held away ${money(b.assets.held_away)} · retirement ${money(b.assets.retirement_accounts)} · cash ${money(b.assets.cash)} · property ${money(b.assets.property)}`}>{money(outsideBook(b))}</td>
+                            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{b.basis === "assets_only" ? "—" : money(b.liabilities.total)}</td>
+                            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink">{money(b.net_worth)}</td>
+                          </>
+                        )}
                         <td className="px-4 py-2">
                           <div className="flex flex-wrap gap-1.5">
                             <BasisChip basis={b.basis} />
@@ -186,7 +201,7 @@ export function NetWorthView() {
                         <td className="px-4 py-2 text-right">
                           {!open && (
                             <div className="flex justify-end gap-1.5">
-                              {b.items.length + b.not_converted.length > 0 && (
+                              {!one && b.items.length > 0 && (
                                 <button className="btn-outline text-xs" data-testid="balance-items" aria-expanded={showing}
                                   onClick={() => setOpened(showing ? null : b.household_id)}>Items</button>
                               )}
@@ -202,7 +217,7 @@ export function NetWorthView() {
                           <td colSpan={7} className="bg-border-soft/30 px-4 py-3">
                             <table className="w-full text-xs" data-testid="balance-item-rows">
                               <tbody className="divide-y divide-border-soft">
-                                {[...b.items, ...b.not_converted].map((i) => (
+                                {b.items.map((i) => (
                                   <tr key={i.id} title={i.source_document}>
                                     <td className="py-1.5 pr-3 text-ink">{i.name}<span className="ml-1 text-ink-muted">{i.person ?? "joint"}</span></td>
                                     <td className="py-1.5 pr-3 text-ink-muted">{kindText(i.kind)}</td>

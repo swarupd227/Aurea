@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useViewNav, useViewTitle } from "./ViewNav";
+import { ViewLink, useViewNav, useViewTitle } from "./ViewNav";
 
 /** A view's title row. On a page it is the page's heading; in the work pane the pane's own header
  * already carries the title (and breadcrumbs), so only the figures and actions are shown. No
@@ -29,6 +29,11 @@ export function ViewHeader({
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
+}
+
+/** The way back to every client, from a view opened on one. */
+export function AllClients({ href }: { href: string }) {
+  return <ViewLink href={href} className="btn-outline text-xs" data-testid="view-all-clients">All clients</ViewLink>;
 }
 
 export const chip = "chip bg-border-soft text-ink-soft";

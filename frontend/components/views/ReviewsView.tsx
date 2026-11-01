@@ -9,7 +9,7 @@ import {
   ReviewStatusChip, reviewDay, reviewFees, topicText, type ReviewHousehold,
 } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { ViewLink, useViewNav } from "./ViewNav";
-import { ViewHeader } from "./ViewHeader";
+import { AllClients, ViewHeader } from "./ViewHeader";
 
 type Panel =
   | { kind: "record"; h: ReviewHousehold; held_on: string; covered: string[]; notes: string; meeting_id: string | null }
@@ -28,9 +28,10 @@ function spoken(p: Panel): string {
   return withRef(`Change the review cadence for ${who} to every ${p.months} months. Reason: ${p.reason.trim()}`, "household", p.h.household_id);
 }
 
-/** When each client was last reviewed and when the next is due. In the work pane, a change is the
- * conversation's tool behind its Confirm card; on a page the controls act directly. */
-export function ReviewsView() {
+/** When each client was last reviewed and when the next is due, or one client's when opened on it. In
+ * the work pane, a change is the conversation's tool behind its Confirm card; on a page the controls act
+ * directly. */
+export function ReviewsView({ household = null }: { household?: string | null }) {
   const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any>("/api/reviews");
   const [msg, setMsg] = useState<string | null>(null);
@@ -40,7 +41,8 @@ export function ReviewsView() {
   if (error) return <div className="view-container"><Card><ErrorState what="client reviews" message={error} onRetry={refetch} /></Card></div>;
   if (loading || !data) return <div className="view-container"><SkeletonList count={4} /></div>;
   const s = data.summary;
-  const homes: ReviewHousehold[] = data.households;
+  const homes: ReviewHousehold[] = household ? data.households.filter((h: ReviewHousehold) => h.household_id === household) : data.households;
+  const one = household ? homes[0] ?? null : null;
   const topics: string[] = data.topics;
   const cadences: number[] = data.cadences;
   const canRecord: boolean = data.can_record;
@@ -92,30 +94,32 @@ export function ReviewsView() {
 
   return (
     <div className="view-container">
-      <ViewHeader title="Client reviews" />
+      <ViewHeader title={one ? `Client reviews · ${one.household}` : "Client reviews"} actions={one ? <AllClients href="/studio/reviews" /> : undefined} />
       {msg && <div className="mb-4 font-mono text-xs text-ink-muted" role="status" data-testid="review-page-status">{msg}</div>}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="review-summary">
-        {[
-          ["Overdue", s.overdue, s.overdue ? "text-crit" : "text-ink-muted"],
-          [`Due in ${data.due_soon_days} days`, s.due_soon, s.due_soon ? "text-warn" : "text-ink-muted"],
-          ["On track", s.on_track, "text-ok"],
-          ["No review on record", s.no_record, s.no_record ? "text-warn" : "text-ink-muted"],
-        ].map(([label, v, tone]: any) => (
-          <Card key={label}>
-            <div className="tile-label">{label}</div>
-            <div className={`font-mono text-2xl tabular-nums ${tone}`}>{v}</div>
-          </Card>
-        ))}
-      </div>
+      {!household && (
+        <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="review-summary">
+          {[
+            ["Overdue", s.overdue, s.overdue ? "text-crit" : "text-ink-muted"],
+            [`Due in ${data.due_soon_days} days`, s.due_soon, s.due_soon ? "text-warn" : "text-ink-muted"],
+            ["On track", s.on_track, "text-ok"],
+            ["No review on record", s.no_record, s.no_record ? "text-warn" : "text-ink-muted"],
+          ].map(([label, v, tone]: any) => (
+            <Card key={label}>
+              <div className="tile-label">{label}</div>
+              <div className={`font-mono text-2xl tabular-nums ${tone}`}>{v}</div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Card className="mb-4">
         <div className="flex flex-wrap gap-1.5" data-testid="review-basis">
           <span className="chip text-ink-muted">next review: last review + cadence</span>
           <span className="chip text-ink-muted">default every {data.default_cadence_months} months</span>
           <span className="chip text-ink-muted">no record does not mean no review</span>
-          {s.booked > 0 && <span className="chip text-ink">{s.booked} booked</span>}
-          {s.unrecorded_meetings > 0 && <span className="chip text-warn">{s.unrecorded_meetings} with a meeting not recorded</span>}
+          {!household && s.booked > 0 && <span className="chip text-ink">{s.booked} booked</span>}
+          {!household && s.unrecorded_meetings > 0 && <span className="chip text-warn">{s.unrecorded_meetings} with a meeting not recorded</span>}
         </div>
       </Card>
 

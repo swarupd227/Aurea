@@ -66,7 +66,7 @@ export interface PaneMatch {
   /** The entity the view is about, if any: a household or onboarding case id. */
   id?: string;
   /** Query parameters the view reads (Recommendations: `rec`, the proposal to bring to the top;
-   * Billing: `invoice`, the bill to open). */
+   * Billing: `invoice`, the bill to open; a view of every client: `household`, the one to show). */
   query: Record<string, string>;
 }
 
@@ -102,6 +102,8 @@ export function withView(pathname: string, route: string | null): string {
  * Ids come from the result itself, never from the model's prose. */
 export function paneRouteForArtifact(toolKey: string, result: Record<string, any> | null | undefined): string | null {
   const r = result || {};
+  // A result about one client opens the view on that client, not on everyone.
+  const onClient = (route: string) => (typeof r.household_id === "string" ? `${route}?household=${r.household_id}` : route);
   switch (toolKey) {
     case "open_view":
       return typeof r.view === "string" ? r.view : null;
@@ -141,20 +143,20 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
       return r.scope === "household" && typeof r.household_id === "string" ? `/studio/messages/${r.household_id}` : "/studio/messages";
     case "read_ips_monitoring":
     case "record_ips":
-      return "/studio/ips";
+      return onClient("/studio/ips");
     case "read_client_reviews":
     case "record_client_review":
     case "set_review_cadence":
     case "book_client_review":
-      return "/studio/reviews";
+      return onClient("/studio/reviews");
     case "read_protection":
     case "record_protection_policy":
     case "end_protection_policy":
     case "record_income":
-      return "/studio/protection";
+      return onClient("/studio/protection");
     case "read_risk_profiles":
     case "decide_risk_profile":
-      return "/studio/risk-profiles";
+      return onClient("/studio/risk-profiles");
     case "read_reconciliation":
     case "import_custody_statement":
     case "resolve_recon_break":
@@ -162,7 +164,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_balance_sheet":
     case "record_balance_item":
     case "end_balance_item":
-      return "/studio/net-worth";
+      return onClient("/studio/net-worth");
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";

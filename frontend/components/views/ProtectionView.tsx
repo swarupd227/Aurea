@@ -7,14 +7,15 @@ import { useApi } from "@/lib/hooks";
 import { withRef } from "@/lib/refs";
 import { KIND_TEXT, Scenario, money } from "@/app/workspace/components/artifacts/ProtectionCard";
 import { ViewLink, useViewNav } from "./ViewNav";
-import { ViewHeader } from "./ViewHeader";
+import { AllClients, ViewHeader } from "./ViewHeader";
 
 const NEW_POLICY = { person_id: "", kind: "life", provider: "", amount: "", benefit_years: "", expires_on: "", source_document: "" };
 const NEW_INCOME = { person_id: "", annual_income: "", source_document: "" };
 
-/** What happens to a household if an earner dies or cannot work, or someone needs care. In the work
- * pane, a change is the conversation's tool behind its Confirm card; on a page the forms act directly. */
-export function ProtectionView() {
+/** What happens to a household if an earner dies or cannot work, or someone needs care: every client,
+ * or one when opened on it. In the work pane, a change is the conversation's tool behind its Confirm
+ * card; on a page the forms act directly. */
+export function ProtectionView({ household = null }: { household?: string | null }) {
   const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any>("/api/protection");
   const [msg, setMsg] = useState<string | null>(null);
@@ -29,8 +30,10 @@ export function ProtectionView() {
   if (loading || !data) return <div className="view-container"><SkeletonList count={4} /></div>;
   const s = data.summary;
   const canRecord: boolean = data.can_record;
-  const people = data.households.flatMap((h: any) => h.people.map((p: any) => ({ ...p, household: h.household, household_id: h.household_id })));
-  const policies = data.households.flatMap((h: any) => h.policies.map((p: any) => ({ ...p, household: h.household })));
+  const homes: any[] = household ? data.households.filter((h: any) => h.household_id === household) : data.households;
+  const one = household ? homes[0] ?? null : null;
+  const people = homes.flatMap((h: any) => h.people.map((p: any) => ({ ...p, household: h.household, household_id: h.household_id })));
+  const policies = homes.flatMap((h: any) => h.policies.map((p: any) => ({ ...p, household: h.household })));
   const isCare = policy.kind === "long_term_care";
   const isYearly = isCare || policy.kind === "income_protection";
   const care = data.care_basis;
@@ -109,22 +112,24 @@ export function ProtectionView() {
 
   return (
     <div className="view-container">
-      <ViewHeader title="Protection" />
+      <ViewHeader title={one ? `Protection · ${one.household}` : "Protection"} actions={one ? <AllClients href="/studio/protection" /> : undefined} />
       {msg && <div className="mb-4 font-mono text-xs text-ink-muted" role="status" data-testid="protection-status">{msg}</div>}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="protection-summary">
-        {[
-          ["With a gap", s.with_gap, s.with_gap ? "text-crit" : "text-ink-muted"],
-          ["Clear", s.clear, "text-ok"],
-          ["Not assessed", s.not_assessed, s.not_assessed ? "text-warn" : "text-ink-muted"],
-          ["No one to assess", s.no_people, "text-ink-muted"],
-        ].map(([label, v, tone]: any) => (
-          <Card key={label}>
-            <div className="tile-label">{label}</div>
-            <div className={`font-mono text-2xl tabular-nums ${tone}`}>{v}</div>
-          </Card>
-        ))}
-      </div>
+      {!household && (
+        <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="protection-summary">
+          {[
+            ["With a gap", s.with_gap, s.with_gap ? "text-crit" : "text-ink-muted"],
+            ["Clear", s.clear, "text-ok"],
+            ["Not assessed", s.not_assessed, s.not_assessed ? "text-warn" : "text-ink-muted"],
+            ["No one to assess", s.no_people, "text-ink-muted"],
+          ].map(([label, v, tone]: any) => (
+            <Card key={label}>
+              <div className="tile-label">{label}</div>
+              <div className={`font-mono text-2xl tabular-nums ${tone}`}>{v}</div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Card className="mb-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

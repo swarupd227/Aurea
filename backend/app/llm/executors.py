@@ -1832,7 +1832,7 @@ class ToolExecutors:
         firm's - an id from the model's memory is not trusted on its own."""
         import json
 
-        from app.core.tools import OPEN_VIEWS
+        from app.core.tools import ONE_CLIENT_VIEWS, OPEN_VIEWS
         from app.models.billing import Invoice
         from app.models.engagement import ClientReport, Meeting
         from app.models.governance import Recommendation
@@ -1876,6 +1876,10 @@ class ToolExecutors:
             route = f"{route}/{await grounded('report_id', ClientReport)}"
         elif view == "message_thread":
             route = f"{route}/{await grounded('household_id', Household)}"
+        elif view in ONE_CLIENT_VIEWS and inputs.get("household_id"):
+            household = await self.session.get(Household, await grounded("household_id", Household))
+            route = f"{route}?household={household.id}"
+            return {"view": route, "kind": view, "message": f"The {label} view is open beside the conversation, on {household.name} alone."}
 
         return {"view": route, "kind": view, "message": f"The {label} view is open beside the conversation."}
 

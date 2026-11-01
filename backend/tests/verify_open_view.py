@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  — registers every table on Base.metadata
 from app.core.db import Base
-from app.core.tools import OPEN_VIEWS, TOOLS, ToolChangeState, tools_for_role
+from app.core.tools import ONE_CLIENT_VIEWS, OPEN_VIEWS, TOOLS, ToolChangeState, tools_for_role
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.llm.gateway import Gateway
 from app.models.enums import AgentRunStatus, RecommendationStatus, UserRole
@@ -165,6 +165,25 @@ async def behaviour() -> None:
                           ex(R.PORTFOLIO_TEAM).open_view({"view": "recommendations", "recommendation_id": str(rec.id)}, turn=searched))
             await refused("the other firm cannot open this firm's proposal",
                           ex(R.PORTFOLIO_TEAM, theirs).open_view({"view": "recommendations", "recommendation_id": str(rec.id)}, turn=listed))
+
+            print("\n=== A view of every client opens on one ===")
+            for view, route in (("net_worth", "/studio/net-worth"), ("protection", "/studio/protection"), ("reviews", "/studio/reviews"),
+                                ("ips", "/studio/ips"), ("risk_profiles", "/studio/risk-profiles")):
+                one = await ex(R.ADVISER).open_view({"view": view, "household_id": str(chen.id)}, turn=searched)
+                check(f"{view} opens on that client", one["view"], f"{route}?household={chen.id}")
+                check(f"{view} says whose it is", "Chen Family alone" in one["message"], True)
+                check(f"{view} with no id is every client", (await ex(R.ADVISER).open_view({"view": view}))["view"], route)
+            balance = [{"tool_key": "read_balance_sheet", "inputs": {}, "result": {"household_id": str(chen.id), "net_worth": 1}}]
+            check("an id from a balance sheet read this turn", (await ex(R.ADVISER).open_view({"view": "net_worth", "household_id": str(chen.id)}, turn=balance))["view"],
+                  f"/studio/net-worth?household={chen.id}")
+            await refused("a client no tool returned this turn", ex(R.ADVISER).open_view({"view": "net_worth", "household_id": str(other.id)}, turn=searched))
+            await refused("another firm's client", ex(R.ADVISER).open_view({"view": "net_worth", "household_id": str(foreign.id)}, turn=smuggled))
+            check("an id means nothing to a view that cannot use it", (await ex(R.ADVISER).open_view({"view": "tasks", "household_id": str(chen.id)}, turn=searched))["view"], "/studio/tasks")
+            check("the model is told how", all(v in next(i.description for i in TOOLS["open_view"].inputs if i.name == "household_id") for v in ONE_CLIENT_VIEWS), True)
+            panes = (FRONTEND / "lib" / "paneViews.ts").read_text(encoding="utf-8")
+            pane = (FRONTEND / "app" / "workspace" / "components" / "WorkPane.tsx").read_text(encoding="utf-8")
+            check("a card about one client keeps it", panes.count('onClient("/studio/'), 5)
+            check("the pane passes it to each view", pane.count("household={pane.query.household ?? null}"), 5)
 
             billed = [{"tool_key": "explain_invoice", "inputs": {}, "result": {"id": str(bill.id), "number": None}}]
             b = await ex(R.OPERATIONS).open_view({"view": "billing", "invoice_id": str(bill.id)}, turn=billed)

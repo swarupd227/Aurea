@@ -10,7 +10,7 @@ import {
   IpsFindings, IpsStatusChip, measuredText, share, type IpsMandate,
 } from "@/app/workspace/components/artifacts/IpsCard";
 import { ViewLink, useViewNav } from "./ViewNav";
-import { ViewHeader } from "./ViewHeader";
+import { AllClients, ViewHeader } from "./ViewHeader";
 
 interface Panel {
   m: IpsMandate;
@@ -42,7 +42,7 @@ function spoken(p: Panel): string {
 
 /** Each mandate against the IPS its client accepted. In the work pane, recording one is the
  * conversation's tool behind its Confirm card; on a page the form acts directly. */
-export function IpsView() {
+export function IpsView({ household = null }: { household?: string | null }) {
   const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any>("/api/ips");
   const [msg, setMsg] = useState<string | null>(null);
@@ -52,7 +52,8 @@ export function IpsView() {
   if (error) return <div className="view-container"><Card><ErrorState what="IPS monitoring" message={error} onRetry={refetch} /></Card></div>;
   if (loading || !data) return <div className="view-container"><SkeletonList count={4} /></div>;
   const s = data.summary;
-  const rows: IpsMandate[] = data.mandates;
+  const rows: IpsMandate[] = household ? data.mandates.filter((m: IpsMandate) => m.household_id === household) : data.mandates;
+  const one = household ? rows[0] ?? null : null;
   const classes: string[] = data.classes;
   const canRecord: boolean = data.can_record;
 
@@ -98,30 +99,32 @@ export function IpsView() {
 
   return (
     <div className="view-container">
-      <ViewHeader title="IPS monitoring" />
+      <ViewHeader title={one ? `IPS monitoring · ${one.household}` : "IPS monitoring"} actions={one ? <AllClients href="/studio/ips" /> : undefined} />
       {msg && <div className="mb-4 font-mono text-xs text-ink-muted" role="status" data-testid="ips-page-status">{msg}</div>}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="ips-summary">
-        {[
-          ["In breach", s.breach, s.breach ? "text-crit" : "text-ink-muted"],
-          ["Exception accepted", s.excepted, s.excepted ? "text-warn" : "text-ink-muted"],
-          ["Within", s.within, "text-ok"],
-          ["No IPS on file", s.no_ips, s.no_ips ? "text-warn" : "text-ink-muted"],
-        ].map(([label, v, tone]: any) => (
-          <Card key={label}>
-            <div className="tile-label">{label}</div>
-            <div className={`font-mono text-2xl tabular-nums ${tone}`}>{v}</div>
-          </Card>
-        ))}
-      </div>
+      {!household && (
+        <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="ips-summary">
+          {[
+            ["In breach", s.breach, s.breach ? "text-crit" : "text-ink-muted"],
+            ["Exception accepted", s.excepted, s.excepted ? "text-warn" : "text-ink-muted"],
+            ["Within", s.within, "text-ok"],
+            ["No IPS on file", s.no_ips, s.no_ips ? "text-warn" : "text-ink-muted"],
+          ].map(([label, v, tone]: any) => (
+            <Card key={label}>
+              <div className="tile-label">{label}</div>
+              <div className={`font-mono text-2xl tabular-nums ${tone}`}>{v}</div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Card className="mb-4">
         <div className="flex flex-wrap gap-1.5" data-testid="ips-basis">
           <span className="chip text-ink-muted">the IPS outranks the model</span>
           <span className="chip text-ink-muted">no IPS on file does not mean no IPS</span>
           <span className="chip text-ink-muted">an exception lasts {data.exception_days} days</span>
-          {s.outside_model_band > 0 && <span className="chip text-warn">{s.outside_model_band} with no IPS, outside the model's band</span>}
-          {s.not_assessed > 0 && <span className="chip text-ink-muted">{s.not_assessed} not assessed</span>}
+          {!household && s.outside_model_band > 0 && <span className="chip text-warn">{s.outside_model_band} with no IPS, outside the model's band</span>}
+          {!household && s.not_assessed > 0 && <span className="chip text-ink-muted">{s.not_assessed} not assessed</span>}
         </div>
       </Card>
 

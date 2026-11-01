@@ -810,17 +810,20 @@ TOOLS: dict[str, Tool] = {
             "messages; give household_id), ips (each mandate against its accepted IPS), reviews (when each client was last "
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
-            "its breaks) or net_worth (what each household owns, owes and spends). It returns no data and states nothing - answer "
+            "its breaks) or net_worth (what each household owns, owes and spends). ips, reviews, protection, risk_profiles and "
+            "net_worth show every client unless given household_id: when the conversation is about one client, look them up "
+            "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
-            "read_onboarding_cases, read_meetings, read_reports, read_messages); an id from memory or an earlier turn is refused."
+            "read_onboarding_cases, read_meetings, read_reports, read_messages, read_balance_sheet, read_protection, "
+            "read_client_reviews, read_risk_profiles, read_ips_monitoring); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
             ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation or net_worth", required=True),
-            ToolInput("household_id", "uuid", "For client or message_thread: the household, as a tool returned it this turn", required=False),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles or net_worth to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -1376,6 +1379,8 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "reconciliation": ("/studio/reconciliation", "Reconciliation", {_PT, _C, _O, _B}),
     "net_worth": ("/studio/net-worth", "Net worth", {_A, _P, _PT, _C, _O, _B}),
 }
+# The views of every client that can open on one, through `?household=`.
+ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth"}
 
 
 def get_tool(key: str) -> Tool | None:

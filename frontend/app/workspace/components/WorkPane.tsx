@@ -82,17 +82,17 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
     case "message_thread":
       return pane.id ? <MessageThreadView key={pane.id} householdId={pane.id} /> : null;
     case "ips":
-      return <IpsView />;
+      return <IpsView household={pane.query.household ?? null} />;
     case "reviews":
-      return <ReviewsView />;
+      return <ReviewsView household={pane.query.household ?? null} />;
     case "protection":
-      return <ProtectionView />;
+      return <ProtectionView household={pane.query.household ?? null} />;
     case "risk_profiles":
-      return <RiskProfilesView />;
+      return <RiskProfilesView household={pane.query.household ?? null} />;
     case "reconciliation":
       return <ReconciliationView />;
     case "net_worth":
-      return <NetWorthView />;
+      return <NetWorthView household={pane.query.household ?? null} />;
   }
 }
 
@@ -169,7 +169,7 @@ export function WorkPane({ pane }: { pane: PaneMatch }) {
             type="button"
             data-testid="pane-ask"
             onClick={() => {
-              setContextChip({ route, label: matchPaneView(route)?.label || title, id: pane.id ?? pane.query.rec ?? pane.query.invoice });
+              setContextChip({ route, label: matchPaneView(route)?.label || title, id: pane.id ?? pane.query.rec ?? pane.query.invoice ?? pane.query.household });
               setSheetHidden(true);
             }}
             className="flex h-7 shrink-0 items-center gap-1 rounded px-2 text-xs text-ink-muted transition-colors hover:bg-border-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
