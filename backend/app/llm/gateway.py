@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, AsyncGenerator
@@ -44,6 +45,12 @@ from app.llm.service import llm_service
 # in one turn before the gateway stops chaining and just answers with what it has —
 # a guardrail against a confused model looping, not a limit anyone should normally hit.
 MAX_TOOL_ROUNDS = 4
+
+# A reply whose last sentence says what Astra is about to do. The history it reads holds its words and
+# not its tool calls, so it can copy an earlier such line and stop there, with nothing done. Asked once.
+_PROMISED = re.compile(r"(?:^|[.!?:]\s+|\n)\s*(?:I'll|I’ll|I will|I'm going to|I’m going to|Let me(?! know))\b[^.?!\n]*[.:]?$", re.I)
+_ACT_NOW = ("[You said what you would do and called no tool, so nothing has happened. Call the tool now, "
+            "or say in one sentence why you cannot.]")
 
 
 class GatewayError(Exception):
@@ -72,6 +79,9 @@ You can call a tool, see its result, and call another tool in the same turn — 
 answering well takes two or three steps (look up a household, then check a mandate it
 owns, then answer), just do them in sequence rather than stopping to ask the user to
 continue. Once you have what you need, answer in prose; don't narrate empty tool calls.
+
+Earlier turns here show your words and not the tools you called. Saying you will do something does
+not do it: to act, call the tool in that same reply.
 
 State-changing tools (deciding a recommendation, executing orders, updating a goal, running
 an agent) always pause for the user's explicit confirmation before anything happens — that pause is handled
@@ -152,6 +162,7 @@ class Gateway:
         accumulated_text: list[str] = []
         astra_msg: ThreadMessage | None = None
         used_tools: list[dict[str, Any]] = []     # what this turn found, for the follow-up suggestions
+        reminded = False
 
         try:
             for _round in range(MAX_TOOL_ROUNDS):
@@ -171,6 +182,11 @@ class Gateway:
                     accumulated_text.append(round_text)
 
                 if not tool_uses:
+                    if not reminded and _PROMISED.search(round_text.strip()):
+                        reminded = True
+                        messages.append({"role": "assistant", "content": round_text})
+                        messages.append({"role": "user", "content": _ACT_NOW})
+                        continue
                     break  # Claude answered in prose — the turn is done.
 
                 # A message now exists to attach ToolCall rows to. Created once, on

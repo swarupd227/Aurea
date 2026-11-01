@@ -38,7 +38,7 @@ from app.models.enums import TaskStatus, UserRole
 from app.models.graph import Household
 from app.models.identity import User
 from app.models.tenant import Firm
-from app.models.thread import PendingAction, PendingActionStatus, Thread, ThreadKind
+from app.models.thread import MessageRole, PendingAction, PendingActionStatus, Thread, ThreadKind, ThreadMessage
 
 PASS, FAIL = [], []
 R = UserRole
@@ -293,6 +293,34 @@ async def behaviour() -> None:
             async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t8.id, "Thanks"):
                 pass
             check("a confirmed change is not marked", "Not done" in said_to_model(), False)
+
+            print("\n=== saying it is not doing it ===")
+            async def turn(*rounds):
+                t = await thread()
+                gw_mod.llm_service.stream = script(*rounds)
+                events = [e async for e in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t.id, "please")]
+                return t, events, (await s.execute(select(ThreadMessage).where(ThreadMessage.thread_id == t.id, ThreadMessage.role == MessageRole.ASTRA))).scalars().first()
+            t9, events, reply = await turn(say("I'll add that task now."), tool_round("create_task", {"title": "Said, then done"}), say("Done."))
+            check("a promise with no tool is asked to act, and the card comes", [e["tool_key"] for e in events if e["type"] == "pending_action"], ["create_task"])
+            check("  on the thread as one reply", reply.text, "I'll add that task now.")
+            hearing_rounds: list = []
+            rounds = iter([say("Let me do that."), say("That needs a title from you first.")])
+            async def nudged(**kw):
+                hearing_rounds.append(str(kw["messages"][-1]["content"]))
+                for ev in next(rounds):
+                    yield ev
+            t10 = await thread()
+            gw_mod.llm_service.stream = nudged
+            events = [e async for e in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t10.id, "please")]
+            check("  the reminder is said to the model", "called no tool" in hearing_rounds[1], True)
+            stored = (await s.execute(select(ThreadMessage.text).where(ThreadMessage.thread_id == t10.id))).scalars().all()
+            check("  and never stored", any("called no tool" in (x or "") for x in stored), False)
+            check("  its reason reaches the person", "".join(e.get("text", "") for e in events if e["type"] == "token"), "Let me do that.That needs a title from you first.")
+            t11, events, reply = await turn(say("I'll do it."), say("I'll do it now."))
+            check("asked once, then the turn ends", reply.text, "I'll do it.\n\nI'll do it now.")
+            for words in ("The fee is 1.2%.", "Let me know if you want more.", "Shall I go ahead?", "Would you like me to, and I'll check?"):
+                _, events, reply = await turn(say(words))
+                check(f"not a promise: {words}", reply.text, words)
 
             print("\n=== today is the firm's ===")
             # 8pm UTC on a Friday is already Saturday morning in Auckland.
