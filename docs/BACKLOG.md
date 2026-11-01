@@ -51,6 +51,7 @@ Nothing is being built right now.
 | B-52 | Astra blurs "no review on record" | §5.10 | Live on 31 Oct it listed the Chens, reviewed on 14 Sep, among clients paying fees with no review on file. `read_client_reviews` was right. A carried review also reports all four topics as `not_covered` when they are unknown; the page says "not recorded" |
 | B-54 | Approved outreach under the right adviser's name | - | `client_care.act` signs with the first adviser found at the firm, not that client's adviser. Only matters with more than one adviser |
 | B-55 | A report's age at the moment of approval | - | Approving shows the period but no warning. The live Morrison draft is dated 13 Aug, so its figures were 11 weeks old on 31 Oct; a redraft refreshes the same draft |
+| B-72 | Timestamps in tool results are UTC | - | Astra reads them as they stand, so a day can be wrong on the firm's calendar. Live on 1 Nov it said fee notices went out on 26 Oct; they went at 19:34 UTC, which is 27 Oct in New Zealand. "Today" is right (`firm_time`), but a moment inside a result is not converted |
 | B-61 | The signed-in app on a phone | - | `Shell.tsx` keeps a fixed `w-64` sidebar with no breakpoint, so at phone width it takes about half the screen and clips the page beside it. Seen on the client's Canvas |
 | B-63 | What an IPS limit does not do yet | §5.5 | The rebalancer stops a buy at a position limit and a cash floor, and never buys a restricted holding, but it does not sell down a holding already over its limit or restricted unless its class is overweight. The monitor reports those. A position limit also counts a diversified fund as one holding, because an instrument does not say what it is |
 | B-64 | The client sees their IPS | §5.5 | Reading is staff only. A client's Canvas shows no IPS, though the terms are theirs |
@@ -105,7 +106,7 @@ B-26 waits for a real custodian statement.
 
 | Item | Commit |
 |---|---|
-| Messages: what the live check found. An automated notice no longer hides an unanswered client message (the Chen thread), Astra reads a thread before describing it. Not deployed yet. Cross-firm Canvas reads were refused both ways between the NZ and Indian firms, live 31 Oct | The commit that adds this line |
+| Messages: what the live check found. An automated notice no longer hides an unanswered client message (the Chen thread), Astra reads a thread before describing it, both confirmed live 1 Nov. Cross-firm Canvas reads were refused both ways between the NZ and Indian firms, live 31 Oct | `3a0203c` |
 | B-57 to B-60: tax memos with room to finish and each saving credited to its source; the client assistant given goals, targets and written money, and its replies rendered. Tests; not yet live | The commit that adds this line |
 | India demo: what the live check found. The carry-forward on a harvest, memo wording, goals sized with contributions, the client assistant's cut-off replies, a line that read as a data-location claim. Confirmed live 31 Oct, backfill run: ₹0 carried, 4 of 6 goals on track. The memo wording only partly, finished in B-57 | `8427c73`, with `seed/india_demo_backfill.py` |
 | India demo rows 1-3: market layer, licences and consent, per-taxpayer tax, the demonstration firm | `035007d`, `3183767`, `7a10e46` |
