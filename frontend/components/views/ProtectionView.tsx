@@ -9,11 +9,11 @@ import { KIND_TEXT, Scenario, money } from "@/app/workspace/components/artifacts
 import { ViewLink, useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
-const NEW_POLICY = { person_id: "", kind: "life", provider: "", amount: "", expires_on: "", source_document: "" };
+const NEW_POLICY = { person_id: "", kind: "life", provider: "", amount: "", benefit_years: "", expires_on: "", source_document: "" };
 const NEW_INCOME = { person_id: "", annual_income: "", source_document: "" };
 
-/** What happens to a household if an earner dies or cannot work. In the work pane, a change is the
- * conversation's tool behind its Confirm card; on a page the forms act directly. */
+/** What happens to a household if an earner dies or cannot work, or someone needs care. In the work
+ * pane, a change is the conversation's tool behind its Confirm card; on a page the forms act directly. */
 export function ProtectionView() {
   const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any>("/api/protection");
@@ -31,7 +31,9 @@ export function ProtectionView() {
   const canRecord: boolean = data.can_record;
   const people = data.households.flatMap((h: any) => h.people.map((p: any) => ({ ...p, household: h.household, household_id: h.household_id })));
   const policies = data.households.flatMap((h: any) => h.policies.map((p: any) => ({ ...p, household: h.household })));
-  const isIncomeCover = policy.kind === "income_protection";
+  const isCare = policy.kind === "long_term_care";
+  const isYearly = isCare || policy.kind === "income_protection";
+  const care = data.care_basis;
 
   function close() {
     setOpen(null);
@@ -60,9 +62,10 @@ export function ProtectionView() {
   const nameOf = (id: string) => people.find((p: any) => p.person_id === id)?.name ?? "this person";
 
   function askPolicy() {
-    const figure = `${isIncomeCover ? "annual benefit" : "sum insured"} ${policy.amount}`;
+    const figure = `${isYearly ? "annual benefit" : "sum insured"} ${policy.amount}`;
     nav.say?.(withRef(
       `Record a ${policy.kind} policy for ${nameOf(policy.person_id)} with ${policy.provider.trim()}: ${figure}`
+      + `${isCare && policy.benefit_years ? `, paid for ${policy.benefit_years} years` : ""}`
       + `${policy.expires_on ? `, ending on ${policy.expires_on}` : ""}, from the document "${policy.source_document.trim()}".`,
       "person", policy.person_id));
     setPolicy(NEW_POLICY);
@@ -81,7 +84,8 @@ export function ProtectionView() {
     const amount = policy.amount === "" ? null : Number(policy.amount);
     const ok = await run("/api/protection/policies", {
       person_id: policy.person_id, kind: policy.kind, provider: policy.provider, source_document: policy.source_document,
-      sum_insured: isIncomeCover ? null : amount, annual_benefit: isIncomeCover ? amount : null,
+      sum_insured: isYearly ? null : amount, annual_benefit: isYearly ? amount : null,
+      benefit_years: isCare && policy.benefit_years ? Number(policy.benefit_years) : null,
       expires_on: policy.expires_on || null,
     }, (r) => `Recorded ${KIND_TEXT[r.kind] ?? r.kind} cover with ${r.provider} for ${r.person}.`);
     if (ok) setPolicy(NEW_POLICY);
@@ -131,6 +135,9 @@ export function ProtectionView() {
             <span className="chip text-ink-muted">{(data.assumptions.discount_rate * 100).toFixed(0)}% discount</span>
             <span className="chip text-ink-muted">debts on file add to the death need</span>
             <span className="chip text-ink-muted">home and business not counted</span>
+            {care
+              ? <span className="chip text-ink-muted" title={`${care.source} · set by ${care.set_by}`} data-testid="protection-care-basis">care {money(care.annual_cost)} a year · {care.years} years · from age {data.assumptions.care_from_age}</span>
+              : <span className="chip text-warn" data-testid="protection-care-basis">cost of care not set</span>}
             <span className="chip text-ink-muted">not modelled: {data.not_modelled.join(" · ").replace(/_/g, " ")}</span>
           </div>
           <div className="flex gap-2">
@@ -152,13 +159,21 @@ export function ProtectionView() {
                 <option value="life">Life</option>
                 <option value="tpd">Total and permanent disablement</option>
                 <option value="income_protection">Income protection</option>
+                <option value="long_term_care">Long-term care</option>
               </select>
             </label>
             <label className="block">
-              <div className="tile-label">{isIncomeCover ? "Annual benefit" : "Sum insured"}</div>
+              <div className="tile-label">{isYearly ? "Annual benefit" : "Sum insured"}</div>
               <input className="input w-full font-mono" inputMode="decimal" value={policy.amount} aria-label="Amount"
                 onChange={(e) => setPolicy({ ...policy, amount: e.target.value })} />
             </label>
+            {isCare && (
+              <label className="block">
+                <div className="tile-label">Years paid (blank if as long as care lasts)</div>
+                <input className="input w-full font-mono" inputMode="numeric" value={policy.benefit_years} aria-label="Years paid" data-testid="protection-benefit-years"
+                  onChange={(e) => setPolicy({ ...policy, benefit_years: e.target.value })} />
+              </label>
+            )}
             <label className="block">
               <div className="tile-label">Provider</div>
               <input className="input w-full" value={policy.provider} aria-label="Provider" onChange={(e) => setPolicy({ ...policy, provider: e.target.value })} />
@@ -220,18 +235,19 @@ export function ProtectionView() {
         )}
       </Card>
 
-      <h2 className="mb-2 text-sm font-medium text-ink">Earners</h2>
+      <h2 className="mb-2 text-sm font-medium text-ink">People</h2>
       {people.length === 0 ? <Empty>No one to assess.</Empty> : (
         <Card className="mb-4 overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="protection-people">
               <thead>
                 <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
-                  <th className="px-4 py-2 font-medium">Earner</th>
+                  <th className="px-4 py-2 font-medium">Person</th>
                   <th className="px-4 py-2 text-right font-medium">Age · to retirement</th>
                   <th className="px-4 py-2 text-right font-medium">Income</th>
                   <th className="px-4 py-2 text-right font-medium">If they die · {data.currency}</th>
                   <th className="px-4 py-2 text-right font-medium">If they cannot work</th>
+                  <th className="px-4 py-2 text-right font-medium">If they need care</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-soft">
@@ -250,6 +266,7 @@ export function ProtectionView() {
                     </td>
                     <td className="px-4 py-2 text-right" title={p.death.need != null ? `need ${money(p.death.need)}${p.death.debts ? ` including debts ${money(p.death.debts)}` : ""} · cover ${money(p.death.cover)} · assets ${money(p.death.assets)}` : undefined}><Scenario s={p.death} /></td>
                     <td className="px-4 py-2 text-right" title={p.disability.need != null ? `need ${money(p.disability.need)} · cover ${money(p.disability.cover)} · assets ${money(p.disability.assets)}` : undefined}><Scenario s={p.disability} /></td>
+                    <td className="px-4 py-2 text-right" title={p.care.need != null ? `need ${money(p.care.need)} · cover ${money(p.care.cover)} · assets ${money(p.care.assets)}` : undefined}><Scenario s={p.care} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -280,7 +297,7 @@ export function ProtectionView() {
                       <div className="text-xs text-ink-muted">{p.household}</div>
                     </td>
                     <td className="px-4 py-2 text-ink-muted">{KIND_TEXT[p.kind] ?? p.kind} · {p.provider}</td>
-                    <td className="px-4 py-2 text-right font-mono tabular-nums text-ink-muted">{p.currency} {money(p.sum_insured ?? p.annual_benefit)}{p.annual_benefit != null ? " /yr" : ""}</td>
+                    <td className="px-4 py-2 text-right font-mono tabular-nums text-ink-muted">{p.currency} {money(p.sum_insured ?? p.annual_benefit)}{p.annual_benefit != null ? " /yr" : ""}{p.benefit_years != null ? ` · ${p.benefit_years}y` : ""}</td>
                     <td className="px-4 py-2"><span className={`chip ${p.counted ? "text-ok" : "text-ink-muted"}`}>{p.status.replace("_", " ")}</span>{p.expires_on && <span className="chip ml-1 text-ink-muted">to {p.expires_on}</span>}</td>
                     <td className="px-4 py-2 text-right">
                       {canRecord && p.status !== "ended" && (ending?.id === p.id ? (

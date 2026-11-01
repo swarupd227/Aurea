@@ -20,7 +20,6 @@ Nothing is being built right now.
 
 | ID | Item | L100 | Where it stands | Size |
 |---|---|---|---|---|
-| B-06 | Protection slice 2 | §5.4 | No agent raises gaps as proposals; long-term care not modelled | Medium |
 | B-07 | Offboarding | §5.11 | No account closure or transfer-out flow | Medium |
 | B-08 | Approved product list | §5.7 | No manager due diligence or approved list | Medium |
 | B-09 | Equity compensation and concentrated stock | §5.2, §5.4 | Not built | Large |
@@ -76,6 +75,8 @@ B-26 waits for a real custodian statement.
 
 | ID | Decision | Why it is stuck |
 |---|---|---|
+| B-76 | The firm's cost of care | Care reads "not assessed" until a branch leader or administrator sets a yearly cost and years to plan for, from a source. Needs a real figure, and it differs by country, so the Indian firm needs its own |
+| B-77 | Should the protection agent chase what it cannot assess | It raises measured gaps only. On 1 Nov the live NZ book had none, and six households were not assessed for want of an income. A proposal to go and get the income is possible, but it adds six to the queue, and a household with no gap measured is not known to have one |
 | B-27 | PPEF1 real valuation | Needs a real figure and its source |
 | B-28 | Credit and rebill the 13 bills issued on stale prices | Moves money again |
 | B-29 | Hartley and Morrison retirement dates | Seeded goals have James Hartley working to 77 and Robert Morrison to 74, which sets their protection figures |
@@ -87,6 +88,7 @@ B-26 waits for a real custodian statement.
 
 | ID | Item | Proven so far |
 |---|---|---|
+| B-78 | The protection agent and long-term care | The real model on a throwaway database on 1 Nov: a run, a proposal, its Confirm card and a real approval adding the task; a care cost set by a branch leader and refused for an adviser; a care policy recorded and counted. Tests for the rest: clearing, staying quiet, growing, six months, rollback and Tier 3. On the live site it has no gap to raise and no cost of care to work from until B-76 |
 | B-31 | Wash-sale guard holding a trade back | Tests only; on the 00:00 UTC run on 31 Oct it applied to Morrison and held nothing |
 | B-32 | Protection record, end and income Confirm flows | Tests only |
 | B-34 | Reconciliation import and resolve Confirm cards in chat, and a real proposal | Tests only |
@@ -107,7 +109,8 @@ B-26 waits for a real custodian statement.
 
 | Item | Commit |
 |---|---|
-| B-72: a moment in a tool result reaches the model on the firm's clock (`firm_time.on_firm_clock`); stored results stay in UTC. Tests only, not deployed | The commit that adds this line |
+| B-06: Protection slice 2. The protection agent raises measured gaps, and long-term care is modelled from the firm's stated cost. Not deployed. Needs `app.db_bootstrap`, `seed.schedule_backfill` and `seed.ai_governance_backfill`. See B-76, B-77 and B-78 | The commit that adds this line |
+| B-72: a moment in a tool result reaches the model on the firm's clock (`firm_time.on_firm_clock`); stored results stay in UTC. Tests only, not deployed | `be3723a` |
 | Messages: what the live check found. An automated notice no longer hides an unanswered client message (the Chen thread), Astra reads a thread before describing it, both confirmed live 1 Nov. Cross-firm Canvas reads were refused both ways between the NZ and Indian firms, live 31 Oct | `3a0203c` |
 | B-57 to B-60: tax memos with room to finish and each saving credited to its source; the client assistant given goals, targets and written money, and its replies rendered. Confirmed live 1 Nov, backfill run: all five memos finish, each saving is credited to its source, the assistant states the equity and both goals | `d94fc65` |
 | India demo: what the live check found. The carry-forward on a harvest, memo wording, goals sized with contributions, the client assistant's cut-off replies, a line that read as a data-location claim. Confirmed live 31 Oct, backfill run: ₹0 carried, 4 of 6 goals on track. The memo wording only partly, finished in B-57 | `8427c73`, with `seed/india_demo_backfill.py` |

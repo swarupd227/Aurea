@@ -15,8 +15,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
-# life and tpd pay a lump sum; income_protection pays a yearly benefit while the insured cannot work.
-POLICY_KINDS = ("life", "tpd", "income_protection")
+# life and tpd pay a lump sum; income_protection pays a yearly benefit while the insured cannot work,
+# and long_term_care one while they need care.
+POLICY_KINDS = ("life", "tpd", "income_protection", "long_term_care")
 
 
 class ProtectionPolicy(Base):
@@ -31,9 +32,11 @@ class ProtectionPolicy(Base):
     provider: Mapped[str] = mapped_column(String(120))
     policy_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     sum_insured: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)      # life, tpd
-    annual_benefit: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)   # income_protection
+    annual_benefit: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)   # income, care
     # The age an income benefit stops being paid. None means to the insured's retirement age.
     benefit_to_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # How many years a care benefit pays. None means for as long as care lasts.
+    benefit_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
     annual_premium: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="NZD")
     expires_on: Mapped[date | None] = mapped_column(Date, nullable=True)

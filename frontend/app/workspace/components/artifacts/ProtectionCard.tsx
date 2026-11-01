@@ -1,7 +1,7 @@
 import { firmLocale } from "@/lib/format";
 
 export interface ProtectionScenario {
-  status: "gap" | "no_gap" | "not_assessed" | "past_retirement";
+  status: "gap" | "no_gap" | "not_assessed" | "past_retirement" | "not_yet";
   missing?: string[];
   need?: number;
   cover?: number;
@@ -20,6 +20,7 @@ export interface ProtectionPerson {
   other_income_missing: boolean;
   death: ProtectionScenario;
   disability: ProtectionScenario;
+  care: ProtectionScenario;
 }
 
 export interface ProtectionPolicy {
@@ -30,6 +31,7 @@ export interface ProtectionPolicy {
   sum_insured: number | null;
   annual_benefit: number | null;
   benefit_to_age: number | null;
+  benefit_years: number | null;
   currency: string;
   expires_on: string | null;
   status: string;
@@ -58,7 +60,9 @@ export function money(v: number | null | undefined) {
   return v.toLocaleString(firmLocale(), { maximumFractionDigits: 0 });
 }
 
-export const KIND_TEXT: Record<string, string> = { life: "life", tpd: "TPD", income_protection: "income" };
+export const KIND_TEXT: Record<string, string> = { life: "life", tpd: "TPD", income_protection: "income", long_term_care: "care" };
+
+export const SCENARIO_TEXT: Record<string, string> = { death: "if they die", disability: "if they cannot work", care: "if they need care" };
 
 export function Scenario({ s }: { s: ProtectionScenario }) {
   if (s.status === "gap") return <span className="font-mono tabular-nums text-crit">{money(s.gap)}</span>;
@@ -70,18 +74,21 @@ export function Scenario({ s }: { s: ProtectionScenario }) {
     );
   }
   if (s.status === "past_retirement") return <span className="chip text-ink-muted">past retirement</span>;
+  if (s.status === "not_yet") return <span className="chip text-ink-muted">not yet</span>;
   return <span className="chip text-warn">{(s.missing ?? []).join(" · ").replace(/_/g, " ")} not on file</span>;
 }
 
 function PeopleTable({ rows, currency }: { rows: { household?: string; p: ProtectionPerson }[]; currency?: string | null }) {
   return (
+    <div className="overflow-x-auto">
     <table className="w-full text-sm">
       <thead>
         <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
-          <th className="px-3 py-1.5 font-medium">Earner</th>
+          <th className="px-3 py-1.5 font-medium">Person</th>
           <th className="px-3 py-1.5 text-right font-medium">Income</th>
           <th className="px-3 py-1.5 text-right font-medium">If they die{currency ? ` · ${currency}` : ""}</th>
           <th className="px-3 py-1.5 text-right font-medium">If they cannot work</th>
+          <th className="px-3 py-1.5 text-right font-medium">If they need care</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-border-soft">
@@ -94,10 +101,12 @@ function PeopleTable({ rows, currency }: { rows: { household?: string; p: Protec
             <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">{money(p.income)}</td>
             <td className="px-3 py-1.5 text-right"><Scenario s={p.death} /></td>
             <td className="px-3 py-1.5 text-right"><Scenario s={p.disability} /></td>
+            <td className="px-3 py-1.5 text-right"><Scenario s={p.care} /></td>
           </tr>
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -107,7 +116,7 @@ export function ProtectionCard({ result }: { result: any }) {
   if (Array.isArray(result?.households)) {
     const b = result as Book;
     const rows = b.households.flatMap((h) => h.people.map((p) => ({ household: h.household, p })));
-    const ranked = rows.filter((r) => r.p.death.status === "gap" || r.p.disability.status === "gap");
+    const ranked = rows.filter((r) => [r.p.death, r.p.disability, r.p.care].some((s) => s.status === "gap"));
     const shown = (ranked.length ? ranked : rows).slice(0, SHOWN);
     return (
       <div className="overflow-hidden rounded-lg border border-border bg-surface" data-testid="protection-card">

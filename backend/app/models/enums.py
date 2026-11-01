@@ -126,6 +126,7 @@ class AgentKey(StrEnum):
     BILLING = "billing"
     RECONCILIATION = "reconciliation"
     IPS_MONITORING = "ips_monitoring"
+    PROTECTION_PLANNING = "protection_planning"
 
 
 class ActivityKind(StrEnum):

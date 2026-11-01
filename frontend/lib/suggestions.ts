@@ -171,6 +171,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Largest gaps", prompt: "Which households have the largest protection gaps?" },
         { label: "Not assessed", prompt: "Who can't be assessed for protection, and what's missing?" },
         h1 ? { label: `${short(h1)}'s cover`, prompt: `What happens to ${the(h1)} if an earner dies or can't work?` } : { label: "Explain the basis", prompt: "How is a protection gap worked out, and what does it leave out?" },
+        { label: "Who may need care", prompt: "Who is old enough for long-term care to be the question, and what would it cost them?" },
       ];
     case "/studio/risk-profiles":
       return [

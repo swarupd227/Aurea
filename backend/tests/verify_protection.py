@@ -181,7 +181,7 @@ async def main() -> int:
                  w["death"]["goals_need"], 100_000 / (1.04 ** 5), tol=5.0)
             check("retirement and legacy goals are not", w["death"]["goals_need"] < 100_000, True)
             check("cover not yet on file", w["death"]["cover"], 0.0)
-            check("what is left out is stated", "long_term_care" in v["not_modelled"], True)
+            check("what is left out is stated", "funeral_and_final_costs" in v["not_modelled"], True)
             check("the assumptions travel with the figures", v["assumptions"]["death_replacement"], 0.7)
 
             print("\n=== Pensions and savings accounts on file count ===")

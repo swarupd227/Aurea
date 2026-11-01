@@ -48,7 +48,11 @@ pages are artifact views the agents open. Full guideline, including what is buil
   and places nothing if the window has changed. "Substantially identical" means the same instrument.
 - **Protection works from what is on file.** `aurea_core/protection.py` never estimates an income or a cover
   figure: a person with no income or date of birth is "not assessed", and that is the result. No policy on
-  file does not mean no cover. Policies and incomes are recorded by a person from a document.
+  file does not mean no cover. Policies and incomes are recorded by a person from a document. Care is worked
+  only from the cost a firm states, with its source: with none it is "not assessed", and no default is ever
+  supplied. The protection agent raises measured gaps and nothing else. Approving adds a review task; it buys
+  and recommends nothing, and at any tier a person decides. Once decided, a gap comes back only when it has grown
+  by a tenth or six months have passed, because a standing fact raised monthly teaches people to ignore it.
 - **Net worth works from what is on file.** `aurea_core/balance_sheet.py` adds the managed book to what a household
   holds elsewhere, less what it owes. An asset, debt or expense is recorded by a person from a document and never
   estimated, and wallet-share's guess stays out of it. No debt on file reads "assets only", not debt free; no income
@@ -115,7 +119,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

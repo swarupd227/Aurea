@@ -25,6 +25,7 @@ THINK_LABELS = {
     "meeting_prep": "Assembling the brief from goals, positioning and life events",
     "meeting_companion": "Turning the transcript into notes, tasks and proposed goals",
     "research_reporting": "Drafting client-ready commentary grounded in the house views",
+    "protection_planning": "Reading each household's cover against what it would need",
     "next_best_action": "Scanning for concentration, tax, life-stage and growth signals",
     "client_care": "Stress-testing the plan to ground the outreach",
     "conduct_surveillance": "Reviewing recommendations for suitability and fair conduct",

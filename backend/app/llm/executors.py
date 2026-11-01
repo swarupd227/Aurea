@@ -67,6 +67,7 @@ class ToolExecutors:
             "read_protection": self.read_protection,
             "record_protection_policy": self.record_protection_policy,
             "end_protection_policy": self.end_protection_policy,
+            "set_care_assumptions": self.set_care_assumptions,
             "record_income": self.record_income,
             "read_risk_profiles": self.read_risk_profiles,
             "decide_risk_profile": self.decide_risk_profile,
@@ -530,7 +531,7 @@ class ToolExecutors:
                 "kind": str(inputs.get("kind") or "").strip().lower(), "provider": inputs.get("provider") or "",
                 "source_document": inputs.get("source_document") or "", "sum_insured": inputs.get("sum_insured"),
                 "annual_benefit": inputs.get("annual_benefit"), "benefit_to_age": inputs.get("benefit_to_age"),
-                "expires_on": expires}
+                "benefit_years": inputs.get("benefit_years"), "expires_on": expires}
 
     async def record_protection_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
         args = self._policy_args(inputs)
@@ -545,14 +546,26 @@ class ToolExecutors:
 
         firm = await self._firm()
         say = markets.money_for(firm)
-        kinds = {"life": "Life", "tpd": "Total and permanent disablement", "income_protection": "Income protection"}
+        kinds = {"life": "Life", "tpd": "Total and permanent disablement", "income_protection": "Income protection",
+                 "long_term_care": "Long-term care"}
         try:
+            if tool_key == "set_care_assumptions":
+                r = await protection.prepare_care(self.session, self.firm_id, annual_cost=inputs.get("annual_cost"),
+                                                  years=inputs.get("years"), source_document=inputs.get("source_document") or "")
+                was = r["previous"]
+                return [("Cost of care", f"{say(r['annual_cost'])} a year"), ("Planned for", f"{r['years']} years"),
+                        ("Each person's need", say(r["annual_cost"] * r["years"])),
+                        ("Replaces", f"{say(was['annual_cost'])} a year for {was['years']} years" if was else "Nothing set"),
+                        ("Document", r["source"])]
             if tool_key == "record_protection_policy":
                 r = await protection.prepare_policy(self.session, self.firm_id, **self._policy_args(inputs))
                 return [("Insured", r["person"].full_name), ("Cover", kinds.get(r["kind"], r["kind"])), ("Provider", r["provider"]),
                         ("Sum insured", say(r["sum_insured"]) if r["sum_insured"] else None),
                         ("Annual benefit", say(r["annual_benefit"]) if r["annual_benefit"] else None),
-                        ("Benefit to age", r["benefit_to_age"]), ("Ends on", r["expires_on"]), ("Document", r["source"])]
+                        ("Benefit to age", r["benefit_to_age"]),
+                        ("Paid for", f"{r['benefit_years']} years" if r["benefit_years"] else
+                         ("As long as care lasts" if r["kind"] == "long_term_care" else None)),
+                        ("Ends on", r["expires_on"]), ("Document", r["source"])]
             if tool_key == "end_protection_policy":
                 r = await protection.prepare_end(self.session, self.firm_id, _parse_uuid(inputs.get("policy_id"), "policy_id"),
                                                  reason=inputs.get("reason") or "")
@@ -567,6 +580,24 @@ class ToolExecutors:
                     ("Replaces", say(r["previous"]) if r["previous"] is not None else "Nothing on file"), ("Document", r["source"])]
         except protection.ProtectionError as exc:
             raise ExecutorError(str(exc))
+
+    async def set_care_assumptions(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The firm's cost of care. A firm-wide figure, so it is a firm leader's to state, not an adviser's."""
+        from app.aurea_core import markets, protection
+        from app.models.identity import User
+
+        if self.role not in (UserRole.BRANCH_LEADER, UserRole.ADMIN):
+            raise ExecutorError("The firm's cost of care is set by a branch leader or an administrator.")
+        user = await self.session.get(User, self.user_id)
+        try:
+            result = await protection.set_care(
+                self.session, self.firm_id, annual_cost=inputs.get("annual_cost"), years=inputs.get("years"),
+                source_document=inputs.get("source_document") or "", set_by=user.email if user else "unknown")
+        except protection.ProtectionError as exc:
+            raise ExecutorError(str(exc))
+        say = markets.money_for(await self._firm())
+        result["message"] = f"Care is now planned at {say(result['annual_cost'])} a year for {result['years']} years."
+        return result
 
     async def end_protection_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
         policy_id = _parse_uuid(inputs.get("policy_id"), "policy_id")
@@ -2285,6 +2316,14 @@ class ToolExecutors:
             return None
         if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.IPS_MONITORING.value:
             return self._ips_decision_preview(rec, inputs)
+        if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.PROTECTION_PLANNING.value:
+            if str(rec.status) != "proposed":
+                raise ExecutorError(f"Already {rec.status}")
+            action = str(inputs.get("action") or "")
+            return {"rows": [{"label": k, "value": str(v)} for k, v in (
+                ("Client", rec.subject_label), ("Gaps", rec.summary),
+                ("Decision", "Approve, and add a task to review this cover" if action == "approve" else action.title()),
+            ) if v]}
         if rec is None or rec.firm_id != self.firm_id or str(rec.agent_key) != AgentKey.RESEARCH_REPORTING.value:
             return None
         report = await reports.of_proposal(self.session, self.firm_id, rec.payload)
@@ -2327,7 +2366,7 @@ class ToolExecutors:
             return rows(*await self._review_preview(tool_key, inputs))
         if tool_key == "record_ips":
             return rows(*await self._ips_preview(inputs))
-        if tool_key in ("record_protection_policy", "end_protection_policy", "record_income"):
+        if tool_key in ("record_protection_policy", "end_protection_policy", "record_income", "set_care_assumptions"):
             return rows(*await self._protection_preview(tool_key, inputs))
         if tool_key == "decide_risk_profile":
             return rows(*await self._risk_preview(inputs))

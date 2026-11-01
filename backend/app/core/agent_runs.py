@@ -118,11 +118,11 @@ def forced_to_proposal(agent_key: str | AgentKey) -> bool:
     approving for itself. Escalating a reconciliation break to a custodian is held the same way:
     nothing moves, but it is a judgement the agent proposes and a person makes. So is accepting a
     breach of a client's IPS, and so is a client report: acting would put it in front of the
-    client with nobody having read it."""
+    client with nobody having read it. A review of a client's cover is an adviser's to take on."""
     key = str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key)
     return (decision_rights.moves_the_book(agent_key) or decision_rights.moves_client_cash(agent_key)
             or key in decision_rights.RECON_AGENTS or key in decision_rights.IPS_AGENTS
-            or key == AgentKey.RESEARCH_REPORTING.value)
+            or key in (AgentKey.RESEARCH_REPORTING.value, AgentKey.PROTECTION_PLANNING.value))
 
 
 def acts_on_its_own(agent_key: str | AgentKey, tier: str) -> bool:

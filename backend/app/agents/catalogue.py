@@ -273,4 +273,15 @@ CATALOGUE: dict[str, dict] = {
                       "time under their name. Compliance may dismiss or roll back. Nothing trades and the "
                       "IPS does not change.",
     },
+    AgentKey.PROTECTION_PLANNING: {
+        "name": "Protection Planner", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_1, "subject": "firm",
+        "senses": "Every household's protection result: what each person would need if they died, could not "
+                  "work or needed care, against the cover and assets on file.",
+        "acts": "Puts each household with a measured gap to a person, one proposal per household, kept up to "
+                "date while the gap stands and closed when it clears. Once decided, a gap comes back when it "
+                "has grown or after six months. A household it cannot assess raises nothing.",
+        "checkpoint": "A person approves, which adds a task to review the cover with the client. Nothing is "
+                      "bought and no product is recommended, whatever the agent's tier.",
+    },
 }

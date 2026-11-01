@@ -77,6 +77,8 @@ _AGENTS = [
      "Re-checks custodian statements against the book and proposes which breaks to escalate to the custodian and which to accept as explained. Never changes the book and never escalates without operations or the portfolio team approving."),
     ("ips_monitoring", "IPS Monitor", "agent", "Head of Advice", "medium",
      "Reads each mandate against the IPS its client accepted and puts each breach to a person. Never trades or changes an IPS; approving accepts a breach for a limited time under the approver's name."),
+    ("protection_planning", "Protection Planner", "agent", "Head of Advice", "medium",
+     "Reads each household's cover against what it would need if someone died, could not work or needed care, and puts a measured gap to a person. Approving adds a review task; it buys nothing and recommends no product."),
 ]
 
 _TOOLS = [
@@ -93,6 +95,8 @@ _TOOLS = [
      "Records a manager's stated value for a private holding - revalues every holding of it, which changes client balances and the fees charged on them."),
     ("refresh_prices", "Refresh Prices (tool)", "tool", "Head of Operations", "medium",
      "Fetches market prices on demand and revalues the holdings they change, which changes client balances and the fees charged on them. Confirm-gated and refused within ten minutes of the last fetch."),
+    ("set_care_assumptions", "Set Care Assumptions (tool)", "tool", "Head of Advice", "medium",
+     "States what long-term care costs at the firm, from a named source, which moves every client's care figure at once. Confirm-gated, and what it replaced goes on the ledger."),
     ("import_custody_statement", "Import Custody Statement (tool)", "tool", "Head of Operations", "medium",
      "Records a custodian's statement for an account and compares it with the book as it stood on the statement's date, opening a break for each difference. Confirm-gated; it never changes holdings or cash."),
     ("resolve_recon_break", "Resolve Reconciliation Break (tool)", "tool", "Head of Operations", "medium",

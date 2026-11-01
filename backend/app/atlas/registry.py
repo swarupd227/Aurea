@@ -39,8 +39,10 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
     from app.agents.billing import BillingAgent
     from app.agents.reconciliation import ReconciliationAgent
     from app.agents.ips_monitoring import IpsMonitoringAgent
+    from app.agents.protection_planning import ProtectionPlanningAgent
 
     agents: list[BaseAgent] = [
+        ProtectionPlanningAgent(),
         OnboardingAgent(),
         BookIntegrationAgent(),
         MeetingPrepAgent(),

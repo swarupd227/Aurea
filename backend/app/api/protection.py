@@ -35,6 +35,7 @@ class PolicyIn(BaseModel):
     sum_insured: float | None = None
     annual_benefit: float | None = None
     benefit_to_age: int | None = None
+    benefit_years: int | None = None
     annual_premium: float | None = None
     policy_number: str | None = None
     expires_on: date | None = None

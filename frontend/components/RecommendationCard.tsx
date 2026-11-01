@@ -12,6 +12,7 @@ import { ConsentPanel, ConsentChips } from "./ConsentPanel";
 import { BUCKET_TEXT } from "@/app/workspace/components/artifacts/TaxPositionCard";
 import { findingText, type IpsFinding } from "@/app/workspace/components/artifacts/IpsCard";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
+import { SCENARIO_TEXT } from "@/app/workspace/components/artifacts/ProtectionCard";
 
 const pctf = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -334,6 +335,17 @@ export default function RecommendationCard({
               {payload.accept_until && <span className={chipMuted}>Accepting runs to {reviewDay(payload.accept_until)}</span>}
             </div>
           )}
+          {payload.signal === "protection_gap" && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2" data-testid="rec-protection-gap">
+              {(payload.gaps ?? []).map((g: any) => (
+                <span key={`${g.person_id}-${g.scenario}`} className="chip bg-crit-bg text-crit" title={`need ${money(g.need)} · cover ${money(g.cover)} · assets ${money(g.assets)}`}>
+                  {g.person} · {money(g.gap)} {SCENARIO_TEXT[g.scenario]}
+                </span>
+              ))}
+              {(payload.gaps ?? []).some((g: any) => g.partner_income_unknown) && <span className="chip text-warn">partner income not on file</span>}
+              {(payload.gaps ?? []).some((g: any) => g.retirement_assumed) && <span className={chipMuted}>retirement age assumed</span>}
+            </div>
+          )}
           {isDrift && (
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               {harvested > 0 && (
@@ -457,7 +469,7 @@ export default function RecommendationCard({
 
           {orders.length === 0 && payload.brief && <MeetingBriefView brief={payload.brief} />}
 
-          {orders.length === 0 && !payload.brief && payload.signal !== "ips_breach" && Object.keys(payload).length > 0 && (
+          {orders.length === 0 && !payload.brief && payload.signal !== "ips_breach" && payload.signal !== "protection_gap" && Object.keys(payload).length > 0 && (
             <PayloadView payload={payload} shown={`${rec.summary ?? ""}\n${rec.rationale ?? ""}`} />
           )}
 
