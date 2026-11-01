@@ -108,7 +108,7 @@ B-26 waits for a real custodian statement.
 |---|---|
 | B-72: a moment in a tool result reaches the model on the firm's clock (`firm_time.on_firm_clock`); stored results stay in UTC. Tests only, not deployed | The commit that adds this line |
 | Messages: what the live check found. An automated notice no longer hides an unanswered client message (the Chen thread), Astra reads a thread before describing it, both confirmed live 1 Nov. Cross-firm Canvas reads were refused both ways between the NZ and Indian firms, live 31 Oct | `3a0203c` |
-| B-57 to B-60: tax memos with room to finish and each saving credited to its source; the client assistant given goals, targets and written money, and its replies rendered. Tests; not yet live | The commit that adds this line |
+| B-57 to B-60: tax memos with room to finish and each saving credited to its source; the client assistant given goals, targets and written money, and its replies rendered. Confirmed live 1 Nov, backfill run: all five memos finish, each saving is credited to its source, the assistant states the equity and both goals | `d94fc65` |
 | India demo: what the live check found. The carry-forward on a harvest, memo wording, goals sized with contributions, the client assistant's cut-off replies, a line that read as a data-location claim. Confirmed live 31 Oct, backfill run: ₹0 carried, 4 of 6 goals on track. The memo wording only partly, finished in B-57 | `8427c73`, with `seed/india_demo_backfill.py` |
 | India demo rows 1-3: market layer, licences and consent, per-taxpayer tax, the demonstration firm | `035007d`, `3183767`, `7a10e46` |
 | Billing and invoices | |
