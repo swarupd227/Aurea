@@ -33,7 +33,7 @@ from app.models.enums import ConnectorDomain, MarketType, RecommendationStatus, 
 from app.models.governance import AgentRun, Recommendation
 from app.models.graph import Account, AccountBeneficiary, Goal, Household, Mandate, Person
 from app.models.identity import User
-from app.models.portfolio import Holding, Instrument, InvestmentPolicy, ModelPortfolio, Price, TargetAllocation, Transaction
+from app.models.portfolio import Holding, Instrument, InvestmentPolicy, ModelPortfolio, Price, TargetAllocation, TaxLot
 from app.models.protection import ProtectionPolicy
 from app.models.reconciliation import CustodyStatement, ReconBreak
 from app.models.risk_assessment import RiskAssessment
@@ -231,6 +231,9 @@ async def main() -> int:
                        Price(firm_id=firm.id, instrument_id=bbb.id, as_of=today, close=3, currency="NZD", source="seed", is_real=False),
                        Price(firm_id=firm.id, instrument_id=ccc.id, as_of=today, close=5, currency="NZD", source="test", is_real=True)])
             await s.flush()
+            held = (await s.execute(select(Holding).where(Holding.instrument_id == aaa.id))).scalar_one()
+            s.add(TaxLot(firm_id=firm.id, holding_id=held.id, quantity=100, cost_per_unit=8, acquired_on=today - timedelta(days=200)))
+            await s.flush()
             place = {"mandate_id": str(mandate.id), "orders": [{"symbol": "AAA", "side": "buy", "quantity": 10}], "reason": "Top up"}
             shown = await card(ex, "execute_orders", place)
             check("names the mandate and the account", (shown["Mandate"], shown["Account"]), ("Ann mandate", "Ann A/C · Custody Co"))
@@ -243,6 +246,7 @@ async def main() -> int:
             mixed = {**place, "orders": [{"symbol": "AAA", "side": "sell", "quantity": 4}, {"symbol": "BBB", "side": "BUY", "quantity": 1}]}
             shown = await card(ex, "execute_orders", mixed)
             check("two orders get a row each", (shown["Order 1"].startswith("Sell 4 AAA"), "no real price" in shown["Order 2"]), (True, True))
+            check("a sale shows its estimated gain", "gain about $18" in shown["Order 1"], True)
             check("one that cannot fill is named", shown["Will not fill"], "BBB")
             check("and leaves the cash alone", "1,050" in shown["Cash, before fees"], True)
             await refused("nothing that could fill", ex.preview_change("execute_orders", {**place, "orders": [{"symbol": "BBB", "quantity": 1}]}), "none of these")
@@ -255,17 +259,9 @@ async def main() -> int:
             s.add(InvestmentPolicy(firm_id=firm.id, mandate_id=mandate.id, version=1, accepted_on=today, targets={"equity": 1.0}, drift_band=0.05,
                                    restricted=["tobacco"], document="IPS v1", recorded_by="a@t", recorded_by_role="adviser"))
             await s.flush()
-            shown = await card(ex, "execute_orders", {**place, "orders": [{"symbol": "CCC", "quantity": 1}]})
-            check("a purchase the IPS restricts is named, flag or symbol", shown["IPS"], "Restricted by version 1: CCC")
+            await refused("a purchase the IPS restricts", ex.preview_change("execute_orders", {**place, "orders": [{"symbol": "CCC", "quantity": 1}]}), "restricted by IPS version 1")
             shown = await card(ex, "execute_orders", place)
-            check("otherwise it says the order is not measured", "not measured" in shown["IPS"], True)
-            firm.jurisdiction = "US"
-            s.add(Transaction(firm_id=firm.id, account_id=account.id, instrument_id=ccc.id, txn_type="sell", quantity=1, price=5, amount=5,
-                              trade_date=today, lineage={"realised_gain": -2}))
-            await s.flush()
-            shown = await card(ex, "execute_orders", {**place, "orders": [{"symbol": "CCC", "quantity": 1}]})
-            check("a rebuy after a loss in the window is named", shown["Wash sale"], "CCC")
-            firm.jurisdiction = "NZ"
+            check("otherwise it says the order was measured", shown["IPS"], "Version 1: breaches no term and widens no breach")
             done = await ex.execute_orders(place)
             check("the write goes through the same checks", (done["orders_count"], await count(Order)), (1, 1))
 

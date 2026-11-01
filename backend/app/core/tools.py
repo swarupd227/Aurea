@@ -321,7 +321,7 @@ TOOLS: dict[str, Tool] = {
         key="read_licences",
         name="Read Licences",
         speaking_agent="astra",
-        description="The firm's SEBI licences, what each lets an agent do, which mandate sits on which service track, and the proposals approved by an adviser and waiting for the client's consent. An Investment Adviser needs the client's consent on every trade; only a discretionary Portfolio Manager acts without it, and a named person still approves. Use it for 'what can the agents do for this client' and 'what is waiting for a client'. A firm with no licences on file is not governed by this.",
+        description="For a firm with SEBI licences on file: its licences, what each lets an agent do, which mandate sits on which service track, and the proposals approved by an adviser and waiting for the client's consent. At such a firm a mandate on the Investment Adviser track needs the client's consent on every trade; only a discretionary Portfolio Manager acts without it, and a named person still approves. A firm with no licences on file is not governed by any of this, whatever a mandate's type, and a mandate being advisory does not by itself stop an order. Use it for 'what can the agents do for this client' and 'what is waiting for a client'.",
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[],
@@ -1117,7 +1117,11 @@ TOOLS: dict[str, Tool] = {
         key="execute_orders",
         name="Execute Orders",
         speaking_agent="drift_rebalancing",
-        description="Submit a set of orders (buys/sells) to settle them onto a client's book.",
+        description=("Submit a set of orders (buys/sells) to settle them onto a client's book. Refused as a whole if "
+                     "the account cannot do it, or it would breach the client's IPS or the mandate's exclusions, "
+                     "or fall in the household's tax window, or the firm's licence sends the mandate through a "
+                     "proposal. It checks all of this itself, so call it rather than working out the answer first, "
+                     "and say what it refused and why."),
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
         confirmation="This will place orders and settle trades. Confirm?",
         inputs=[

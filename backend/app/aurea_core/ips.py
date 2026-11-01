@@ -179,6 +179,38 @@ async def _book(session: AsyncSession, mandate: Mandate, restricted: list[str], 
             "positions": [{**p, "weight": p["value"] / total} for p in positions]}
 
 
+async def orders_against(session: AsyncSession, mandate: Mandate, *, firm: Firm,
+                         orders: list[dict]) -> tuple[InvestmentPolicy | None, list[dict]]:
+    """The IPS in force, and the terms these orders would breach or a breach they would widen past what an
+    exception holds. `orders` carry symbol, side, est_value and instrument. A breach the orders leave no
+    worse is the monitor's to raise, so a sale that helps is not stopped by what it is helping. Writes nothing."""
+    policy = await in_force(session, mandate.id)
+    if policy is None:
+        return None, []
+    terms = _terms_view(policy)
+    book = await _book(session, mandate, terms["restricted"], await latest_prices(session, firm.id))
+    total = book["total"]
+    if total <= 0:
+        return policy, []
+    values = {cls: weight * total for cls, weight in book["weights"].items()}
+    positions = {p["symbol"]: dict(p) for p in book["positions"]}
+    for o in orders:
+        signed = o["est_value"] if o["side"] == "buy" else -o["est_value"]
+        cls = str(o["instrument"].asset_class)
+        values[cls] = values.get(cls, 0.0) + signed
+        values["cash"] = values.get("cash", 0.0) - signed
+        row = positions.setdefault(o["symbol"], {"symbol": o["symbol"], "value": 0.0,
+                                                 "restricted": restricted_by(o["instrument"], terms["restricted"])})
+        row["value"] += signed
+    # The profile is left as accepted: an order does not change one, and a change is the monitor's.
+    before = findings_of(terms, weights=book["weights"], positions=book["positions"], profile=terms["profile"])
+    after = findings_of(terms, weights={cls: value / total for cls, value in values.items()}, profile=terms["profile"],
+                        positions=[{**p, "weight": p["value"] / total} for p in positions.values() if p["value"] > 0])
+    standing, _ = _split(after, await _exceptions(session, policy, firm_time.today(firm)))
+    was = {f["term"]: f["excess"] for f in before}
+    return policy, [f for f in standing if f["excess"] > was.get(f["term"], 0.0)]
+
+
 async def _view(session: AsyncSession, mandate: Mandate, household: Household | None, prices: dict, today: date) -> dict:
     policy = await in_force(session, mandate.id)
     targets, band, model_name = await model_terms(session, mandate.model_portfolio_id)

@@ -2550,7 +2550,9 @@ class ToolExecutors:
         }
 
     async def _order_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """The mandate, its account and the order set, everything executing would refuse refused."""
+        """The mandate, its account and the order set, everything executing would refuse refused. Runs
+        for the card and again at Confirm, because the book or the IPS can move between the two."""
+        from app.aurea_core import order_guard
         from app.models.tenant import Firm
 
         mandate_id = _parse_uuid(inputs.get("mandate_id") or "", "mandate_id")
@@ -2567,7 +2569,8 @@ class ToolExecutors:
         # A direct order skips the proposal, so it skips the client's consent. Only a track that
         # needs none may use it.
         from app.aurea_core import licences
-        track = licences.track_for(await self.session.get(Firm, self.firm_id), mandate)
+        firm = await self.session.get(Firm, self.firm_id)
+        track = licences.track_for(firm, mandate)
         if track is not None and (track.per_trade_consent or not track.may_execute):
             raise ExecutorError(f"{track.name}: a trade on this mandate goes through a proposal and the "
                                 "client's consent, not a direct order.")
@@ -2629,21 +2632,25 @@ class ToolExecutors:
                 "asset_class": str(inst.asset_class),
                 "reason": reason,
             })
+        if len(unpriced) == len(order_set):
+            raise ExecutorError(f"None of these could fill: there is no real price for {', '.join(unpriced)}.")
+        review = await order_guard.review(self.session, firm=firm, mandate=mandate, account=account, orders=order_set,
+                                          instruments=instruments, unpriced=unpriced)
+        if review["refused"]:
+            raise ExecutorError(f"Nothing can be placed. {' '.join(review['refused'])}")
         return {"mandate": mandate, "account": account, "accounts": len(accounts), "order_set": order_set,
-                "unpriced": unpriced, "instruments": instruments, "reason": reason}
+                "unpriced": unpriced, "review": review, "reason": reason}
 
     async def _orders_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
-        """Orders place at once and a fill can only be offset, so the card shows each one, what it does
-        to the cash, and anything that stands against it: a price it cannot fill on, the client's IPS."""
-        from app.aurea_core import ips, markets, wash_sale
+        """Orders place at once and a fill can only be offset, so the card shows each one, its estimated
+        gain, what it does to the cash, and what the guard has to say short of refusing."""
+        from app.aurea_core import markets
         from app.conduit.execution import venue_for_firm
 
         a = await self._order_args(inputs)
         firm = await self._firm()
         say = markets.money_for(firm)
         orders, account = a["order_set"], a["account"]
-        if len(a["unpriced"]) == len(orders):
-            raise ExecutorError(f"None of these could fill: there is no real price for {', '.join(a['unpriced'])}.")
         where = f"{account.name}{f' · {account.custodian}' if account.custodian else ''}"
         rows: list[tuple[str, Any]] = [
             ("Mandate", a["mandate"].name),
@@ -2651,7 +2658,9 @@ class ToolExecutors:
         for n, o in enumerate(orders, 1):
             at = (f"at about {markets.money(o['est_price'], firm.base_currency, dp=2)}, {say(o['est_value'])}"
                   if o["symbol"] not in a["unpriced"] else "no real price")
-            rows.append((f"Order {n}", f"{o['side'].title()} {float(o['quantity']):g} {o['symbol']} {at}"))
+            gain = o.get("est_realised_gain")
+            result = f", {'loss' if gain < 0 else 'gain'} about {say(abs(gain))}" if gain is not None else ""
+            rows.append((f"Order {n}", f"{o['side'].title()} {float(o['quantity']):g} {o['symbol']} {at}{result}"))
         filling = [o for o in orders if o["symbol"] not in a["unpriced"]]
         buys = sum(o["est_value"] for o in filling if o["side"] == "buy")
         sells = sum(o["est_value"] for o in filling if o["side"] == "sell")
@@ -2659,15 +2668,11 @@ class ToolExecutors:
         rows.append(("Cash, before fees", f"{say(cash)} becomes {say(cash + sells - buys)}"))
         if a["unpriced"]:
             rows.append(("Will not fill", ", ".join(a["unpriced"])))
-        policy = await ips.in_force(self.session, a["mandate"].id)
+        policy = a["review"]["policy"]
         if policy:
-            barred = [o["symbol"] for o in orders if o["side"] == "buy"
-                      and ips.restricted_by(a["instruments"][o["symbol"]], policy.restricted or [])]
-            rows.append(("IPS", f"Restricted by version {policy.version}: {', '.join(barred)}" if barred
-                         else f"Version {policy.version} in force; this order is not measured against it"))
-        clash = wash_sale.conflicts(orders, await wash_sale.guard(self.session, firm, a["mandate"]))
-        if clash:
-            rows.append(("Wash sale", ", ".join(sorted({c["symbol"] for c in clash}))))
+            rows.append(("IPS", f"Version {policy.version}: breaches no term and widens no breach"))
+        for flag in a["review"]["flags"]:
+            rows.append((f"Review {flag['symbol']}", f"Sold at a loss in {flag['account']} on {flag['on']}"))
         venue = venue_for_firm(firm)
         rows.append(("Venue", venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached"))
         rows.append(("Reason", a["reason"].strip() or None))
