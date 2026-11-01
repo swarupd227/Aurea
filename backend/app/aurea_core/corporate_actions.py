@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import utcnow
 from app.models.corporate_actions import CorporateAction, CorporateActionEntitlement
 from app.models.graph import Account
-from app.models.portfolio import Holding, TaxLot, Transaction
+from app.models.portfolio import Holding, Instrument, TaxLot, Transaction
 
 _MECHANICAL_TYPES = {"cash_dividend", "split", "reverse_split", "return_of_capital"}
 
@@ -36,6 +36,52 @@ def _d(v) -> Decimal:
 
 class CorporateActionError(Exception):
     """A posting was attempted that the arithmetic cannot support (e.g. double-post)."""
+
+
+def mechanical_effect(action: CorporateAction, shares) -> dict:
+    """What a mechanical event does to a position. Refused when its terms are missing: a dividend with
+    no amount or a split with no ratio would otherwise post nothing, and a posting cannot be redone."""
+    details = action.details or {}
+    if action.action_type in ("cash_dividend", "return_of_capital"):
+        per_share = _d(details.get("cash_per_share"))
+        if per_share <= 0:
+            raise CorporateActionError("This event has no cash per share on record, so there is nothing to post.")
+        return {"per_share": per_share, "cash": (_d(shares) * per_share).quantize(Decimal("0.01"))}
+    ratio = _d(details.get("ratio"))
+    if ratio <= 0:
+        raise CorporateActionError("This event has no split ratio on record, so there is nothing to post.")
+    return {"ratio": ratio, "new_quantity": _d(shares) * ratio}
+
+
+async def prepare_compute(session: AsyncSession, corporate_action_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict:
+    """What computing would add. Writes nothing."""
+    action = await session.get(CorporateAction, corporate_action_id)
+    if action is None or action.firm_id != firm_id:
+        raise CorporateActionError(f"Corporate action {corporate_action_id} not found.")
+    held = (await session.execute(select(Holding.account_id).where(
+        Holding.firm_id == firm_id, Holding.instrument_id == action.instrument_id))).scalars().all()
+    done = set((await session.execute(select(CorporateActionEntitlement.account_id).where(
+        CorporateActionEntitlement.corporate_action_id == action.id))).scalars().all())
+    return {"action": action, "instrument": await session.get(Instrument, action.instrument_id),
+            "holders": len(held), "new": sum(1 for account in held if account not in done), "existing": len(done)}
+
+
+async def prepare_post(session: AsyncSession, entitlement_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict:
+    """What posting from a conversation would refuse, and what it would do. Writes nothing. A voluntary
+    or complex event needs amounts a person gives on the Corporate actions page; from here it would
+    post nothing, and a posting cannot be undone."""
+    row = await session.get(CorporateActionEntitlement, entitlement_id)
+    if row is None or row.firm_id != firm_id:
+        raise CorporateActionError(f"Entitlement {entitlement_id} not found.")
+    if row.status == "posted":
+        raise CorporateActionError("Entitlement already posted — corporate actions post exactly once.")
+    action = await session.get(CorporateAction, row.corporate_action_id)
+    if action.action_type not in _MECHANICAL_TYPES:
+        raise CorporateActionError(f"A {action.action_type.replace('_', ' ')} needs its cash and share amounts given on "
+                                   "the Corporate actions page, so it cannot be posted from here.")
+    return {"row": row, "action": action, "effect": mechanical_effect(action, row.shares_entitled),
+            "account": await session.get(Account, row.account_id),
+            "instrument": await session.get(Instrument, action.instrument_id)}
 
 
 async def compute_entitlements(session: AsyncSession, corporate_action_id: uuid.UUID) -> list[CorporateActionEntitlement]:
@@ -108,6 +154,7 @@ async def post_entitlement(
     now = utcnow()
 
     if action.action_type in _MECHANICAL_TYPES:
+        mechanical_effect(action, row.shares_entitled)
         await _apply_mechanical(session, action, row)
     else:
         row.cash_amount = _d(cash_amount) if cash_amount is not None else None

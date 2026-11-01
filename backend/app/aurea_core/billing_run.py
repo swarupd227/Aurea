@@ -62,19 +62,53 @@ async def open_run(session: AsyncSession, firm_id: uuid.UUID) -> BillingRun | No
     run = (await session.execute(
         select(BillingRun).where(BillingRun.firm_id == firm_id, BillingRun.status == "proposed")
     )).scalars().first()
-    if run is None or run.agent_run_id is None:
+    if run is None or not await _dismissed(session, run):
         return run
+    run.status = "cancelled"
+    await session.execute(
+        update(Invoice).where(Invoice.run_id == run.id, Invoice.status == "draft").values(status="void")
+    )
+    await session.flush()
+    return None
+
+
+async def _dismissed(session: AsyncSession, run: BillingRun) -> bool:
+    if run.agent_run_id is None:
+        return False
     recs = (await session.execute(
         select(Recommendation).where(Recommendation.run_id == run.agent_run_id)
     )).scalars().all()
-    if recs and all(r.status == RecommendationStatus.DISMISSED for r in recs):
-        run.status = "cancelled"
-        await session.execute(
-            update(Invoice).where(Invoice.run_id == run.id, Invoice.status == "draft").values(status="void")
-        )
-        await session.flush()
-        return None
-    return run
+    return bool(recs) and all(r.status == RecommendationStatus.DISMISSED for r in recs)
+
+
+async def _unbilled(session: AsyncSession, firm_id: uuid.UUID, pv: dict) -> tuple[list[dict], int, dict]:
+    """What a preview would bill that has not been billed: the entries, how many were already, and
+    the held bills they supersede. A held bill has not been billed, so a new draft replaces it."""
+    existing = (await session.execute(
+        select(Invoice).where(Invoice.firm_id == firm_id, Invoice.kind == "invoice",
+                              Invoice.status.in_(("issued", "debited", "held")))
+    )).scalars().all()
+    billed = {(str(i.arrangement_id), i.period_start.isoformat()) for i in existing if i.status != "held"}
+    held = {(str(i.arrangement_id), i.period_start.isoformat()): i for i in existing if i.status == "held"}
+    entries = [e for e in pv["arrangements"] if (e["arrangement_id"], e["period_start"]) not in billed]
+    return entries, len(pv["arrangements"]) - len(entries), held
+
+
+async def what_would_bill(session: AsyncSession, firm_id: uuid.UUID, *, as_of: date | None = None) -> dict:
+    """What a run now would draft, before each bill is reconciled to its agreement. Writes nothing."""
+    run = (await session.execute(
+        select(BillingRun).where(BillingRun.firm_id == firm_id, BillingRun.status == "proposed")
+    )).scalars().first()
+    waiting = run if run is not None and not await _dismissed(session, run) else None
+    pv = await preview(session, firm_id, as_of=as_of or utcnow().date())
+    entries, already, _ = await _unbilled(session, firm_id, pv)
+    amounts: dict[str, float] = defaultdict(float)
+    for e in entries:
+        if not e["blocked"] and e["currency"]:
+            amounts[e["currency"]] += float(e["amount"])
+    return {"waiting": waiting, "bills": len(entries), "blocked": sum(1 for e in entries if e["blocked"]),
+            "amounts": {k: round(v, 2) for k, v in amounts.items()}, "already_billed": already,
+            "no_agreement": len(pv["no_agreement"])}
 
 
 async def propose_run(
@@ -91,22 +125,7 @@ async def propose_run(
         raise BillingError(f"A billing run for {waiting.as_of.isoformat()} is already awaiting approval.")
 
     pv = await preview(session, firm_id, as_of=as_of)
-
-    # A period already billed is not billed again. A held bill has not been billed, so it is
-    # superseded by the new draft rather than left to pile up beside it.
-    existing = (await session.execute(
-        select(Invoice).where(Invoice.firm_id == firm_id, Invoice.kind == "invoice",
-                              Invoice.status.in_(("issued", "debited", "held")))
-    )).scalars().all()
-    billed = {(str(i.arrangement_id), i.period_start.isoformat()) for i in existing if i.status != "held"}
-    held = {(str(i.arrangement_id), i.period_start.isoformat()): i for i in existing if i.status == "held"}
-
-    entries, already = [], 0
-    for e in pv["arrangements"]:
-        if (e["arrangement_id"], e["period_start"]) in billed:
-            already += 1
-            continue
-        entries.append(e)
+    entries, already, held = await _unbilled(session, firm_id, pv)
     if not entries:
         return None
 
@@ -242,6 +261,14 @@ async def approve_run(
     return run.summary["result"]
 
 
+def check_creditable(inv: Invoice) -> dict:
+    """What crediting would refuse, and what it would put back in cash. Writes nothing."""
+    if inv.kind != "invoice" or inv.status not in ("issued", "debited"):
+        raise BillingError(f"A {inv.status} {inv.kind.replace('_', ' ')} cannot be credited.")
+    paid = (inv.debit_detail or {}).get("accounts", []) if inv.debit_status == "posted" else []
+    return {"returned": sum(float(_d(row["amount"])) for row in paid), "accounts": len(paid)}
+
+
 async def credit_invoice(session: AsyncSession, invoice: Invoice, *, reason: str, by: str) -> Invoice:
     """Offset an issued invoice in full. The invoice is kept; a credit note is added, and any
     cash taken for it is put back as its own entry - nothing is edited or deleted."""
@@ -249,8 +276,7 @@ async def credit_invoice(session: AsyncSession, invoice: Invoice, *, reason: str
         select(Invoice).where(Invoice.id == invoice.id).with_for_update()
         .execution_options(populate_existing=True)
     )).scalar_one()
-    if inv.kind != "invoice" or inv.status not in ("issued", "debited"):
-        raise BillingError(f"A {inv.status} {inv.kind.replace('_', ' ')} cannot be credited.")
+    check_creditable(inv)
 
     now = utcnow()
     note = Invoice(

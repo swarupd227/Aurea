@@ -130,19 +130,32 @@ def check_answer(firm, *, channel: str, evidence_ref: str | None) -> bool:
     return simulated
 
 
-async def record(session: AsyncSession, *, firm, rec: Recommendation, given: bool, channel: str,
-                 evidence_ref: str | None, recorded_by: str, note: str | None) -> TradeConsent:
-    """Write the answer. The caller holds the recommendation's lock (runtime.client_response)."""
-    simulated = check_answer(firm, channel=channel, evidence_ref=evidence_ref)
-    row = (await session.execute(
-        select(TradeConsent).where(TradeConsent.recommendation_id == rec.id).with_for_update()
-    )).scalar_one_or_none()
+def _answerable(row: TradeConsent | None, rec: Recommendation) -> TradeConsent:
     if row is None:
         raise ConsentError("This proposal is not waiting for a client's consent.")
     if row.status != "awaiting":
         raise ConsentError(f"The client's answer is already on record: {row.status}.")
     if row.order_digest != digest(_final(rec).get("order_set") or []):
         raise ConsentError("The orders have changed since consent was requested. Run the agent again.")
+    return row
+
+
+async def prepare_answer(session: AsyncSession, *, firm, rec: Recommendation, channel: str,
+                         evidence_ref: str | None) -> dict:
+    """What recording an answer would refuse, refused without writing, and the orders it would release."""
+    simulated = check_answer(firm, channel=channel, evidence_ref=evidence_ref)
+    row = (await session.execute(
+        select(TradeConsent).where(TradeConsent.recommendation_id == rec.id))).scalar_one_or_none()
+    return {"consent": _answerable(row, rec), "simulated": simulated}
+
+
+async def record(session: AsyncSession, *, firm, rec: Recommendation, given: bool, channel: str,
+                 evidence_ref: str | None, recorded_by: str, note: str | None) -> TradeConsent:
+    """Write the answer. The caller holds the recommendation's lock (runtime.client_response)."""
+    simulated = check_answer(firm, channel=channel, evidence_ref=evidence_ref)
+    row = _answerable((await session.execute(
+        select(TradeConsent).where(TradeConsent.recommendation_id == rec.id).with_for_update()
+    )).scalar_one_or_none(), rec)
     row.status = "given" if given else "declined"
     row.channel = channel
     row.evidence_ref = (evidence_ref or "").strip() or None

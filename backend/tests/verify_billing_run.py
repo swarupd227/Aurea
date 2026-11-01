@@ -139,6 +139,11 @@ async def run() -> None:
                 s.add(ar)
                 return ar
 
+            print("\n=== What a run would bill, before it is drafted ===")
+            ahead = await billing_run.what_would_bill(s, firm.id)
+            check("it counts what the run will", (ahead["bills"], ahead["blocked"], ahead["amounts"], ahead["no_agreement"]), (4, 2, {"NZD": 5_000}, 1))
+            check("and drafts nothing", (await s.execute(select(BillingRun))).first(), None)
+
             print("\n=== The agent proposes; it does not bill ===")
             ar = agent_ctx()
             await s.flush()
@@ -148,6 +153,7 @@ async def run() -> None:
             sensed = await agent.sense(ctx)
             run1 = await s.get(BillingRun, uuid.UUID(sensed["run_id"]))
             check("the run waits for approval", run1.status, "proposed")
+            check("and a look ahead names it", (await billing_run.what_would_bill(s, firm.id))["waiting"].id, run1.id)
             check("the unconfirmed arrangement is not in it",
                   await invoice_of(run1, "M5 Unconfirmed"), None)
             drafts = await agent.think(ctx, sensed)

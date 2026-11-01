@@ -284,16 +284,9 @@ class ToolExecutors:
                         if rows else "There are no private holdings."),
         }
 
-    async def record_valuation(self, inputs: dict[str, Any]) -> dict[str, Any]:
+    async def _valuation_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from datetime import date as _date
 
-        from app.aurea_core import valuations
-        from app.models.identity import User
-
-        # The gateway checks the catalogue's roles; this re-checks, as for the other tools that move money.
-        if self.role not in (UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM):
-            raise ExecutorError("Recording a valuation changes client balances and fees, so only "
-                                "operations or the portfolio team may do it.")
         symbol = (inputs.get("symbol") or "").strip()
         inst = (await self.session.execute(
             select(Instrument).where(Instrument.firm_id == self.firm_id, Instrument.symbol == symbol)
@@ -308,12 +301,41 @@ class ToolExecutors:
             unit_value = float(inputs.get("unit_value"))
         except (TypeError, ValueError):
             raise ExecutorError("unit_value must be a number.")
+        return {"instrument_id": inst.id, "as_of": as_of, "unit_value": unit_value,
+                "source_document": inputs.get("source_document") or "", "notes": inputs.get("notes")}
+
+    async def _valuation_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, markets, valuations
+
+        args = await self._valuation_args(inputs)
+        say = markets.money_for(await self._firm())
+        try:
+            r = await valuations.prepare_valuation(self.session, self.firm_id, **args)
+        except valuations.ValuationError as exc:
+            raise ExecutorError(str(exc))
+        inst = r["inst"]
+        return [("Fund", f"{inst.symbol} · {inst.name}"), ("Unit value", f"{r['unit_value']:,.4f} {inst.currency}"),
+                ("Was", f"{r['prior_value']:,.4f} on {r['prior_date']}" if r["prior_value"] else "Nothing on file"),
+                ("Change", f"{r['change']:+.1%}" if r["change"] is not None else None),
+                ("As at", firm_time.spoken(args["as_of"])), ("Holdings revalued", str(len(r["held"]))),
+                ("Value held", f"{say(r['value_before'])} becomes {say(r['value_after'])}"),
+                ("Document", args["source_document"].strip()), ("Note", (args["notes"] or "").strip() or None)]
+
+    async def record_valuation(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import valuations
+        from app.models.identity import User
+        from app.models.portfolio import Instrument as _Instrument
+
+        # The gateway checks the catalogue's roles; this re-checks, as for the other tools that move money.
+        if self.role not in (UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM):
+            raise ExecutorError("Recording a valuation changes client balances and fees, so only "
+                                "operations or the portfolio team may do it.")
+        args = await self._valuation_args(inputs)
+        inst = await self.session.get(_Instrument, args["instrument_id"])
         user = await self.session.get(User, self.user_id)
         try:
             result = await valuations.record_valuation(
-                self.session, self.firm_id, instrument_id=inst.id, as_of=as_of, unit_value=unit_value,
-                source_document=inputs.get("source_document") or "", notes=inputs.get("notes"),
-                recorded_by=user.email if user else "unknown")
+                self.session, self.firm_id, recorded_by=user.email if user else "unknown", **args)
         except valuations.ValuationError as exc:
             raise ExecutorError(str(exc))
         move = f" ({result['change_pct']:+.1%} against {result['previous']['value']:,.4f})" if result["change_pct"] is not None else ""
@@ -339,6 +361,19 @@ class ToolExecutors:
             parts.append(f"the last run failed for {len(feed['last_run']['failed'])} symbol(s)")
         result["message"] = "; ".join(parts) + "."
         return result
+
+    async def _refresh_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, price_freshness
+
+        try:
+            conn = await price_freshness.prepare_refresh(self.session, self.firm_id)
+        except price_freshness.RefreshRefused as exc:
+            raise ExecutorError(str(exc))
+        s = (await price_freshness.price_freshness(self.session, self.firm_id))["summary"]
+        last = conn.last_synced_at
+        return [("Held instruments", str(s["total"])), ("Not current", str(s["total"] - s["current"])),
+                ("Last fetched", firm_time.spoken(firm_time.today(await self._firm(), last)) if last else "Never"),
+                ("Effect", "Holdings revalue at the new prices, which changes balances and fees")]
 
     async def refresh_prices(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import price_freshness
@@ -396,6 +431,31 @@ class ToolExecutors:
         result["message"] = (f"Licensed as {names}. {len(result['mandates'])} mandate(s); "
                              f"{len(result['awaiting_consent'])} proposal(s) waiting for a client's consent.")
         return result
+
+    async def _consent_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import consent, markets
+        from app.models.governance import Recommendation
+
+        rec_id = _parse_uuid(inputs.get("recommendation_id"), "recommendation_id")
+        rec = (await self.session.execute(select(Recommendation).where(
+            Recommendation.id == rec_id, Recommendation.firm_id == self.firm_id))).scalar_one_or_none()
+        if rec is None:
+            raise ExecutorError(f"Proposal {rec_id} not found or access denied")
+        firm = await self._firm()
+        channel = str(inputs.get("channel") or "")
+        try:
+            r = await consent.prepare_answer(self.session, firm=firm, rec=rec, channel=channel, evidence_ref=inputs.get("evidence_ref"))
+        except consent.ConsentError as exc:
+            raise ExecutorError(str(exc))
+        say = markets.money_for(firm)
+        lines = [f"{str(o['side']).title()} {float(o['quantity'] or 0):g} {o['symbol']} ({say(float(o['est_value'] or 0))})"
+                 for o in r["consent"].orders or []]
+        given = bool(inputs.get("given"))
+        return [("Proposal", rec.title), ("Mandate", rec.subject_label),
+                ("Answer", "Yes: the orders are placed now" if given else "No: nothing is placed"),
+                ("How", channel.replace("_", " ")), ("Evidence", (inputs.get("evidence_ref") or "").strip() or None),
+                ("Orders", "; ".join(lines)), ("Simulated", "Yes, for demonstration only" if r["simulated"] else None),
+                ("Note", (inputs.get("note") or "").strip() or None)]
 
     async def record_client_consent(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.atlas import runtime
@@ -1008,6 +1068,18 @@ class ToolExecutors:
         )
         return view
 
+    async def _billing_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import billing_run
+
+        r = await billing_run.what_would_bill(self.session, self.firm_id)
+        if r["waiting"] is not None:
+            return [("Awaiting approval", f"The run for {r['waiting'].as_of.isoformat()}"),
+                    ("Effect", "No new run is drafted while that one is open")]
+        amounts = "; ".join(f"{c} {v:,.2f}" for c, v in r["amounts"].items())
+        return [("Bills", str(r["bills"])), ("To issue", amounts or "Nothing"), ("Held by a block", str(r["blocked"])),
+                ("Already billed", str(r["already_billed"])), ("No fee agreement", str(r["no_agreement"])),
+                ("Effect", "Nothing is issued or taken until it is approved")]
+
     async def run_billing(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.atlas.base import Subject
         from app.atlas.runtime import AgentPausedError, run_agent
@@ -1039,8 +1111,8 @@ class ToolExecutors:
                                 "approves it.")}
         return view_out
 
-    async def credit_invoice(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.aurea_core import billing_run, billing_views
+    async def _invoice_to_credit(self, inputs: dict[str, Any]):
+        from app.aurea_core import billing_run
         from app.core import decision_rights
         from app.models.billing import Invoice
         from app.models.enums import AgentKey
@@ -1057,7 +1129,24 @@ class ToolExecutors:
         inv = await self.session.get(Invoice, invoice_id)
         if inv is None or inv.firm_id != self.firm_id:
             raise ExecutorError(f"Invoice {invoice_id} not found or access denied")
+        try:
+            return inv, reason, billing_run.check_creditable(inv)
+        except billing_run.BillingError as exc:
+            raise ExecutorError(str(exc))
+
+    async def _credit_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        inv, reason, r = await self._invoice_to_credit(inputs)
+        amount = f"{inv.currency} {float(inv.amount):,.2f}"
+        return [("Invoice", inv.invoice_number), ("Client", inv.household_name or inv.mandate_name),
+                ("Period", f"{inv.period_start.isoformat()} to {inv.period_end.isoformat()}"), ("Credited", amount),
+                ("Back to cash", f"{inv.currency} {r['returned']:,.2f} across {r['accounts']} account(s)" if r["returned"]
+                 else "Nothing, no fee was taken"), ("Reason", reason)]
+
+    async def credit_invoice(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import billing_run, billing_views
         from app.models.identity import User
+
+        inv, reason, _ = await self._invoice_to_credit(inputs)
         user = await self.session.get(User, self.user_id)
         try:
             note = await billing_run.credit_invoice(self.session, inv, reason=reason, by=user.email if user else "unknown")
@@ -1164,10 +1253,7 @@ class ToolExecutors:
             ),
         }
 
-    async def set_account_registration(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from datetime import date as _date
-
-        from app.models.enums import RegistrationType
+    async def _account(self, inputs: dict[str, Any]):
         from app.models.graph import Account
 
         account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
@@ -1176,17 +1262,26 @@ class ToolExecutors:
         )).scalar_one_or_none()
         if account is None:
             raise ExecutorError(f"Account {account_id} not found")
+        return account
 
+    async def _registration_args(self, inputs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+        """The account and the changes, all checked before any is made."""
+        from datetime import date as _date
+
+        from app.models.enums import RegistrationType
+
+        account = await self._account(inputs)
+        changes: dict[str, Any] = {}
         reg_type = inputs.get("registration_type")
         if reg_type is not None:
             if reg_type not in {t.value for t in RegistrationType}:
                 raise ExecutorError(f"Unknown registration_type: {reg_type}")
-            account.registration_type = reg_type
+            changes["registration_type"] = reg_type
 
         death_date = inputs.get("original_owner_death_date")
         if death_date:
             try:
-                account.original_owner_death_date = _date.fromisoformat(str(death_date)[:10])
+                changes["original_owner_death_date"] = _date.fromisoformat(str(death_date)[:10])
             except ValueError:
                 raise ExecutorError(f"Invalid original_owner_death_date: {death_date}")
 
@@ -1194,39 +1289,75 @@ class ToolExecutors:
         if election is not None:
             if election not in ("10_year_rule", "life_expectancy"):
                 raise ExecutorError(f"rmd_election_method must be 10_year_rule or life_expectancy, got {election}")
-            account.rmd_election_method = election
+            changes["rmd_election_method"] = election
+        if not changes:
+            raise ExecutorError("Say what to change on this account's registration.")
+        return account, changes
 
+    async def _registration_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time
+
+        account, changes = await self._registration_args(inputs)
+        kind = changes.get("registration_type")
+        death = changes.get("original_owner_death_date")
+        method = changes.get("rmd_election_method")
+        return [("Account", account.name),
+                ("Registration", f"{(account.registration_type or 'Unset').replace('_', ' ')} becomes {kind.replace('_', ' ')}") if kind else ("Registration", None),
+                ("Original owner died", firm_time.spoken(death) if death else None),
+                ("RMD election", method.replace("_", " ") if method else None),
+                ("Effect", "Changes how the account's tax treatment is worked out")]
+
+    async def set_account_registration(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        account, changes = await self._registration_args(inputs)
+        for field, value in changes.items():
+            setattr(account, field, value)
         await self.session.flush()
         return {
             "account_id": str(account.id), "registration_type": account.registration_type,
             "message": f"Updated registration for {account.name}.",
         }
 
-    async def add_account_beneficiary(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.core.db import utcnow
-        from app.models.graph import Account, AccountBeneficiary
-
-        account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
-        beneficiary_name = inputs.get("beneficiary_name")
+    async def _beneficiary_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        name = inputs.get("beneficiary_name")
         percentage = inputs.get("percentage")
-        if not beneficiary_name or percentage is None:
+        if not name or percentage is None:
             raise ExecutorError("beneficiary_name and percentage are required")
-
-        account = (await self.session.execute(
-            select(Account).where(Account.id == account_id, Account.firm_id == self.firm_id)
-        )).scalar_one_or_none()
-        if account is None:
-            raise ExecutorError(f"Account {account_id} not found")
-
+        account = await self._account(inputs)
         designation_class = inputs.get("designation_class") or "primary"
         if designation_class not in ("primary", "contingent"):
             raise ExecutorError("designation_class must be primary or contingent")
+        try:
+            share = float(percentage)
+        except (TypeError, ValueError):
+            raise ExecutorError("percentage must be a number.")
+        if not 0 < share <= 100:
+            raise ExecutorError("percentage must be above 0 and at most 100.")
+        return {"account": account, "name": name, "share": share, "designation_class": designation_class,
+                "relationship": inputs.get("relationship_to_owner"),
+                "per_stirpes": str(inputs.get("per_stirpes", "")).lower() == "true"}
 
+    async def _beneficiary_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.models.graph import AccountBeneficiary
+
+        a = await self._beneficiary_args(inputs)
+        others = (await self.session.execute(select(AccountBeneficiary.percentage).where(
+            AccountBeneficiary.account_id == a["account"].id,
+            AccountBeneficiary.designation_class == a["designation_class"]))).scalars().all()
+        now = sum(float(p) for p in others)
+        return [("Account", a["account"].name), ("Beneficiary", a["name"]), ("Share", f"{a['share']:g}%"),
+                ("Class", a["designation_class"].title()), ("Relationship", a["relationship"]),
+                ("Per stirpes", "Yes" if a["per_stirpes"] else None),
+                (f"{a['designation_class'].title()} total", f"{now:g}% becomes {now + a['share']:g}%")]
+
+    async def add_account_beneficiary(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.core.db import utcnow
+        from app.models.graph import AccountBeneficiary
+
+        a = await self._beneficiary_args(inputs)
         row = AccountBeneficiary(
-            firm_id=self.firm_id, account_id=account.id, beneficiary_name=beneficiary_name,
-            percentage=float(percentage), designation_class=designation_class,
-            relationship_to_owner=inputs.get("relationship_to_owner"),
-            per_stirpes=str(inputs.get("per_stirpes", "")).lower() == "true",
+            firm_id=self.firm_id, account_id=a["account"].id, beneficiary_name=a["name"],
+            percentage=a["share"], designation_class=a["designation_class"],
+            relationship_to_owner=a["relationship"], per_stirpes=a["per_stirpes"],
             date_designated=utcnow().date(),
         )
         self.session.add(row)
@@ -1235,7 +1366,7 @@ class ToolExecutors:
         return {
             "beneficiary_id": str(row.id), "beneficiary_name": row.beneficiary_name,
             "percentage": float(row.percentage),
-            "message": f"Added {row.beneficiary_name} as a {designation_class} beneficiary ({percentage}%) on {account.name}.",
+            "message": f"Added {row.beneficiary_name} as a {a['designation_class']} beneficiary ({a['share']:g}%) on {a['account'].name}.",
         }
 
     async def read_beneficiary_audit(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2202,6 +2333,18 @@ class ToolExecutors:
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):
             return rows(*await self._balance_preview(tool_key, inputs))
+        if tool_key in ("create_crm_contact", "create_crm_opportunity", "log_crm_activity", "update_crm_opportunity_stage"):
+            return rows(*await self._crm_preview(tool_key, inputs))
+        if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):
+            return rows(*await self._corporate_preview(tool_key, inputs))
+        named = {"execute_orders": self._orders_preview, "credit_invoice": self._credit_preview,
+                 "record_valuation": self._valuation_preview, "record_client_consent": self._consent_preview,
+                 "refresh_prices": self._refresh_preview, "run_billing": self._billing_preview,
+                 "set_account_registration": self._registration_preview, "add_account_beneficiary": self._beneficiary_preview,
+                 "update_goal": self._goal_preview, "mark_conflict_reviewed": self._conflict_preview,
+                 "log_wsp_evidence": self._wsp_preview}
+        if tool_key in named:
+            return rows(*await named[tool_key](inputs))
         if tool_key in ("import_custody_statement", "resolve_recon_break"):
             return rows(*await self._recon_preview(tool_key, inputs))
         if tool_key not in ("complete_task", "assign_task", "create_task"):
@@ -2363,11 +2506,8 @@ class ToolExecutors:
             "message": f"{past_tense} '{rec.title}'. Status: {rec.status}.",
         }
 
-    async def execute_orders(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Submit buy/sell orders on a mandate's first account, via the same order
-        engine (draft -> staged -> placed -> filled -> settled) the drift-rebalancing
-        agent uses — real prices, real book entries, honest about a paper venue."""
-        from app.conduit.execution import execute_order_set
+    async def _order_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The mandate, its account and the order set, everything executing would refuse refused."""
         from app.models.tenant import Firm
 
         mandate_id = _parse_uuid(inputs.get("mandate_id") or "", "mandate_id")
@@ -2399,13 +2539,21 @@ class ToolExecutors:
         # from conversation.
         account = accounts[0]
 
-        order_set = []
+        order_set, unpriced, instruments = [], [], {}
         for o in orders_in:
             symbol = o.get("symbol")
-            side = o.get("side", "buy")
+            side = str(o.get("side", "buy")).strip().lower()
             quantity = o.get("quantity")
             if not symbol or not quantity:
                 raise ExecutorError("Each order needs a symbol and quantity")
+            if side not in ("buy", "sell"):
+                raise ExecutorError(f"An order is a buy or a sell, not '{side}'.")
+            try:
+                units = float(quantity)
+            except (TypeError, ValueError):
+                raise ExecutorError(f"{symbol}: the quantity must be a number.")
+            if units <= 0:
+                raise ExecutorError(f"{symbol}: the quantity must be above zero.")
 
             inst = (
                 await self.session.execute(
@@ -2414,6 +2562,7 @@ class ToolExecutors:
             ).scalar_one_or_none()
             if not inst:
                 raise ExecutorError(f"Unknown instrument symbol: {symbol}")
+            instruments[symbol] = inst
 
             price_row = (
                 await self.session.execute(
@@ -2421,7 +2570,10 @@ class ToolExecutors:
                 )
             ).scalar_one_or_none()
             est_price = float(price_row.close) if price_row else 0.0
-            est_value = est_price * float(quantity)
+            est_value = est_price * units
+            # The venue fills only on a real price, so an order on any other would not fill.
+            if price_row is None or not price_row.is_real:
+                unpriced.append(symbol)
 
             order_set.append({
                 "account_id": str(account.id),
@@ -2434,7 +2586,59 @@ class ToolExecutors:
                 "asset_class": str(inst.asset_class),
                 "reason": reason,
             })
+        return {"mandate": mandate, "account": account, "accounts": len(accounts), "order_set": order_set,
+                "unpriced": unpriced, "instruments": instruments, "reason": reason}
 
+    async def _orders_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """Orders place at once and a fill can only be offset, so the card shows each one, what it does
+        to the cash, and anything that stands against it: a price it cannot fill on, the client's IPS."""
+        from app.aurea_core import ips, markets, wash_sale
+        from app.conduit.execution import venue_for_firm
+
+        a = await self._order_args(inputs)
+        firm = await self._firm()
+        say = markets.money_for(firm)
+        orders, account = a["order_set"], a["account"]
+        if len(a["unpriced"]) == len(orders):
+            raise ExecutorError(f"None of these could fill: there is no real price for {', '.join(a['unpriced'])}.")
+        where = f"{account.name}{f' · {account.custodian}' if account.custodian else ''}"
+        rows: list[tuple[str, Any]] = [
+            ("Mandate", a["mandate"].name),
+            ("Account", f"{where} (the first of {a['accounts']})" if a["accounts"] > 1 else where)]
+        for n, o in enumerate(orders, 1):
+            at = (f"at about {markets.money(o['est_price'], firm.base_currency, dp=2)}, {say(o['est_value'])}"
+                  if o["symbol"] not in a["unpriced"] else "no real price")
+            rows.append((f"Order {n}", f"{o['side'].title()} {float(o['quantity']):g} {o['symbol']} {at}"))
+        filling = [o for o in orders if o["symbol"] not in a["unpriced"]]
+        buys = sum(o["est_value"] for o in filling if o["side"] == "buy")
+        sells = sum(o["est_value"] for o in filling if o["side"] == "sell")
+        cash = float(account.cash_balance or 0)
+        rows.append(("Cash, before fees", f"{say(cash)} becomes {say(cash + sells - buys)}"))
+        if a["unpriced"]:
+            rows.append(("Will not fill", ", ".join(a["unpriced"])))
+        policy = await ips.in_force(self.session, a["mandate"].id)
+        if policy:
+            barred = [o["symbol"] for o in orders if o["side"] == "buy"
+                      and ips.restricted_by(a["instruments"][o["symbol"]], policy.restricted or [])]
+            rows.append(("IPS", f"Restricted by version {policy.version}: {', '.join(barred)}" if barred
+                         else f"Version {policy.version} in force; this order is not measured against it"))
+        clash = wash_sale.conflicts(orders, await wash_sale.guard(self.session, firm, a["mandate"]))
+        if clash:
+            rows.append(("Wash sale", ", ".join(sorted({c["symbol"] for c in clash}))))
+        venue = venue_for_firm(firm)
+        rows.append(("Venue", venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached"))
+        rows.append(("Reason", a["reason"].strip() or None))
+        return rows
+
+    async def execute_orders(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Submit buy/sell orders on a mandate's first account, via the same order
+        engine (draft -> staged -> placed -> filled -> settled) the drift-rebalancing
+        agent uses — real prices, real book entries, honest about a paper venue."""
+        from app.conduit.execution import execute_order_set
+        from app.models.tenant import Firm
+
+        a = await self._order_args(inputs)
+        mandate_id, order_set = a["mandate"].id, a["order_set"]
         firm = await self.session.get(Firm, self.firm_id)
         result = await execute_order_set(
             self.session, firm=firm, order_set=order_set, mandate_id=mandate_id, actor=str(self.role),
@@ -2459,8 +2663,10 @@ class ToolExecutors:
             "message": note,
         }
 
-    async def update_goal(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Update a household goal's target, timeline, or priority."""
+    async def _goal_changes(self, inputs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+        """The goal and what would change on it, checked before any of it is written."""
+        from datetime import date
+
         goal_id = _parse_uuid(inputs.get("goal_id") or "", "goal_id")
         target = inputs.get("target")
         timeline = inputs.get("timeline")
@@ -2470,31 +2676,55 @@ class ToolExecutors:
         if not goal or goal.firm_id != self.firm_id:
             raise ExecutorError(f"Goal {goal_id} not found or access denied")
 
-        updates: dict[str, Any] = {}
+        changes: dict[str, Any] = {}
         if target is not None:
-            goal.target_amount = float(target)
-            updates["target_amount"] = float(target)
+            try:
+                changes["target_amount"] = float(target)
+            except (TypeError, ValueError):
+                raise ExecutorError("target must be a number.")
         if timeline:
             # Only a bare 4-digit year is unambiguous from conversation; anything
             # else (e.g. "5 years") is left for the goal-planning UI to resolve.
             text = str(timeline).strip()
-            if text.isdigit() and len(text) == 4:
-                from datetime import date
-                goal.target_date = date(int(text), 12, 31)
-                updates["target_date"] = goal.target_date.isoformat()
-            else:
-                updates["timeline_note"] = f"'{timeline}' wasn't a specific year — target date unchanged"
+            if not (text.isdigit() and len(text) == 4):
+                raise ExecutorError(f"'{timeline}' is not a specific year, so the target date cannot be set from it.")
+            changes["target_date"] = date(int(text), 12, 31)
         if priority:
-            priority_map = {"high": 1, "medium": 2, "low": 3}
-            mapped = priority_map.get(str(priority).lower())
-            if mapped:
-                goal.priority = mapped
-                updates["priority"] = str(priority).lower()
+            mapped = {"high": 1, "medium": 2, "low": 3}.get(str(priority).lower())
+            if mapped is None:
+                raise ExecutorError("priority must be high, medium or low.")
+            changes["priority"] = mapped
+        if not changes:
+            raise ExecutorError("Say what to change on this goal: its target, year or priority.")
+        return goal, changes
 
+    async def _goal_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, markets
+
+        goal, c = await self._goal_changes(inputs)
+        say = markets.money_for(await self._firm())
+        household = await self.session.get(Household, goal.household_id)
+        rank = {1: "High", 2: "Medium", 3: "Low"}
+        return [("Goal", goal.name), ("Client", household.name if household else None),
+                ("Target", f"{say(float(goal.target_amount))} becomes {say(c['target_amount'])}" if "target_amount" in c else None),
+                ("Date", f"{firm_time.spoken(goal.target_date) if goal.target_date else 'None'} becomes {firm_time.spoken(c['target_date'])}"
+                 if "target_date" in c else None),
+                ("Priority", f"{rank.get(goal.priority, goal.priority)} becomes {rank[c['priority']]}" if "priority" in c else None)]
+
+    async def update_goal(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Update a household goal's target, timeline, or priority."""
+        goal, changes = await self._goal_changes(inputs)
+        for field, value in changes.items():
+            setattr(goal, field, value)
         await self.session.flush()
 
+        updates = dict(changes)
+        if "target_date" in updates:
+            updates["target_date"] = updates["target_date"].isoformat()
+        if "priority" in updates:
+            updates["priority"] = str(inputs.get("priority")).lower()
         return {
-            "goal_id": str(goal_id),
+            "goal_id": str(goal.id),
             "updates": updates,
             "message": f"Updated goal '{goal.name}'.",
         }
@@ -2539,15 +2769,12 @@ class ToolExecutors:
             ),
         }
 
-    async def mark_conflict_reviewed(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.core.db import utcnow
+    async def _conflict(self, inputs: dict[str, Any]):
         from app.models.compliance_program import ConflictInventoryItem
-        from app.models.identity import User
 
         conflict_key = inputs.get("conflict_key")
         if not conflict_key:
             raise ExecutorError("conflict_key is required")
-
         row = (await self.session.execute(
             select(ConflictInventoryItem).where(
                 ConflictInventoryItem.firm_id == self.firm_id,
@@ -2556,7 +2783,22 @@ class ToolExecutors:
         )).scalar_one_or_none()
         if row is None:
             raise ExecutorError(f"No conflict-inventory item with key '{conflict_key}'")
+        return row
 
+    async def _conflict_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time
+
+        row = await self._conflict(inputs)
+        firm = await self._firm()
+        return [("Conflict", row.title), ("Owner", row.owner),
+                ("Last reviewed", firm_time.spoken(firm_time.today(firm, row.last_reviewed_at)) if row.last_reviewed_at else "Never"),
+                ("Reviewed", firm_time.spoken(firm_time.today(firm))), ("Notes", inputs.get("notes"))]
+
+    async def mark_conflict_reviewed(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.core.db import utcnow
+        from app.models.identity import User
+
+        row = await self._conflict(inputs)
         user = await self.session.get(User, self.user_id)
         row.last_reviewed_at = utcnow()
         row.last_reviewed_by = user.email if user else str(self.role)
@@ -2570,20 +2812,32 @@ class ToolExecutors:
             "message": f"Marked '{row.title}' reviewed as of today.",
         }
 
-    async def log_wsp_evidence(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.core.db import utcnow
+    async def _wsp_rule(self, inputs: dict[str, Any]):
         from app.models.compliance_program import WSPRule
 
         rule_key = inputs.get("rule_key")
         if not rule_key:
             raise ExecutorError("rule_key is required")
-
         row = (await self.session.execute(
             select(WSPRule).where(WSPRule.firm_id == self.firm_id, WSPRule.rule_key == rule_key)
         )).scalar_one_or_none()
         if row is None:
             raise ExecutorError(f"No WSP rule with key '{rule_key}'")
+        return row
 
+    async def _wsp_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time
+
+        row = await self._wsp_rule(inputs)
+        firm = await self._firm()
+        return [("Obligation", row.obligation), ("Rule", row.rule_key), ("Frequency", row.frequency.replace("_", " ")),
+                ("Last evidence", firm_time.spoken(firm_time.today(firm, row.last_evidence_at)) if row.last_evidence_at else "Never"),
+                ("Logged for", firm_time.spoken(firm_time.today(firm)))]
+
+    async def log_wsp_evidence(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.core.db import utcnow
+
+        row = await self._wsp_rule(inputs)
         row.last_evidence_at = utcnow()
         await self.session.flush()
 
@@ -2630,8 +2884,9 @@ class ToolExecutors:
             ),
         }
 
-    async def create_crm_contact(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.models.crm import CONTACT_TYPES, CrmContact
+    @staticmethod
+    def _contact_args(inputs: dict[str, Any]) -> tuple[str, str]:
+        from app.models.crm import CONTACT_TYPES
 
         full_name = inputs.get("full_name")
         if not full_name:
@@ -2639,7 +2894,90 @@ class ToolExecutors:
         contact_type = inputs.get("contact_type") or "prospect"
         if contact_type not in CONTACT_TYPES:
             raise ExecutorError(f"contact_type must be one of {CONTACT_TYPES}")
+        return full_name, contact_type
 
+    async def _contact(self, inputs: dict[str, Any]):
+        from app.models.crm import CrmContact
+
+        contact_id = _parse_uuid(inputs.get("contact_id") or "", "contact_id")
+        contact = (await self.session.execute(
+            select(CrmContact).where(CrmContact.id == contact_id, CrmContact.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if contact is None:
+            raise ExecutorError(f"Contact {contact_id} not found")
+        return contact
+
+    async def _opportunity_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        title = inputs.get("title")
+        if not title:
+            raise ExecutorError("title is required")
+        contact = await self._contact(inputs)
+        try:
+            probability = int(inputs.get("probability_pct") or 10)
+        except (TypeError, ValueError):
+            raise ExecutorError("probability_pct must be a whole number.")
+        return {"contact": contact, "title": title, "estimated_aum": inputs.get("estimated_aum"), "probability": probability}
+
+    async def _activity_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.models.crm import ACTIVITY_TYPES, CrmOpportunity
+
+        detail = inputs.get("detail")
+        if not detail:
+            raise ExecutorError("detail is required")
+        activity_type = inputs.get("activity_type") or "note"
+        if activity_type not in ACTIVITY_TYPES:
+            raise ExecutorError(f"activity_type must be one of {ACTIVITY_TYPES}")
+        contact = await self._contact(inputs)
+        opportunity = None
+        if inputs.get("opportunity_id"):
+            opportunity_id = _parse_uuid(inputs["opportunity_id"], "opportunity_id")
+            opportunity = (await self.session.execute(select(CrmOpportunity).where(
+                CrmOpportunity.id == opportunity_id, CrmOpportunity.firm_id == self.firm_id,
+                CrmOpportunity.contact_id == contact.id))).scalar_one_or_none()
+            if opportunity is None:
+                raise ExecutorError(f"Opportunity {opportunity_id} is not this contact's.")
+        return {"contact": contact, "detail": detail, "activity_type": activity_type, "opportunity": opportunity}
+
+    async def _stage_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.models.crm import PIPELINE_STAGES, CrmContact, CrmOpportunity
+
+        opportunity_id = _parse_uuid(inputs.get("opportunity_id") or "", "opportunity_id")
+        stage = inputs.get("stage")
+        if stage not in PIPELINE_STAGES:
+            raise ExecutorError(f"stage must be one of {PIPELINE_STAGES}")
+        row = (await self.session.execute(
+            select(CrmOpportunity).where(CrmOpportunity.id == opportunity_id, CrmOpportunity.firm_id == self.firm_id)
+        )).scalar_one_or_none()
+        if row is None:
+            raise ExecutorError(f"Opportunity {opportunity_id} not found")
+        return {"row": row, "stage": stage, "contact": await self.session.get(CrmContact, row.contact_id)}
+
+    async def _crm_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import markets
+
+        say = markets.money_for(await self._firm())
+        if tool_key == "create_crm_contact":
+            name, kind = self._contact_args(inputs)
+            return [("Name", name), ("Type", kind.replace("_", " ").capitalize()), ("Email", inputs.get("email")),
+                    ("Source", inputs.get("source")), ("Notes", inputs.get("notes"))]
+        if tool_key == "create_crm_opportunity":
+            a = await self._opportunity_args(inputs)
+            return [("Contact", a["contact"].full_name), ("Opportunity", a["title"]),
+                    ("Estimated assets", say(float(a["estimated_aum"])) if a["estimated_aum"] else None),
+                    ("Probability", f"{a['probability']}%"), ("Stage", "Lead")]
+        if tool_key == "log_crm_activity":
+            a = await self._activity_args(inputs)
+            return [("Contact", a["contact"].full_name), ("Type", a["activity_type"].capitalize()), ("Detail", a["detail"]),
+                    ("Opportunity", a["opportunity"].title if a["opportunity"] else None)]
+        a = await self._stage_args(inputs)
+        return [("Opportunity", a["row"].title), ("Contact", a["contact"].full_name if a["contact"] else None),
+                ("Stage", f"{a['row'].stage.capitalize()} becomes {a['stage'].capitalize()}"),
+                ("Lost reason", inputs.get("lost_reason") if a["stage"] == "lost" else None)]
+
+    async def create_crm_contact(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.models.crm import CrmContact
+
+        full_name, contact_type = self._contact_args(inputs)
         row = CrmContact(
             firm_id=self.firm_id, full_name=full_name, contact_type=contact_type,
             email=inputs.get("email"), source=inputs.get("source"), notes=inputs.get("notes"),
@@ -2655,23 +2993,13 @@ class ToolExecutors:
 
     async def create_crm_opportunity(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.core.db import utcnow
-        from app.models.crm import CrmContact, CrmOpportunity
+        from app.models.crm import CrmOpportunity
 
-        contact_id = _parse_uuid(inputs.get("contact_id") or "", "contact_id")
-        title = inputs.get("title")
-        if not title:
-            raise ExecutorError("title is required")
-
-        contact = (await self.session.execute(
-            select(CrmContact).where(CrmContact.id == contact_id, CrmContact.firm_id == self.firm_id)
-        )).scalar_one_or_none()
-        if contact is None:
-            raise ExecutorError(f"Contact {contact_id} not found")
-
+        a = await self._opportunity_args(inputs)
+        contact, title = a["contact"], a["title"]
         row = CrmOpportunity(
-            firm_id=self.firm_id, contact_id=contact_id, title=title, stage="lead",
-            estimated_aum=inputs.get("estimated_aum"), probability_pct=int(inputs.get("probability_pct") or 10),
-            opened_at=utcnow(),
+            firm_id=self.firm_id, contact_id=contact.id, title=title, stage="lead",
+            estimated_aum=a["estimated_aum"], probability_pct=a["probability"], opened_at=utcnow(),
         )
         self.session.add(row)
         await self.session.flush()
@@ -2684,27 +3012,14 @@ class ToolExecutors:
 
     async def log_crm_activity(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.core.db import utcnow
-        from app.models.crm import ACTIVITY_TYPES, CrmActivity, CrmContact
+        from app.models.crm import CrmActivity
 
-        contact_id = _parse_uuid(inputs.get("contact_id") or "", "contact_id")
-        detail = inputs.get("detail")
-        if not detail:
-            raise ExecutorError("detail is required")
-        activity_type = inputs.get("activity_type") or "note"
-        if activity_type not in ACTIVITY_TYPES:
-            raise ExecutorError(f"activity_type must be one of {ACTIVITY_TYPES}")
-
-        contact = (await self.session.execute(
-            select(CrmContact).where(CrmContact.id == contact_id, CrmContact.firm_id == self.firm_id)
-        )).scalar_one_or_none()
-        if contact is None:
-            raise ExecutorError(f"Contact {contact_id} not found")
-
-        opportunity_id = inputs.get("opportunity_id")
+        a = await self._activity_args(inputs)
+        contact, activity_type = a["contact"], a["activity_type"]
         row = CrmActivity(
-            firm_id=self.firm_id, contact_id=contact_id,
-            opportunity_id=_parse_uuid(opportunity_id, "opportunity_id") if opportunity_id else None,
-            activity_type=activity_type, occurred_at=utcnow(), detail=detail,
+            firm_id=self.firm_id, contact_id=contact.id,
+            opportunity_id=a["opportunity"].id if a["opportunity"] else None,
+            activity_type=activity_type, occurred_at=utcnow(), detail=a["detail"],
             logged_by_user_id=self.user_id,
         )
         self.session.add(row)
@@ -2717,19 +3032,9 @@ class ToolExecutors:
 
     async def update_crm_opportunity_stage(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.core.db import utcnow
-        from app.models.crm import PIPELINE_STAGES, CrmOpportunity
 
-        opportunity_id = _parse_uuid(inputs.get("opportunity_id") or "", "opportunity_id")
-        stage = inputs.get("stage")
-        if stage not in PIPELINE_STAGES:
-            raise ExecutorError(f"stage must be one of {PIPELINE_STAGES}")
-
-        row = (await self.session.execute(
-            select(CrmOpportunity).where(CrmOpportunity.id == opportunity_id, CrmOpportunity.firm_id == self.firm_id)
-        )).scalar_one_or_none()
-        if row is None:
-            raise ExecutorError(f"Opportunity {opportunity_id} not found")
-
+        a = await self._stage_args(inputs)
+        row, stage = a["row"], a["stage"]
         row.stage = stage
         if stage in ("won", "lost") and row.closed_at is None:
             row.closed_at = utcnow()
@@ -2775,19 +3080,42 @@ class ToolExecutors:
             "message": f"{len(out)} corporate action(s)" + (f" with status '{status}'" if status else "") + ".",
         }
 
+    async def _corporate_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import corporate_actions as engine
+        from app.aurea_core import firm_time, markets
+
+        firm = await self._firm()
+        try:
+            if tool_key == "compute_corporate_action_entitlements":
+                r = await engine.prepare_compute(self.session, _parse_uuid(inputs.get("corporate_action_id") or "", "corporate_action_id"),
+                                                 firm_id=self.firm_id)
+                a = r["action"]
+                return [("Event", a.action_type.replace("_", " ").capitalize()), ("Instrument", r["instrument"].symbol if r["instrument"] else None),
+                        ("Ex date", firm_time.spoken(a.ex_date) if a.ex_date else None),
+                        ("Payable", firm_time.spoken(a.payable_date) if a.payable_date else None),
+                        ("Voluntary", "Yes, this opens elections" if a.is_voluntary else None),
+                        ("Accounts holding", str(r["holders"])), ("New entitlements", str(r["new"])),
+                        ("Already computed", str(r["existing"]))]
+            r = await engine.prepare_post(self.session, _parse_uuid(inputs.get("entitlement_id") or "", "entitlement_id"),
+                                          firm_id=self.firm_id)
+            a, row, effect = r["action"], r["row"], r["effect"]
+            shares = float(row.shares_entitled)
+            return [("Event", a.action_type.replace("_", " ").capitalize()), ("Instrument", r["instrument"].symbol if r["instrument"] else None),
+                    ("Account", r["account"].name if r["account"] else None), ("Shares entitled", f"{shares:g}"),
+                    ("Cash in", f"{markets.money(float(effect['cash']), firm.base_currency, dp=2)} at {float(effect['per_share']):g} a share" if "cash" in effect else None),
+                    ("Holding", f"{shares:g} becomes {float(effect['new_quantity']):g} at {float(effect['ratio']):g} for 1" if "new_quantity" in effect else None),
+                    ("Tax lots", "Reduced in cost" if a.action_type == "return_of_capital" else "Restated" if "new_quantity" in effect else None),
+                    ("Effect", "Posts once and cannot be undone")]
+        except engine.CorporateActionError as exc:
+            raise ExecutorError(str(exc))
+
     async def compute_corporate_action_entitlements(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import corporate_actions as engine
         from app.aurea_core.corporate_actions import CorporateActionError
-        from app.models.corporate_actions import CorporateAction
 
         action_id = _parse_uuid(inputs.get("corporate_action_id") or "", "corporate_action_id")
-        action = (await self.session.execute(
-            select(CorporateAction).where(CorporateAction.id == action_id, CorporateAction.firm_id == self.firm_id)
-        )).scalar_one_or_none()
-        if action is None:
-            raise ExecutorError(f"Corporate action {action_id} not found")
-
         try:
+            action = (await engine.prepare_compute(self.session, action_id, firm_id=self.firm_id))["action"]
             created = await engine.compute_entitlements(self.session, action_id)
         except CorporateActionError as exc:
             raise ExecutorError(str(exc))
@@ -2801,14 +3129,9 @@ class ToolExecutors:
         from app.aurea_core import corporate_actions as engine
         from app.aurea_core.corporate_actions import CorporateActionError
 
-        from app.models.corporate_actions import CorporateActionEntitlement
-
         entitlement_id = _parse_uuid(inputs.get("entitlement_id") or "", "entitlement_id")
-        row = await self.session.get(CorporateActionEntitlement, entitlement_id)
-        if row is None or row.firm_id != self.firm_id:
-            raise ExecutorError(f"Entitlement {entitlement_id} not found")
-
         try:
+            await engine.prepare_post(self.session, entitlement_id, firm_id=self.firm_id)
             posted = await engine.post_entitlement(self.session, entitlement_id)
         except CorporateActionError as exc:
             raise ExecutorError(str(exc))

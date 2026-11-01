@@ -194,13 +194,8 @@ class RefreshRefused(Exception):
     """A refresh that should not run, with a reason fit to show the person."""
 
 
-async def refresh_prices(session: AsyncSession, firm_id: uuid.UUID, *, now: datetime | None = None) -> dict:
-    """Fetch prices now, exactly as the scheduled run does, and say what changed.
-
-    It goes through `run_sync`, so the run is recorded the same way and revalues the holdings
-    it touched. Refused when the feed is off, or when it ran successfully moments ago."""
-    from app.conduit.service import run_sync
-
+async def prepare_refresh(session: AsyncSession, firm_id: uuid.UUID, *, now: datetime | None = None):
+    """The connector a fetch would use. Refused when the feed is off, or when it ran moments ago."""
     now = now or utcnow()
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -215,6 +210,15 @@ async def refresh_prices(session: AsyncSession, firm_id: uuid.UUID, *, now: date
             raise RefreshRefused(f"Prices were fetched {int((now - last).total_seconds() // 60)} minute(s) ago. "
                                  f"Try again in {int(wait) + 1} minute(s) - asking the provider again straight "
                                  "away only gets the next run rate-limited.")
+    return conn
+
+
+async def refresh_prices(session: AsyncSession, firm_id: uuid.UUID, *, now: datetime | None = None) -> dict:
+    """Fetch prices now, exactly as the scheduled run does, and say what changed. It goes through
+    `run_sync`, so the run is recorded the same way and revalues the holdings it touched."""
+    from app.conduit.service import run_sync
+
+    conn = await prepare_refresh(session, firm_id, now=now)
     sync = await run_sync(session, conn)
     d = sync.detail or {}
     return {

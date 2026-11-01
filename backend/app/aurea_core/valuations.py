@@ -42,10 +42,12 @@ class ValuationError(Exception):
     """A valuation that cannot be recorded, with a reason fit to show the user."""
 
 
-async def record_valuation(
+async def prepare_valuation(
     session: AsyncSession, firm_id: uuid.UUID, *, instrument_id: uuid.UUID, as_of: date, unit_value: float,
-    source_document: str, recorded_by: str, notes: str | None = None, today: date | None = None,
+    source_document: str, notes: str | None = None, today: date | None = None,
 ) -> dict:
+    """Everything recording would refuse, refused without writing, so a Confirm card that would only
+    fail is not shown. Returns what is on file now and what would change."""
     today = today or utcnow().date()
     inst = await session.get(Instrument, instrument_id)
     if inst is None or inst.firm_id != firm_id:
@@ -93,7 +95,21 @@ async def record_valuation(
 
     held = (await session.execute(
         select(Holding).where(Holding.firm_id == firm_id, Holding.instrument_id == inst.id))).scalars().all()
-    value_before = sum(float(h.market_value or 0) for h in held)
+    return {"inst": inst, "unit_value": unit_value, "active": active, "prior_value": prior_value, "prior_date": prior_date,
+            "prior_basis": prior_basis, "change": change, "held": held,
+            "value_before": sum(float(h.market_value or 0) for h in held),
+            "value_after": sum(float(h.quantity or 0) * unit_value for h in held)}
+
+
+async def record_valuation(
+    session: AsyncSession, firm_id: uuid.UUID, *, instrument_id: uuid.UUID, as_of: date, unit_value: float,
+    source_document: str, recorded_by: str, notes: str | None = None, today: date | None = None,
+) -> dict:
+    ready = await prepare_valuation(session, firm_id, instrument_id=instrument_id, as_of=as_of, unit_value=unit_value,
+                                    source_document=source_document, notes=notes, today=today)
+    inst, unit_value, active, held = ready["inst"], ready["unit_value"], ready["active"], ready["held"]
+    prior_value, prior_date, prior_basis = ready["prior_value"], ready["prior_date"], ready["prior_basis"]
+    change, value_before = ready["change"], ready["value_before"]
 
     for old in active:
         if old.as_of == as_of:
