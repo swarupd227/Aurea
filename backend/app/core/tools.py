@@ -534,6 +534,61 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER},
     ),
 
+    "read_balance_sheet": Tool(
+        key="read_balance_sheet",
+        name="Read Balance Sheet",
+        speaking_agent="astra",
+        description="What a household owns, owes and spends: the managed book, what is held away, retirement accounts, cash, property and business, each debt, net worth, and cash flow. Give a household_id for one household with its items, or none for the whole book. 'basis' of 'assets_only' means no debt is recorded here, which does not mean the client has none, so call it a figure before any debts and never say they are debt free. Cash flow with status 'not_assessed' lists what is missing; never work out a figure in its place. Items under 'not_converted' are in another currency and are left out of every total. 'liquid' leaves out property and business, which cannot be drawn on.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, or leave out for the whole book", required=False),
+        ],
+        output=ToolOutput("object", "Each household's assets, liabilities, net worth and cash flow"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_balance_item": Tool(
+        key="record_balance_item",
+        name="Record Balance Item",
+        speaking_agent="astra",
+        description="Record an asset, debt or yearly expense a household has, from a document. It changes net worth, and a debt also changes the household's protection gap. Use only figures from a document the user gives you and never estimate one. To update a figure, give replaces_id: the old one stays on file, ended. Recorded held-away investments or pensions replace what a person's profile says, so nothing is counted twice.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this? It changes the household's net worth, and a debt changes its protection gap.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household", required=True),
+            ToolInput("kind", "string", "One of: held_away_investment, pension, cash, property, business, other_asset, mortgage, personal_loan, credit_card, student_loan, tax_owed, other_debt, essential_spending, discretionary_spending", required=True),
+            ToolInput("name", "string", "The institution, lender or what it is", required=True),
+            ToolInput("amount", "number", "The value, the balance owed, or the amount a year for spending", required=True),
+            ToolInput("as_of", "string", "The date the figure was true, YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "The document it comes from - name, date and issuer", required=True),
+            ToolInput("person_id", "uuid", "Whose it is. Leave out if it is the household's jointly", required=False),
+            ToolInput("annual_payment", "number", "What a debt costs to service each year", required=False),
+            ToolInput("interest_rate", "number", "A debt's rate, as a percentage", required=False),
+            ToolInput("ends_on", "string", "When a debt ends, YYYY-MM-DD", required=False),
+            ToolInput("currency", "string", "A three-letter code, if not the firm's. It is listed and left out of the totals", required=False),
+            ToolInput("replaces_id", "uuid", "The item this is a new figure for, from read_balance_sheet", required=False),
+        ],
+        output=ToolOutput("object", "The household's balance sheet after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "end_balance_item": Tool(
+        key="end_balance_item",
+        name="End Balance Item",
+        speaking_agent="astra",
+        description="Mark an asset, debt or expense as no longer standing: repaid, sold, closed. It stops counting and is kept on file with the reason. To change a figure, record a new one with replaces_id instead.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="End this item? It stops counting towards net worth, and ending a debt changes the protection gap.",
+        inputs=[
+            ToolInput("item_id", "uuid", "The item, from read_balance_sheet", required=True),
+            ToolInput("reason", "string", "Why it no longer stands", required=True),
+        ],
+        output=ToolOutput("object", "The household's balance sheet after ending it"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",
@@ -737,8 +792,8 @@ TOOLS: dict[str, Tool] = {
             "report (one report; give report_id), messages (the client inbox), message_thread (one client's secure "
             "messages; give household_id), ips (each mandate against its accepted IPS), reviews (when each client was last "
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
-            "(questionnaire results beside what is on file) or reconciliation (the book against custodian statements, and "
-            "its breaks). It returns no data and states nothing - answer "
+            "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
+            "its breaks) or net_worth (what each household owns, owes and spends). It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages); an id from memory or an earlier turn is refused."
@@ -1301,6 +1356,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "protection": ("/studio/protection", "Protection", {_A, _P, _PT, _C, _O, _B}),
     "risk_profiles": ("/studio/risk-profiles", "Risk profiles", {_A, _P, _PT, _C, _O, _B}),
     "reconciliation": ("/studio/reconciliation", "Reconciliation", {_PT, _C, _O, _B}),
+    "net_worth": ("/studio/net-worth", "Net worth", {_A, _P, _PT, _C, _O, _B}),
 }
 
 

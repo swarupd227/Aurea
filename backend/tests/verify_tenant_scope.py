@@ -76,7 +76,7 @@ async def behaviour() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     tables = [Base.metadata.tables[n] for n in
               ("firm", "household", "person", "legal_entity", "mandate", "account",
-               "goal", "relationship_edge", "holding", "instrument", "price")]
+               "goal", "relationship_edge", "holding", "instrument", "price", "balance_item")]
     async with engine.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
     Session = async_sessionmaker(engine, expire_on_commit=False)

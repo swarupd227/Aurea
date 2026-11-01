@@ -25,6 +25,7 @@ import { ReviewsView } from "@/components/views/ReviewsView";
 import { ProtectionView } from "@/components/views/ProtectionView";
 import { RiskProfilesView } from "@/components/views/RiskProfilesView";
 import { ReconciliationView } from "@/components/views/ReconciliationView";
+import { NetWorthView } from "@/components/views/NetWorthView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
 
@@ -90,6 +91,8 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <RiskProfilesView />;
     case "reconciliation":
       return <ReconciliationView />;
+    case "net_worth":
+      return <NetWorthView />;
   }
 }
 

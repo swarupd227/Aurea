@@ -130,6 +130,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
       { label: "Billing", prompt: withRef("Why was this household billed what it was?", "household", household) },
       { label: "Next review", prompt: withRef("When was this household last reviewed, and when is the next review due?", "household", household) },
       { label: "Against its IPS", prompt: withRef("How does this household's portfolio sit against its IPS?", "household", household) },
+      { label: "Net worth", prompt: withRef("What is this household's net worth, and what is on file for it?", "household", household) },
     ];
   }
   const route = pathname.replace(/\/$/, "");
@@ -182,6 +183,12 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Overdue reviews", prompt: "Which client reviews are overdue, and what have those clients paid since?" },
         { label: "No record", prompt: "Which households have no review on record?" },
         h1 ? { label: `${short(h1)}'s review`, prompt: `When was ${the(h1)} last reviewed, and what did it cover?` } : { label: "Due soon", prompt: "Which client reviews fall due in the next month?" },
+      ];
+    case "/studio/net-worth":
+      return [
+        { label: "Debts on file", prompt: "Which households have debts on file, and how much do they owe?" },
+        { label: "Assets only", prompt: "Which households have no debts recorded, so their net worth is assets only?" },
+        h1 ? { label: `${short(h1)}'s net worth`, prompt: `What is ${the(h1)}'s net worth, and what is it made of?` } : { label: "Cash flow", prompt: "Which households have a cash flow we can assess?" },
       ];
     case "/studio/ips":
       return [

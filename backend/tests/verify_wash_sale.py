@@ -40,7 +40,7 @@ async def main() -> int:
     # household_brain() unconditionally touches legal_entity/goal/relationship_edge and
     # account_valuation() touches price, even though this scenario has none of those rows.
     wanted = ["firm", "household", "person", "legal_entity", "mandate", "account",
-              "instrument", "price", "holding", "tax_lot", "goal", "relationship_edge"]
+              "instrument", "price", "holding", "tax_lot", "goal", "relationship_edge", "balance_item"]
     tables = [Base.metadata.tables[n] for n in wanted]
     async with db.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))

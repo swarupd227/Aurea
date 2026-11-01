@@ -100,7 +100,7 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
     for b in brains:
         seg = b["household"]["segment"]
         aum = b["totals"]["total_value"]
-        held = sum((p.get("profile") or {}).get("held_away", 0) for p in b["persons"])
+        held = b["totals"].get("held_away", 0)
         if not held:
             share = A.wallet_share_default(seg)
             held = max(aum / share - aum, 0.0) if share else 0.0

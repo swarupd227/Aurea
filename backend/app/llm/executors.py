@@ -76,6 +76,9 @@ class ToolExecutors:
             "book_client_review": self.book_client_review,
             "read_ips_monitoring": self.read_ips_monitoring,
             "record_ips": self.record_ips,
+            "read_balance_sheet": self.read_balance_sheet,
+            "record_balance_item": self.record_balance_item,
+            "end_balance_item": self.end_balance_item,
             "read_reconciliation": self.read_reconciliation,
             "import_custody_statement": self.import_custody_statement,
             "resolve_recon_break": self.resolve_recon_break,
@@ -668,6 +671,99 @@ class ToolExecutors:
             return [("Client", r["household"].name), ("Meeting", r["title"]),
                     ("When", f"{firm_time.spoken(r['when'].date())}, {r['when']:%H:%M}")]
         except reviews.ReviewError as exc:
+            raise ExecutorError(str(exc))
+
+    async def read_balance_sheet(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import balance_sheet, markets
+
+        say = markets.money_for(await self._firm())
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await balance_sheet.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            result["message"] = (f"{result['household']}: net worth {say(result['net_worth'])}"
+                                 + (" before any debts, because none are recorded here." if result["basis"] == "assets_only" else "."))
+            return result
+        result = await balance_sheet.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = (f"{s['households']} household(s): {s['with_liabilities']} with debts recorded, {s['assets_only']} assets only "
+                             f"with no debts recorded here, {s['cash_flow_assessed']} with cash flow assessed.")
+        return result
+
+    def _balance_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        rate = inputs.get("interest_rate")
+        try:
+            rate = float(rate) / 100 if rate not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ExecutorError("interest_rate must be a number.")
+        return {"kind": str(inputs.get("kind") or "").strip().lower(), "name": inputs.get("name") or "", "amount": inputs.get("amount"),
+                "as_of": self._review_day(inputs.get("as_of"), "as_of"), "source_document": inputs.get("source_document") or "",
+                "person_id": _parse_uuid(inputs["person_id"], "person_id") if inputs.get("person_id") else None,
+                "annual_payment": inputs.get("annual_payment"), "interest_rate": rate,
+                "ends_on": self._review_day(inputs.get("ends_on"), "ends_on"), "currency": inputs.get("currency"),
+                "replaces_id": _parse_uuid(inputs["replaces_id"], "replaces_id") if inputs.get("replaces_id") else None}
+
+    async def _balance_write(self, write) -> dict[str, Any]:
+        from app.aurea_core import balance_sheet
+        from app.models.identity import User
+
+        if self.role not in (UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS):
+            raise ExecutorError("Your role cannot change a client's balance sheet.")
+        user = await self.session.get(User, self.user_id)
+        try:
+            return await write(balance_sheet, user.email if user else "unknown")
+        except balance_sheet.BalanceSheetError as exc:
+            raise ExecutorError(str(exc))
+
+    async def record_balance_item(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import markets
+
+        household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+        args = self._balance_args(inputs)
+        result = await self._balance_write(lambda b, by: b.record_item(
+            self.session, household_id, firm_id=self.firm_id, by=by, **args))
+        result["message"] = f"Recorded {result['recorded']}. {result['household']} now reads {markets.money_for(await self._firm())(result['net_worth'])}."
+        return result
+
+    async def end_balance_item(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import markets
+
+        item_id = _parse_uuid(inputs.get("item_id"), "item_id")
+        result = await self._balance_write(lambda b, by: b.end_item(
+            self.session, item_id, firm_id=self.firm_id, reason=inputs.get("reason"), by=by))
+        result["message"] = f"{result['ended_item']} has ended. {result['household']} now reads {markets.money_for(await self._firm())(result['net_worth'])}."
+        return result
+
+    async def _balance_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What a balance sheet Confirm card names, refused for the reasons doing it would be refused."""
+        from app.aurea_core import balance_sheet, firm_time, markets
+
+        say = markets.money_for(await self._firm())
+        text = lambda k: k.replace("_", " ").capitalize()  # noqa: E731
+        try:
+            if tool_key == "end_balance_item":
+                r = await balance_sheet.prepare_end(self.session, _parse_uuid(inputs.get("item_id"), "item_id"), firm_id=self.firm_id,
+                                                    reason=inputs.get("reason"))
+                i = r["item"]
+                return [("Client", r["household"].name if r["household"] else None), ("Item", i.name), ("Type", text(i.kind)),
+                        ("Amount", say(float(i.amount))), ("Reason", r["reason"])]
+            household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+            r = await balance_sheet.prepare_item(self.session, household_id, firm_id=self.firm_id, **self._balance_args(inputs))
+            now = await balance_sheet.for_household(self.session, household_id, firm_id=self.firm_id)
+            old = float(r["replacing"].amount) if r["replacing"] else 0.0
+            change = 0.0 if r["not_converted"] or r["side"] == "expense" else (r["amount"] - old) * (-1 if r["side"] == "liability" else 1)
+            return [("Client", r["household"].name), ("Type", text(r["kind"])), ("Name", r["name"]),
+                    ("Whose", r["person"].full_name if r["person"] else "Joint"),
+                    ("Amount", f"{r['currency']} {r['amount']:,.2f}" if r["not_converted"] else say(r["amount"])),
+                    ("Replaces", say(old) if r["replacing"] else None), ("As at", firm_time.spoken(r["as_of"])),
+                    ("Paid a year", say(r["annual_payment"]) if r["annual_payment"] else None),
+                    ("Interest rate", f"{r['interest_rate']:.2%}" if r["interest_rate"] is not None else None),
+                    ("Ends on", firm_time.spoken(r["ends_on"]) if r["ends_on"] else None), ("Document", r["source"]),
+                    ("Counted", "Not added: not converted" if r["not_converted"] else None),
+                    ("Net worth", None if r["side"] == "expense" or r["not_converted"]
+                     else f"{say(now['net_worth'])} becomes {say(now['net_worth'] + change)}")]
+        except balance_sheet.BalanceSheetError as exc:
             raise ExecutorError(str(exc))
 
     async def read_ips_monitoring(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2104,6 +2200,8 @@ class ToolExecutors:
             return rows(*await self._protection_preview(tool_key, inputs))
         if tool_key == "decide_risk_profile":
             return rows(*await self._risk_preview(inputs))
+        if tool_key in ("record_balance_item", "end_balance_item"):
+            return rows(*await self._balance_preview(tool_key, inputs))
         if tool_key in ("import_custody_statement", "resolve_recon_break"):
             return rows(*await self._recon_preview(tool_key, inputs))
         if tool_key not in ("complete_task", "assign_task", "create_task"):

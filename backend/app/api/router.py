@@ -2,7 +2,7 @@
 from fastapi import APIRouter
 
 from app.api import (
-    account_registration, admin, agents, ai_governance, analytics, atlas, auth, billing, canvas, valuations,
+    account_registration, admin, agents, ai_governance, analytics, atlas, auth, balance_sheet, billing, canvas, valuations,
     compliance_program, composites, conduit, core, corporate_actions, crm, engage, ips, licences, onboarding,
     portfolios, prices, protection, provenance, reconciliation, reviews, risk_profile, skills, sleeves, studio,
     superadmin, threads, vault,
@@ -35,6 +35,7 @@ api_router.include_router(licences.router)
 api_router.include_router(risk_profile.router)
 api_router.include_router(reviews.router)
 api_router.include_router(ips.router)
+api_router.include_router(balance_sheet.router)
 api_router.include_router(canvas.router)
 api_router.include_router(onboarding.router)
 api_router.include_router(engage.router)

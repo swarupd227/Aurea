@@ -174,14 +174,14 @@ async def main() -> int:
             names = [p["name"] for p in v["people"]]
             check("a child with no income is not an earner to assess", sorted(names), ["Mei", "Wei"])
             check("assets are managed plus held away", v["assets"],
-                  {"managed": 400_000.0, "held_away": 100_000.0, "retirement_accounts": 0.0, "total": 500_000.0})
+                  {"managed": 400_000.0, "held_away": 100_000.0, "retirement_accounts": 0.0, "cash": 0.0, "total": 500_000.0})
             w = next(p for p in v["people"] if p["name"] == "Wei")
             check("each earner's survivor income is the other's", w["death"]["annual_need"], 110_000.0)
             near("only a goal due before retirement, in today's money, is a need",
                  w["death"]["goals_need"], 100_000 / (1.04 ** 5), tol=5.0)
             check("retirement and legacy goals are not", w["death"]["goals_need"] < 100_000, True)
             check("cover not yet on file", w["death"]["cover"], 0.0)
-            check("what is left out is stated", "debts" in v["not_modelled"], True)
+            check("what is left out is stated", "long_term_care" in v["not_modelled"], True)
             check("the assumptions travel with the figures", v["assumptions"]["death_replacement"], 0.7)
 
             print("\n=== Pensions and savings accounts on file count ===")
@@ -201,7 +201,7 @@ async def main() -> int:
             await s.flush()
             v = await pr.for_household(s, pots.id, firm_id=third.id, today=today)
             check("each pot on file is an asset, shown apart", v["assets"],
-                  {"managed": 0.0, "held_away": 0.0, "retirement_accounts": 3_000_000.0, "total": 3_000_000.0})
+                  {"managed": 0.0, "held_away": 0.0, "retirement_accounts": 3_000_000.0, "cash": 0.0, "total": 3_000_000.0})
             j = next(p for p in v["people"] if p["name"] == "James")
             check("they can close a gap", (j["death"]["status"], j["disability"]["status"]), ("no_gap", "no_gap"))
             check("and what they closed stays visible", j["disability"]["gap_before_assets"] > 0, True)

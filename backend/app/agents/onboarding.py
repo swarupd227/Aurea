@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import billing, firm_time, ips, knowledge
+from app.aurea_core import balance_sheet, billing, firm_time, ips, knowledge
 from app.aurea_core.document_intel import DOC_LABELS, extract
 from app.aurea_core.screening import screen_parties
 from app.core.db import utcnow
@@ -345,6 +345,9 @@ class OnboardingAgent(BaseAgent):
                 to_type="entity" if owner_entity_id else "person",
                 to_id=owner_entity_id or owner_person_id,
             ))
+
+        # What they declared they hold elsewhere belongs on the household, not left on the case.
+        await balance_sheet.carry_from_onboarding(s, case, household_id=household.id, today=firm_time.today(ctx.firm))
 
         case.status = OnboardingStatus.APPROVED
         case.materialized = created

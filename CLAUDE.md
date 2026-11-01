@@ -49,6 +49,13 @@ pages are artifact views the agents open. Full guideline, including what is buil
 - **Protection works from what is on file.** `aurea_core/protection.py` never estimates an income or a cover
   figure: a person with no income or date of birth is "not assessed", and that is the result. No policy on
   file does not mean no cover. Policies and incomes are recorded by a person from a document.
+- **Net worth works from what is on file.** `aurea_core/balance_sheet.py` adds the managed book to what a household
+  holds elsewhere, less what it owes. An asset, debt or expense is recorded by a person from a document and never
+  estimated, and wallet-share's guess stays out of it. No debt on file reads "assets only", not debt free; no income
+  or expenses means cash flow is "not assessed". A recorded figure replaces what a person's profile says, so nothing
+  counts twice, and a new figure carries over a loan's terms. An item in another currency is listed and left out of
+  every sum. `totals.total_value` stays what is managed and billed; `totals.held_away` sits beside it. Debts add to
+  the death need in protection; a home or a business does not close a gap.
 - **A report reaches a client only through its proposal.** Research & Reporting drafts and proposes;
   approving that proposal publishes, rolling it back withdraws. `aurea_core/reports.py` publishes nothing,
   no tool does, and the agent stops at a proposal whatever its tier (`agent_runs.forced_to_proposal`). A rerun rewrites the draft still waiting for a decision, so none is stranded. A draft
@@ -108,7 +115,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_confirm_cards`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

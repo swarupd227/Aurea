@@ -51,7 +51,7 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
         nextgen_total += len(ng)
 
         # Wallet-share & held-away.
-        held_away = sum((p.get("profile") or {}).get("held_away", 0) for p in b["persons"])
+        held_away = b["totals"].get("held_away", 0)
         if held_away > 0:
             total_wealth = aum + held_away
         else:

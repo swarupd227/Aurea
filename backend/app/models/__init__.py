@@ -1,6 +1,7 @@
 """SQLAlchemy models. Importing this package registers every table on Base.metadata."""
 from app.models import (  # noqa: F401
     ai_governance,
+    balance_sheet,
     billing,
     client_experience,
     compliance,

@@ -19,8 +19,7 @@ _MIN_WALLET_SHARE_GAP = 0.20  # flag when wallet share is below 80%
 
 
 def _held_away_for_brain(brain: dict) -> float:
-    persons = brain.get("persons", [])
-    explicit = sum((p.get("profile") or {}).get("held_away", 0) or 0 for p in persons)
+    explicit = brain["totals"].get("held_away", 0)
     if explicit:
         return explicit
     # Estimate from segment default wallet share if no explicit data

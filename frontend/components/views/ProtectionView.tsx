@@ -129,6 +129,8 @@ export function ProtectionView() {
             <span className="chip text-ink-muted">{Math.round(data.assumptions.disability_replacement * 100)}% own income</span>
             <span className="chip text-ink-muted">to retirement goal, else {data.assumptions.retirement_age}</span>
             <span className="chip text-ink-muted">{(data.assumptions.discount_rate * 100).toFixed(0)}% discount</span>
+            <span className="chip text-ink-muted">debts on file add to the death need</span>
+            <span className="chip text-ink-muted">home and business not counted</span>
             <span className="chip text-ink-muted">not modelled: {data.not_modelled.join(" · ").replace(/_/g, " ")}</span>
           </div>
           <div className="flex gap-2">
@@ -246,7 +248,7 @@ export function ProtectionView() {
                       {money(p.income)}
                       {p.other_income_missing && <span className="chip ml-1 text-warn" title="Another adult's income is not on file, so the need is overstated">partner unknown</span>}
                     </td>
-                    <td className="px-4 py-2 text-right" title={p.death.need != null ? `need ${money(p.death.need)} · cover ${money(p.death.cover)} · assets ${money(p.death.assets)}` : undefined}><Scenario s={p.death} /></td>
+                    <td className="px-4 py-2 text-right" title={p.death.need != null ? `need ${money(p.death.need)}${p.death.debts ? ` including debts ${money(p.death.debts)}` : ""} · cover ${money(p.death.cover)} · assets ${money(p.death.assets)}` : undefined}><Scenario s={p.death} /></td>
                     <td className="px-4 py-2 text-right" title={p.disability.need != null ? `need ${money(p.disability.need)} · cover ${money(p.disability.cover)} · assets ${money(p.disability.assets)}` : undefined}><Scenario s={p.disability} /></td>
                   </tr>
                 ))}

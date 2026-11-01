@@ -179,8 +179,7 @@ function HouseholdPerformance({ householdId }: { householdId: string }) {
   );
 }
 
-function WalletShareTile({ persons, totalValue }: { persons: any[]; totalValue: number }) {
-  const heldAway = persons.reduce((s: number, p: any) => s + ((p.profile?.held_away) || 0), 0);
+function WalletShareTile({ heldAway, totalValue }: { heldAway: number; totalValue: number }) {
   const total = totalValue + heldAway;
   const share = total > 0 ? totalValue / total : 1;
   const isQP = totalValue >= 5_000_000;
@@ -206,6 +205,17 @@ function NextReviewChip({ householdId }: { householdId: string }) {
   return (
     <span className={`${chip} ${data.status === "overdue" ? "text-crit" : ""}`} data-testid="client-next-review">
       {data.next_due ? `Next review ${reviewDay(data.next_due)}` : "No review on record"}
+    </span>
+  );
+}
+
+/** Renders nothing for a role that does not read net worth. */
+function NetWorthChip({ householdId }: { householdId: string }) {
+  const { data } = useApi<any>(`/api/balance-sheet/households/${householdId}`, [householdId]);
+  if (!data) return null;
+  return (
+    <span className={chip} title={data.basis === "assets_only" ? "No debts on file" : undefined} data-testid="client-net-worth">
+      Net worth {money(data.net_worth)}{data.basis === "assets_only" ? " · assets only" : ""}
     </span>
   );
 }
@@ -277,6 +287,7 @@ export function ClientView({ id }: { id: string }) {
             <span className={`${chip} tabular-nums`}>Data confidence {Math.round(t.data_confidence * 100)}%</span>
             <NextReviewChip householdId={id} />
             <IpsChip householdId={id} />
+            <NetWorthChip householdId={id} />
           </>
         }
         actions={
@@ -306,7 +317,7 @@ export function ClientView({ id }: { id: string }) {
         <StatTile label="Accounts" value={brain.accounts.length} />
         <StatTile label="Entities & trusts" value={brain.entities.length} />
         <StatTile label="Goals" value={brain.goals.length} />
-        <WalletShareTile persons={brain.persons} totalValue={t.total_value} />
+        <WalletShareTile heldAway={t.held_away ?? 0} totalValue={t.total_value} />
       </div>
 
       <div className="grid gap-5 cq-lg:grid-cols-3">

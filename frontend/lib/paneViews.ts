@@ -11,7 +11,7 @@ import { viewsForRole } from "./nav";
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
-  | "reviews" | "protection" | "risk_profiles" | "reconciliation";
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -44,6 +44,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "protection", pattern: /^\/studio\/protection\/?$/, base: "/studio/protection", label: "Protection" },
   { key: "risk_profiles", pattern: /^\/studio\/risk-profiles\/?$/, base: "/studio/risk-profiles", label: "Risk profiles" },
   { key: "reconciliation", pattern: /^\/studio\/reconciliation\/?$/, base: "/studio/reconciliation", label: "Reconciliation" },
+  { key: "net_worth", pattern: /^\/studio\/net-worth\/?$/, base: "/studio/net-worth", label: "Net worth" },
 ];
 
 /** The list a single-item view sits under, so one opened straight from the conversation still has
@@ -158,6 +159,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "import_custody_statement":
     case "resolve_recon_break":
       return "/studio/reconciliation";
+    case "read_balance_sheet":
+    case "record_balance_item":
+    case "end_balance_item":
+      return "/studio/net-worth";
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";

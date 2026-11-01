@@ -12,11 +12,15 @@ It only works from what is on file. Income is never estimated: the planners' fal
 portfolio is a guess about a retirement goal, and a protection figure built on it would look exact.
 With no income or date of birth the person is "not assessed", and saying so is the result.
 
-Assets are the managed book, what is held away, and the pensions and savings accounts in a person's
-tax details, all at full value, so a wealthy household reads as self-insured. That is the honest
-reading of the sum, but it spends the retirement pot on the claim: the need, the cover and the assets
-are all reported so an adviser can see which of them closed the gap. Debts and long-term care are not
-modelled, because the book holds no liabilities or care costs, and the result says that as well.
+Assets are the managed book, what is held away, cash, and pensions and savings accounts, all at full
+value, so a wealthy household reads as self-insured. That is the honest reading of the sum, but it spends
+the retirement pot on the claim: the need, the cover and the assets are all reported so an adviser can
+see which of them closed the gap. A home or a business is not among them, because neither can pay a claim.
+
+Debts on file add to what survivors would need, the earner's own and the household's joint ones. They do
+not add to the disability need, because the income benefit is what keeps paying them. With no debts on file
+the need is what it is and the result says none are on file, which does not mean there are none. Long-term
+care is not modelled, because the book holds no care costs, and the result says that as well.
 """
 from __future__ import annotations
 
@@ -27,6 +31,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.aurea_core import balance_sheet
+from app.aurea_core.balance_sheet import income_of, retirement_accounts_of  # noqa: F401  - read from here elsewhere
 from app.aurea_core.goal_tradeoff import human_capital_pv
 from app.aurea_core.graph import household_brain, list_households
 from app.core.db import utcnow
@@ -43,10 +49,7 @@ DEFAULTS = {
 # Goals a death does not make more urgent: the earner's own retirement is covered by replacing the
 # income, and a legacy is what is left, not a need.
 _NOT_A_NEED = ("retirement", "legacy")
-NOT_MODELLED = ["debts", "long_term_care", "funeral_and_final_costs"]
-# Pots a person's tax details record. An account in the book carries no tax wrapper, so a pot here is
-# not also in the managed total. A firm that books one as well as recording it would count it twice.
-_RETIREMENT_ACCOUNTS = ("pension_pot", "isa_value", "ira_value", "roth_value")
+NOT_MODELLED = ["long_term_care", "funeral_and_final_costs"]
 
 
 class ProtectionError(Exception):
@@ -64,17 +67,6 @@ def age_on(dob: date | None, today: date) -> int | None:
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
-def income_of(person: Person) -> float | None:
-    """The income on file, or None. Zero is a stated figure and stays zero."""
-    value = ((person.profile or {}).get("tax") or {}).get("annual_income")
-    return None if value is None else float(value)
-
-
-def retirement_accounts_of(person: Person) -> float:
-    tax = (person.profile or {}).get("tax") or {}
-    return sum(float(tax.get(k) or 0) for k in _RETIREMENT_ACCOUNTS)
-
-
 def _status(gap: float) -> str:
     return "gap" if gap > 0.005 else "no_gap"
 
@@ -82,10 +74,11 @@ def _status(gap: float) -> str:
 def assess(
     *, age: int | None, income: float | None, other_income: float, has_dependants: bool, retirement_age: int,
     goals_due: float, assets: float, life: float = 0.0, tpd: float = 0.0, income_benefits: list[tuple[float, int | None]] = (),
-    rules: dict | None = None, retirement_stated: bool = True,
+    rules: dict | None = None, retirement_stated: bool = True, debts: float = 0.0,
 ) -> dict:
     """The two gaps for one earner. Pure. `income_benefits` is [(annual benefit, paid to age)].
-    `retirement_stated` says the retirement age came from the client's own goal, not the default."""
+    `retirement_stated` says the retirement age came from the client's own goal, not the default.
+    `debts` are what survivors would have to repay; with nobody left behind they are not a need."""
     rules = {**DEFAULTS, **(rules or {})}
     missing = [name for name, v in (("income", income), ("date_of_birth", age)) if v is None]
     if missing:
@@ -107,7 +100,8 @@ def assess(
     survivors_need = (max(0.0, rules["death_replacement"] * (income + other_income) - other_income)
                       if has_dependants else 0.0)
     income_need = pv(survivors_need)
-    need = income_need + goals_due
+    owed = debts if has_dependants else 0.0
+    need = income_need + goals_due + owed
     death_gap = max(0.0, need - life - assets)
 
     own_need = pv(rules["disability_replacement"] * income)
@@ -118,7 +112,8 @@ def assess(
         "years": years,
         "death": {
             "status": _status(death_gap), "need": round(need, 2), "income_need": round(income_need, 2),
-            "goals_need": round(goals_due, 2), "annual_need": round(survivors_need, 2), "cover": round(life, 2),
+            "goals_need": round(goals_due, 2), "debts": round(owed, 2), "annual_need": round(survivors_need, 2),
+            "cover": round(life, 2),
             "assets": round(assets, 2), "gap": round(death_gap, 2),
             "gap_before_assets": round(max(0.0, need - life), 2),
         },
@@ -194,9 +189,9 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     in_force = [p for p, r in zip(policies, rows) if r["counted"]]
 
     managed = float(brain["totals"]["total_value"])
-    held_away = sum(float((p.profile or {}).get("held_away") or 0) for p in persons)
-    retirement_accounts = sum(retirement_accounts_of(p) for p in persons)
-    assets = managed + held_away + retirement_accounts
+    usable, _ = balance_sheet.in_currency(await balance_sheet.current_items(session, household_id, firm_id=firm_id), firm)
+    outside = balance_sheet.assets_on_file(persons, usable)
+    assets = managed + balance_sheet.liquid_of(outside)
     has_people = len(persons) > 1
 
     people = []
@@ -214,6 +209,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
             age=age, income=income, other_income=other_income, has_dependants=has_people,
             retirement_age=retirement_age, retirement_stated=basis != "assumed", assets=assets, rules=rules,
             goals_due=_goals_due(brain["goals"], today=today, years=years, rate=rules["discount_rate"]),
+            debts=balance_sheet.debts_of(usable, p.id),
             life=sum(float(x.sum_insured or 0) for x in mine if x.kind == "life"),
             tpd=sum(float(x.sum_insured or 0) for x in mine if x.kind == "tpd"),
             income_benefits=[(float(x.annual_benefit or 0), x.benefit_to_age) for x in mine
@@ -232,8 +228,11 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     return {
         "household_id": str(household_id), "household": brain["household"]["name"],
         "currency": firm.base_currency if firm else None, "people": people, "policies": rows,
-        "assets": {"managed": round(managed, 2), "held_away": round(held_away, 2),
-                   "retirement_accounts": round(retirement_accounts, 2), "total": round(assets, 2)},
+        "assets": {"managed": round(managed, 2), "held_away": round(outside["held_away"], 2),
+                   "retirement_accounts": round(outside["retirement_accounts"], 2), "cash": round(outside["cash"], 2),
+                   "total": round(assets, 2)},
+        # No debt on file is not no debt, so the count travels with the figures.
+        "debts_on_file": sum(1 for i in usable if i.side == "liability"),
         "assumptions": rules, "not_modelled": NOT_MODELLED,
         "summary": {"people": len(people), "gaps": statuses.count("gap"), "largest_gap": max(gaps, default=0.0),
                     "not_assessed": sum(1 for r in people if r["death"]["status"] == "not_assessed"),

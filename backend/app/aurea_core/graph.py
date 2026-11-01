@@ -8,9 +8,23 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.valuation import account_valuation
+from app.models.balance_sheet import BalanceItem
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person, RelationshipEdge
 from app.models.portfolio import Holding
 from app.models.tenant import Firm
+
+
+def replaced_by(items, kind: str, person) -> bool:
+    """Whether a recorded item stands in for what a person's profile says. A joint one does for everyone."""
+    return any(i.kind == kind and i.person_id in (None, person.id) for i in items)
+
+
+def held_away_of(persons, items) -> float:
+    """What a household holds elsewhere: recorded investments, and for anyone with none recorded, the
+    figure on their profile. Never an estimate, and never both for the same person."""
+    recorded = sum(float(i.amount) for i in items if i.kind == "held_away_investment")
+    return recorded + sum(float((p.profile or {}).get("held_away") or 0) for p in persons
+                          if not replaced_by(items, "held_away_investment", p))
 
 
 async def household_brain(
@@ -88,6 +102,10 @@ async def household_brain(
     ]
 
     firm = await session.get(Firm, firm_id)
+    base = ((firm.base_currency if firm else None) or "NZD").upper()
+    held_items = (await session.execute(select(BalanceItem).where(
+        BalanceItem.household_id == household_id, BalanceItem.kind == "held_away_investment", BalanceItem.status == "current",
+    ))).scalars().all()
     return {
         "currency": firm.base_currency if firm else None,
         "household": {
@@ -128,6 +146,8 @@ async def household_brain(
         "relationships": related_edges,
         "totals": {
             "total_value": round(total, 2),
+            # Not part of total_value, which is what is managed and billed on.
+            "held_away": round(held_away_of(persons, [i for i in held_items if (i.currency or base).upper() == base]), 2),
             "by_asset_class": {k: round(v, 2) for k, v in by_class.items()},
             "data_confidence": round(sum(confidences) / len(confidences), 3) if confidences else 1.0,
         },
