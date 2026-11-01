@@ -1119,9 +1119,9 @@ TOOLS: dict[str, Tool] = {
         speaking_agent="drift_rebalancing",
         description=("Submit a set of orders (buys/sells) to settle them onto a client's book. Refused as a whole if "
                      "the account cannot do it, or it would breach the client's IPS or the mandate's exclusions, "
-                     "or fall in the household's tax window, or the firm's licence sends the mandate through a "
+                     "or fall in the household's tax window, or a SEBI licence on file sends the mandate through a "
                      "proposal. It checks all of this itself, so call it rather than working out the answer first, "
-                     "and say what it refused and why."),
+                     "and say only what it refused and why."),
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
         confirmation="This will place orders and settle trades. Confirm?",
         inputs=[

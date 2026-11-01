@@ -18,8 +18,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  - registers every table on Base.metadata
 from app.aurea_core import firm_time
-from app.core.db import Base, utcnow
+from app.core.db import Base
+from app.core.tools import TOOLS
 from app.llm.executors import ExecutorError, ToolExecutors
+from app.llm.gateway import SYSTEM_PROMPT_TEMPLATE
 from app.models.corporate_actions import CorporateAction
 from app.models.enums import LotRelief, MarketType, UserRole
 from app.models.graph import Account, Household, Mandate, Person
@@ -258,6 +260,11 @@ async def main() -> int:
             await s.delete((await s.execute(select(InvestmentPolicy).where(InvestmentPolicy.version == 4))).scalar_one())
             await s.flush()
             check("nor is a New Zealand firm's", "Order 1" in await card(ex, orders(m, ("buy", "BND", 1))), True)
+
+            print("\n=== What Astra may say about it ===")
+            check("a mandate's type is not a rule", "A mandate's type is a label" in SYSTEM_PROMPT_TEMPLATE, True)
+            check("the licence rule says who it governs", "A firm with no licences on file is not governed" in TOOLS["read_licences"].description, True)
+            check("the tool is called, not second-guessed", "call it rather than working out the answer first" in TOOLS["execute_orders"].description, True)
 
             print("\n=== An Indian discretionary mandate ===")
             india = await firm_of("in", "IN", "INR", regulator="SEBI", settings={"licences": ["pms_discretionary"]})
