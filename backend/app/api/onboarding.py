@@ -242,6 +242,65 @@ async def cases_overview(db: AsyncSession, firm: Firm) -> list[dict]:
     return out
 
 
+async def _first_fills(db: AsyncSession, cases: list) -> dict:
+    """The first purchase that filled on each activated case's account."""
+    from app.models.trading import Order
+
+    by_account = {}
+    for c in cases:
+        account = (c.materialized or {}).get("account_id")
+        if account:
+            by_account[uuid.UUID(str(account))] = c.id
+    if not by_account:
+        return {}
+    out: dict = {}
+    rows = (await db.execute(select(Order.account_id, Order.created_at).where(
+        Order.account_id.in_(list(by_account)), Order.side == "buy", Order.status == "filled").order_by(Order.created_at))).all()
+    for account, at in rows:
+        out.setdefault(by_account[account], at)
+    return out
+
+
+async def states_overview(db: AsyncSession, firm: Firm) -> dict:
+    """Each account's state, owner and age, the exception queues by kind, each household's status, and the three
+    clocks. Shared by the board and the conversation's `read_onboarding_queues` tool."""
+    from app.aurea_core import account_states
+
+    cases = list((await db.execute(select(OnboardingCase).where(OnboardingCase.firm_id == firm.id)
+                                   .order_by(OnboardingCase.created_at.desc()))).scalars().all())
+    transfers: dict = {}
+    if cases:
+        for t in (await db.execute(select(TransferRequest).where(TransferRequest.case_id.in_([c.id for c in cases])))).scalars().all():
+            transfers.setdefault(t.case_id, []).append(t)
+    fills = await _first_fills(db, cases)
+    now = utcnow()
+    rows = []
+    for c in cases:
+        gates = await _gates_for(db, firm, c)
+        tracks = await _tracks_for(db, firm, c)
+        account = next((t for t in tracks["tracks"] if t["key"] == "account"), None)
+        kyc = [f"{g['label']}: {g['detail']}" for g in gates["gates"]
+               if g["track"] == "financial_crime" and g["state"] == "fail"] if str(c.status) != "approved" else []
+        rows.append(account_states.account_row(
+            c, data_complete=bool(account and account["state"] == "complete"), gates_blocking=bool(gates["blocking"]),
+            kyc=kyc, transfers=transfers.get(c.id, []), first_fill=fills.get(c.id), now=now))
+    live = [r for r in rows if not r["rejected"]]
+    queues = {k: {"label": label, "owner": owner, "items": [{**e, "case_id": r["case_id"], "account": r["account"]}
+                                                           for r in live for e in r["exceptions"] if e["queue"] == k]}
+              for k, (label, owner) in account_states.QUEUES.items()}
+    return {"accounts": live, "households": account_states.households(live, {str(c.id): c for c in cases}), "queues": queues,
+            "clocks": account_states.clocks(cases, transfers_by_case=transfers, fills=fills), "states": list(account_states.STATES),
+            "summary": {"accounts": len(live), "overdue": sum(1 for r in live if r["overdue"]),
+                        "exceptions": sum(len(q["items"]) for q in queues.values()),
+                        "by_state": {s: sum(1 for r in live if r["state"] == s) for s in account_states.STATES}}}
+
+
+@router.get("/states")
+async def list_states(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """Where each account stands, what is stuck by kind, each household, and the three clocks."""
+    return await states_overview(db, firm)
+
+
 @router.get("/cases")
 async def list_cases(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     return await cases_overview(db, firm)
@@ -455,6 +514,9 @@ async def onboarding_metrics(
     open_cases = [c for c in cases if c.status not in ("approved", "rejected")]
     gate_results = [await _gates_for(db, firm, c) for c in open_cases]
     metrics["top_blockers"] = metrics_core.blocker_frequency(gate_results)
+    # The three clocks apart: paperwork, money, invested.
+    from app.aurea_core import account_states
+    metrics["clocks"] = account_states.clocks(cases, transfers_by_case=transfers_by_case, fills=await _first_fills(db, cases))
     return metrics
 
 
@@ -1057,6 +1119,10 @@ async def create_transfer(
         raise HTTPException(status_code=422, detail="transfer_type must be acat, wire, or ach")
     if body.direction not in ("in", "out"):
         raise HTTPException(status_code=422, detail="direction must be in or out")
+    # The account must exist before anything is moved into it: a transfer to an account the custodian has not
+    # opened is rejected, and the client's clock starts again.
+    if body.direction == "in" and case.custodian_push_status != "active":
+        raise HTTPException(status_code=409, detail="Open the account at the custodian before starting a transfer into it.")
 
     from app.aurea_core.integrations import transfer as transfer_integration
     from app.core.db import utcnow

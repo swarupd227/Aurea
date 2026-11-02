@@ -132,6 +132,10 @@ pages are artifact views the agents open. Full guideline, including what is buil
   an overturn reopens it. A confirmed PEP opens EDD, a confirmed sanctions match stops the case. An EDD file is signed
   off against the checklist for its wealth, a source for every item, by compliance when the risk is high. Nothing here
   is told to the client.
+- **An onboarding account's state is worked out, never set.** `aurea_core/account_states.py` reads the evidence into ten
+  states, from draft to invested, each with an owner and an SLA, and keeps exceptions in queues by kind (NIGO, KYC,
+  custodian reject, transfer reject, funding fail). A household is its least advanced account. The paperwork, money
+  and invested clocks are reported apart. Nothing is transferred into an account the custodian has not opened.
 - **A market is resolved in one place, and a country with no rules is refused.** `aurea_core/markets.py` says
   what a jurisdiction fixes; `compliance/ontology.framework_for` matches a regulator as a word. A country with
   no market gets `NO_REGIME`, no tax report and a held activation, never New Zealand's rules. Money in a
@@ -163,7 +167,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_onboarding_states`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

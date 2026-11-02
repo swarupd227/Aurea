@@ -967,6 +967,18 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
+    "read_onboarding_queues": Tool(
+        key="read_onboarding_queues",
+        name="Read Onboarding Queues",
+        speaking_agent="astra",
+        description="Where each onboarding account stands, one of draft, data_complete, documents_generated, signed, in_review, submitted, open, funding_in_progress, funded, invested, with whose move it is, how long it has been there and its SLA. The exceptions in their own queues: nigo, kyc, custodian_reject, transfer_reject, funding_fail, each with its owner and age. Each household's status, which is its least advanced account. The three clocks apart: paperwork (signed to open), money (open to funded) and invested (funded to first purchase), as P50 and P90 days. Holidays are not modelled.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Accounts, queues, households and clocks"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
     "read_aml_reviews": Tool(
         key="read_aml_reviews",
         name="Read AML Reviews",
@@ -1442,7 +1454,7 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements) or pipeline (prospects and opportunities). ips, reviews, protection, risk_profiles, net_worth and "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements) or pipeline (prospects and opportunities). ips, reviews, protection, risk_profiles, net_worth and "
             "exits, equity_comp, plan, client_file, cash, trades, tax_documents show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
@@ -1454,7 +1466,7 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions or pipeline", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions or pipeline", required=True),
             ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades or tax_documents to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
@@ -2068,6 +2080,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "trades": ("/studio/trades", "Trades", {_A, _P, _PT, _C, _O, _B}),
     "tax_documents": ("/studio/tax-documents", "Tax documents", {_A, _P, _PT, _C, _O, _B}),
     "aml": ("/studio/aml", "AML reviews", {_A, _C, _O, _B}),
+    "onboarding_queues": ("/studio/onboarding-queues", "Onboarding queues", {_A, _P, _C, _O, _B}),
     "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
     "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),
     "agent_history": ("/studio/agent-history", "Agent history", {_A, _PT, _C, _B}),

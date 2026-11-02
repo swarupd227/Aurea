@@ -78,6 +78,7 @@ class ToolExecutors:
             "read_ips_monitoring": self.read_ips_monitoring,
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
+            "read_onboarding_queues": self.read_onboarding_queues,
             "record_screening_decision": self.record_screening_decision,
             "sign_off_edd": self.sign_off_edd,
             "read_trades": self.read_trades,
@@ -1418,6 +1419,16 @@ class ToolExecutors:
         except tax_documents.TaxDocumentError as exc:
             raise ExecutorError(str(exc))
         return [("Client", r["household"].name), ("Document", r["label"]), ("Year", r["year_label"]), ("For", r["issuer"]), ("Filed at", r["document"]), ("Was expected", "No, the book did not call for it" if not r["expected"] else None)]
+
+    async def read_onboarding_queues(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.api.onboarding import states_overview
+
+        result = await states_overview(self.session, await self._firm())
+        s, c = result["summary"], result["clocks"]
+        stuck = ", ".join(f"{q['label'].lower()} {len(q['items'])}" for q in result["queues"].values() if q["items"]) or "none"
+        result["message"] = (f"{s['accounts']} account(s) in onboarding, {s['overdue']} past their SLA. Exceptions: {stuck}. "
+                             f"Median clocks: paperwork {c['paperwork']['p50']}, money {c['money']['p50']}, invested {c['invested']['p50']} day(s).")
+        return result
 
     async def read_aml_reviews(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_review
@@ -3183,8 +3194,8 @@ class ToolExecutors:
 
     async def _report_decision_preview(self, inputs: dict[str, Any]) -> dict[str, Any] | None:
         """A decision on a report's proposal names the report, because approving it puts it in front
-        of the client. Every other proposal names itself. Only an id that does not resolve keeps the
-        plain card, and fails where it always has."""
+        of the client. Every other proposal names itself. An id that resolves to none of this firm's
+        proposals is refused, so a card never asks someone to approve nothing it can name."""
         from app.aurea_core import reports
         from app.models.enums import AgentKey
         from app.models.governance import Recommendation
@@ -3192,10 +3203,9 @@ class ToolExecutors:
         def card(pairs) -> dict[str, Any]:
             return {"rows": [{"label": k, "value": str(v)} for k, v in pairs if v]}
 
-        try:
-            rec = await self.session.get(Recommendation, _parse_uuid(inputs.get("recommendation_id") or "", "recommendation_id"))
-        except ExecutorError:
-            return None
+        rec = await self.session.get(Recommendation, _parse_uuid(inputs.get("recommendation_id") or "", "recommendation_id"))
+        if rec is None or rec.firm_id != self.firm_id:
+            raise ExecutorError("That is not a proposal on file here. Look it up with read_recommendations this turn and use its id.")
         if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.IPS_MONITORING.value:
             return self._ips_decision_preview(rec, inputs)
         if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.PROTECTION_PLANNING.value:

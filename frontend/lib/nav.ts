@@ -70,6 +70,7 @@ export const VIEWS: View[] = [
   { href: "/studio/cash", label: "Cash movements", icon: Banknote, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["withdrawal", "wire", "standing instruction", "sloa", "rmd", "distribution", "phasing", "dollar cost"] },
   { href: "/studio/trades", label: "Trades", icon: ArrowLeftRight, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["blotter", "confirmation", "settlement", "block", "allocation", "orders"] },
   { href: "/studio/tax-documents", label: "Tax documents", icon: FileText, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["1099", "k-1", "tax forms", "tax summary"] },
+  { href: "/studio/onboarding-queues", label: "Onboarding queues", icon: Workflow, roles: [A, P, C, O, B], intent: "operate", keywords: ["exceptions", "nigo", "clocks", "sla", "account opening", "funding"] },
   { href: "/studio/aml", label: "AML reviews", icon: ShieldCheck, roles: [A, C, O, B], intent: "govern", keywords: ["screening", "sanctions", "pep", "edd", "source of wealth", "kyc", "hits"] },
   { href: "/studio/exits", label: "Departures and estates", icon: DoorOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["offboarding", "leaving", "acat", "transfer out", "death", "estate settlement", "executor", "step-up", "inherited"] },
   { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT], intent: "clients", keywords: ["bias", "nudge"] },

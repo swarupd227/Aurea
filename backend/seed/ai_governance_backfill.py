@@ -201,6 +201,8 @@ _TOOLS = [
      "Reads what a tax year should produce and a summary from the book, which is not the official form."),
     ("read_trades", "Read Trades (tool)", "tool", "Head of Operations", "low",
      "Reads the blotter: confirmations, settlement dates, sources and block allocation."),
+    ("read_onboarding_queues", "Read Onboarding Queues (tool)", "tool", "Head of Operations", "low",
+     "Reads each onboarding account's state and owner, the exception queues and the three clocks."),
     ("record_screening_decision", "Record Screening Decision (tool)", "tool", "Head of Compliance", "high",
      "Records a person's decision on a screening hit; a true match needs a second reviewer. Confirm-gated."),
     ("sign_off_edd", "Sign Off EDD (tool)", "tool", "Head of Compliance", "high",
