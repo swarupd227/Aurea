@@ -134,10 +134,7 @@ export function Rail({
         >
           A
         </div>
-        <span className="text-[15px] font-semibold tracking-tight text-ink">Astra</span>
-        <span className="rounded border border-border px-1 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
-          Preview
-        </span>
+        <span className="truncate text-[15px] font-semibold tracking-tight text-ink" data-testid="app-name">Astra for Wealth</span>
       </div>
 
       <div className="flex items-center gap-1 p-2">
