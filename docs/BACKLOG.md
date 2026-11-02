@@ -28,6 +28,18 @@ Nothing from the 2 Nov audit of the guide against the code is left to build, apa
 leave. The guide is `Wealth_Management_L100_Foundation_Guide.docx`, with L200-1 and L200-2 beside it, in the user's
 Downloads.
 
+The screens are the next work. On 2 Nov, 29 of the 62 pages opened beside the conversation, could be opened by Astra
+and acted through its Confirm card. The other 33 are below, cheapest first. "Retired" counts `navy-*` and `gold`
+classes, which no longer exist and render unstyled. "Direct" counts writes that skip the conversation.
+
+| ID | Item | L100 | Where it stands | Size |
+|---|---|---|---|---|
+| B-93 | Studio pages Astra can already read | - | Analytics (40 retired), Agent history (9), Provenance (22), Capacity (2), Composites (2), Prices, Beneficiary audit, Licences, Corporate actions (2 direct) and Pipeline (4 direct). Each has a read tool but no pane view, so it cannot open beside the conversation, and the two that write skip Confirm | Medium |
+| B-94 | Studio pages Astra cannot reach | - | Tax (959 lines; `read_tax_position` exists, the page is not a view), Estate (35 retired), Family (14), Behavioural, Regulatory countdown, Workforce (8), Skills (24, 5 direct) and Book integration with its batch page (11, 3 direct). No tool, or no view, or both | Large |
+| B-95 | Client Canvas | §5.3 | Canvas, Goals, Retirement, Questionnaire, Next-gen and a report: 80 retired classes. The client assistant is its own box, not the conversation, so Ask and Canvas are not merged | Medium |
+| B-96 | Admin and Superadmin | - | Admin (2,466 lines, 86 retired, 37 direct writes), Connectors, Foundation, Regulatory and Superadmin. Configuration that changes the platform with no tool and no Confirm card | Large |
+| B-97 | Ask-your-book and the old Agents page | - | `studio/ask` still puts a book snapshot into a prompt instead of calling tools, and `studio/agents` is a 12-line stub. Retire both in favour of the conversation | Small |
+
 ## Smaller items
 
 | ID | Item | L100 | Where it stands |
