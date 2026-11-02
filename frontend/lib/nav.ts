@@ -71,6 +71,7 @@ export const VIEWS: View[] = [
   { href: "/studio/trades", label: "Trades", icon: ArrowLeftRight, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["blotter", "confirmation", "settlement", "block", "allocation", "orders"] },
   { href: "/studio/tax-documents", label: "Tax documents", icon: FileText, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["1099", "k-1", "tax forms", "tax summary"] },
   { href: "/studio/onboarding-queues", label: "Onboarding queues", icon: Workflow, roles: [A, P, C, O, B], intent: "operate", keywords: ["exceptions", "nigo", "clocks", "sla", "account opening", "funding"] },
+  { href: "/studio/transfers", label: "Transfers in", icon: ArrowLeftRight, roles: [A, P, C, O, B], intent: "govern", keywords: ["acat", "transfer", "reject", "cost basis", "rollover", "1035", "asset memo", "residual"] },
   { href: "/studio/document-matrix", label: "Document matrix", icon: ScrollText, roles: [A, P, C, O, B], intent: "govern", keywords: ["nigo", "documents", "registration", "tenancy", "custodian forms", "signatures", "beneficiaries"] },
   { href: "/studio/consents", label: "Consents", icon: BadgeCheck, roles: [A, P, C, O, B], intent: "govern", keywords: ["consent", "e-delivery", "householding", "aggregation", "fee debit", "redelivery", "brochure"] },
   { href: "/studio/aml", label: "AML reviews", icon: ShieldCheck, roles: [A, C, O, B], intent: "govern", keywords: ["screening", "sanctions", "pep", "edd", "source of wealth", "kyc", "hits"] },

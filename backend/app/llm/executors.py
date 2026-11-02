@@ -79,6 +79,9 @@ class ToolExecutors:
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
             "rate_aml_risk": self.rate_aml_risk,
+            "read_transfer_files": self.read_transfer_files,
+            "record_transfer_event": self.record_transfer_event,
+            "record_rollover_facts": self.record_rollover_facts,
             "read_document_matrix": self.read_document_matrix,
             "record_registration_detail": self.record_registration_detail,
             "set_custodian_documents": self.set_custodian_documents,
@@ -1585,6 +1588,91 @@ class ToolExecutors:
         label = lambda ks: ", ".join(document_matrix.DOCUMENTS.get(k, k) for k in ks) or "None"  # noqa: E731
         return [("Custodian", r["custodian"]), ("Forms required", label(r["documents"])), ("Was", label(r["was"])), ("Source", r["source"]),
                 ("Effect", "Every open case at this custodian needs these before submission")]
+
+    def _transfer_event_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"transfer_id": _parse_uuid(inputs.get("transfer_id") or "", "transfer_id"), "kind": inputs.get("kind"),
+                "on": self._exit_day(inputs.get("on"), "on"), "evidence": inputs.get("evidence"), "code": inputs.get("code"),
+                "amount": inputs.get("amount"), "lines": inputs.get("lines"), "carrier": inputs.get("carrier"), "contract": inputs.get("contract"),
+                "note": inputs.get("note")}
+
+    def _rollover_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"case_id": _parse_uuid(inputs.get("case_id") or "", "case_id"), "source": inputs.get("source"),
+                "facts": {k: inputs.get(k) for k in ("plan_name", "plan_type", "balance", "plan_cost_bps", "ira_cost_bps", "employer_stock", "employer_stock_value", "employer_stock_basis", "loan_balance", "separation_year", "adviser_reason")}}
+
+    async def read_transfer_files(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import transfer_file
+
+        try:
+            result = await transfer_file.for_case(self.session, self.firm_id,
+                                                  case_id=_parse_uuid(inputs["case_id"], "case_id") if inputs.get("case_id") else None)
+        except transfer_file.TransferFileError as exc:
+            raise ExecutorError(str(exc))
+        open_n = sum(1 for t in result["transfers"] if t["stage"] != "complete")
+        result["message"] = f"{len(result['transfers'])} transfer(s) in, {open_n} open, {result['late']} late."
+        return result
+
+    async def record_transfer_event(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import transfer_file
+
+        try:
+            result = await transfer_file.record_entry(self.session, self.firm_id, by=await self._shelf_user(), **self._transfer_event_args(inputs))
+        except transfer_file.TransferFileError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _transfer_event_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, transfer_file
+
+        try:
+            r = await transfer_file.prepare_entry(self.session, self.firm_id, **self._transfer_event_args(inputs))
+        except transfer_file.TransferFileError as exc:
+            raise ExecutorError(str(exc))
+        d = r["detail"]
+        t = r["transfer"]
+        return [("Client", r["client"]), ("Transfer", f"{t.transfer_type.upper()} from {t.delivering_firm or 'the delivering firm'}"),
+                ("What happened", transfer_file.KINDS[r["kind"]]), ("On", firm_time.spoken(r["on"])),
+                ("Reason", transfer_file.REJECT_CODES.get(d.get("code")) if d.get("code") else None),
+                ("Amount", d.get("amount")),
+                ("Memo", "; ".join(f"{m['description']}{' ' + format(m['quantity'], 'g') if m['quantity'] is not None else ''}: {m['how'].replace('_', ' ')}" for m in d.get("lines", [])) or None),
+                ("Contract", f"{d['carrier']} {d['contract']}" if d.get("carrier") else None),
+                ("Evidence", r["evidence"]), ("Stands now", r["before"]["stage"].replace("_", " "))]
+
+    async def record_rollover_facts(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import transfer_file
+
+        try:
+            result = await transfer_file.record_rollover(self.session, self.firm_id, by=await self._shelf_user(), **self._rollover_args(inputs))
+        except transfer_file.TransferFileError as exc:
+            raise ExecutorError(str(exc))
+        missing = (result.get("rollover") or {}).get("missing", [])
+        result["message"] = "Recorded. " + (f"Not yet assessed: {', '.join(missing)}." if missing else "Every point is assessed.")
+        return result
+
+    async def _rollover_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import transfer_file
+
+        try:
+            r = await transfer_file.prepare_rollover(self.session, self.firm_id, **self._rollover_args(inputs))
+        except transfer_file.TransferFileError as exc:
+            raise ExecutorError(str(exc))
+        from app.aurea_core import markets
+        from app.models.tenant import Firm
+
+        firm = await self.session.get(Firm, self.firm_id)
+
+        def show(k, v):
+            if isinstance(v, bool):
+                return "Yes" if v else "No"
+            if k.endswith("_bps"):
+                return f"{v:g} bps"
+            if k in ("balance", "employer_stock_value", "employer_stock_basis", "loan_balance"):
+                return markets.money_for(firm)(v)
+            return v
+
+        shown = [(transfer_file.ROLLOVER_FACTS[k], show(k, v)) for k, v in r["facts"].items()]
+        return [("Case", r["case"].prospect_name), *shown, ("Source", r["source"]),
+                ("Still not assessed", ", ".join(r["after"]["missing"]) or "None")]
 
     async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_risk
@@ -3502,6 +3590,10 @@ class ToolExecutors:
             return rows(*await self._case_registration_preview(inputs))
         if tool_key == "set_custodian_documents":
             return rows(*await self._custodian_documents_preview(inputs))
+        if tool_key == "record_transfer_event":
+            return rows(*await self._transfer_event_preview(inputs))
+        if tool_key == "record_rollover_facts":
+            return rows(*await self._rollover_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

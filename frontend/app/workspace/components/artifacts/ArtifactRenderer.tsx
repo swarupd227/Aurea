@@ -28,6 +28,7 @@ import { TaxDocumentsCard, TradesCard } from "./TradesCard";
 import { AmlCard } from "./AmlCard";
 import { ConsentsCard } from "./ConsentsCard";
 import { DocumentMatrixCard } from "./DocumentMatrixCard";
+import { TransfersCard } from "./TransfersCard";
 import { OnboardingQueuesCard } from "./OnboardingQueuesCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
@@ -146,6 +147,11 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_transfer_files":
+      case "record_transfer_event":
+      case "record_rollover_facts":
+        if (!Array.isArray(artifact.result?.transfers)) return null;
+        return <TransfersCard result={artifact.result as any} />;
       case "read_document_matrix":
       case "record_registration_detail":
       case "set_custodian_documents":

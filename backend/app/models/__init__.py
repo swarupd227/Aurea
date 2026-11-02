@@ -14,6 +14,7 @@ from app.models import (  # noqa: F401
     connectors,
     consent,
     consent_registry,
+    transfer_file,
     corporate_actions,
     crm,
     engagement,

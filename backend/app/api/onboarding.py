@@ -1134,8 +1134,8 @@ async def create_transfer(
     case = await db.get(OnboardingCase, case_id)
     if not case or case.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Case not found")
-    if body.transfer_type not in ("acat", "wire", "ach"):
-        raise HTTPException(status_code=422, detail="transfer_type must be acat, wire, or ach")
+    if body.transfer_type not in ("acat", "wire", "ach", "rollover", "exchange_1035"):
+        raise HTTPException(status_code=422, detail="transfer_type must be acat, wire, ach, rollover or exchange_1035")
     if body.direction not in ("in", "out"):
         raise HTTPException(status_code=422, detail="direction must be in or out")
     # The account must exist before anything is moved into it: a transfer to an account the custodian has not

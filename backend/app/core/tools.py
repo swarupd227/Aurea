@@ -1072,6 +1072,67 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.OPERATIONS, UserRole.COMPLIANCE},
     ),
 
+    "read_transfer_files": Tool(
+        key="read_transfer_files",
+        name="Read Transfer Files",
+        speaking_agent="astra",
+        description="Transfers into the firm, each with its file: where it stands and whose move it is (requested, submitted, rejected, debit_open, in_transit, received, complete), rejects with their reason codes, the delivering firm's asset memo and what stays behind (a partial transfer), a debit balance to clear, days from submission to receipt, cost basis due fifteen days after the assets arrive and whether it is late, residuals swept in, and annuities moved by 1035 exchange. Give case_id for one case, which adds its rollover analysis for a US employer plan: cost against the IRA, direct or indirect, employer stock (NUA), a plan loan, the required distribution first and the age-55 exception, each 'not_assessed' until its fact is recorded. The analysis lays points out and recommends nothing. A prospect still in onboarding is not a household, so search_households will not find them: read this or read_onboarding_cases by name.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("case_id", "uuid", "One onboarding case, from read_onboarding_cases", required=False)],
+        output=ToolOutput("object", "Transfer files, rejects by code, and a case's rollover analysis"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_transfer_event": Tool(
+        key="record_transfer_event",
+        name="Record Transfer Event",
+        speaking_agent="astra",
+        description="Records what happened to a transfer into the firm, from the document that says so: kind is submitted, rejected (with code: title_mismatch, tax_id_mismatch, account_number, account_closed, duplicate, signature, debit_balance, non_transferable, other), resubmitted, asset_memo (lines as 'holding quantity how; ...' with how in_kind, liquidate, stays or exchange_1035), debit_balance (amount), debit_cleared, received, cost_basis, residual (amount) or exchange_1035 (carrier and contract). It moves no holdings or cash. transfer_id comes from read_transfer_files.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this on the transfer's file?",
+        inputs=[
+            ToolInput("transfer_id", "uuid", "The transfer, from read_transfer_files", required=True),
+            ToolInput("kind", "string", "What happened", required=True),
+            ToolInput("on", "string", "The day it happened, YYYY-MM-DD. Defaults to today", required=False),
+            ToolInput("evidence", "string", "The document that says so", required=True),
+            ToolInput("code", "string", "For a reject: its reason code", required=False),
+            ToolInput("amount", "number", "For a debit balance or a residual", required=False),
+            ToolInput("lines", "string", "For an asset memo", required=False),
+            ToolInput("carrier", "string", "For a 1035 exchange: the insurer", required=False),
+            ToolInput("contract", "string", "For a 1035 exchange: the contract number", required=False),
+            ToolInput("note", "string", "Anything the document adds", required=False),
+        ],
+        output=ToolOutput("object", "The case's transfer files"),
+        roles_required={UserRole.OPERATIONS},
+    ),
+
+    "record_rollover_facts": Tool(
+        key="record_rollover_facts",
+        name="Record Rollover Facts",
+        speaking_agent="astra",
+        description="Records the facts of an employer plan rollover for a US onboarding case, from the plan statement and fee disclosure: plan_name, plan_type, balance, plan_cost_bps and ira_cost_bps (all-in), employer_stock (yes/no) with employer_stock_value and employer_stock_basis, loan_balance, separation_year, and the adviser's own reason in adviser_reason. Record only what the documents show; ask the adviser for their reason, never write it for them.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record these rollover facts?",
+        inputs=[
+            ToolInput("case_id", "uuid", "The onboarding case", required=True),
+            ToolInput("plan_name", "string", "The plan", required=False),
+            ToolInput("plan_type", "string", "401k, 403b, 457b or other", required=False),
+            ToolInput("balance", "number", "The balance on the statement", required=False),
+            ToolInput("plan_cost_bps", "number", "The plan's all-in cost, from its fee disclosure", required=False),
+            ToolInput("ira_cost_bps", "number", "The IRA's all-in cost, from the firm's schedule", required=False),
+            ToolInput("employer_stock", "string", "Does the plan hold employer stock: yes or no", required=False),
+            ToolInput("employer_stock_value", "number", "Its value", required=False),
+            ToolInput("employer_stock_basis", "number", "Its cost basis", required=False),
+            ToolInput("loan_balance", "number", "Any plan loan outstanding, 0 for none", required=False),
+            ToolInput("separation_year", "number", "The year the client left the employer", required=False),
+            ToolInput("adviser_reason", "string", "The adviser's reason, in their words", required=False),
+            ToolInput("source", "string", "Where the facts come from", required=True),
+        ],
+        output=ToolOutput("object", "The case's transfer files and rollover analysis"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
     "rate_aml_risk": Tool(
         key="rate_aml_risk",
         name="Rate AML Risk",
@@ -1752,7 +1813,7 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
             "exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural and regulatory_countdown show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
@@ -1764,7 +1825,7 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, document_matrix, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, document_matrix, transfers, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
             ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural or regulatory_countdown to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
@@ -2383,6 +2444,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "aml": ("/studio/aml", "AML reviews", {_A, _C, _O, _B}),
     "consents": ("/studio/consents", "Consents", {_A, _P, _C, _O, _B}),
     "document_matrix": ("/studio/document-matrix", "Document matrix", {_A, _P, _C, _O, _B}),
+    "transfers": ("/studio/transfers", "Transfers in", {_A, _P, _C, _O, _B}),
     "onboarding_queues": ("/studio/onboarding-queues", "Onboarding queues", {_A, _P, _C, _O, _B}),
     "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
     "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),

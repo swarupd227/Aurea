@@ -279,7 +279,8 @@ class Gateway:
                             yield {"type": "tool_result", "tool_key": tool_key, "ok": False}
                             tool_result_blocks.append({
                                 "type": "tool_result", "tool_use_id": tool_use["id"],
-                                "content": f"Error: {e}", "is_error": True,
+                                # Refused before any card: nothing was recorded or changed, and the model is told so in as many words.
+                                "content": f"Error - nothing was done, nothing was recorded: {e}", "is_error": True,
                             })
                             continue
 
