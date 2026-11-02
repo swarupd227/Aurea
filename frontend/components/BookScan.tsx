@@ -117,7 +117,8 @@ export default function BookScan({
             <div className="grid grid-cols-2 cq-md:grid-cols-4 gap-3">
               <Tile label="Households swept" value={result.households_scanned} />
               <Tile label="Signals detected" value={result.detected} />
-              <Tile label="Actions surfaced" value={result.items_surfaced} />
+              <Tile label="Actions" value={result.items_surfaced}
+                sub={result.new != null ? `${result.new} new · ${result.still_open} already open` : undefined} />
               <Tile label="At stake" value={money((agg.harvestable_losses || 0) + (agg.idle_cash || 0))}
                 sub={`${money(agg.harvestable_losses || 0)} losses · ${money(agg.idle_cash || 0)} cash`} />
             </div>
@@ -142,6 +143,7 @@ export default function BookScan({
                       <div className="text-sm font-medium text-ink">{it.title}</div>
                       <div className="text-xs text-ink-muted">{it.subject_label} · {m.label} · {Math.round(it.confidence * 100)}% confidence</div>
                     </div>
+                    {it.still_open && <span className="chip shrink-0 bg-border-soft text-ink-muted" title="Found before and still waiting for a decision">open</span>}
                     <span className={`chip shrink-0 ${it.priority <= 1 ? "bg-crit-bg text-crit" : it.priority === 2 ? "bg-warn-bg text-warn" : "bg-border-soft text-ink-muted"}`}>
                       P{it.priority}
                     </span>

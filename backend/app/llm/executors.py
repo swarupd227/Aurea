@@ -148,6 +148,9 @@ class ToolExecutors:
             "read_messages": self.read_messages,
             "send_client_message": self.send_client_message,
             "read_provenance": self.read_provenance,
+            "resolve_surveillance_flag": self.resolve_surveillance_flag,
+            "escalate_surveillance_flag": self.escalate_surveillance_flag,
+            "evaluate_agents": self.evaluate_agents,
             "decide_recommendation": self.decide_recommendation,
             "execute_orders": self.execute_orders,
             "update_goal": self.update_goal,
@@ -2230,7 +2233,12 @@ class ToolExecutors:
         if status != "all":
             stmt = stmt.where(Recommendation.status == RecommendationStatus.PROPOSED)
         if subject:
-            stmt = stmt.where(Recommendation.subject_label.ilike(f"%{subject}%"))
+            # A person names a proposal by its title as often as by its client, and a firm-wide one's
+            # client is the firm, so the words are looked for in the title, the client and the agent.
+            from sqlalchemy import or_
+
+            stmt = stmt.where(or_(Recommendation.subject_label.ilike(f"%{subject}%"), Recommendation.title.ilike(f"%{subject}%"),
+                                  Recommendation.agent_key.ilike(f"%{subject.replace(' ', '_')}%")))
         total = (await self.session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
         # What can still be decided comes first, so history never buries it.
         recs = (await self.session.execute(
@@ -3142,6 +3150,8 @@ class ToolExecutors:
 
         if tool_key == "decide_recommendation":
             return await self._report_decision_preview(inputs)
+        if tool_key in ("resolve_surveillance_flag", "escalate_surveillance_flag", "evaluate_agents"):
+            return rows(*await self._supervision_preview(tool_key, inputs))
         if tool_key == "withdraw_report":
             report, _ = await self._withdrawal(inputs)
             household = await self.session.get(Household, report.household_id)
@@ -3210,6 +3220,84 @@ class ToolExecutors:
         to = await self._task_assignee(inputs.get("assignee_name"))
         held = (await tasks.views(self.session, [task], await self._today()))[0]["assigned_to_name"]
         return rows(*common, ("Held by", held), ("Assign to", to.full_name if to else "Nobody"))
+
+    async def _supervised_flag(self, inputs: dict[str, Any], roles):
+        """The flag, refused for a role supervision is not for, as the route refuses it."""
+        from app.provenance import supervision
+
+        if self.role not in roles:
+            raise ExecutorError("Supervision is for compliance or a branch leader.")
+        try:
+            return await supervision.flag(self.session, self.firm_id, _parse_uuid(inputs.get("flag_id") or "", "flag_id"))
+        except supervision.SupervisionError as exc:
+            raise ExecutorError(str(exc))
+
+    async def _supervision_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What a supervision Confirm card names: the flag and what is said about it, or the agents a
+        re-run would narrow. Refused for the reasons doing it would be refused."""
+        from app.provenance import supervision
+
+        try:
+            if tool_key == "evaluate_agents":
+                if self.role not in supervision.EVALUATORS:
+                    raise ExecutorError("Re-running the evaluation is for compliance, a branch leader or an administrator.")
+                narrowed = await supervision.would_narrow(self.session, self.firm_id)
+                return [("Agents scored", str(len(supervision.CATALOGUE))),
+                        ("Would narrow", "; ".join(
+                            f"{n['agent']}: {'paused' if n['paused'] else n['from'].replace('tier_', 'Tier ') + ' to ' + n['to'].replace('tier_', 'Tier ')}"
+                            for n in narrowed) or "None on today's record"),
+                        ("Widens", "Never")]
+            row = await self._supervised_flag(inputs, supervision.SUPERVISORS)
+            common = [("Flag", f"{row.severity} · {row.category}"), ("Agent", supervision.agent_name(row.target_agent_key)),
+                      ("Finding", row.finding)]
+            if tool_key == "resolve_surveillance_flag":
+                note = supervision.check_resolve(row, inputs.get("note"))
+                return [*common, ("Reason", note), ("Paused agent", "Stays paused; unpause it in Admin" if row.auto_paused_agent else None)]
+            to, note = supervision.check_escalate(row, inputs.get("escalated_to"), inputs.get("note"))
+            return [*common, ("To", to), ("Reason", note), ("Already escalated to", row.escalated_to)]
+        except supervision.SupervisionError as exc:
+            raise ExecutorError(str(exc))
+
+    async def _supervisor(self) -> str:
+        from app.models.identity import User
+
+        user = await self.session.get(User, self.user_id)
+        return user.email if user else "unknown"
+
+    async def resolve_surveillance_flag(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.provenance import supervision
+
+        row = await self._supervised_flag(inputs, supervision.SUPERVISORS)
+        try:
+            result = await supervision.resolve(self.session, row, note=inputs.get("note") or "", by=await self._supervisor())
+        except supervision.SupervisionError as exc:
+            raise ExecutorError(str(exc))
+        return {**result, "message": "Resolved." + (" The agent it paused stays paused until someone unpauses it in Admin."
+                                                    if result["agent_still_paused"] else "")}
+
+    async def escalate_surveillance_flag(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.provenance import supervision
+
+        row = await self._supervised_flag(inputs, supervision.SUPERVISORS)
+        try:
+            result = await supervision.escalate(self.session, row, to=inputs.get("escalated_to") or "",
+                                                note=inputs.get("note") or "", by=await self._supervisor())
+        except supervision.SupervisionError as exc:
+            raise ExecutorError(str(exc))
+        return {**result, "message": f"Escalated to {result['escalated_to']}. The flag stays open."}
+
+    async def evaluate_agents(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.provenance import supervision
+        from app.provenance.evaluation import evaluate_firm
+
+        if self.role not in supervision.EVALUATORS:
+            raise ExecutorError("Re-running the evaluation is for compliance, a branch leader or an administrator.")
+        result = await evaluate_firm(self.session, self.firm_id)
+        agents = [{"agent_key": a["agent_key"], "agent_name": supervision.agent_name(str(a["agent_key"])),
+                   "quality_score": a["quality_score"], "grade": a["grade"], "sample_size": a["sample_size"]}
+                  for a in result["agents"]]
+        return {"evaluated": result["evaluated"], "autonomy_changes": result["autonomy_changes"], "evaluations": agents,
+                "message": f"{result['evaluated']} agent(s) scored; {result['autonomy_changes']} narrowed."}
 
     async def read_provenance(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """The Provenance page in brief: ledger integrity, open surveillance flags, agent quality and

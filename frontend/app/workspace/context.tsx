@@ -177,8 +177,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const say = useCallback(
     (text: string) => {
-      // On a phone the conversation is under the sheet: show it, so the turn is seen streaming.
+      // On a phone the conversation is under the sheet, and on a desktop a widened pane covers it: show
+      // it either way, so the turn and any Confirm card it raises are seen, not left waiting out of sight.
       setSheetHidden(true);
+      setFocus(false);
       if (sender.current) sender.current(text);
       else void askAstra(text).catch(() => insertInComposer(text));
     },

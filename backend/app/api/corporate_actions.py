@@ -18,6 +18,7 @@ from app.core.security import UserRole, require_roles
 from app.models.corporate_actions import (
     ACTION_STATUSES, ACTION_TYPES, CorporateAction, CorporateActionEntitlement,
 )
+from app.models.graph import Account, Household, Mandate, Person
 from app.models.identity import User
 from app.models.portfolio import Instrument
 from app.models.tenant import Firm
@@ -126,7 +127,17 @@ async def list_entitlements(action_id: uuid.UUID, user: User = StaffDep, firm: F
             CorporateActionEntitlement.firm_id == firm.id,
         )
     )).scalars().all()
-    return {"items": [_entitlement_out(e) for e in rows]}
+    return {"items": [{**_entitlement_out(e), **await _holder(db, e.account_id)} for e in rows]}
+
+
+async def _holder(db: AsyncSession, account_id: uuid.UUID) -> dict:
+    """The account and the client it belongs to, by name, so a posting can be confirmed in words."""
+    account = await db.get(Account, account_id)
+    mandate = await db.get(Mandate, account.mandate_id) if account and account.mandate_id else None
+    person = await db.get(Person, mandate.person_id) if mandate and mandate.person_id else None
+    household = await db.get(Household, person.household_id) if person and person.household_id else None
+    return {"account_name": account.name if account else None,
+            "client": household.name if household else (person.full_name if person else None)}
 
 
 class ElectionIn(BaseModel):

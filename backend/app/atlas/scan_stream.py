@@ -7,8 +7,9 @@ lands in the ledger at its tier."""
 from __future__ import annotations
 
 import asyncio
+import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents._signals import book_signals
@@ -47,13 +48,16 @@ async def scan_book_stream(session: AsyncSession, *, firm: Firm, agent_key: Agen
         return
     await session.commit()  # durable before we hand the items to the client
 
+    # What this run found includes what was already waiting: a finding with an open proposal refreshes
+    # that proposal rather than raising another, so counting only new rows reported a full book as empty.
+    refreshed = [uuid.UUID(x) for x in (run.context or {}).get("refreshed", [])]
     recs = (await session.execute(
-        select(Recommendation).where(Recommendation.run_id == run.id)
+        select(Recommendation).where(or_(Recommendation.run_id == run.id, Recommendation.id.in_(refreshed)))
         .order_by(Recommendation.priority, Recommendation.confidence.desc())
     )).scalars().all()
     items = [{
         "id": str(r.id), "title": r.title, "summary": r.summary, "subject_label": r.subject_label,
-        "priority": r.priority, "confidence": r.confidence,
+        "priority": r.priority, "confidence": r.confidence, "still_open": r.run_id != run.id,
         "signal": (r.payload or {}).get("signal", "insight"), "payload": r.payload or {},
     } for r in recs]
     by_signal: dict[str, int] = {}
@@ -67,7 +71,8 @@ async def scan_book_stream(session: AsyncSession, *, firm: Firm, agent_key: Agen
                     for it in items if it["signal"] == "idle_cash")
 
     yield {"phase": "done", "households_scanned": len(households), "detected": detected,
-           "items_surfaced": len(items), "by_signal": by_signal, "items": items,
+           "items_surfaced": len(items), "new": sum(1 for it in items if not it["still_open"]),
+           "still_open": sum(1 for it in items if it["still_open"]), "by_signal": by_signal, "items": items,
            "aggregates": {"harvestable_losses": round(harvestable), "idle_cash": round(idle_cash),
                           "concentrated_positions": by_signal.get("concentration", 0),
                           "goals_off_track": by_signal.get("goal_gap", 0)},

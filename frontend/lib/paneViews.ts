@@ -11,7 +11,9 @@ import { viewsForRole } from "./nav";
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
-  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents";
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents"
+  | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
+  | "corporate_actions" | "pipeline";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -53,6 +55,16 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "cash", pattern: /^\/studio\/cash\/?$/, base: "/studio/cash", label: "Cash movements" },
   { key: "trades", pattern: /^\/studio\/trades\/?$/, base: "/studio/trades", label: "Trades" },
   { key: "tax_documents", pattern: /^\/studio\/tax-documents\/?$/, base: "/studio/tax-documents", label: "Tax documents" },
+  { key: "analytics", pattern: /^\/studio\/analytics\/?$/, base: "/studio/analytics", label: "Analytics" },
+  { key: "capacity", pattern: /^\/studio\/capacity\/?$/, base: "/studio/capacity", label: "Capacity & outcomes" },
+  { key: "agent_history", pattern: /^\/studio\/agent-history\/?$/, base: "/studio/agent-history", label: "Agent history" },
+  { key: "provenance", pattern: /^\/provenance\/?$/, base: "/provenance", label: "Provenance" },
+  { key: "composites", pattern: /^\/studio\/composites\/?$/, base: "/studio/composites", label: "Composites" },
+  { key: "prices", pattern: /^\/studio\/prices\/?$/, base: "/studio/prices", label: "Prices" },
+  { key: "beneficiary_audit", pattern: /^\/studio\/beneficiary-audit\/?$/, base: "/studio/beneficiary-audit", label: "Beneficiary audit" },
+  { key: "licences", pattern: /^\/studio\/licences\/?$/, base: "/studio/licences", label: "Licences" },
+  { key: "corporate_actions", pattern: /^\/studio\/corporate-actions\/?$/, base: "/studio/corporate-actions", label: "Corporate actions" },
+  { key: "pipeline", pattern: /^\/studio\/pipeline\/?$/, base: "/studio/pipeline", label: "Growth pipeline" },
 ];
 
 /** The list a single-item view sits under, so one opened straight from the conversation still has
@@ -207,6 +219,38 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "close_client_exit":
     case "withdraw_client_exit":
       return onClient("/studio/exits");
+    case "read_analytics":
+      return "/studio/analytics";
+    case "read_capacity":
+      return "/studio/capacity";
+    case "read_agent_history":
+      return "/studio/agent-history";
+    case "read_provenance":
+    case "resolve_surveillance_flag":
+    case "escalate_surveillance_flag":
+    case "evaluate_agents":
+      return "/provenance";
+    case "read_composites":
+    case "read_composite_report":
+    case "read_firm_definition_check":
+      return "/studio/composites";
+    case "read_price_freshness":
+    case "refresh_prices":
+      return "/studio/prices";
+    case "read_beneficiary_audit":
+      return "/studio/beneficiary-audit";
+    case "read_licences":
+      return "/studio/licences";
+    case "read_corporate_actions":
+    case "compute_corporate_action_entitlements":
+    case "post_corporate_action_entitlement":
+      return "/studio/corporate-actions";
+    case "read_crm_pipeline":
+    case "create_crm_contact":
+    case "create_crm_opportunity":
+    case "log_crm_activity":
+    case "update_crm_opportunity_stage":
+      return "/studio/pipeline";
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";

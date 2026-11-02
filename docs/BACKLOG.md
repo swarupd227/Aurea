@@ -29,12 +29,11 @@ leave. The guide is `Wealth_Management_L100_Foundation_Guide.docx`, with L200-1 
 Downloads.
 
 The screens are the next work. On 2 Nov, 29 of the 62 pages opened beside the conversation, could be opened by Astra
-and acted through its Confirm card. The other 33 are below, cheapest first. "Retired" counts `navy-*` and `gold`
+and acted through its Confirm card. B-93 brought that to 39. The other 23 are below, cheapest first. "Retired" counts `navy-*` and `gold`
 classes, which no longer exist and render unstyled. "Direct" counts writes that skip the conversation.
 
 | ID | Item | L100 | Where it stands | Size |
 |---|---|---|---|---|
-| B-93 | Studio pages Astra can already read | - | Analytics (40 retired), Agent history (9), Provenance (22), Capacity (2), Composites (2), Prices, Beneficiary audit, Licences, Corporate actions (2 direct) and Pipeline (4 direct). Each has a read tool but no pane view, so it cannot open beside the conversation, and the two that write skip Confirm | Medium |
 | B-94 | Studio pages Astra cannot reach | - | Tax (959 lines; `read_tax_position` exists, the page is not a view), Estate (35 retired), Family (14), Behavioural, Regulatory countdown, Workforce (8), Skills (24, 5 direct) and Book integration with its batch page (11, 3 direct). No tool, or no view, or both | Large |
 | B-95 | Client Canvas | §5.3 | Canvas, Goals, Retirement, Questionnaire, Next-gen and a report: 80 retired classes. The client assistant is its own box, not the conversation, so Ask and Canvas are not merged | Medium |
 | B-96 | Admin and Superadmin | - | Admin (2,466 lines, 86 retired, 37 direct writes), Connectors, Foundation, Regulatory and Superadmin. Configuration that changes the platform with no tool and no Confirm card | Large |
@@ -121,6 +120,8 @@ B-26 waits for a real custodian statement.
 
 | Item | Commit |
 |---|---|
+| B-93: Analytics, Agent history, Provenance, Capacity, Composites, Prices, Beneficiary audit, Licences, Corporate actions and Pipeline open beside the conversation, on the theme tokens, and their writes go through Confirm. Provenance gained `resolve_surveillance_flag`, `escalate_surveillance_flag` and `evaluate_agents`, and its routes now admit only compliance and a branch leader (an administrator may also re-run the evaluation); before, any staff member could close a conduct flag. A posted entitlement names its client. Each view opened in the pane on 2 Nov against the live backend, reads only. Not deployed. Needs `seed.ai_governance_backfill` | The commit that adds this line |
+| Scan book reported nothing on a full book: a rescan refreshes the proposals already open, and only new ones were counted, so 62 signals read as 0 actions and $0. Already-open ones now count, marked as open. In the pane its sentence went to a conversation a widened pane hid, so its Confirm card waited unseen: handing a sentence to the conversation now shows it. `read_recommendations` matched only a proposal's client, so a firm-wide one could not be found by its title; it now matches the title, client and agent. Not deployed | The commit that adds this line |
 | B-77: decided 2 Nov on recommendation. The protection agent raises measured gaps only; a household not assessed for want of an income stays listed on the Protection page as not assessed. A proposal to go and get an income would add six to the queue and none is known to have a gap | No code |
 | B-30: decided 2 Nov on recommendation. India rows 4 to 6 wait until the L100 batch is live, then come back for approval one row at a time. The SEBI licence question (D1) is the customer's to answer | No code |
 | B-06: Protection slice 2. The protection agent raises measured gaps, and long-term care is modelled from the firm's stated cost. Not deployed. Needs `app.db_bootstrap`, `seed.schedule_backfill` and `seed.ai_governance_backfill`. See B-76, B-77 and B-78 | The commit that adds this line |

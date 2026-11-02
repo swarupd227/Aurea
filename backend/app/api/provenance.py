@@ -17,7 +17,7 @@ from app.core.security import STAFF_ROLES, get_current_user, staff_user, require
 from app.models.governance import AutonomyChange, LedgerEntry, SurveillanceFlag
 from app.models.identity import User
 from app.models.tenant import Firm
-from app.provenance import views
+from app.provenance import supervision, views
 from app.provenance.evaluation import evaluate_firm, latest_evaluations
 from app.provenance.ledger import append_entry, verify_chain
 
@@ -81,10 +81,13 @@ async def evaluations(firm: Firm = Depends(current_firm), db: AsyncSession = Dep
 
 @router.post("/evaluate")
 async def run_evaluation(
-    user: User = Depends(require_roles(*STAFF_ROLES)),
+    user: User = Depends(get_current_user),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    """Run the evaluation harness now; applies adaptive autonomy on regressions."""
+    """Run the evaluation harness now; applies adaptive autonomy on regressions. It can narrow an
+    agent's tier or pause it, so it is supervision's to run (provenance.supervision.EVALUATORS)."""
+    if user.role not in supervision.EVALUATORS:
+        raise HTTPException(403, "Re-running the evaluation is for compliance, a branch leader or an administrator.")
     return await evaluate_firm(db, firm.id)
 
 
@@ -109,6 +112,8 @@ async def resolve_flag(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if user.role not in supervision.SUPERVISORS:
+        raise HTTPException(403, "Resolving a surveillance flag is for compliance or a branch leader.")
     flag = await db.get(SurveillanceFlag, flag_id)
     if not flag or flag.firm_id != firm.id:
         raise HTTPException(404, "Flag not found.")
@@ -129,6 +134,8 @@ async def escalate_flag(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if user.role not in supervision.SUPERVISORS:
+        raise HTTPException(403, "Escalating a surveillance flag is for compliance or a branch leader.")
     flag = await db.get(SurveillanceFlag, flag_id)
     if not flag or flag.firm_id != firm.id:
         raise HTTPException(404, "Flag not found.")

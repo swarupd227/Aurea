@@ -1333,7 +1333,7 @@ TOOLS: dict[str, Tool] = {
         confirmation=None,
         inputs=[
             ToolInput("status", "string", "open (default: waiting for a decision), or all only when past decisions are asked about", required=False),
-            ToolInput("subject", "string", "Only proposals whose client or subject name contains this text", required=False),
+            ToolInput("subject", "string", "Only proposals whose title, client or agent contains this text: a client's name, or words from the proposal's title", required=False),
             ToolInput("limit", "number", "Max results to return (default 20)", required=False),
         ],
         output=ToolOutput("object", "Proposals with id, title, agent, subject, priority, confidence and can_decide"),
@@ -1377,7 +1377,7 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter) or tax_documents (what a tax year should produce). ips, reviews, protection, risk_profiles, net_worth and "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements) or pipeline (prospects and opportunities). ips, reviews, protection, risk_profiles, net_worth and "
             "exits, equity_comp, plan, client_file, cash, trades, tax_documents show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
@@ -1389,7 +1389,7 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades or tax_documents", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions or pipeline", required=True),
             ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades or tax_documents to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
@@ -1626,6 +1626,49 @@ TOOLS: dict[str, Tool] = {
         confirmation=None,
         inputs=[],
         output=ToolOutput("object", "Ledger integrity, surveillance flags, agent evaluations and autonomy changes"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "resolve_surveillance_flag": Tool(
+        key="resolve_surveillance_flag",
+        name="Resolve Surveillance Flag",
+        speaking_agent="astra",
+        description="Close an open conduct-surveillance flag, with the reason, which goes on the ledger under the person's name. Find the flag with read_provenance. It does not unpause an agent the flag paused; that is done in Admin.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Resolve this flag? It closes the finding on the ledger under your name.",
+        inputs=[
+            ToolInput("flag_id", "uuid", "The flag, from read_provenance", required=True),
+            ToolInput("note", "string", "Why it is resolved, in the person's own words", required=True),
+        ],
+        output=ToolOutput("object", "The flag as it now stands"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER},
+    ),
+
+    "escalate_surveillance_flag": Tool(
+        key="escalate_surveillance_flag",
+        name="Escalate Surveillance Flag",
+        speaking_agent="astra",
+        description="Escalate an open conduct-surveillance flag to a person or role, with the reason, on the ledger. Find the flag with read_provenance. It stays open.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Escalate this flag? It is recorded on the ledger under your name and stays open.",
+        inputs=[
+            ToolInput("flag_id", "uuid", "The flag, from read_provenance", required=True),
+            ToolInput("escalated_to", "string", "Who it goes to: a person or a role", required=True),
+            ToolInput("note", "string", "Why, in the person's own words", required=True),
+        ],
+        output=ToolOutput("object", "The flag as it now stands"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER},
+    ),
+
+    "evaluate_agents": Tool(
+        key="evaluate_agents",
+        name="Evaluate Agents",
+        speaking_agent="astra",
+        description="Re-score every agent from how its proposals were decided and flagged. An agent whose score has regressed is narrowed one autonomy tier, or paused at Tier 1, and that goes on the ledger; nothing is ever widened. The Confirm card names any agent it would narrow.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Re-run the agent evaluation? An agent that has regressed is narrowed or paused.",
+        inputs=[],
+        output=ToolOutput("object", "Each agent's score and grade, and any autonomy narrowed"),
         roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER, UserRole.ADMIN},
     ),
 
@@ -1957,6 +2000,16 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "cash": ("/studio/cash", "Cash movements", {_A, _P, _PT, _C, _O, _B}),
     "trades": ("/studio/trades", "Trades", {_A, _P, _PT, _C, _O, _B}),
     "tax_documents": ("/studio/tax-documents", "Tax documents", {_A, _P, _PT, _C, _O, _B}),
+    "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
+    "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),
+    "agent_history": ("/studio/agent-history", "Agent history", {_A, _PT, _C, _B}),
+    "provenance": ("/provenance", "Provenance", {_C, _B}),
+    "composites": ("/studio/composites", "Composites", {_A, _PT, _R, _C}),
+    "prices": ("/studio/prices", "Prices", {_A, _P, _PT, _R, _C, _O, _B}),
+    "beneficiary_audit": ("/studio/beneficiary-audit", "Beneficiary audit", {_A, _P, _PT, _C}),
+    "licences": ("/studio/licences", "Licences", {_A, _P, _PT, _C, _O, _B}),
+    "corporate_actions": ("/studio/corporate-actions", "Corporate actions", {_O, _C}),
+    "pipeline": ("/studio/pipeline", "Growth pipeline", {_A, _P, _PT}),
 }
 # The views of every client that can open on one, through `?household=`.
 ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "cash", "trades", "tax_documents"}

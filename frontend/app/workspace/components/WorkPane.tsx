@@ -33,6 +33,16 @@ import { FinancialPlanView } from "@/components/views/FinancialPlanView";
 import { ProductsView } from "@/components/views/ProductsView";
 import { TaxDocumentsView, TradesView } from "@/components/views/TradesView";
 import { NetWorthView } from "@/components/views/NetWorthView";
+import { AnalyticsView } from "@/components/views/AnalyticsView";
+import { CapacityView } from "@/components/views/CapacityView";
+import { AgentHistoryView } from "@/components/views/AgentHistoryView";
+import { PipelineView } from "@/components/views/PipelineView";
+import { CorporateActionsView } from "@/components/views/CorporateActionsView";
+import { ProvenanceView } from "@/components/views/ProvenanceView";
+import { CompositesView } from "@/components/views/CompositesView";
+import { PricesView } from "@/components/views/PricesView";
+import { BeneficiaryAuditView } from "@/components/views/BeneficiaryAuditView";
+import { LicencesView } from "@/components/views/LicencesView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
 
@@ -116,6 +126,26 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <ProductsView />;
     case "exits":
       return <ExitsView household={pane.query.household ?? null} />;
+    case "analytics":
+      return <AnalyticsView />;
+    case "capacity":
+      return <CapacityView />;
+    case "agent_history":
+      return <AgentHistoryView />;
+    case "pipeline":
+      return <PipelineView />;
+    case "corporate_actions":
+      return <CorporateActionsView />;
+    case "provenance":
+      return <ProvenanceView />;
+    case "composites":
+      return <CompositesView />;
+    case "prices":
+      return <PricesView />;
+    case "beneficiary_audit":
+      return <BeneficiaryAuditView />;
+    case "licences":
+      return <LicencesView />;
   }
 }
 

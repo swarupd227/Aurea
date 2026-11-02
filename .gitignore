@@ -15,6 +15,7 @@ venv/
 # Node / Next
 node_modules/
 .next/
+.next-*/
 out/
 npm-debug.log*
 .turbo/
