@@ -967,55 +967,6 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
-    "read_aml_reviews": Tool(
-        key="read_aml_reviews",
-        name="Read AML Reviews",
-        speaking_agent="astra",
-        description="Screening hits and EDD files waiting on a person. Each hit on each party: its category, score, the discriminators a reviewer weighs, and its state: open, needs_info, awaiting_confirmation (a true match waiting for a second reviewer), true_match or false_positive, with qa_due where a false positive is sampled for QA. Each EDD file: risk tier, status, the source-of-wealth gaps, the last review, and the checklist each kind of wealth needs. Give case_id for one onboarding case. A party is not cleared until every hit on it is decided, whatever the screener said. Never tell a client about a hit.",
-        change_state=ToolChangeState.NO,
-        confirmation=None,
-        inputs=[ToolInput("case_id", "uuid", "One onboarding case, from read_onboarding_cases, or leave out for the firm", required=False)],
-        output=ToolOutput("object", "Hits, EDD files, checklists and counts"),
-        roles_required={UserRole.ADVISER, UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
-    ),
-
-    "record_screening_decision": Tool(
-        key="record_screening_decision",
-        name="Record Screening Decision",
-        speaking_agent="astra",
-        description="A person's decision on one screening hit for one party. kind 'disposition' (compliance or operations): true_match, false_positive or needs_info, with the reason, naming the discriminators checked. kind 'confirmation' (compliance, a second person): confirmed or rejected, for a true match awaiting it. kind 'qa' (compliance, not the person who decided): agree or overturn, for a false positive; an overturn reopens the hit. A confirmed PEP or adverse-media match opens EDD; a confirmed sanctions match stops the case. Never decide for the person, and never suggest a decision from the name alone.",
-        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
-        confirmation="Record this decision on the hit?",
-        inputs=[
-            ToolInput("party_id", "uuid", "The party, from read_aml_reviews", required=True),
-            ToolInput("hit", "string", "The hit, as read_aml_reviews named it (category:name) or the matched name", required=True),
-            ToolInput("kind", "string", "disposition, confirmation or qa. Defaults to disposition", required=False),
-            ToolInput("decision", "string", "true_match, false_positive or needs_info; confirmed or rejected; agree or overturn", required=True),
-            ToolInput("rationale", "string", "Why, in the reviewer's words", required=True),
-        ],
-        output=ToolOutput("object", "The case's hits and EDD file"),
-        roles_required={UserRole.COMPLIANCE, UserRole.OPERATIONS},
-    ),
-
-    "sign_off_edd": Tool(
-        key="sign_off_edd",
-        name="Sign Off EDD",
-        speaking_agent="astra",
-        description="A reviewer's decision on an onboarding case's EDD file. approve needs wealth_type (employment, business_sale, equity_compensation, inheritance, investments, property_sale or crypto), a source for every item on that wealth's checklist in read_aml_reviews, and the conclusion that the wealth is explicable; it completes EDD. decline keeps the account from opening. more_info leaves it pending. A high-risk file is signed off by compliance, a medium one by compliance or operations. A source is a document a person saw, never 'we know the client'.",
-        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
-        confirmation="Record this EDD decision?",
-        inputs=[
-            ToolInput("case_id", "uuid", "The onboarding case", required=True),
-            ToolInput("decision", "string", "approve, decline or more_info", required=True),
-            ToolInput("wealth_type", "string", "Where the wealth comes from, from the checklists", required=False),
-            ToolInput("evidence", "list[string]", "Each checklist item and its source, like 'sale_agreement: SPA dated 3 Mar 2024, executed copy'", required=False),
-            ToolInput("conclusion", "string", "explicable or not_explicable", required=False),
-            ToolInput("rationale", "string", "The reviewer's conclusion in their own words", required=True),
-        ],
-        output=ToolOutput("object", "The case's hits and EDD file"),
-        roles_required={UserRole.COMPLIANCE, UserRole.OPERATIONS},
-    ),
-
     "read_client_exits": Tool(
         key="read_client_exits",
         name="Read Departures and Estates",
@@ -1442,7 +1393,7 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements) or pipeline (prospects and opportunities). ips, reviews, protection, risk_profiles, net_worth and "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements) or pipeline (prospects and opportunities). ips, reviews, protection, risk_profiles, net_worth and "
             "exits, equity_comp, plan, client_file, cash, trades, tax_documents show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
@@ -2067,7 +2018,6 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "cash": ("/studio/cash", "Cash movements", {_A, _P, _PT, _C, _O, _B}),
     "trades": ("/studio/trades", "Trades", {_A, _P, _PT, _C, _O, _B}),
     "tax_documents": ("/studio/tax-documents", "Tax documents", {_A, _P, _PT, _C, _O, _B}),
-    "aml": ("/studio/aml", "AML reviews", {_A, _C, _O, _B}),
     "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
     "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),
     "agent_history": ("/studio/agent-history", "Agent history", {_A, _PT, _C, _B}),
