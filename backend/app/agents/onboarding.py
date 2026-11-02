@@ -36,7 +36,7 @@ async def _activation_gates(session, firm, case) -> dict:
     UI and the enforcement can never disagree about what is blocking.
     """
     from app.aurea_core import (
-        disclosures, fees as fees_core, gates as gates_core, parties as parties_core,
+        consents, disclosures, fees as fees_core, gates as gates_core, parties as parties_core,
     )
     from app.models.onboarding import FeeSchedule
 
@@ -55,10 +55,12 @@ async def _activation_gates(session, firm, case) -> dict:
         case,
         party_status=parties_core.completeness_for(case.registration_type, party_rows,
                                                    await aml_review.decisions_for(session, [p.id for p in party_rows])),
-        disclosure_status=disclosures.status_for(
-            firm.jurisdiction, case.registration_type, disc_rows
-        ),
-        fee_status=fees_core.status_for(case, schedule),
+        disclosure_status=(disclosure := disclosures.status_for(
+            firm.jurisdiction, case.registration_type, disc_rows, case.engagement_type
+        )),
+        fee_status=(fee := fees_core.status_for(case, schedule)),
+        consent_status=consents.gate_status(await consents.for_case_rows(session, case), disclosure_items=disclosure["items"],
+                                            fee_assigned=bool(fee and fee.get("assigned"))),
     )
 
 RISK_TO_MODEL = {"conservative": "Balanced", "balanced": "Balanced", "growth": "Growth", "aggressive": "Growth"}

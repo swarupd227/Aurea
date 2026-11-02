@@ -11,7 +11,7 @@ import { viewsForRole } from "./nav";
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
-  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "onboarding_queues"
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "onboarding_queues"
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
   | "corporate_actions" | "pipeline" | "tax" | "estate" | "family" | "behavioural" | "regulatory_countdown" | "workforce"
   | "skills" | "book_integration" | "book_batch";
@@ -57,6 +57,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "trades", pattern: /^\/studio\/trades\/?$/, base: "/studio/trades", label: "Trades" },
   { key: "tax_documents", pattern: /^\/studio\/tax-documents\/?$/, base: "/studio/tax-documents", label: "Tax documents" },
   { key: "aml", pattern: /^\/studio\/aml\/?$/, base: "/studio/aml", label: "AML reviews" },
+  { key: "consents", pattern: /^\/studio\/consents\/?$/, base: "/studio/consents", label: "Consents" },
   { key: "onboarding_queues", pattern: /^\/studio\/onboarding-queues\/?$/, base: "/studio/onboarding-queues", label: "Onboarding queues" },
   { key: "analytics", pattern: /^\/studio\/analytics\/?$/, base: "/studio/analytics", label: "Analytics" },
   { key: "capacity", pattern: /^\/studio\/capacity\/?$/, base: "/studio/capacity", label: "Capacity & outcomes" },
@@ -222,6 +223,9 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_balance_item":
     case "end_balance_item":
       return onClient("/studio/net-worth");
+    case "read_consents":
+    case "record_consent":
+      return onClient("/studio/consents");
     case "read_onboarding_queues":
       return "/studio/onboarding-queues";
     case "read_aml_reviews":

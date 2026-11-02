@@ -33,6 +33,10 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
         "Privacy notice", "Privacy",
         "Initial privacy notice setting out how client data is collected, used and shared.",
     ),
+    "reg_bi_disclosure": (
+        "Regulation Best Interest disclosure", "US SEC",
+        "Reg BI Disclosure Obligation - the capacity, fees, conflicts and limits of a brokerage account, in writing.",
+    ),
     "wrap_brochure": (
         "Wrap fee program brochure", "US SEC",
         "Required where the account is opened under a wrap fee program.",
@@ -94,9 +98,19 @@ _BY_JURISDICTION: dict[str, list[str]] = {
 _ROLLOVER_TYPES = {"employer_rollover", "traditional_ira", "roth_ira"}
 
 
-def required_for(jurisdiction: str | None, registration_type: str | None) -> list[str]:
+# A US account's capacity decides its documents: a brokerage account is under Reg BI, not the Advisers Act, and a
+# planning-only engagement has no supervised person managing money for the client.
+_US_BY_ENGAGEMENT: dict[str, list[str]] = {
+    "brokerage": ["form_crs", "reg_bi_disclosure", "privacy_notice"],
+    "financial_planning": ["form_adv_2a", "form_crs", "privacy_notice"],
+}
+
+
+def required_for(jurisdiction: str | None, registration_type: str | None, engagement_type: str | None = None) -> list[str]:
     """The doc_types this case must evidence before the account can be activated."""
     base = list(_BY_JURISDICTION.get((jurisdiction or "NZ").upper(), ["jurisdiction_not_supported"]))
+    if (jurisdiction or "").upper() == "US" and engagement_type in _US_BY_ENGAGEMENT:
+        base = list(_US_BY_ENGAGEMENT[engagement_type])
 
     # US rollovers carry the PTE 2020-02 best-interest disclosure as well as the memo.
     if (registration_type or "") in _ROLLOVER_TYPES and (jurisdiction or "").upper() == "US":
@@ -132,6 +146,7 @@ def status_for(
     jurisdiction: str | None,
     registration_type: str | None,
     delivered: list,
+    engagement_type: str | None = None,
 ) -> dict:
     """Reconcile the required set against delivery records.
 
@@ -139,7 +154,7 @@ def status_for(
     required set are still reported — a firm may deliver more than the minimum, and the
     evidence matters either way.
     """
-    required = required_for(jurisdiction, registration_type)
+    required = required_for(jurisdiction, registration_type, engagement_type)
     by_type: dict[str, list] = {}
     for d in delivered:
         by_type.setdefault(d.doc_type, []).append(d)

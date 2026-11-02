@@ -982,6 +982,39 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
     ),
 
+    "read_consents": Tool(
+        key="read_consents",
+        name="Read Consents",
+        speaking_agent="astra",
+        description="The consent registry: each consent a client gave or withdrew (e_delivery, householding, data_aggregation, trusted_contact, discretionary_authority, fee_debit), who gave it, when, how and the evidence, with the one that stands for each kind; discretion granted in a signed agreement; and brochures and privacy notices due again a year after delivery. Give household_id or case_id for one client. Not on file does not mean not given.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household", required=False), ToolInput("case_id", "uuid", "One onboarding case", required=False)],
+        output=ToolOutput("object", "Consents, what stands, and redeliveries due"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_consent": Tool(
+        key="record_consent",
+        name="Record Consent",
+        speaking_agent="astra",
+        description="Records a consent a client gave or withdrew, from its evidence: kind (e_delivery, householding, data_aggregation, trusted_contact, discretionary_authority, fee_debit), status granted or withdrawn, given_by, method (e_signature, signed_form, portal, email, recorded_call), evidence (where it is filed) and given_on. For an onboarding case give case_id; for a client already onboarded, household_id. Delivering disclosures by email or portal needs e_delivery on file, and a fee schedule needs fee_debit. A withdrawal is a new record.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this consent?",
+        inputs=[
+            ToolInput("case_id", "uuid", "The onboarding case", required=False),
+            ToolInput("household_id", "uuid", "The household, for a client already onboarded", required=False),
+            ToolInput("kind", "string", "Which consent", required=True),
+            ToolInput("status", "string", "granted or withdrawn. Defaults to granted", required=False),
+            ToolInput("given_by", "string", "Who gave it", required=True),
+            ToolInput("method", "string", "How it was given", required=True),
+            ToolInput("evidence", "string", "Where the evidence is filed", required=True),
+            ToolInput("given_on", "string", "The day it was given, YYYY-MM-DD. Defaults to today", required=False),
+        ],
+        output=ToolOutput("object", "The client's consents"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
     "rate_aml_risk": Tool(
         key="rate_aml_risk",
         name="Rate AML Risk",
@@ -1662,8 +1695,8 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
-            "exits, equity_comp, plan, client_file, cash, trades, tax_documents, tax, estate, family, behavioural and regulatory_countdown show every client unless given household_id: when the conversation is about one client, look them up "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural and regulatory_countdown show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
@@ -1674,8 +1707,8 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades, tax_documents, tax, estate, family, behavioural or regulatory_countdown to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural or regulatory_countdown to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -2291,6 +2324,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "trades": ("/studio/trades", "Trades", {_A, _P, _PT, _C, _O, _B}),
     "tax_documents": ("/studio/tax-documents", "Tax documents", {_A, _P, _PT, _C, _O, _B}),
     "aml": ("/studio/aml", "AML reviews", {_A, _C, _O, _B}),
+    "consents": ("/studio/consents", "Consents", {_A, _P, _C, _O, _B}),
     "onboarding_queues": ("/studio/onboarding-queues", "Onboarding queues", {_A, _P, _C, _O, _B}),
     "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
     "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),
@@ -2314,7 +2348,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
 }
 # The views of every client that can open on one, through `?household=`.
 ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "cash", "trades", "tax_documents",
-                    "tax", "estate", "family", "behavioural", "regulatory_countdown"}
+                    "tax", "estate", "family", "behavioural", "regulatory_countdown", "consents"}
 
 
 def get_tool(key: str) -> Tool | None:

@@ -110,13 +110,16 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
         select(TransferRequest).where(TransferRequest.case_id == case.id)
     )).scalars().all())
     decided = await aml_review.decisions_for(db, [p.id for p in party_rows])
+    from app.aurea_core import consents
+    disclosure_status = disclosures.status_for(firm.jurisdiction, case.registration_type, list(disc_rows), case.engagement_type)
+    fee_status = await _fee_status(db, case)
     return gates_core.evaluate(
         case,
         party_status=parties_core.completeness_for(case.registration_type, party_rows, decided),
-        disclosure_status=disclosures.status_for(
-            firm.jurisdiction, case.registration_type, list(disc_rows)
-        ),
-        fee_status=await _fee_status(db, case),
+        disclosure_status=disclosure_status,
+        consent_status=consents.gate_status(await consents.for_case_rows(db, case), disclosure_items=disclosure_status["items"],
+                                            fee_assigned=bool(fee_status and fee_status.get("assigned"))),
+        fee_status=fee_status,
         held_away_count=held_away_n,
         transfer_status=transfer_controls.status_for(
             xfer_rows, party_names=[p.legal_name for p in party_rows]
@@ -154,7 +157,7 @@ async def _tracks_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dic
         party_status=parties_core.completeness_for(case.registration_type, party_rows,
                                                    await aml_review.decisions_for(db, [p.id for p in party_rows])),
         disclosure_status=disclosures.status_for(
-            firm.jurisdiction, case.registration_type, list(disc_rows)
+            firm.jurisdiction, case.registration_type, list(disc_rows), case.engagement_type
         ),
         documents=list(doc_rows),
         transfers=list(xfer_rows),
@@ -989,7 +992,7 @@ async def list_disclosures(
     rows = (await db.execute(
         select(DisclosureDelivery).where(DisclosureDelivery.case_id == case.id)
     )).scalars().all()
-    return disclosures.status_for(firm.jurisdiction, case.registration_type, rows)
+    return disclosures.status_for(firm.jurisdiction, case.registration_type, rows, case.engagement_type)
 
 
 @router.post("/cases/{case_id}/disclosures")
@@ -1023,7 +1026,7 @@ async def record_disclosure(
         select(DisclosureDelivery).where(DisclosureDelivery.case_id == case.id)
     )).scalars().all()
     await db.commit()
-    return disclosures.status_for(firm.jurisdiction, case.registration_type, rows)
+    return disclosures.status_for(firm.jurisdiction, case.registration_type, rows, case.engagement_type)
 
 
 @router.delete("/cases/{case_id}/disclosures/{delivery_id}", status_code=204)

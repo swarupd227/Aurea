@@ -79,6 +79,8 @@ class ToolExecutors:
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
             "rate_aml_risk": self.rate_aml_risk,
+            "read_consents": self.read_consents,
+            "record_consent": self.record_consent,
             "read_onboarding_queues": self.read_onboarding_queues,
             "record_screening_decision": self.record_screening_decision,
             "sign_off_edd": self.sign_off_edd,
@@ -1448,6 +1450,48 @@ class ToolExecutors:
         facts = {k: inputs.get(k) for k in ("residence_country", "citizenship", "source_of_funds_country", "wealth_source", "channel",
                                              "wires_per_year", "expected_annual_inflow", "third_party_payments", "layered") if inputs.get(k) not in (None, "")}
         return {"facts": facts, "band": inputs.get("band"), "reason": inputs.get("reason")}
+
+    def _consent_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"case_id": _parse_uuid(inputs["case_id"], "case_id") if inputs.get("case_id") else None,
+                "household_id": _parse_uuid(inputs["household_id"], "household_id") if inputs.get("household_id") else None,
+                "kind": inputs.get("kind"), "status": inputs.get("status"), "given_by": inputs.get("given_by"), "method": inputs.get("method"),
+                "evidence": inputs.get("evidence"), "given_on": self._exit_day(inputs.get("given_on"), "given_on")}
+
+    async def read_consents(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import consents
+
+        try:
+            result = await consents.registry(self.session, self.firm_id,
+                                             household_id=_parse_uuid(inputs["household_id"], "household_id") if inputs.get("household_id") else None,
+                                             case_id=_parse_uuid(inputs["case_id"], "case_id") if inputs.get("case_id") else None)
+        except consents.ConsentError as exc:
+            raise ExecutorError(str(exc))
+        stands = result["standing"] or {}
+        result["message"] = ((f"{sum(1 for v in stands.values() if v['status'] == 'granted')} consent(s) stand; " if result["standing"] is not None else
+                              f"{len(result['records'])} consent record(s) on file; ") + f"{len(result['redeliveries_due'])} disclosure(s) due again.")
+        return result
+
+    async def record_consent(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import consents
+
+        try:
+            result = await consents.record(self.session, self.firm_id, by=await self._shelf_user(), **self._consent_args(inputs))
+        except consents.ConsentError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _consent_registry_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import consents, firm_time
+
+        try:
+            r = await consents.prepare(self.session, self.firm_id, **self._consent_args(inputs))
+        except consents.ConsentError as exc:
+            raise ExecutorError(str(exc))
+        effect = {"e_delivery": "Disclosures may be delivered by email or portal", "fee_debit": "Fees may be debited from the account"}.get(r["kind"])
+        return [("Client", r["whose"]), ("Consent", consents.LABELS[r["kind"]]), ("Status", r["status"].capitalize()), ("Given by", r["given_by"]),
+                ("Given on", firm_time.spoken(r["given_on"])), ("How", r["method"].replace("_", " ")), ("Evidence", r["evidence"]),
+                ("Effect", (effect if r["status"] == "granted" else "No longer stands") if effect else None)]
 
     async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_risk
@@ -3359,6 +3403,8 @@ class ToolExecutors:
             return rows(*await self._crm_preview(tool_key, inputs))
         if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):
             return rows(*await self._corporate_preview(tool_key, inputs))
+        if tool_key == "record_consent":
+            return rows(*await self._consent_registry_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

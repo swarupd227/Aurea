@@ -42,7 +42,7 @@ def sanctions_open(case, party_status: dict) -> list[str]:
 
 def evaluate(case, *, party_status: dict, disclosure_status: dict,
              fee_status: dict | None = None, held_away_count: int | None = None,
-             transfer_status: dict | None = None) -> dict:
+             transfer_status: dict | None = None, consent_status: dict | None = None) -> dict:
     """All activation gates for a case, and whether any of them blocks.
 
     Optional arguments degrade gracefully: a caller that has not loaded the fee schedule or
@@ -85,6 +85,25 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
             )
         gates.append(_gate("fee_schedule_confirmed", "Fee schedule confirmed",
                            fee_state, fee_detail, track="agreements"))
+
+    # ── Track A — consents ────────────────────────────────────────────────────
+    # Electronic delivery without consent is not delivery, and a fee is debited only with authority to do it.
+    if consent_status is not None:
+        electronic = consent_status.get("electronic_without_consent", [])
+        gates.append(_gate(
+            "e_delivery_consent", "E-delivery consent on file",
+            FAIL if electronic else PASS,
+            f"Delivered electronically with no e-delivery consent: {', '.join(electronic)}." if electronic
+            else "Electronic deliveries are covered, or none were electronic.",
+            track="agreements",
+        ))
+        if fee_status is not None and fee_status.get("assigned"):
+            gates.append(_gate(
+                "fee_debit_authorised", "Fee debit authorised",
+                FAIL if consent_status.get("fee_debit_missing") else PASS,
+                "No authority to debit fees is on file." if consent_status.get("fee_debit_missing") else "Fee debit authority on file.",
+                track="agreements",
+            ))
 
     # ── Track A — engagement, agreement, IPS ─────────────────────────────────
     gates.append(_gate(

@@ -13,6 +13,7 @@ from app.models import (  # noqa: F401
     composites,
     connectors,
     consent,
+    consent_registry,
     corporate_actions,
     crm,
     engagement,
