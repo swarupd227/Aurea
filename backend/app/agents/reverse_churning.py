@@ -4,38 +4,33 @@
 focus area' — L100 §8.4. Regulators expect ongoing advisory value for ongoing fees.
 Extends Conduct Surveillance with a specific reverse-churning surveillance signal.
 Creates a SurveillanceFlag + suggests a check-in agenda for each flagged household.
+
+What counts is a review a person recorded or a meeting that was held. Tasks and proposals do not: most are the
+platform's own, and this agent's proposal must not reset its own clock. A household with neither on record is
+not measured, because no record does not mean no review. Client reviews lists those with what they were billed.
+A household keeps one open flag: a run that finds it again adds nothing.
 """
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import date
 
 from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import markets
+from app.aurea_core import firm_time, markets, reviews
 from app.aurea_core.graph import household_brain, list_households
-from app.models.enums import AgentKey, AutonomyTier, SurveillanceSeverity
-from app.models.governance import AgentRun, Recommendation, SurveillanceFlag
-from app.models.engagement import Meeting, Task
+from app.models.enums import AgentKey, AutonomyTier, MeetingStatus, SurveillanceSeverity
+from app.models.governance import SurveillanceFlag
+from app.models.engagement import ClientReview, Meeting
 
 _INACTIVITY_MONTHS = 12  # flag when no advisory activity for this long
 _FEE_MANDATE_KEYWORDS = ("discretionary", "advisory")  # fee-based mandate types
 
 
-def _last_activity_date(meetings: list, recommendations: list, tasks: list) -> date | None:
-    dates = []
-    for m in meetings:
-        if m.updated_at:
-            dates.append(m.updated_at.date() if hasattr(m.updated_at, "date") else m.updated_at)
-    for r in recommendations:
-        if r.created_at:
-            dates.append(r.created_at.date() if hasattr(r.created_at, "date") else r.created_at)
-    for t in tasks:
-        if t.created_at:
-            dates.append(t.created_at.date() if hasattr(t.created_at, "date") else t.created_at)
-    return max(dates) if dates else None
+def _last_activity_date(held_reviews: list[date], held_meetings: list[date]) -> date | None:
+    return max([*held_reviews, *held_meetings], default=None)
 
 
 class ReverseChurningAgent(BaseAgent):
@@ -49,11 +44,13 @@ class ReverseChurningAgent(BaseAgent):
         s = ctx.session
         households = await list_households(s, ctx.firm.id)
         results = []
-        cutoff = date.today() - timedelta(days=_INACTIVITY_MONTHS * 30)
+        not_measured = 0
+        today = firm_time.today(ctx.firm)
+        cutoff = reviews.add_months(today, -_INACTIVITY_MONTHS)
 
         for hh_summary in households:
             hid = hh_summary["id"]
-            brain = await household_brain(s, hid, firm_id=ctx.firm.id)
+            brain = await household_brain(s, uuid.UUID(str(hid)), firm_id=ctx.firm.id)
             if not brain:
                 continue
 
@@ -68,35 +65,27 @@ class ReverseChurningAgent(BaseAgent):
 
             hid_uuid = uuid.UUID(hid)
 
-            # Check for advisory activity: meetings, recommendations, tasks
-            meetings = (
-                await s.execute(select(Meeting).where(Meeting.household_id == hid_uuid))
-            ).scalars().all()
-            tasks = (
-                await s.execute(select(Task).where(Task.household_id == hid_uuid))
-            ).scalars().all()
-            recs = (
-                await s.execute(select(Recommendation).where(Recommendation.household_id == hid_uuid))
-            ).scalars().all()
+            held = (await s.execute(select(ClientReview.held_on).where(ClientReview.household_id == hid_uuid))).scalars().all()
+            met = (await s.execute(select(Meeting.scheduled_at).where(
+                Meeting.household_id == hid_uuid, Meeting.status == MeetingStatus.COMPLETED.value))).scalars().all()
+            last_active = _last_activity_date(list(held), [firm_time.today(ctx.firm, m) for m in met if m])
 
-            last_active = _last_activity_date(meetings, recs, tasks)
-
-            if last_active is None or last_active < cutoff:
-                months_inactive = (
-                    (date.today() - last_active).days // 30
-                    if last_active else _INACTIVITY_MONTHS + 99
-                )
+            if last_active is None:
+                not_measured += 1
+                continue
+            if last_active < cutoff:
+                months_inactive = (today - last_active).days // 30
                 aum = brain["totals"].get("total_value", 0) or 0
                 results.append({
                     "brain": brain,
                     "months_inactive": months_inactive,
-                    "last_active": last_active.isoformat() if last_active else None,
+                    "last_active": last_active.isoformat(),
                     "aum": aum,
                     "mandate_types": [m.get("mandate_type") for m in fee_mandates],
                 })
 
         results.sort(key=lambda r: -r["months_inactive"])
-        return {"flagged": results}
+        return {"flagged": results, "not_measured": not_measured}
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
         if not sensed["flagged"]:
@@ -117,7 +106,7 @@ class ReverseChurningAgent(BaseAgent):
                 f"Household: {hh['name']} | Jurisdiction: {jurisdiction}\n"
                 f"AUM: {currency} {item['aum']:,.0f} | "
                 f"Inactive for: {item['months_inactive']} months\n"
-                f"Last advisory activity: {item['last_active'] or 'never recorded'}\n"
+                f"Last review or meeting on record: {item['last_active']}\n"
                 f"Goals on file: {goal_summary}\n\n"
                 "Generate 4–5 agenda items for a re-engagement meeting that are specific to "
                 "this client's situation. Cover: portfolio review, goal progress, life events "
@@ -138,31 +127,39 @@ class ReverseChurningAgent(BaseAgent):
                 prompt=prompt, fallback=fallback, max_tokens=450,
             )
 
-            # Write a SurveillanceFlag for compliance records
+            # Write a SurveillanceFlag for compliance records, once: it stands until a person resolves it. A flag
+            # has no household column, so the household rides in its attributes. It used to be passed as a column,
+            # which raised, and the except below hid that no flag was ever written.
+            open_flags = (await ctx.session.execute(select(SurveillanceFlag.attributes).where(
+                SurveillanceFlag.firm_id == ctx.firm.id, SurveillanceFlag.kind == "reverse_churning",
+                SurveillanceFlag.resolved.is_(False)))).scalars().all()
+            standing = any((a or {}).get("household_id") == str(hh["id"]) for a in open_flags)
             try:
-                flag = SurveillanceFlag(
+                flag = None if standing else SurveillanceFlag(
                     firm_id=ctx.firm.id,
-                    household_id=uuid.UUID(hh["id"]),
+                    target_agent_key=str(self.key),
                     severity=SurveillanceSeverity.MEDIUM,
                     category="conduct",
                     kind="reverse_churning",
                     finding=(
                         f"{hh['name']} has been on fee-based advisory mandate(s) "
-                        f"with no recorded advisory activity for {item['months_inactive']} months "
-                        f"(last active: {item['last_active'] or 'never'}). "
+                        f"with no review or meeting on record for {item['months_inactive']} months "
+                        f"(last: {item['last_active']}). "
                         "Potential reverse-churning conduct risk."
                     ),
                     resolved=False,
                     auto_paused_agent=False,
                     attributes={
+                        "household_id": str(hh["id"]), "household": hh["name"],
                         "months_inactive": item["months_inactive"],
                         "last_active": item["last_active"],
                         "aum": item["aum"],
                         "mandate_types": item["mandate_types"],
                     },
                 )
-                ctx.session.add(flag)
-                await ctx.session.flush()
+                if flag is not None:
+                    ctx.session.add(flag)
+                    await ctx.session.flush()
             except Exception:
                 pass  # flag write must not break the agent run
 
@@ -171,7 +168,7 @@ class ReverseChurningAgent(BaseAgent):
                     f"Reverse churning risk — {item['months_inactive']}m inactive — {hh['name']}"
                 ),
                 summary=(
-                    f"Fee-based mandate, no advisory activity for {item['months_inactive']} months. "
+                    f"Fee-based mandate, no review or meeting on record for {item['months_inactive']} months. "
                     f"AUM {currency} {item['aum']:,.0f}. Re-engagement agenda drafted."
                 ),
                 rationale=agenda,

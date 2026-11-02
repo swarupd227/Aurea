@@ -1,11 +1,9 @@
-"""Tax Intelligence Agent — cross-book NZ tax optimisation.
+"""Tax Intelligence Agent — a cross-book tax read, for the household's own market.
 
-Scans all household mandates simultaneously for:
-  - Loss-harvesting opportunities (not just drift-triggered)
-  - PIE fund regime mismatches
-  - KiwiSaver contribution rate gaps
-  - Bright-line property test proximity
-  - Suboptimal withdrawal sequencing in decumulation
+Scans all household mandates simultaneously for what that market's report raises: in New Zealand
+loss harvesting, PIE mismatches, KiwiSaver gaps and the bright-line test; in the US short-term gains,
+NIIT, wash sales, RMDs and Roth conversions; in the UK the CGT and dividend allowances and a tapered
+pension allowance. India has its own path. A market with no report raises nothing.
 """
 from __future__ import annotations
 
@@ -19,6 +17,59 @@ from app.aurea_core import markets, tax_intelligence
 from app.aurea_core.graph import list_households
 from app.models.enums import AgentKey, AutonomyTier
 from app.models.graph import Household
+
+
+REGULATOR = {"NZ": "IRD", "US": "IRS", "UK": "HMRC"}
+
+
+def _nz_findings(result: dict, say) -> list[str]:
+    sections = []
+    lh, pie, ks = result["loss_harvest"], result["pie_optimisation"], result["kiwisaver"]
+    if lh["count"] > 0:
+        sections.append(f"Loss-harvest: {lh['count']} lot(s) with total unrealised loss of {say(abs(lh['total_harvestable_loss']))} "
+                        f"(est. {say(lh['estimated_tax_saving_at_top_pir'])} tax saving at top PIR).")
+    if pie["count"] > 0:
+        sections.append(f"PIE optimisation: {pie['count']} mandate(s) could save ~{say(pie['total_annual_saving'])}/yr by switching to PIE fund structure.")
+    for flag in result["bright_line"]["flags"]:
+        sections.append(f"Bright-line: {flag['property_address']} — {flag['action']}")
+    for rec in ks["recommendations"]:
+        if rec.get("recommended_rate_pct") != rec.get("current_rate_pct"):
+            sections.append(f"KiwiSaver: {rec['person_name']} at {rec['current_rate_pct']}% — consider increasing to "
+                            f"{rec['recommended_rate_pct']}% to capture full govt top-up of {say(rec['max_govt_topup'])}/yr.")
+    return sections
+
+
+def _us_findings(result: dict, say) -> list[str]:
+    cgt, rmd, roth = result["cgt_analysis"], result["rmd_planning"], result["roth_conversion"]
+    sections = []
+    if cgt["total_short_term_gains"] > 10_000:
+        sections.append(f"Short-term gains: {say(cgt['total_short_term_gains'])} unrealised. {cgt['st_conversion_action']}")
+    if cgt["niit_exposed"]:
+        sections.append(f"NIIT: about {say(cgt['niit_additional_tax'])} on long-term gains. {cgt['niit_action']}")
+    if cgt["wash_sale_violations"]:
+        sections.append(f"Wash sales: {len(cgt['wash_sale_violations'])} lot(s) would have a loss disallowed if sold now.")
+    if rmd["rmd_active"]:
+        sections.append(f"RMDs: {rmd['rmd_active']} required this year, about {say(rmd['total_rmd_this_year'])} in all.")
+    for c in roth["candidates"]:
+        if c["attractive"]:
+            sections.append(f"Roth: {c['person_name']} has room of {say(c['recommended_conversion'])} at a {c['marginal_rate_pct']}% marginal rate.")
+    return sections
+
+
+def _uk_findings(result: dict, say) -> list[str]:
+    cgt, div = result["cgt_allowance"], result["dividend_allowance"]
+    sections = []
+    if cgt["flag"]:
+        sections.append(f"CGT: {say(cgt['net_taxable_gains'])} of unrealised gains above the exempt amount, about {say(cgt['estimated_cgt_at_higher_rate'])} at the higher rate. {cgt['action']}")
+    if div["flag"]:
+        sections.append(f"Dividends: about {say(div['estimated_excess'])} above the allowance, {say(div['estimated_tax'])} of tax. {div['action']}")
+    for p in result["pension_allowance"]["persons"]:
+        if p["tapered"]:
+            sections.append(f"Pension: {p['person_name']}'s annual allowance is tapered to {say(p['effective_allowance'])}. {p['action']}")
+    return sections
+
+
+FINDINGS = {"NZ": _nz_findings, "US": _us_findings, "UK": _uk_findings}
 
 
 class TaxIntelligenceAgent(BaseAgent):
@@ -59,70 +110,39 @@ class TaxIntelligenceAgent(BaseAgent):
                 drafts.append(await self._india(ctx, result))
                 continue
 
-            # Build a concise memo for the adviser
-            sections = []
-
-            lh = result["loss_harvest"]
-            if lh["count"] > 0:
-                sections.append(
-                    f"Loss-harvest: {lh['count']} lot(s) with total unrealised loss of "
-                    f"${abs(lh['total_harvestable_loss']):,.0f} "
-                    f"(est. ${lh['estimated_tax_saving_at_top_pir']:,.0f} tax saving at top PIR)."
-                )
-
-            pie = result["pie_optimisation"]
-            if pie["count"] > 0:
-                sections.append(
-                    f"PIE optimisation: {pie['count']} mandate(s) could save "
-                    f"~${pie['total_annual_saving']:,.0f}/yr by switching to PIE fund structure."
-                )
-
-            bl = result["bright_line"]
-            if bl["count"] > 0:
-                for flag in bl["flags"]:
-                    sections.append(
-                        f"Bright-line: {flag['property_address']} — {flag['action']}"
-                    )
-
-            ks = result["kiwisaver"]
-            if ks["count"] > 0:
-                for rec in ks["recommendations"]:
-                    if rec.get("recommended_rate_pct") != rec.get("current_rate_pct"):
-                        sections.append(
-                            f"KiwiSaver: {rec['person_name']} at {rec['current_rate_pct']}% "
-                            f"— consider increasing to {rec['recommended_rate_pct']}% "
-                            f"to capture full govt top-up of ${rec['max_govt_topup']:,.2f}/yr."
-                        )
-
+            market = result.get("jurisdiction")
+            if market not in FINDINGS:
+                continue
+            say = lambda v, c=result.get("currency"): markets.money(v, c)  # noqa: E731
+            sections = FINDINGS[market](result, say)
+            if not sections:
+                continue
+            regulator = REGULATOR[market]
             memo_prompt = (
-                f"You are a senior NZ wealth adviser. Write a 3-paragraph tax intelligence memo "
-                f"for the {hh_name} household, covering the following findings:\n\n"
-                + "\n".join(f"- {s}" for s in sections)
-                + "\n\nBe concrete with dollar amounts. Mention IRD rules where relevant. "
+                f"Write a 3-paragraph tax intelligence memo for the adviser on the {hh_name} household, "
+                f"covering the following findings:\n\n" + "\n".join(f"- {s}" for s in sections)
+                + f"\n\nBe concrete with the amounts given, and use no others. Mention {regulator} rules where relevant. "
+                f"These are estimates for a qualified person to check. "
                 f"Close with the one highest-priority action for the next meeting."
             )
-            memo = await narrate(ctx, memo_prompt)
+            memo = await narrate(ctx, task="advice", system=firm_voice(ctx), prompt=memo_prompt,
+                                 fallback="\n".join(sections) + "\nEstimates for a qualified person to check.")
+            extra = summary.get("bright_line_flags", 0)
 
             drafts.append(RecommendationDraft(
                 title=f"Tax intelligence — {hh_name}",
                 summary=(
-                    f"{summary['total_flags']} tax flag(s): "
-                    f"${abs(summary['harvestable_loss']):,.0f} harvestable loss, "
-                    f"${summary['estimated_tax_saving']:,.0f} est. annual saving. "
-                    f"{summary['bright_line_flags']} bright-line alert(s)."
+                    f"{summary['total_flags']} tax flag(s): {say(abs(summary['harvestable_loss']))} harvestable loss, "
+                    f"{say(summary['estimated_tax_saving'])} est. saving."
+                    + (f" {extra} bright-line alert(s)." if extra else "")
                 ),
                 rationale=memo,
                 confidence=0.85,
-                priority=1 if summary["bright_line_flags"] > 0 else 2,
-                subject=Subject(type="household", id=hh_id, label=hh_name),
+                priority=1 if extra > 0 else 2,
+                subject=Subject(type="household", id=uuid.UUID(hh_id), label=hh_name),
                 payload=result,
-                evidence={
-                    "harvestable_loss": summary["harvestable_loss"],
-                    "estimated_tax_saving": summary["estimated_tax_saving"],
-                    "bright_line_flags": summary["bright_line_flags"],
-                    "pie_flags": pie["count"],
-                    "kiwisaver_flags": ks["count"],
-                },
+                evidence={"jurisdiction": market, "harvestable_loss": summary["harvestable_loss"], "estimated_tax_saving": summary["estimated_tax_saving"],
+                          "findings": len(sections)},
             ))
 
         return drafts

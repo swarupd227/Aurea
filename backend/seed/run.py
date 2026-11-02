@@ -469,7 +469,7 @@ EXTRA_HOUSEHOLDS = [
      ],
      "holdings": [("AAPL", 2000, 140, 1800), ("MSFT", 1500, 250, 1600), ("AGG", 2000, 100, 1400),
                   ("VNQ", 1000, 80, 1200), ("PPEF1", 2000, 100, 1500)],
-     "goals": [{"name": "Retirement", "kind": "retirement", "target": 8000000, "years": 8, "share": 0.8},
+     "goals": [{"name": "Retirement", "kind": "retirement", "target": 8000000, "years": 3, "share": 0.8},
                {"name": "Family legacy", "kind": "legacy", "target": 3000000, "years": 20, "share": 0.2}]},
     # ── UK jurisdiction: IHT pension inclusion exposure ───────────────────────
     {"name": "The Hartley Family", "segment": "private_wealth", "model": "balanced", "mandate": "advisory",
@@ -485,7 +485,7 @@ EXTRA_HOUSEHOLDS = [
      ],
      "holdings": [("AAPL", 1200, 160, 1600), ("MSFT", 800, 290, 1500),
                   ("AGG", 1500, 100, 1400), ("VNQ", 600, 88, 1300)],
-     "goals": [{"name": "Retirement", "kind": "retirement", "target": 5000000, "years": 10, "share": 0.8},
+     "goals": [{"name": "Retirement", "kind": "retirement", "target": 5000000, "years": 2, "share": 0.8},
                {"name": "IHT-efficient legacy", "kind": "legacy", "target": 2000000, "years": 25, "share": 0.2}]},
 ]
 

@@ -19,7 +19,7 @@ each feature was costing them too much time. Every §5 and §6.1 gap from the au
 Parked stays parked, and "Waiting on a decision" needs a figure or a yes from the user.
 
 **The one cloud build must:** deploy both sides, which runs `app.db_bootstrap` for the new columns, then run
-`seed.schedule_backfill` and `seed.ai_governance_backfill`. After it, one live pass over the batch, Not now on every
+`seed.schedule_backfill`, `seed.ai_governance_backfill` and `seed.retirement_dates_backfill`. After it, one live pass over the batch, Not now on every
 card, moves these rows to Done.
 
 ## Next, in order
@@ -66,14 +66,9 @@ B-26 waits for a real custodian statement.
 
 | ID | Decision | Why it is stuck |
 |---|---|---|
-| B-76 | The firm's cost of care | Care reads "not assessed" until a branch leader or administrator sets a yearly cost and years to plan for, from a source. Needs a real figure, and it differs by country, so the Indian firm needs its own |
-| B-77 | Should the protection agent chase what it cannot assess | It raises measured gaps only. On 1 Nov the live NZ book had none, and six households were not assessed for want of an income. A proposal to go and get the income is possible, but it adds six to the queue, and a household with no gap measured is not known to have one |
-| B-27 | PPEF1 real valuation | Needs a real figure and its source |
-| B-28 | Credit and rebill the 13 bills issued on stale prices | Moves money again |
-| B-29 | Hartley and Morrison retirement dates | Seeded goals have James Hartley working to 77 and Robert Morrison to 74, which sets their protection figures |
-| B-30 | India alignment: the rest | Rows 1-3 of the investor demo are built. Rows 4-6 and everything for real client data still await approval (`reports/India market alignment for Astra.md`), and hosting is deferred. The customer's SEBI licences are unknown (D1), and could change B-02, B-04 and B-08 |
-| B-47 | Reverse Churning reading the review record | Today any task or proposal counts as advisory activity, so its own proposal resets its 12-month clock. Reading recorded reviews fixes that, but flags every fee-paying household with no record and opens a surveillance flag for each, so it should wait for a yes and for real reviews to be recorded |
-| B-42 | Tax Intelligence agent on NZ, US and UK | Calls `narrate` positionally, which raises, and reads NZ-only keys for US and UK. Fixing it starts raising proposals on the live firm, so it needs a yes. The India path is separate and works |
+| B-76 | The firm's cost of care | Care reads "not assessed" until a branch leader or administrator sets a yearly cost and years to plan for, from a source. Needs a real figure, and it differs by country, so the Indian firm needs its own. Not decided on 2 Nov: no default is ever supplied |
+| B-27 | PPEF1 real valuation | Needs a real figure and its source. Not decided on 2 Nov: a valuation is a fact, and none may be invented |
+| B-28 | Credit and rebill the 13 bills issued on stale prices | Decided 2 Nov on recommendation: yes, after the cloud build, by operations, one invoice at a time through the credit card, each confirmed by a person. It moves real money, so it is not done from here |
 
 ## Built, not yet proven live
 
@@ -105,12 +100,15 @@ B-26 waits for a real custodian statement.
 | B-37, B-38, B-39, B-44, B-52 | Risk and wording. A mandate's model read against its profile (`model_fit`), named on the Risk profiles page, on the adopt card and as a gap on a rebalance. Wealth against needs beside the questionnaire, as figures that change nothing. A questionnaire per person or entity, so a trust is asked for itself. Astra no longer calls a profile unsupported, or a reviewed client unreviewed | Tests. On the real model on throwaway data: Astra said no questionnaire is recorded here and that it cannot call the profile unsupported, twice. It first still opened with "nothing supports it", so the tool result now says so outright. A model's profile is read from its name, which is the only thing that says; a name that does not say reads "not stated". Moving a mandate to another model is still a person's, from admin. Not deployed |
 | B-63, B-66 | The rebalancer acts on an IPS limit. A holding over its limit is sold down and a restricted one sold out, whatever its class is doing, inside the tax budget and the wash-sale guard, unless a person accepted the breach or holds it back. The research team can mark a product a diversified fund, and a limit is then not read against it, here, in the monitor, on a direct order or as concentration. A sleeve nothing here can fill, like a private fund, no longer raises a rebalance alone, and the monitor still reports it outside the band | Tests, 43 checks with B-64 and B-69, on the optimiser and through the agent. No mandate has an IPS live, so nothing sells until one is recorded (B-62). No live product is marked diversified. A fund is marked, not looked through: what it holds is not on file. Not deployed |
 | B-64, B-69 | A client sees their net worth and the IPS terms they accepted on Canvas, and the client assistant can state both. Only the terms, not what the monitor finds. A client says something is wrong by a message that raises a task for the adviser, and nothing changes until a person records it | Tests, including a client naming another household. Not deployed |
+| B-42, B-47, B-29 | Decided on recommendation on 2 Nov. Tax Intelligence runs on NZ, US and UK: it called `narrate` wrongly and read NZ fields for every market, so it raised nothing anywhere but India. Reverse Churning counts a recorded review or a meeting held, not its own proposals and tasks, leaves a household with no record unmeasured rather than flagging it, and keeps one flag; its flag had never been written at all, because it was given a household column the flag does not have and the error was swallowed. James Hartley and Robert Morrison retire the year they turn 70 (`seed/retirement_dates_backfill.py`; the seed says the same). Found by the local test on 2 Nov and fixed: the estate view raised for every US household, because it asked a mandate for a household it does not hold | Tests, 30 checks, with the real model writing the memos. Every agent ran on a local copy of both demo firms, every subject, none failed. Once deployed, Tax Intelligence starts raising proposals on the NZ firm, and the two retirement goals come forward by 7 and 5 years, which moves their projections and protection figures. Not deployed |
 | B-75 | The remaining Confirm cards on the live site | From B-67: client consent, registration, conflict, WSP evidence, the pipeline and corporate actions have been seen in tests only |
 
 ## Done
 
 | Item | Commit |
 |---|---|
+| B-77: decided 2 Nov on recommendation. The protection agent raises measured gaps only; a household not assessed for want of an income stays listed on the Protection page as not assessed. A proposal to go and get an income would add six to the queue and none is known to have a gap | No code |
+| B-30: decided 2 Nov on recommendation. India rows 4 to 6 wait until the L100 batch is live, then come back for approval one row at a time. The SEBI licence question (D1) is the customer's to answer | No code |
 | B-06: Protection slice 2. The protection agent raises measured gaps, and long-term care is modelled from the firm's stated cost. Not deployed. Needs `app.db_bootstrap`, `seed.schedule_backfill` and `seed.ai_governance_backfill`. See B-76, B-77 and B-78 | The commit that adds this line |
 | B-45: India demo, a real consent and a real fill, confirmed live 1 Nov on both tracks with real prices on the paper venue. Banerjee: approval placed nothing, a simulated consent bound to those orders filled 3 of 3. Iyer: approval filled 4 of 4 with no consent asked. FIFO lots, fees and tax reconcile, the ledger chain is valid. Found B-79 | The check, no code |
 | B-72: a moment in a tool result reaches the model on the firm's clock (`firm_time.on_firm_clock`); stored results stay in UTC. Tests only, not deployed | `be3723a` |

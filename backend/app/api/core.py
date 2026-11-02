@@ -220,8 +220,9 @@ async def household_estate(
             clauses.append(Mandate.entity_id.in_(entity_ids))
         total_unrealised = 0.0
         if clauses:
+            # A mandate belongs to a person or an entity, not to a household, so it is found through them.
             mandate_ids = (
-                await db.execute(select(Mandate.id).where(Mandate.household_id == household_id))
+                await db.execute(select(Mandate.id).where(_or(*clauses)))
             ).scalars().all()
             if mandate_ids:
                 account_ids = (
