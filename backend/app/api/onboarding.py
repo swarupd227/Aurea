@@ -1329,20 +1329,14 @@ class BatchCreate(BaseModel):
 
 
 def _batch_dict(b: BookIntegrationBatch) -> dict:
-    return {
-        "id": str(b.id), "source_firm": b.source_firm, "status": b.status,
-        "feed": b.feed, "mappings": b.mappings, "stats": b.stats, "committed": b.committed,
-        "created_at": b.created_at.isoformat() if b.created_at else None,
-    }
+    from app.aurea_core import book_batches
+    return book_batches.as_dict(b)
 
 
 @router.get("/book-batches")
 async def list_batches(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    rows = (
-        await db.execute(select(BookIntegrationBatch).where(BookIntegrationBatch.firm_id == firm.id)
-                         .order_by(BookIntegrationBatch.created_at.desc()))
-    ).scalars().all()
-    return [_batch_dict(b) for b in rows]
+    from app.aurea_core import book_batches
+    return await book_batches.list_for(db, firm.id)
 
 
 @router.post("/book-batches")
@@ -1350,30 +1344,21 @@ async def create_batch(
     body: BatchCreate, user: User = Depends(require_roles(*STAFF_ROLES)),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    from app.aurea_core.sample_book import sample_feed
-
-    feed = body.feed or sample_feed(body.source_firm)
-    b = BookIntegrationBatch(firm_id=firm.id, source_firm=body.source_firm, feed=feed)
-    db.add(b)
-    await db.flush()
-    return _batch_dict(b)
+    """A new batch. With no feed it loads the sample book and is marked as one (aurea_core/book_batches.py)."""
+    from app.aurea_core import book_batches
+    try:
+        return _batch_dict(await book_batches.start(db, firm.id, body.source_firm, body.feed))
+    except book_batches.BatchError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/book-batches/{batch_id}")
 async def get_batch(batch_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    b = await db.get(BookIntegrationBatch, batch_id)
-    if not b or b.firm_id != firm.id:
-        raise HTTPException(status_code=404, detail="Batch not found")
-    rec = (
-        await db.execute(
-            select(Recommendation).where(Recommendation.subject_id == b.id,
-                                         Recommendation.agent_key == AgentKey.BOOK_INTEGRATION)
-            .order_by(Recommendation.created_at.desc()).limit(1)
-        )
-    ).scalar_one_or_none()
-    out = _batch_dict(b)
-    out["recommendation_id"] = str(rec.id) if rec else None
-    return out
+    from app.aurea_core import book_batches
+    try:
+        return await book_batches.one(db, firm.id, batch_id)
+    except book_batches.BatchError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.post("/book-batches/{batch_id}/run")

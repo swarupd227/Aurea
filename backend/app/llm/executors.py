@@ -136,6 +136,19 @@ class ToolExecutors:
             "read_portfolio": self.read_portfolio,
             "search_holdings": self.search_holdings,
             "screen_book": self.screen_book,
+            "read_tax_book": self.read_tax_book,
+            "read_estate": self.read_estate,
+            "read_family": self.read_family,
+            "read_behavioural": self.read_behavioural,
+            "read_regulatory_countdown": self.read_regulatory_countdown,
+            "read_skills": self.read_skills,
+            "create_skill": self.create_skill,
+            "update_skill": self.update_skill,
+            "delete_skill": self.delete_skill,
+            "clone_skill": self.clone_skill,
+            "run_skill": self.run_skill,
+            "read_book_batches": self.read_book_batches,
+            "start_book_batch": self.start_book_batch,
             "read_recommendations": self.read_recommendations,
             "read_agents": self.read_agents,
             "open_view": self.open_view,  # outside the gateway's turn no id is grounded, so only id-free views open
@@ -2524,6 +2537,24 @@ class ToolExecutors:
             tier, guardrails = await policy.resolve_tier(self.session, self.firm_id, key, None)
             return {"key": key, "name": name, "firm": firm, "mandate_type": None, "tier": str(tier),
                     "guardrails": guardrails, "subject": Subject("onboarding_case", case.id, case.prospect_name)}
+        batch_in = inputs.get("batch_id")
+        if need == "book_batch" or batch_in:
+            from app.aurea_core import book_batches
+
+            if need != "book_batch":
+                raise ExecutorError(f"{name} does not work on a book batch.")
+            if not batch_in:
+                raise ExecutorError(f"{name} works on one acquired book. Give a batch_id (read_book_batches).")
+            try:
+                batch = await book_batches.get(self.session, self.firm_id, _parse_uuid(batch_in, "batch_id"))
+            except book_batches.BatchError:
+                raise ExecutorError(f"Book batch {batch_in} not found or access denied.")
+            status = getattr(batch.status, "value", batch.status)
+            if status != "received":
+                raise ExecutorError(f"The {batch.source_firm} book has already been reconciled ({status}).")
+            tier, guardrails = await policy.resolve_tier(self.session, self.firm_id, key, None)
+            return {"key": key, "name": name, "firm": firm, "mandate_type": None, "tier": str(tier),
+                    "guardrails": guardrails, "subject": Subject("book_batch", batch.id, batch.source_firm)}
         if household_in:
             hid = _parse_uuid(household_in, "household_id")
             household = (await self.session.execute(
@@ -2708,7 +2739,7 @@ class ToolExecutors:
         from app.models.billing import Invoice
         from app.models.engagement import ClientReport, Meeting
         from app.models.governance import Recommendation
-        from app.models.onboarding import OnboardingCase
+        from app.models.onboarding import BookIntegrationBatch, OnboardingCase
 
         view = str(inputs.get("view") or "").strip().lower()
         spec = OPEN_VIEWS.get(view)
@@ -2721,7 +2752,8 @@ class ToolExecutors:
         seen = json.dumps([t.get("result") for t in (turn or [])], default=str)
 
         finder = {Household: "search_households", Recommendation: "read_recommendations", Invoice: "read_billing",
-                  OnboardingCase: "read_onboarding_cases", Meeting: "read_meetings", ClientReport: "read_reports"}
+                  OnboardingCase: "read_onboarding_cases", Meeting: "read_meetings", ClientReport: "read_reports",
+                  BookIntegrationBatch: "read_book_batches"}
 
         async def grounded(field: str, model) -> uuid.UUID:
             value = _parse_uuid(inputs.get(field) or "", field)
@@ -2744,6 +2776,8 @@ class ToolExecutors:
             route = f"{route}/{await grounded('case_id', OnboardingCase)}"
         elif view == "meeting":
             route = f"{route}/{await grounded('meeting_id', Meeting)}"
+        elif view == "book_batch":
+            route = f"{route}/{await grounded('batch_id', BookIntegrationBatch)}"
         elif view == "report":
             route = f"{route}/{await grounded('report_id', ClientReport)}"
         elif view == "message_thread":
@@ -3280,6 +3314,12 @@ class ToolExecutors:
             return await self._report_decision_preview(inputs)
         if tool_key in ("resolve_surveillance_flag", "escalate_surveillance_flag", "evaluate_agents"):
             return rows(*await self._supervision_preview(tool_key, inputs))
+        if tool_key in ("create_skill", "update_skill", "delete_skill", "clone_skill"):
+            return rows(*await self._skill_preview(tool_key, inputs))
+        if tool_key == "start_book_batch":
+            return rows(*await self._batch_preview(inputs))
+        if tool_key == "run_skill":
+            return rows(*await self._run_skill_preview(inputs))
         if tool_key == "withdraw_report":
             report, _ = await self._withdrawal(inputs)
             household = await self.session.get(Household, report.household_id)
@@ -3473,6 +3513,244 @@ class ToolExecutors:
             "autonomy_changes": changes,
             "message": f"{integrity} {len(open_flags)} open surveillance flag(s). {len(evaluations)} agent(s) scored.",
         }
+
+    # ─── The Studio pages that had no tool (B-94): each read returns what its page's route returns.
+    async def _owned_household(self, inputs: dict[str, Any]) -> Household:
+        hid = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        household = (await self.session.execute(
+            select(Household).where(Household.id == hid, Household.firm_id == self.firm_id))).scalar_one_or_none()
+        if household is None:
+            raise ExecutorError(f"Household {hid} not found or access denied")
+        return household
+
+    async def read_tax_book(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tax_intelligence
+
+        firm = await self._firm()
+        result = await tax_intelligence.for_firm(self.session, self.firm_id, firm.jurisdiction)
+        return {**result, "message": f"The book's tax position across {result.get('total_households_scanned', 0)} household(s). "
+                                     "Every figure is an estimate for a qualified person to check."}
+
+    async def read_estate(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import estate
+
+        household = await self._owned_household(inputs)
+        result = await estate.for_household(self.session, household.id, firm_id=self.firm_id)
+        risk = result["succession_risk"]
+        return {**result, "message": f"{household.name}: {risk['gaps_count']} succession gap(s), {risk['level']} risk."}
+
+    async def read_family(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import family
+
+        household = await self._owned_household(inputs)
+        result = await family.for_anchor(self.session, self.firm_id, household_id=household.id)
+        return {**result, "household_id": str(household.id),
+                "message": f"{household.name}'s family spans {result['household_count']} household(s)."}
+
+    async def read_behavioural(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import behavioural
+
+        household = await self._owned_household(inputs)
+        result = await behavioural.for_household(self.session, household.id, firm_id=self.firm_id)
+        if result is None:
+            raise ExecutorError(f"Household {household.id} not found or access denied")
+        return {**result, "message": f"{household.name}'s behavioural profile."}
+
+    async def read_regulatory_countdown(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import regulatory_countdown
+
+        firm = await self._firm()
+        if inputs.get("household_id"):
+            household = await self._owned_household(inputs)
+            result = await regulatory_countdown.for_household(self.session, household.id, firm.jurisdiction, firm_id=self.firm_id)
+            return {**result, "message": result.get("message") or f"{household.name}: {len(result['analyses'])} countdown(s)."}
+        results = await regulatory_countdown.for_firm(self.session, self.firm_id, firm.jurisdiction)
+        return {"results": results, "total": len(results),
+                "message": f"{len(results)} household(s) with a regulatory countdown."}
+
+    async def _me(self):
+        from app.models.identity import User
+
+        user = await self.session.get(User, self.user_id)
+        if user is None or user.firm_id != self.firm_id:
+            raise ExecutorError("Your user could not be found.")
+        return user
+
+    async def _skill_fields(self, inputs: dict[str, Any], user) -> dict[str, Any]:
+        from app.skills import library
+
+        fields = {k: inputs.get(k) for k in library.FIELDS if inputs.get(k) not in (None, "")}
+        if "enabled" in fields:
+            fields["enabled"] = str(fields["enabled"]).strip().lower() in ("true", "yes", "1", "on")
+        if "shared_with" in fields:
+            given = fields["shared_with"] if isinstance(fields["shared_with"], list) else str(fields["shared_with"]).split(",")
+            fields["shared_with"] = await library.resolve_colleagues(self.session, self.firm_id, user, given)
+            fields.setdefault("visibility", "shared")
+        return fields
+
+    async def read_skills(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.skills import library
+
+        skills = await library.list_for(self.session, self.firm_id, await self._me())
+        mine = sum(1 for s in skills if s["mine"])
+        return {"skills": skills, "message": f"{len(skills)} skill(s) you can see, {mine} of them yours."}
+
+    async def _skill_change(self, tool_key: str, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.skills import library
+
+        user = await self._me()
+        names = await library.owners(self.session, self.firm_id)
+        try:
+            if tool_key == "create_skill":
+                s = await library.create(self.session, self.firm_id, user, await self._skill_fields(inputs, user))
+                verb = "Created"
+            elif tool_key == "update_skill":
+                s = await library.update(self.session, self.firm_id, _parse_uuid(inputs.get("skill_id") or "", "skill_id"),
+                                         user, await self._skill_fields(inputs, user))
+                verb = "Changed"
+            elif tool_key == "clone_skill":
+                s = await library.clone(self.session, self.firm_id, _parse_uuid(inputs.get("skill_id") or "", "skill_id"), user)
+                verb = "Copied into your skills as"
+            else:
+                gone = await library.delete(self.session, self.firm_id, _parse_uuid(inputs.get("skill_id") or "", "skill_id"), user)
+                return {"deleted": gone, "message": f"Deleted the skill {gone['name']}."}
+        except library.SkillError as exc:
+            raise ExecutorError(str(exc))
+        return {"skill": library.as_dict(s, user, names), "message": f"{verb} the skill {s.name}."}
+
+    async def create_skill(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return await self._skill_change("create_skill", inputs)
+
+    async def update_skill(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return await self._skill_change("update_skill", inputs)
+
+    async def delete_skill(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return await self._skill_change("delete_skill", inputs)
+
+    async def clone_skill(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return await self._skill_change("clone_skill", inputs)
+
+    async def _skill_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """The skill and the change, checked as the change would check it, without writing."""
+        from app.skills import library
+
+        user = await self._me()
+        try:
+            if tool_key == "create_skill":
+                f = library.check(await self._skill_fields(inputs, user))
+                if "name" not in f or "instruction" not in f:
+                    raise library.SkillError("A skill needs a name and an instruction.")
+                return [("Skill", f["name"]), ("Instruction", f["instruction"]), ("Description", f.get("description")),
+                        ("Scope", f.get("scope", "book")), ("Output", f.get("output_kind", "insight")),
+                        ("Tier", library.TIERS.index(f.get("default_tier", "tier_1")) + 1),
+                        ("Visible to", await self._skill_audience(f, user))]
+            sid = _parse_uuid(inputs.get("skill_id") or "", "skill_id")
+            if tool_key == "clone_skill":
+                s = await library.get(self.session, self.firm_id, sid)
+                if not library.visible(s, user):
+                    raise library.SkillForbidden("You don't have access to this skill.")
+                return [("Skill", s.name), ("Copy", f"{s.name} (copy)"), ("Visible to", "Only you")]
+            s = await library.owned(self.session, self.firm_id, sid, user, "edit" if tool_key == "update_skill" else "delete")
+            if tool_key == "delete_skill":
+                return [("Skill", s.name), ("Instruction", s.instruction), ("Proposals it raised", "Stay")]
+            f = library.check(await self._skill_fields(inputs, user))
+            if not f:
+                raise library.SkillError("Name what to change.")
+            shown = {"name": "Name", "instruction": "Instruction", "description": "Description", "scope": "Scope",
+                     "output_kind": "Output", "default_tier": "Tier", "enabled": "Enabled", "visibility": "Visibility"}
+            rows: list[tuple[str, Any]] = [("Skill", s.name)]
+            for k, label in shown.items():
+                if k in f:
+                    rows.append((label, f"{getattr(s, k)} → {f[k]}"))
+            if "shared_with" in f:
+                rows.append(("Visible to", await self._skill_audience({**f, "visibility": f.get("visibility", s.visibility)}, user)))
+            return rows
+        except library.SkillError as exc:
+            raise ExecutorError(str(exc))
+
+    async def _skill_to_run(self, inputs: dict[str, Any]):
+        """The skill, visible to the caller and enabled, and the household it is pointed at if any."""
+        from app.skills import library
+
+        user = await self._me()
+        try:
+            s = await library.get(self.session, self.firm_id, _parse_uuid(inputs.get("skill_id") or "", "skill_id"))
+        except library.SkillError as exc:
+            raise ExecutorError(str(exc))
+        if not library.visible(s, user):
+            raise ExecutorError("You don't have access to this skill.")
+        if not s.enabled:
+            raise ExecutorError(f"The skill {s.name} is disabled; enable it first.")
+        household = await self._owned_household(inputs) if inputs.get("household_id") else None
+        return s, household
+
+    async def run_skill(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.skills import runtime as skill_runtime
+
+        s, household = await self._skill_to_run(inputs)
+        result = await skill_runtime.run_skill(self.session, await self._firm(), s,
+                                               subject_type="household" if household else None,
+                                               subject_id=household.id if household else None, persist=True)
+        return {"skill": s.name, "run_id": result["run_id"], "scanned": result["scanned"], "surfaced": result["surfaced"],
+                "proposals": [{"recommendation_id": rid, "household": p["household"], "household_id": p["household_id"], "title": p["title"]}
+                              for rid, p in zip(result["recommendation_ids"], result["proposals"])],
+                "message": f"The skill {s.name} looked at {result['scanned']} household(s) and proposed {result['surfaced']} thing(s) "
+                           "for a person to decide. It acted on nothing."}
+
+    async def _run_skill_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core.graph import list_households
+
+        s, household = await self._skill_to_run(inputs)
+        over = household.name if household else f"Every client ({len(await list_households(self.session, self.firm_id))} households)"
+        return [("Skill", s.name), ("Instruction", s.instruction), ("Runs over", over),
+                ("Tier", "2 · supervised" if s.default_tier in ("tier_2", "tier_3") else "1 · assistive"),
+                ("What it does", "Proposes, for a person to decide; it acts on nothing")]
+
+    async def _skill_audience(self, f: dict, user) -> str:
+        from app.skills import library
+
+        visibility = f.get("visibility", "private")
+        if visibility == "public":
+            return "Everyone in the firm"
+        if visibility == "shared":
+            names = await library.owners(self.session, self.firm_id)
+            people = [names.get(uuid.UUID(x), "—") for x in f.get("shared_with") or []]
+            return "You and " + ", ".join(people) if people else "Only you"
+        return "Only you"
+
+    async def read_book_batches(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import book_batches
+
+        if inputs.get("batch_id"):
+            try:
+                batch = await book_batches.one(self.session, self.firm_id, _parse_uuid(inputs["batch_id"], "batch_id"))
+            except book_batches.BatchError:
+                raise ExecutorError(f"Book batch {inputs['batch_id']} not found or access denied")
+            sample = " It is the generated sample book, not a real acquisition." if batch["sample"] else ""
+            return {"batch": batch, "message": f"The {batch['source_firm']} book is {batch['status']}.{sample}"}
+        batches = await book_batches.list_for(self.session, self.firm_id)
+        return {"batches": batches, "message": f"{len(batches)} acquired book(s)."}
+
+    async def start_book_batch(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import book_batches
+
+        try:
+            b = await book_batches.start(self.session, self.firm_id, str(inputs.get("source_firm") or ""))
+        except book_batches.BatchError as exc:
+            raise ExecutorError(str(exc))
+        return {"batch": {**book_batches.as_dict(b), "recommendation_id": None, "recommendation_status": None},
+                "message": f"Loaded the sample book as an acquisition from {b.source_firm}. Run book integration on it to map it."}
+
+    async def _batch_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core.sample_book import sample_feed
+
+        name = str(inputs.get("source_firm") or "").strip()
+        if not name:
+            raise ExecutorError("Name the firm the book comes from.")
+        feed = sample_feed(name)
+        return [("From", name), ("Feed", "Sample book - generated, not a real file"),
+                ("Clients", len(feed.get("clients") or [])), ("Holdings", len(feed.get("holdings") or [])),
+                ("Changes records", "Nothing until its proposal is approved")]
 
     async def screen_book(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """The whole book, a row per household, filtered (aurea_core/book_screen.py)."""

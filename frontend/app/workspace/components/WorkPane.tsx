@@ -45,6 +45,15 @@ import { CompositesView } from "@/components/views/CompositesView";
 import { PricesView } from "@/components/views/PricesView";
 import { BeneficiaryAuditView } from "@/components/views/BeneficiaryAuditView";
 import { LicencesView } from "@/components/views/LicencesView";
+import { TaxView } from "@/components/views/TaxView";
+import { EstateView } from "@/components/views/EstateView";
+import { FamilyView } from "@/components/views/FamilyView";
+import { BehaviouralView } from "@/components/views/BehaviouralView";
+import { RegulatoryCountdownView } from "@/components/views/RegulatoryCountdownView";
+import { WorkforceView } from "@/components/views/WorkforceView";
+import { SkillsView } from "@/components/views/SkillsView";
+import { BookIntegrationView } from "@/components/views/BookIntegrationView";
+import { BookBatchView } from "@/components/views/BookBatchView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
 
@@ -140,6 +149,24 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <AgentHistoryView />;
     case "pipeline":
       return <PipelineView />;
+    case "tax":
+      return <TaxView household={pane.query.household ?? null} />;
+    case "estate":
+      return <EstateView household={pane.query.household ?? null} />;
+    case "family":
+      return <FamilyView household={pane.query.household ?? null} />;
+    case "behavioural":
+      return <BehaviouralView household={pane.query.household ?? null} />;
+    case "regulatory_countdown":
+      return <RegulatoryCountdownView household={pane.query.household ?? null} />;
+    case "workforce":
+      return <WorkforceView />;
+    case "skills":
+      return <SkillsView />;
+    case "book_integration":
+      return <BookIntegrationView />;
+    case "book_batch":
+      return pane.id ? <BookBatchView key={pane.id} id={pane.id} /> : null;
     case "corporate_actions":
       return <CorporateActionsView />;
     case "provenance":

@@ -16,12 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
 from app.core.db import get_db
-from app.core.security import UserRole, staff_user
+from app.core.security import staff_user
 from app.models.governance import Recommendation
 from app.models.identity import User
 from app.models.skill import Skill
 from app.models.tenant import Firm
-from app.skills import runtime as skill_runtime
+from app.skills import library, runtime as skill_runtime
 
 router = APIRouter(prefix="/api/skills", tags=["skills"], dependencies=[Depends(staff_user)])
 
@@ -56,21 +56,7 @@ class RunIn(BaseModel):
 
 
 def _visible(s: Skill, user: User) -> bool:
-    return (s.created_by == user.id or s.visibility == "public"
-            or (s.visibility == "shared" and str(user.id) in (s.shared_with or [])))
-
-
-def _skill_dict(s: Skill, user: User, owners: dict) -> dict:
-    mine = s.created_by == user.id
-    return {
-        "id": str(s.id), "name": s.name, "description": s.description, "instruction": s.instruction,
-        "scope": s.scope, "output_kind": s.output_kind, "default_tier": s.default_tier,
-        "enabled": s.enabled, "visibility": s.visibility, "shared_with": s.shared_with or [],
-        "owner_id": str(s.created_by) if s.created_by else None,
-        "owner_name": "Firm library" if not s.created_by else owners.get(s.created_by, "—"),
-        "mine": mine, "can_edit": mine,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-    }
+    return library.visible(s, user)
 
 
 def _rec_dict(r: Recommendation) -> dict:
@@ -82,67 +68,62 @@ def _rec_dict(r: Recommendation) -> dict:
             "created_at": r.created_at.isoformat() if r.created_at else None}
 
 
-async def _owners_map(db, firm_id) -> dict:
-    return {u.id: u.full_name for u in (await db.execute(
-        select(User).where(User.firm_id == firm_id))).scalars().all()}
+def _fail(exc: library.SkillError) -> HTTPException:
+    if isinstance(exc, library.SkillForbidden):
+        return HTTPException(status_code=403, detail=str(exc))
+    return HTTPException(status_code=404 if "not found" in str(exc) else 400, detail=str(exc))
+
+
+async def _out(db, firm, user, s: Skill) -> dict:
+    return library.as_dict(s, user, await library.owners(db, firm.id))
 
 
 @router.get("")
 async def list_skills(user: User = Depends(staff_user), firm: Firm = Depends(current_firm),
                       db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(
-        select(Skill).where(Skill.firm_id == firm.id).order_by(Skill.created_at.desc())
-    )).scalars().all()
-    owners = await _owners_map(db, firm.id)
-    return [_skill_dict(s, user, owners) for s in rows if _visible(s, user)]
+    return await library.list_for(db, firm.id, user)
 
 
 @router.get("/colleagues")
 async def colleagues(user: User = Depends(staff_user), firm: Firm = Depends(current_firm),
                      db: AsyncSession = Depends(get_db)):
     """Staff colleagues a skill can be shared with."""
-    rows = (await db.execute(
-        select(User).where(User.firm_id == firm.id, User.role != UserRole.CLIENT)
-    )).scalars().all()
     return [{"id": str(u.id), "name": u.full_name, "role": u.role, "title": u.title}
-            for u in rows if u.id != user.id]
+            for u in await library.colleagues(db, firm.id, user)]
 
 
 @router.post("")
 async def create_skill(body: SkillIn, user: User = Depends(staff_user),
                        firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    s = Skill(firm_id=firm.id, created_by=user.id, **body.model_dump(exclude_none=True))
-    db.add(s)
-    await db.flush()
-    return _skill_dict(s, user, await _owners_map(db, firm.id))
+    try:
+        return await _out(db, firm, user, await library.create(db, firm.id, user, body.model_dump(exclude_none=True)))
+    except library.SkillError as exc:
+        raise _fail(exc)
 
 
 async def _get(db, firm, skill_id) -> Skill:
-    s = await db.get(Skill, skill_id)
-    if not s or s.firm_id != firm.id:
-        raise HTTPException(status_code=404, detail="Skill not found")
-    return s
+    try:
+        return await library.get(db, firm.id, skill_id)
+    except library.SkillError as exc:
+        raise _fail(exc)
 
 
 @router.patch("/{skill_id}")
 async def update_skill(skill_id: uuid.UUID, body: SkillUpdate, user: User = Depends(staff_user),
                        firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    s = await _get(db, firm, skill_id)
-    if s.created_by != user.id:
-        raise HTTPException(status_code=403, detail="Only the skill's owner can edit it.")
-    for k, v in body.model_dump(exclude_none=True).items():
-        setattr(s, k, v)
-    await db.flush()
-    return _skill_dict(s, user, await _owners_map(db, firm.id))
+    try:
+        return await _out(db, firm, user, await library.update(db, firm.id, skill_id, user, body.model_dump(exclude_none=True)))
+    except library.SkillError as exc:
+        raise _fail(exc)
 
 
 @router.delete("/{skill_id}")
 async def delete_skill(skill_id: uuid.UUID, user: User = Depends(staff_user),
                        firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    s = await _get(db, firm, skill_id)
-    if s.created_by != user.id:
-        raise HTTPException(status_code=403, detail="Only the skill's owner can delete it.")
-    await db.delete(s)
+    try:
+        await library.delete(db, firm.id, skill_id, user)
+    except library.SkillError as exc:
+        raise _fail(exc)
     return {"ok": True}
 
 
@@ -150,15 +131,10 @@ async def delete_skill(skill_id: uuid.UUID, user: User = Depends(staff_user),
 async def clone_skill(skill_id: uuid.UUID, user: User = Depends(staff_user),
                       firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     """Copy a skill you can see into your own (private) workspace, to customise."""
-    s = await _get(db, firm, skill_id)
-    if not _visible(s, user):
-        raise HTTPException(status_code=403, detail="You don't have access to this skill.")
-    copy = Skill(firm_id=firm.id, created_by=user.id, name=f"{s.name} (copy)", description=s.description,
-                 instruction=s.instruction, scope=s.scope, output_kind=s.output_kind,
-                 default_tier=s.default_tier, enabled=True, visibility="private", shared_with=[])
-    db.add(copy)
-    await db.flush()
-    return _skill_dict(copy, user, await _owners_map(db, firm.id))
+    try:
+        return await _out(db, firm, user, await library.clone(db, firm.id, skill_id, user))
+    except library.SkillError as exc:
+        raise _fail(exc)
 
 
 @router.get("/{skill_id}/run-stream")

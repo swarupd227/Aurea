@@ -22,7 +22,6 @@ R = UserRole
 # a sentence cannot name, or it has its own tool.
 NOT_FROM_CONVERSATION: dict[AgentKey, str] = {
     AgentKey.ABANDONMENT_RECOVERY: "it belongs to the onboarding desk - run it from the Onboarding page",
-    AgentKey.BOOK_INTEGRATION: "it works on an inbound book batch - run it from Book integration",
     AgentKey.BILLING: "billing has its own tool - ask to prepare a billing run",
 }
 
@@ -52,6 +51,8 @@ _ONLY_RUN_ROLES: dict[AgentKey, frozenset[UserRole]] = {
     AgentKey.MEETING_COMPANION: frozenset({R.ADVISER, R.PARAPLANNER}),
     AgentKey.RECONCILIATION: frozenset({R.OPERATIONS, R.PORTFOLIO_TEAM}),
     AgentKey.IPS_MONITORING: frozenset({R.ADVISER, R.PORTFOLIO_TEAM, R.COMPLIANCE}),
+    # An acquired book is the operations desk's, as its page is.
+    AgentKey.BOOK_INTEGRATION: frozenset({R.OPERATIONS}),
 }
 
 # What an agent needs to be pointed at. Anything not listed here may run firm-wide, which is
@@ -62,6 +63,7 @@ SUBJECT_REQUIRED: dict[AgentKey, str] = {
     AgentKey.MEETING_PREP: "household",
     AgentKey.MEETING_COMPANION: "meeting",
     **{k: "onboarding_case" for k in CASE_AGENTS},
+    AgentKey.BOOK_INTEGRATION: "book_batch",
 }
 
 TIER_LABEL: dict[str, str] = {

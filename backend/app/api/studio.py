@@ -404,80 +404,18 @@ async def get_notifications(
 
 @router.get("/family")
 async def get_family_aggregate(
-    person_id: uuid.UUID,
+    household_id: uuid.UUID | None = None,
+    person_id: uuid.UUID | None = None,
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
 ):
-    """Follow intergenerational/spouse/parent/child edges and return consolidated family view."""
-    import uuid as _uuid
-    from app.models.graph import (
-        Account, Household, LegalEntity, Mandate, Person, RelationshipEdge,
-    )
-    from app.models.portfolio import Holding
-    from app.models.graph import Goal
+    """The family around a household's members, or one person (`aurea_core/family.py`)."""
+    from app.aurea_core import family
 
-    FAMILY_KINDS = {"intergenerational", "spouse", "parent", "child"}
-
-    # BFS over relationship edges to collect all linked person/entity IDs.
-    visited_person_ids: set[_uuid.UUID] = {person_id}
-    frontier = [person_id]
-    while frontier:
-        next_frontier: list[_uuid.UUID] = []
-        edges = (await db.execute(
-            select(RelationshipEdge).where(
-                RelationshipEdge.firm_id == firm.id,
-                RelationshipEdge.kind.in_(FAMILY_KINDS),
-                RelationshipEdge.from_id.in_(frontier),
-            )
-        )).scalars().all()
-        for e in edges:
-            if e.to_type == "person" and e.to_id not in visited_person_ids:
-                visited_person_ids.add(e.to_id)
-                next_frontier.append(e.to_id)
-        frontier = next_frontier
-
-    # Find all households these persons belong to.
-    person_rows = (await db.execute(
-        select(Person).where(Person.id.in_(visited_person_ids))
-    )).scalars().all()
-    household_ids: set[_uuid.UUID] = {p.household_id for p in person_rows if p.household_id}
-
-    # Household names.
-    households = (await db.execute(
-        select(Household).where(Household.id.in_(household_ids))
-    )).scalars().all()
-
-    # AUM: sum via person → mandate → account → holding.
-    total_aum = 0.0
-    if visited_person_ids:
-        aum_row = (await db.execute(
-            select(func.coalesce(func.sum(Holding.market_value), 0))
-            .join(Account, Account.id == Holding.account_id)
-            .join(Mandate, Mandate.id == Account.mandate_id)
-            .where(Mandate.firm_id == firm.id, Mandate.person_id.in_(visited_person_ids))
-        )).scalar_one()
-        total_aum = float(aum_row)
-
-    # Goals across all households.
-    goals = []
-    if household_ids:
-        goal_rows = (await db.execute(
-            select(Goal).where(Goal.firm_id == firm.id, Goal.household_id.in_(household_ids))
-        )).scalars().all()
-        goals = [
-            {"name": g.name, "kind": g.kind, "target_amount": float(g.target_amount or 0),
-             "household_id": str(g.household_id)}
-            for g in goal_rows
-        ]
-
-    return {
-        "person_ids": [str(p) for p in visited_person_ids],
-        "household_count": len(household_ids),
-        "households": [{"id": str(h.id), "name": h.name, "segment": h.segment} for h in households],
-        "total_family_aum": total_aum,
-        "goal_count": len(goals),
-        "goals": goals,
-    }
+    try:
+        return await family.for_anchor(db, firm.id, household_id=household_id, person_id=person_id)
+    except family.FamilyError as exc:
+        raise HTTPException(status_code=404 if "not found" in str(exc) else 400, detail=str(exc))
 
 
 # ── I6: Agent Run History ─────────────────────────────────────────────────────

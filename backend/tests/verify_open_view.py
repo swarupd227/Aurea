@@ -146,7 +146,7 @@ async def behaviour() -> None:
             check("billing opens for operations", (await ex(R.OPERATIONS).open_view({"view": "billing"}))["view"], "/studio/billing")
             check("and for compliance", (await ex(R.COMPLIANCE).open_view({"view": "billing"}))["view"], "/studio/billing")
             await refused("a paraplanner has no billing view", ex(R.PARAPLANNER).open_view({"view": "billing"}))
-            await refused("an unknown view", ex(R.ADVISER).open_view({"view": "estate"}))
+            await refused("an unknown view", ex(R.ADVISER).open_view({"view": "ask"}))
 
             print("\n=== An id only from this turn, and only this firm's ===")
             got = await ex(R.ADVISER).open_view({"view": "client", "household_id": str(chen.id)}, turn=searched)

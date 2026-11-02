@@ -38,6 +38,13 @@ import { RecommendationsCard } from "./RecommendationsCard";
 import { AgentsCard } from "./AgentsCard";
 import { AgentRunCard, isAgentRunData } from "./AgentRunCard";
 import { BookScreenCard } from "./BookScreenCard";
+import { TaxBookCard, isTaxBook } from "./TaxBookCard";
+import { EstateCard, isEstate } from "./EstateCard";
+import { FamilyCard, isFamily } from "./FamilyCard";
+import { BehaviouralCard, isBehavioural } from "./BehaviouralCard";
+import { RegulatoryCountdownCard, isRegulatoryCountdown } from "./RegulatoryCountdownCard";
+import { SkillsCard, isSkills } from "./SkillsCard";
+import { BookBatchCard, isBookBatch } from "./BookBatchCard";
 import {
   AgentHistoryCard, AnalyticsCard, CapacityCard, MessagesCard, OnboardingCasesCard, ProvenanceCard, ReportsCard, TasksCard,
 } from "./PageReadCards";
@@ -273,6 +280,24 @@ export function artifactCard(artifact: Artifact) {
       case "read_agents":
         if (!Array.isArray(artifact.result?.agents)) return null;
         return <AgentsCard result={artifact.result as any} />;
+      case "read_tax_book":
+        return isTaxBook(artifact.result) ? <TaxBookCard result={artifact.result as any} /> : null;
+      case "read_estate":
+        return isEstate(artifact.result) ? <EstateCard result={artifact.result as any} /> : null;
+      case "read_family":
+        return isFamily(artifact.result) ? <FamilyCard result={artifact.result as any} /> : null;
+      case "read_behavioural":
+        return isBehavioural(artifact.result) ? <BehaviouralCard result={artifact.result as any} /> : null;
+      case "read_regulatory_countdown":
+        return isRegulatoryCountdown(artifact.result) ? <RegulatoryCountdownCard result={artifact.result as any} /> : null;
+      case "read_skills":
+      case "create_skill":
+      case "update_skill":
+      case "clone_skill":
+        return isSkills(artifact.result) ? <SkillsCard result={artifact.result as any} /> : null;
+      case "read_book_batches":
+      case "start_book_batch":
+        return isBookBatch(artifact.result) ? <BookBatchCard result={artifact.result as any} /> : null;
       case "screen_book":
         if (!Array.isArray(artifact.result?.households) || typeof artifact.result?.households_screened !== "number"
           || !artifact.result.households.every((h: any) => Array.isArray(h?.equity) && h?.values && Array.isArray(h?.next_gen))) return null;

@@ -59,6 +59,9 @@ class Tool:
 # TOOLS CATALOGUE
 # =============================================================================
 
+# The people the client-desk Studio pages are for (frontend/lib/nav.ts), and administrators.
+ADV_ROLES = frozenset({UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN})
+
 TOOLS: dict[str, Tool] = {
     # ─── Read-only tools (no confirmation needed)
 
@@ -1460,6 +1463,186 @@ TOOLS: dict[str, Tool] = {
                        UserRole.BRANCH_LEADER, UserRole.ADMIN},
     ),
 
+    # ─── The Studio pages that had no tool (B-94). Each read returns what its page's route returns.
+    "read_tax_book": Tool(
+        key="read_tax_book",
+        name="Read Tax Book",
+        speaking_agent="astra",
+        description="The book's tax position on the firm's tax rules, aggregated across every household: the Tax intelligence page's firm view. For one household use read_tax_position. Every figure is an estimate for a qualified person to check.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The book's tax figures and flags by household"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "read_estate": Tool(
+        key="read_estate",
+        name="Read Estate",
+        speaking_agent="astra",
+        description="One household's estate and succession: what the estate holds by asset class, its trusts and how much of their governance is on file, the next generation's readiness checklist, succession gaps, and, where the household's market steps basis up at death, the unrealised gain that would no longer be taxed (retirement accounts left out). The scores are counts of what is on file, not assessments. Give household_id (search_households).",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "The household (from search_households)", required=True)],
+        output=ToolOutput("object", "Estate value, trusts, heir readiness, succession gaps and step-up"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "read_family": Tool(
+        key="read_family",
+        name="Read Family",
+        speaking_agent="astra",
+        description="A family across households: everyone linked to a household's members as spouse, parent, child or across generations, the households they are in, what their own mandates hold (aum_basis says what that covers), and their goals. Give household_id (search_households).",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "The household whose family to read (from search_households)", required=True)],
+        output=ToolOutput("object", "Family members, households, family AUM and goals"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "read_behavioural": Tool(
+        key="read_behavioural",
+        name="Read Behavioural Profile",
+        speaking_agent="astra",
+        description="One household's behavioural finance profile: how its decisions on proposals split, bias scores, the drawdown it is under, signals from meeting transcripts and coaching for the adviser. The draft client message in it is a template, never sent and never to be quoted to a client as fact. Give household_id (search_households).",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "The household (from search_households)", required=True)],
+        output=ToolOutput("object", "Decisions, bias scores, stress, signals and coaching"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "read_regulatory_countdown": Tool(
+        key="read_regulatory_countdown",
+        name="Read Regulatory Countdown",
+        speaking_agent="astra",
+        description="Deadlines in law that change what a client should do (US estate exemption, UK inheritance tax on pensions and business relief). The thresholds are fixed in the platform, so name the year they are from and treat every figure as an estimate. Give household_id for one household; leave it out for every household with a countdown.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household (from search_households); leave out for the firm", required=False)],
+        output=ToolOutput("object", "One household's countdowns, or every household's"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "read_skills": Tool(
+        key="read_skills",
+        name="Read Skills",
+        speaking_agent="astra",
+        description="The skills the caller can see: their own, those shared with them and the firm's public ones, with each one's instruction, scope, output, tier, who owns it and whether the caller may edit it.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Skills with owner, visibility and can_edit"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "create_skill": Tool(
+        key="create_skill",
+        name="Create Skill",
+        speaking_agent="astra",
+        description="Create a skill in the caller's own workspace: a plain-English instruction an agent runs over clients. Take the name and the instruction in the person's words. Skills are assistive and stop at Tier 2. Private unless the person says to share it with named colleagues or make it public.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Create this skill?",
+        inputs=[
+            ToolInput("name", "string", "The skill's name", required=True),
+            ToolInput("instruction", "string", "What it does, in the person's words", required=True),
+            ToolInput("description", "string", "A one-line description", required=False),
+            ToolInput("scope", "string", "household or book (default book)", required=False),
+            ToolInput("output_kind", "string", "insight, task or note (default insight)", required=False),
+            ToolInput("default_tier", "string", "tier_1 or tier_2 (default tier_1)", required=False),
+            ToolInput("visibility", "string", "private, shared or public (default private)", required=False),
+            ToolInput("shared_with", "list[string]", "For shared: colleagues' full names or emails", required=False),
+        ],
+        output=ToolOutput("object", "The skill"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "update_skill": Tool(
+        key="update_skill",
+        name="Update Skill",
+        speaking_agent="astra",
+        description="Change a skill the caller owns: only the fields the person names. Only its owner may change it. Get skill_id from read_skills.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Change this skill?",
+        inputs=[
+            ToolInput("skill_id", "uuid", "The skill (from read_skills)", required=True),
+            ToolInput("name", "string", "A new name", required=False),
+            ToolInput("instruction", "string", "A new instruction", required=False),
+            ToolInput("description", "string", "A new description", required=False),
+            ToolInput("scope", "string", "household or book", required=False),
+            ToolInput("output_kind", "string", "insight, task or note", required=False),
+            ToolInput("default_tier", "string", "tier_1 or tier_2", required=False),
+            ToolInput("enabled", "string", "true or false", required=False),
+            ToolInput("visibility", "string", "private, shared or public", required=False),
+            ToolInput("shared_with", "list[string]", "For shared: colleagues' full names or emails", required=False),
+        ],
+        output=ToolOutput("object", "The skill as changed"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "delete_skill": Tool(
+        key="delete_skill",
+        name="Delete Skill",
+        speaking_agent="astra",
+        description="Delete a skill the caller owns. Proposals it raised stay. Get skill_id from read_skills.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Delete this skill? It cannot be undone.",
+        inputs=[ToolInput("skill_id", "uuid", "The skill (from read_skills)", required=True)],
+        output=ToolOutput("object", "The skill deleted"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "clone_skill": Tool(
+        key="clone_skill",
+        name="Copy Skill",
+        speaking_agent="astra",
+        description="Copy a skill the caller can see into their own workspace, private, to change. Get skill_id from read_skills.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Copy this skill into your skills?",
+        inputs=[ToolInput("skill_id", "uuid", "The skill to copy (from read_skills)", required=True)],
+        output=ToolOutput("object", "The copy"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "run_skill": Tool(
+        key="run_skill",
+        name="Run Skill",
+        speaking_agent="astra",
+        description="Run a skill the caller can see over every client, or over one household. Each client it matches becomes a proposal for a person to decide; it acts on nothing and stops at Tier 2. Get skill_id from read_skills and household_id from search_households.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Run this skill? Each match becomes a proposal for a person to decide.",
+        inputs=[
+            ToolInput("skill_id", "uuid", "The skill (from read_skills)", required=True),
+            ToolInput("household_id", "uuid", "One household to run it over; leave out for every client", required=False),
+        ],
+        output=ToolOutput("object", "How many households it looked at and the proposals it raised"),
+        roles_required=set(ADV_ROLES),
+    ),
+
+    "read_book_batches": Tool(
+        key="read_book_batches",
+        name="Read Book Batches",
+        speaking_agent="astra",
+        description="Acquired books being mapped into the firm's records: each batch's source, status, client and holding counts, mappings and conflicts. Give batch_id for one, with the proposal its run raised. A batch marked sample holds the generated sample book, not a real acquisition: say so.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("batch_id", "uuid", "One batch", required=False)],
+        output=ToolOutput("object", "Batches, or one batch with its proposal"),
+        roles_required={UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
+    "start_book_batch": Tool(
+        key="start_book_batch",
+        name="Start Book Batch",
+        speaking_agent="astra",
+        description="Start an acquired-book batch. No file import is built, so it loads the generated sample book under the name given and marks it as a sample. Then run book_integration on it (run_agent with its batch_id) to map it.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Load the sample book as a new acquisition?",
+        inputs=[ToolInput("source_firm", "string", "The firm the book comes from", required=True)],
+        output=ToolOutput("object", "The new batch"),
+        roles_required={UserRole.OPERATIONS},
+    ),
+
     # ─── Opening a view beside the conversation. It reads nothing and states nothing: the view loads
     # its own data, and the only ids it takes are ones a tool returned earlier in the same turn.
     "open_view": Tool(
@@ -1479,25 +1662,26 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements) or pipeline (prospects and opportunities). ips, reviews, protection, risk_profiles, net_worth and "
-            "exits, equity_comp, plan, client_file, cash, trades, tax_documents show every client unless given household_id: when the conversation is about one client, look them up "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits, equity_comp, plan, client_file, cash, trades, tax_documents, tax, estate, family, behavioural and regulatory_countdown show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages, read_balance_sheet, read_protection, "
-            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan, read_client_file, read_cash_movements); an id from memory or an earlier turn is refused."
+            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan, read_client_file, read_cash_movements, read_tax_position, read_estate, read_family, read_behavioural, read_regulatory_countdown, screen_book, read_book_batches); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions or pipeline", required=True),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades or tax_documents to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades, tax_documents, tax, estate, family, behavioural or regulatory_countdown to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
             ToolInput("meeting_id", "uuid", "For meeting: the meeting, as read_meetings returned it this turn", required=False),
             ToolInput("report_id", "uuid", "For report: the report, as read_reports returned it this turn", required=False),
+            ToolInput("batch_id", "uuid", "For book_batch: the acquired book, as read_book_batches returned it this turn", required=False),
         ],
         output=ToolOutput("object", "The view's route - nothing about what it shows"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
@@ -1789,7 +1973,8 @@ TOOLS: dict[str, Tool] = {
             "confirmation. Give the agent_key (call read_agents if unsure) and, where the agent works on one client, the "
             "household_id (find it with search_households) or mandate_id; an onboarding agent works on one case, so give "
             "its case_id (from read_onboarding_cases); the meeting companion works on one meeting's transcript, and "
-            "meeting prep can prepare a particular meeting, so give its meeting_id (from read_meetings) - never guess an "
+            "meeting prep can prepare a particular meeting, so give its meeting_id (from read_meetings); book integration "
+            "maps one acquired book, so give its batch_id (from read_book_batches) - never guess an "
             "id. Agents you can start: "
             + ", ".join(agent_runs.conversation_agent_keys()) + "."
         ),
@@ -1804,6 +1989,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("mandate_id", "uuid", "The mandate the run is about (drift_rebalancing works on a mandate)", required=False),
             ToolInput("case_id", "uuid", "The onboarding case an onboarding agent works on (from read_onboarding_cases)", required=False),
             ToolInput("meeting_id", "uuid", "The meeting meeting_prep or meeting_companion works on (from read_meetings)", required=False),
+            ToolInput("batch_id", "uuid", "The acquired book book_integration works on (from read_book_batches)", required=False),
         ],
         output=ToolOutput("object", "The run's beats, any proposals it put forward, and the tier it ran at"),
         roles_required=set(agent_runs.ANY_RUN_ROLES),
@@ -2116,9 +2302,19 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "licences": ("/studio/licences", "Licences", {_A, _P, _PT, _C, _O, _B}),
     "corporate_actions": ("/studio/corporate-actions", "Corporate actions", {_O, _C}),
     "pipeline": ("/studio/pipeline", "Growth pipeline", {_A, _P, _PT}),
+    "tax": ("/studio/tax", "Tax intelligence", {_A, _P, _PT}),
+    "estate": ("/studio/estate", "Estate & succession", {_A, _P, _PT}),
+    "family": ("/studio/family", "Family aggregate", {_A, _P, _PT}),
+    "behavioural": ("/studio/behavioural", "Behavioural finance", {_A, _P, _PT}),
+    "regulatory_countdown": ("/studio/regulatory-countdown", "Regulatory countdown", {_A, _P, _PT}),
+    "workforce": ("/studio/workforce", "Workforce", {_A, _PT, _C, _B}),
+    "skills": ("/studio/skills", "Skills", {_A, _P, _PT}),
+    "book_integration": ("/studio/book-integration", "Book integration", {_O}),
+    "book_batch": ("/studio/book-integration", "Acquired book", {_O}),
 }
 # The views of every client that can open on one, through `?household=`.
-ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "cash", "trades", "tax_documents"}
+ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "cash", "trades", "tax_documents",
+                    "tax", "estate", "family", "behavioural", "regulatory_countdown"}
 
 
 def get_tool(key: str) -> Tool | None:

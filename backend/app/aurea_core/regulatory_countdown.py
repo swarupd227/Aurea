@@ -489,11 +489,11 @@ async def for_household(
     session: AsyncSession, household_id: uuid.UUID, firm_jurisdiction: str = "NZ",
     *, firm_id: uuid.UUID,
 ) -> dict | None:
-    brain = await household_brain(session, str(household_id), firm_id=firm_id)
+    brain = await household_brain(session, uuid.UUID(str(household_id)), firm_id=firm_id)
     if not brain:
         return None
 
-    jurisdiction = brain["household"]["values"].get("jurisdiction") or firm_jurisdiction
+    jurisdiction = (brain["household"]["values"] or {}).get("jurisdiction") or firm_jurisdiction
 
     result: dict = {
         "household_id": str(household_id),

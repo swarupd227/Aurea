@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 
 from app.atlas import activity
 from app.atlas.base import Subject
@@ -103,7 +104,7 @@ async def _persist_rec(session, firm, skill, run, tier, item) -> Recommendation:
         firm_id=firm.id, run_id=run.id, agent_key=SKILL_AGENT_KEY, tier=tier,
         status=RecommendationStatus.PROPOSED, title=item["title"], summary=item["summary"],
         rationale=item["rationale"], confidence=item["confidence"], priority=item["priority"],
-        subject_type="household", subject_id=item["household_id"], subject_label=item["household"],
+        subject_type="household", subject_id=uuid.UUID(str(item["household_id"])), subject_label=item["household"],
         payload={"skill_id": str(skill.id), "output_kind": skill.output_kind},
         evidence={"source": f"Skill: {skill.name}", "scope": skill.scope, "authored_by": "adviser"},
         citations=[])
@@ -133,7 +134,7 @@ async def stream_skill(session, firm, skill, *, subject_type: str | None = None,
         ids = [h["id"] for h in await list_households(session, firm.id)]
     brains = []
     for hid in ids:
-        b = await household_brain(session, hid, firm_id=firm.id)
+        b = await household_brain(session, uuid.UUID(str(hid)), firm_id=firm.id)
         if b:
             brains.append(b)
 

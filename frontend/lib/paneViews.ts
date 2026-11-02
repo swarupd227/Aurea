@@ -13,7 +13,8 @@ export type PaneViewKey =
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
   | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "onboarding_queues"
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
-  | "corporate_actions" | "pipeline";
+  | "corporate_actions" | "pipeline" | "tax" | "estate" | "family" | "behavioural" | "regulatory_countdown" | "workforce"
+  | "skills" | "book_integration" | "book_batch";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -67,6 +68,15 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "licences", pattern: /^\/studio\/licences\/?$/, base: "/studio/licences", label: "Licences" },
   { key: "corporate_actions", pattern: /^\/studio\/corporate-actions\/?$/, base: "/studio/corporate-actions", label: "Corporate actions" },
   { key: "pipeline", pattern: /^\/studio\/pipeline\/?$/, base: "/studio/pipeline", label: "Growth pipeline" },
+  { key: "tax", pattern: /^\/studio\/tax\/?$/, base: "/studio/tax", label: "Tax intelligence" },
+  { key: "estate", pattern: /^\/studio\/estate\/?$/, base: "/studio/estate", label: "Estate & succession" },
+  { key: "family", pattern: /^\/studio\/family\/?$/, base: "/studio/family", label: "Family aggregate" },
+  { key: "behavioural", pattern: /^\/studio\/behavioural\/?$/, base: "/studio/behavioural", label: "Behavioural finance" },
+  { key: "regulatory_countdown", pattern: /^\/studio\/regulatory-countdown\/?$/, base: "/studio/regulatory-countdown", label: "Regulatory countdown" },
+  { key: "workforce", pattern: /^\/studio\/workforce\/?$/, base: "/studio/workforce", label: "Workforce" },
+  { key: "skills", pattern: /^\/studio\/skills\/?$/, base: "/studio/skills", label: "Skills" },
+  { key: "book_integration", pattern: /^\/studio\/book-integration\/?$/, base: "/studio/book-integration", label: "Book integration" },
+  { key: "book_batch", pattern: /^\/studio\/book-integration\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/book-integration", label: "Acquired book" },
 ];
 
 /** The list a single-item view sits under, so one opened straight from the conversation still has
@@ -77,6 +87,7 @@ export const PANE_PARENT: Partial<Record<PaneViewKey, string>> = {
   meeting: "/studio/meetings",
   report: "/studio/reports",
   message_thread: "/studio/messages",
+  book_batch: "/studio/book-integration",
 };
 
 export interface PaneMatch {
@@ -134,7 +145,31 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
       return recs.length === 1 && recs[0]?.id ? `/studio/review?rec=${recs[0].id}` : "/studio/review";
     }
     case "read_agents":
-      return "/studio";
+      return "/studio/workforce";
+    case "read_tax_book":
+      return "/studio/tax";
+    case "read_tax_position":
+    case "check_household_wash_sale":
+      return onClient("/studio/tax");
+    case "read_estate":
+      return onClient("/studio/estate");
+    case "read_family":
+      return onClient("/studio/family");
+    case "read_behavioural":
+      return onClient("/studio/behavioural");
+    case "read_regulatory_countdown":
+      return onClient("/studio/regulatory-countdown");
+    case "read_skills":
+    case "create_skill":
+    case "update_skill":
+    case "delete_skill":
+    case "clone_skill":
+      return "/studio/skills";
+    case "run_skill":
+      return "/studio/review";
+    case "read_book_batches":
+    case "start_book_batch":
+      return r.batch && typeof r.batch.id === "string" ? `/studio/book-integration/${r.batch.id}` : "/studio/book-integration";
     case "read_billing":
       return r.scope === "household" && typeof r.household_id === "string" ? `/studio/clients/${r.household_id}` : "/studio/billing";
     case "run_billing":

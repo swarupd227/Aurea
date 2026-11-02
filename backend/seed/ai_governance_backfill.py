@@ -82,6 +82,22 @@ _AGENTS = [
 ]
 
 _TOOLS = [
+    ("run_skill", "Run Skill (tool)", "tool", "Head of Advice", "medium",
+     "Runs an adviser-written skill over every client or one household; each match becomes a proposal for a person, at Tier 2 at most. Confirm-gated; it acts on nothing."),
+    ("create_skill", "Create Skill (tool)", "tool", "Head of Advice", "low",
+     "Adds a skill to the caller's own workspace, private unless shared by name; refused above Tier 2. Confirm-gated."),
+    ("update_skill", "Update Skill (tool)", "tool", "Head of Advice", "low",
+     "Changes a skill its owner holds, and only its owner. Confirm-gated, naming each field's old and new value."),
+    ("delete_skill", "Delete Skill (tool)", "tool", "Head of Advice", "low",
+     "Deletes a skill its owner holds; proposals it raised stay. Confirm-gated."),
+    ("clone_skill", "Copy Skill (tool)", "tool", "Head of Advice", "low",
+     "Copies a skill the caller can see into their own workspace, private. Confirm-gated."),
+    ("start_book_batch", "Start Book Batch (tool)", "tool", "Head of Operations", "low",
+     "Loads the generated sample book as an acquisition, marked as a sample; nothing reaches client records until its proposal is approved. Confirm-gated, operations only."),
+    ("read_estate", "Read Estate (tool)", "tool", "Head of Advice", "low",
+     "One household's estate and succession, with basis stepped up only where its market says and never in a retirement account. Read-only."),
+    ("read_family", "Read Family (tool)", "tool", "Head of Advice", "low",
+     "A family across households, held to the caller's firm. Read-only."),
     ("execute_orders", "Execute Orders (tool)", "tool", "Portfolio team lead", "high",
      "The conversational path to real order placement and settlement — pauses for confirmation, but the highest-stakes tool in the catalogue."),
     ("decide_recommendation", "Approve Recommendation (tool)", "tool", "Portfolio team lead", "high",
