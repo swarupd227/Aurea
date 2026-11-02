@@ -110,10 +110,10 @@ async def main() -> int:
                 return {r["label"]: r["value"] for r in (await executor.preview_change(tool, inputs))["rows"]}
 
             def buy(*symbols):
-                return {"mandate_id": str(mandate.id), "orders": [{"symbol": x, "side": "buy", "quantity": 1} for x in symbols]}
+                return {"mandate_id": str(mandate.id), "reason": "Test", "orders": [{"symbol": x, "side": "buy", "quantity": 1} for x in symbols]}
 
             def sell(symbol):
-                return {"mandate_id": str(mandate.id), "orders": [{"symbol": symbol, "side": "sell", "quantity": 1}]}
+                return {"mandate_id": str(mandate.id), "reason": "Test", "orders": [{"symbol": symbol, "side": "sell", "quantity": 1}]}
 
             print("\n=== Nothing decided ===")
             read = await ex.read_product_shelf({})

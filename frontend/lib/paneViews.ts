@@ -11,7 +11,7 @@ import { viewsForRole } from "./nav";
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
-  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash";
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -51,6 +51,8 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "plan", pattern: /^\/studio\/plan\/?$/, base: "/studio/plan", label: "Financial plan" },
   { key: "client_file", pattern: /^\/studio\/client-file\/?$/, base: "/studio/client-file", label: "Client file" },
   { key: "cash", pattern: /^\/studio\/cash\/?$/, base: "/studio/cash", label: "Cash movements" },
+  { key: "trades", pattern: /^\/studio\/trades\/?$/, base: "/studio/trades", label: "Trades" },
+  { key: "tax_documents", pattern: /^\/studio\/tax-documents\/?$/, base: "/studio/tax-documents", label: "Tax documents" },
 ];
 
 /** The list a single-item view sits under, so one opened straight from the conversation still has
@@ -171,6 +173,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_balance_item":
     case "end_balance_item":
       return onClient("/studio/net-worth");
+    case "read_trades":
+      return onClient("/studio/trades");
+    case "read_tax_documents":
+    case "record_tax_document":
+      return onClient("/studio/tax-documents");
     case "read_cash_movements":
       return onClient("/studio/cash");
     case "read_client_file":

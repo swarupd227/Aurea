@@ -27,6 +27,7 @@ from app.models import (  # noqa: F401
     reconciliation,
     risk_assessment,
     shelf,
+    tax_documents,
     skill,
     sleeves,
     telemetry,

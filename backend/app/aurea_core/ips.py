@@ -179,6 +179,25 @@ async def _book(session: AsyncSession, mandate: Mandate, restricted: list[str], 
             "positions": [{**p, "weight": p["value"] / total} for p in positions]}
 
 
+async def book_after(session: AsyncSession, mandate: Mandate, *, firm: Firm, orders: list[dict], restricted: list | tuple = ()) -> dict:
+    """The mandate's weights and positions as they stand and as these orders would leave them."""
+    book = await _book(session, mandate, list(restricted), await latest_prices(session, firm.id))
+    total = book["total"]
+    if total <= 0:
+        return {"total": 0.0, "weights_before": {}, "weights_after": {}, "positions_before": [], "positions_after": []}
+    values = {cls: weight * total for cls, weight in book["weights"].items()}
+    positions = {p["symbol"]: dict(p) for p in book["positions"]}
+    for o in orders:
+        signed = o["est_value"] if o["side"] == "buy" else -o["est_value"]
+        cls = str(o["instrument"].asset_class)
+        values[cls] = values.get(cls, 0.0) + signed
+        values["cash"] = values.get("cash", 0.0) - signed
+        row = positions.setdefault(o["symbol"], {"symbol": o["symbol"], "value": 0.0, "restricted": restricted_by(o["instrument"], restricted)})
+        row["value"] += signed
+    return {"total": total, "weights_before": book["weights"], "positions_before": book["positions"], "weights_after": {cls: value / total for cls, value in values.items()},
+            "positions_after": [{**p, "weight": p["value"] / total} for p in positions.values() if p["value"] > 0]}
+
+
 async def orders_against(session: AsyncSession, mandate: Mandate, *, firm: Firm,
                          orders: list[dict]) -> tuple[InvestmentPolicy | None, list[dict]]:
     """The IPS in force, and the terms these orders would breach or a breach they would widen past what an
@@ -188,24 +207,12 @@ async def orders_against(session: AsyncSession, mandate: Mandate, *, firm: Firm,
     if policy is None:
         return None, []
     terms = _terms_view(policy)
-    book = await _book(session, mandate, terms["restricted"], await latest_prices(session, firm.id))
-    total = book["total"]
-    if total <= 0:
+    book = await book_after(session, mandate, firm=firm, orders=orders, restricted=terms["restricted"])
+    if book["total"] <= 0:
         return policy, []
-    values = {cls: weight * total for cls, weight in book["weights"].items()}
-    positions = {p["symbol"]: dict(p) for p in book["positions"]}
-    for o in orders:
-        signed = o["est_value"] if o["side"] == "buy" else -o["est_value"]
-        cls = str(o["instrument"].asset_class)
-        values[cls] = values.get(cls, 0.0) + signed
-        values["cash"] = values.get("cash", 0.0) - signed
-        row = positions.setdefault(o["symbol"], {"symbol": o["symbol"], "value": 0.0,
-                                                 "restricted": restricted_by(o["instrument"], terms["restricted"])})
-        row["value"] += signed
     # The profile is left as accepted: an order does not change one, and a change is the monitor's.
-    before = findings_of(terms, weights=book["weights"], positions=book["positions"], profile=terms["profile"])
-    after = findings_of(terms, weights={cls: value / total for cls, value in values.items()}, profile=terms["profile"],
-                        positions=[{**p, "weight": p["value"] / total} for p in positions.values() if p["value"] > 0])
+    before = findings_of(terms, weights=book["weights_before"], positions=book["positions_before"], profile=terms["profile"])
+    after = findings_of(terms, weights=book["weights_after"], positions=book["positions_after"], profile=terms["profile"])
     standing, _ = _split(after, await _exceptions(session, policy, firm_time.today(firm)))
     was = {f["term"]: f["excess"] for f in before}
     return policy, [f for f in standing if f["excess"] > was.get(f["term"], 0.0)]

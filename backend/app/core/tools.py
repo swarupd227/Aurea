@@ -916,6 +916,56 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM},
     ),
 
+    "read_trades": Tool(
+        key="read_trades",
+        name="Read Trades",
+        speaking_agent="astra",
+        description="The trade blotter: each order with its confirmation, trade and settlement dates, price, fees and net, whether a proposal or a person's direct order raised it, and blocks across accounts with their allocation. Settlement dates skip weekends and do not model holidays. On a paper venue no market was reached: say so.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "One household, or leave out for the firm", required=False),
+            ToolInput("days", "number", "How many days back. Defaults to 30", required=False),
+        ],
+        output=ToolOutput("object", "Trades, blocks and counts"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "read_tax_documents": Tool(
+        key="read_tax_documents",
+        name="Read Tax Documents",
+        speaking_agent="astra",
+        description="For a tax year: which documents the book's activity should produce, whether each has arrived, and a summary of realised gains, dividends, distributions and fees by account. The custodian or fund issues the official form: this is never one, so say so. Not on file does not mean not issued. Tax years are the market's own. Defaults to the last one to end.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "One household, or leave out for the firm", required=False),
+            ToolInput("tax_year", "number", "The calendar year the tax year began in", required=False),
+        ],
+        output=ToolOutput("object", "What is expected, received and overdue, and the figures"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_tax_document": Tool(
+        key="record_tax_document",
+        name="Record Tax Document",
+        speaking_agent="astra",
+        description="Record that a tax document has arrived, from having it: a 1099, K-1 or the local equivalent. kind and issuer come from read_tax_documents.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this as received?",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household", required=True),
+            ToolInput("kind", "string", "The document's kind, from read_tax_documents", required=True),
+            ToolInput("tax_year", "number", "The calendar year the tax year began in", required=True),
+            ToolInput("issuer", "string", "The account or fund, from read_tax_documents", required=True),
+            ToolInput("source_document", "string", "Where it is filed", required=True),
+        ],
+        output=ToolOutput("object", "The year's documents"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
     "read_client_exits": Tool(
         key="read_client_exits",
         name="Read Departures and Estates",
@@ -1326,8 +1376,8 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) or cash (payments out, RMDs, phasing). ips, reviews, protection, risk_profiles, net_worth and "
-            "exits, equity_comp, plan, client_file, cash show every client unless given household_id: when the conversation is about one client, look them up "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter) or tax_documents (what a tax year should produce). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits, equity_comp, plan, client_file, cash, trades, tax_documents show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
@@ -1338,8 +1388,8 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file or cash", required=True),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file or cash to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades or tax_documents", required=True),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades or tax_documents to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -1634,7 +1684,7 @@ TOOLS: dict[str, Tool] = {
         name="Execute Orders",
         speaking_agent="drift_rebalancing",
         description=("Submit a set of orders (buys/sells) to settle them onto a client's book. Refused as a whole if "
-                     "the account cannot do it, or it would breach the client's IPS or the mandate's exclusions, "
+                     "the account cannot do it, or it would breach the client's IPS, capacity for loss or the mandate's exclusions, "
                      "or fall in the household's tax window, or a SEBI licence on file sends the mandate through a "
                      "proposal. It checks all of this itself, so call it rather than working out the answer first, "
                      "and say only what it refused and why."),
@@ -1643,7 +1693,7 @@ TOOLS: dict[str, Tool] = {
         inputs=[
             ToolInput("mandate_id", "uuid", "The mandate to trade", required=True),
             ToolInput("orders", "list[object]", "Buy/sell orders with symbols and quantities", required=True),
-            ToolInput("reason", "string", "Why these orders (e.g., drift rebalance, tax loss harvest)", required=False),
+            ToolInput("reason", "string", "Why, as the person said it. It is the record of why this was placed. If they gave no reason, ask for one before calling: restating the order is not a reason", required=True),
         ],
         output=ToolOutput("object", "Execution record with fills and fees"),
         roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM},  # Only these roles may execute
@@ -1904,9 +1954,11 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "plan": ("/studio/plan", "Financial plan", {_A, _P, _PT, _C, _O, _B}),
     "client_file": ("/studio/client-file", "Client file", {_A, _P, _PT, _C, _O, _B}),
     "cash": ("/studio/cash", "Cash movements", {_A, _P, _PT, _C, _O, _B}),
+    "trades": ("/studio/trades", "Trades", {_A, _P, _PT, _C, _O, _B}),
+    "tax_documents": ("/studio/tax-documents", "Tax documents", {_A, _P, _PT, _C, _O, _B}),
 }
 # The views of every client that can open on one, through `?household=`.
-ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "cash"}
+ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "cash", "trades", "tax_documents"}
 
 
 def get_tool(key: str) -> Tool | None:

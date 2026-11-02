@@ -28,13 +28,12 @@ with L200-1 and L200-2 beside it, in the user's Downloads.
 
 | ID | Item | L100 | Where it stands | Size |
 |---|---|---|---|---|
-| B-87 | The trade lifecycle | §6.1 | No trade confirmation, settlement date or block allocation. An order settles at once. Goes with B-81 | Medium |
+| B-37, B-38, B-39 | Risk: model against profile, capacity from wealth against needs, a questionnaire per person or entity | §5.2, §5.5 | See Smaller items | Medium |
 
 ## Smaller items
 
 | ID | Item | L100 | Where it stands |
 |---|---|---|---|
-| B-13 | Tax documents (1099, K-1 and local equivalents) | §5.9 | Not built |
 | B-14 | Binary document storage | - | Text only |
 | B-15 | Book scan covers every scheduled agent | - | `POST /api/studio/scan` runs three agents |
 | B-16 | Household currency | - | Not stored; protection shows UK and US figures as NZD with no conversion |
@@ -45,7 +44,7 @@ with L200-1 and L200-2 beside it, in the user's Downloads.
 | B-39 | Questionnaire by person or entity | §5.2 | One set of answers per household, compared with every mandate; a trust is not asked separately |
 | B-44 | Astra overstates "not taken" | §5.2 | Live on 31 Oct it said nothing on file supports a mandate's profile. The tool knows only that no questionnaire is recorded here; a firm may hold one elsewhere |
 | B-69 | The client sees their net worth | §5.4 | Reading is staff only. A client's Canvas shows no net worth, and the client cannot correct what is on file |
-| B-81 | A direct order and the compliance rules | - | Surveillance reviews recommendations, and a direct order is not one, so `execute_orders` gets no surveillance flag and none of the pre-trade rules a proposal is measured by. It is held to the IPS and the tax window (B-71), and the thread records who confirmed it, but nothing there writes it to the provenance ledger |
+| B-91 | Goal projections read debts and spending | §5.3 | Retirement reads what is recorded (B-68). Other goals' projections do not |
 | B-48 | Over-promising rule reads a denial as a promise | - | `no_overpromise` matches words, so "does not mean a rebuy carries no risk" and "not a guarantee of outcome" fail it. Two Indian tax memos show this live. Every firm shares the rule and over-flagging is the safe direction, so the user chose on 31 Oct to leave it |
 | B-49 | Approve shown to a role that cannot approve | - | `RecommendationCard` shows Approve to everyone. The server refuses compliance on a proposal that moves a book, so the control holds, but the screen should read `decision_rights` |
 | B-51 | A lapsed Confirm card still offers Confirm | - | A pending action expires after 24 hours, but only when someone clicks. Until then the card shows live buttons; the server refuses the click and only then does it read Expired |
@@ -112,6 +111,7 @@ B-26 waits for a real custodian statement.
 | B-83, B-11, B-84, B-12, B-68 | The financial plan: retirement with withdrawal rates, income to count on, Social Security claiming, pension elections, the cash reserve, debts by cost, a ten-year projection and education funding, one view on one client (`aurea_core/financial_plan.py`, Financial plan). Recorded spending and debts now drive retirement. Goal projections outside retirement still do not read them | Tests, 62 checks, with the statutory factors checked against known figures. With nothing recorded the retirement figures do not change. On the real model on throwaway data: a plan read, a statement recorded and confirmed, claiming ages laid out. Not deployed |
 | B-10, B-86, B-88 | The client file: trusted contacts, estate documents and whether they are out of date, life events that raise a review task, and beneficiaries who have died or are a former spouse (`aurea_core/client_file.py`, Client file) | Tests, 33 checks. Not deployed |
 | B-85, B-89 | Cash movements: payment requests, maker-checker, third-party callback, RMDs taken against required, standing instructions, and phasing new money in, with open requests and later stages held back from every purchase (`aurea_core/cash_movement.py`, Cash movements) | Tests, 50 checks. Standing instructions are recorded and show the next date; raising each payment is a person's. Not deployed |
+| B-87, B-81, B-13 | The trade lifecycle, direct orders and tax documents. A blotter with confirmations, settlement dates worked from the market, sources and blocks across accounts (`aurea_core/blotter.py`, Trades). A direct order needs the person's reason, goes on the provenance ledger, is refused above its capacity ceiling and names a stock past a fifth of the book. A year's summary and what it should produce, on the market's own tax year, with a person recording what arrives (`aurea_core/tax_documents.py`, Tax documents) | Tests, 42 checks. On the real model on throwaway data: Astra asked for a reason it had been making up, kept the client's words, read the blotter and said the venue was paper. Through the app locally: a sale from a sentence, its card, Confirm, and the blotter updating itself. Three things fell out of that run: a reason filled in by Astra, a bond fund called concentrated, and a calendar year used for every market. Surveillance still does not review a direct order, whose rules are written for proposals: the ledger is its record. Settlement does not model holidays, and the book still takes a trade at once on its trade date. Not deployed |
 | B-75 | The remaining Confirm cards on the live site | From B-67: client consent, registration, conflict, WSP evidence, the pipeline and corporate actions have been seen in tests only |
 
 ## Done

@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import cash_movement, exits, firm_time, harvest_guard, ips, shelf, wash_sale
 from app.aurea_core import orders as order_engine
+from app.aurea_core.equity_comp import CONCENTRATED
+from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX
 from app.conduit.execution import lot_method_for_firm
 from app.models.graph import Account, Household, Mandate
 from app.models.portfolio import Holding, InvestmentPolicy, TaxLot
@@ -59,6 +61,23 @@ def _cash_short(account: Account, filling: list[dict], held_back: float) -> list
     return []
 
 
+async def _fit(session: AsyncSession, firm: Firm, mandate: Mandate, filling: list[dict], instruments: dict) -> tuple[list[str], list[str]]:
+    """Whether these orders fit the client: a mandate's equity above what its capacity for loss allows stops
+    the trade, as it does for the rebalancer, and a position past a fifth of the book is named."""
+    if not filling:
+        return [], []
+    book = await ips.book_after(session, mandate, firm=firm, orders=[{**o, "instrument": instruments[o["symbol"]]} for o in filling])
+    if book["total"] <= 0:
+        return [], []
+    capacity = str((mandate.suitability or {}).get("capacity_for_loss") or "").strip().lower()
+    ceiling = CAPACITY_EQUITY_MAX.get(capacity)
+    was, now = book["weights_before"].get("equity", 0.0), book["weights_after"].get("equity", 0.0)
+    refused = [f"Equity would be {now:.1%} of this mandate, over the {ceiling:.0%} ceiling for {capacity} capacity for loss."] if ceiling is not None and now > ceiling and now > was else []
+    bought = {o["symbol"] for o in filling if o["side"] == "buy" and str(instruments[o["symbol"]].asset_class) == "equity"}
+    concentrated = [f"{p['symbol']} {p['weight']:.1%}" for p in book["positions_after"] if p["symbol"] in bought and p["weight"] > CONCENTRATED]
+    return refused, concentrated
+
+
 def _said(found: dict, policy: InvestmentPolicy) -> str:
     v = f"IPS version {policy.version}"
     if found["kind"] == "restricted":
@@ -86,11 +105,11 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
     so it moves nothing and is measured against nothing."""
     held = exits.order_refusal(mandate, orders)
     if held:
-        return {"refused": [held], "flags": [], "policy": None, "watched": []}
+        return {"refused": [held], "flags": [], "policy": None, "watched": [], "concentrated": []}
     symbols = [o["symbol"] for o in orders]
     twice = sorted({s for s in symbols if symbols.count(s) > 1})
     if twice:
-        return {"refused": [f"{', '.join(twice)} is in this set twice. Give each instrument one order."], "flags": [], "policy": None, "watched": []}
+        return {"refused": [f"{', '.join(twice)} is in this set twice. Give each instrument one order."], "flags": [], "policy": None, "watched": [], "concentrated": []}
 
     filling = [o for o in orders if o["symbol"] not in unpriced]
     refused = await _estimate_sales(session, firm, account, [o for o in filling if o["side"] == "sell"])
@@ -104,6 +123,8 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
                 and ips.restricted_by(instruments[o["symbol"]], excluded)
                 and not ips.restricted_by(instruments[o["symbol"]], in_ips)]
     refused += [_said(found, policy) for found in breaches]
+    fit, concentrated = await _fit(session, firm, mandate, filling, instruments)
+    refused += fit
     off_shelf, watched = await shelf.order_refusals(session, firm, mandate, filling)
     refused += off_shelf
 
@@ -116,4 +137,4 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
         refused += [c["say"] for c in harvest_guard.conflicts(filling, rules)]
         flags = harvest_guard.flags(filling, rules)
     refused += [_wash_said(c) for c in wash_sale.conflicts(filling, await wash_sale.guard(session, firm, mandate, today=today))]
-    return {"refused": refused, "flags": flags, "policy": policy, "watched": watched}
+    return {"refused": refused, "flags": flags, "policy": policy, "watched": watched, "concentrated": concentrated}

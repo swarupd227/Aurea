@@ -130,6 +130,8 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
       { label: "Billing", prompt: withRef("Why was this household billed what it was?", "household", household) },
       { label: "Next review", prompt: withRef("When was this household last reviewed, and when is the next review due?", "household", household) },
       { label: "Against its IPS", prompt: withRef("How does this household's portfolio sit against its IPS?", "household", household) },
+      { label: "Trades", prompt: withRef("What has been traded for this household in the last month, and what has settled?", "household", household) },
+      { label: "Tax documents", prompt: withRef("Which tax documents are expected for this household, and what has arrived?", "household", household) },
       { label: "Cash movements", prompt: withRef("Are any payments waiting for this household, and how much of their required distribution is left this year?", "household", household) },
       { label: "Client file", prompt: withRef("What is on file for this household: trusted contact, estate documents, recent life events, and is anything out of date?", "household", household) },
       { label: "Financial plan", prompt: withRef("Will this household's money last, how much cash do they have in reserve, and what do their debts cost?", "household", household) },

@@ -234,6 +234,7 @@ async def main() -> int:
             held = (await s.execute(select(Holding).where(Holding.instrument_id == aaa.id))).scalar_one()
             s.add(TaxLot(firm_id=firm.id, holding_id=held.id, quantity=100, cost_per_unit=8, acquired_on=today - timedelta(days=200)))
             await s.flush()
+            mandate.suitability = {**mandate.suitability, "capacity_for_loss": "high"}
             place = {"mandate_id": str(mandate.id), "orders": [{"symbol": "AAA", "side": "buy", "quantity": 10}], "reason": "Top up"}
             shown = await card(ex, "execute_orders", place)
             check("names the mandate and the account", (shown["Mandate"], shown["Account"]), ("Ann mandate", "Ann A/C · Custody Co"))
@@ -285,7 +286,7 @@ async def main() -> int:
             await s.flush()
             indian = ToolExecutors(s, adviser.id, adviser.role, india.id)
             await refused("a direct order is refused", indian.preview_change(
-                "execute_orders", {"mandate_id": str(im.id), "orders": [{"symbol": "TCS", "quantity": 1}]}), "through a proposal")
+                "execute_orders", {"mandate_id": str(im.id), "reason": "Test", "orders": [{"symbol": "TCS", "quantity": 1}]}), "through a proposal")
             agent_run = AgentRun(firm_id=india.id, agent_key="drift_rebalancing", status="awaiting", tier="tier_2", trigger="manual", started_at=utcnow())
             s.add(agent_run)
             await s.flush()

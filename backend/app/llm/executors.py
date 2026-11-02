@@ -77,6 +77,9 @@ class ToolExecutors:
             "book_client_review": self.book_client_review,
             "read_ips_monitoring": self.read_ips_monitoring,
             "read_client_exits": self.read_client_exits,
+            "read_trades": self.read_trades,
+            "read_tax_documents": self.read_tax_documents,
+            "record_tax_document": self.record_tax_document,
             "read_cash_movements": self.read_cash_movements,
             "request_cash_movement": self.request_cash_movement,
             "record_cash_paid": self.record_cash_paid,
@@ -1347,6 +1350,59 @@ class ToolExecutors:
             return [("Mandate", r["mandate"].name if r["mandate"] else None), ("Released", say(r["released"]))]
         except e.CashMovementError as exc:
             raise ExecutorError(str(exc))
+
+    async def read_trades(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import blotter
+
+        household_id = _parse_uuid(inputs["household_id"], "household_id") if inputs.get("household_id") else None
+        result = await blotter.for_firm(self.session, self.firm_id, household_id=household_id, days=self._limit(inputs.get("days"), blotter.DEFAULT_DAYS, 365))
+        s = result["summary"]
+        result["message"] = (f"{s['filled']} filled in the last {result['days']} days, {s['unsettled']} unsettled, {s['direct']} from direct orders, {s['rejected']} rejected."
+                             + (" Paper venue: no market was reached." if result["paper_venue"] else ""))
+        return result
+
+    async def read_tax_documents(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tax_documents
+
+        try:
+            year = int(inputs["tax_year"]) if inputs.get("tax_year") else None
+        except (TypeError, ValueError):
+            raise ExecutorError("tax_year must be a year.")
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await tax_documents.for_household(self.session, household_id, firm_id=self.firm_id, tax_year=year)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            result["message"] = f"{result['household']}, {result['tax_year_label']}: {result['received']} received, {result['awaited']} awaited, {result['overdue']} overdue. This is a summary from the book, not the official form."
+            return result
+        result = await tax_documents.for_firm(self.session, self.firm_id, tax_year=year)
+        s = result["summary"]
+        result["message"] = f"{result['tax_year_label']}: {s['expected']} expected, {s['received']} received, {s['awaited']} awaited, {s['overdue']} overdue."
+        return result
+
+    def _tax_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {k: inputs.get(k) for k in ("kind", "tax_year", "issuer", "source_document")}
+
+    async def record_tax_document(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tax_documents
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            row = await tax_documents.record_received(self.session, household_id, firm_id=self.firm_id, by=await self._shelf_user(), **self._tax_args(inputs))
+        except tax_documents.TaxDocumentError as exc:
+            raise ExecutorError(str(exc))
+        result = await tax_documents.for_household(self.session, household_id, firm_id=self.firm_id, tax_year=row.tax_year)
+        result["message"] = f"Recorded as received. {result['awaited']} awaited, {result['overdue']} overdue."
+        return result
+
+    async def _tax_document_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import tax_documents
+
+        try:
+            r = await tax_documents.prepare_received(self.session, _parse_uuid(inputs.get("household_id") or "", "household_id"), firm_id=self.firm_id, **self._tax_args(inputs))
+        except tax_documents.TaxDocumentError as exc:
+            raise ExecutorError(str(exc))
+        return [("Client", r["household"].name), ("Document", r["label"]), ("Year", r["year_label"]), ("For", r["issuer"]), ("Filed at", r["document"]), ("Was expected", "No, the book did not call for it" if not r["expected"] else None)]
 
     async def read_client_exits(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import exits, markets
@@ -3040,7 +3096,7 @@ class ToolExecutors:
             return rows(*await self._crm_preview(tool_key, inputs))
         if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):
             return rows(*await self._corporate_preview(tool_key, inputs))
-        named = {"execute_orders": self._orders_preview, "credit_invoice": self._credit_preview,
+        named = {"record_tax_document": self._tax_document_preview, "execute_orders": self._orders_preview, "credit_invoice": self._credit_preview,
                  "record_valuation": self._valuation_preview, "record_client_consent": self._consent_preview,
                  "refresh_prices": self._refresh_preview, "run_billing": self._billing_preview,
                  "set_account_registration": self._registration_preview, "add_account_beneficiary": self._beneficiary_preview,
@@ -3221,6 +3277,8 @@ class ToolExecutors:
 
         if not orders_in:
             raise ExecutorError("orders is required and must be a non-empty list")
+        if len(reason.strip()) < 3:
+            raise ExecutorError("Give the reason for this order. It is the record of why it was placed.")
 
         mandate = await self.session.get(Mandate, mandate_id)
         if not mandate or mandate.firm_id != self.firm_id:
@@ -3331,6 +3389,8 @@ class ToolExecutors:
         policy = a["review"]["policy"]
         if policy:
             rows.append(("IPS", f"Version {policy.version}: breaches no term and widens no breach"))
+        if a["review"]["concentrated"]:
+            rows.append(("Concentration", ", ".join(a["review"]["concentrated"]) + " of the book"))
         if a["review"]["watched"]:
             rows.append(("Under watch", ", ".join(a["review"]["watched"])))
         for flag in a["review"]["flags"]:
@@ -3346,6 +3406,7 @@ class ToolExecutors:
         agent uses — real prices, real book entries, honest about a paper venue."""
         from app.conduit.execution import execute_order_set
         from app.models.tenant import Firm
+        from app.provenance import ledger
 
         a = await self._order_args(inputs)
         mandate_id, order_set = a["mandate"].id, a["order_set"]
@@ -3353,6 +3414,10 @@ class ToolExecutors:
         result = await execute_order_set(
             self.session, firm=firm, order_set=order_set, mandate_id=mandate_id, actor=str(self.role),
         )
+        # A direct order has no proposal to carry its record, so the ledger does.
+        await ledger.append_entry(self.session, firm_id=self.firm_id, event_type="direct_order_placed", actor=await self._shelf_user(), content={
+            "mandate_id": str(mandate_id), "reason": a["reason"], "orders": [{"side": o["side"], "symbol": o["symbol"], "quantity": float(o["quantity"]), "est_value": o["est_value"]} for o in order_set],
+            "settled": result["orders_settled"], "failed": result["orders_failed"], "venue": result["venue"], "role": str(self.role)})
 
         note = (
             f"{result['orders_settled']} of {result['orders_created']} order(s) filled and "

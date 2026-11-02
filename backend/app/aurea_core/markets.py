@@ -27,14 +27,15 @@ class Market:
     tax_year_starts: tuple[int, int] = (1, 1)  # month, day
     statutory_fifo: bool = False    # the law fixes which lots a sale relieves; no firm setting may change it
     basis_on_death: str = "carry"   # step_up: an heir's cost becomes the value at death
+    settle_days: int = 2            # weekdays from trade to settlement
 
 
 MARKETS: dict[str, Market] = {m.code: m for m in (
     Market("NZ", "New Zealand", "NZD", "en-NZ", "Pacific/Auckland", "NZ-FMA", True, (4, 1)),
-    Market("US", "United States", "USD", "en-US", "America/New_York", "US-SEC", True, basis_on_death="step_up"),
+    Market("US", "United States", "USD", "en-US", "America/New_York", "US-SEC", True, basis_on_death="step_up", settle_days=1),
     Market("UK", "United Kingdom", "GBP", "en-GB", "Europe/London", "UK-FCA", True, (4, 6), basis_on_death="step_up"),
     Market("EU", "European Union", "EUR", "en-IE", "Europe/Brussels", "EU-MiFID", False),
-    Market("IN", "India", "INR", "en-IN", "Asia/Kolkata", "IN-SEBI", True, (4, 1), statutory_fifo=True),
+    Market("IN", "India", "INR", "en-IN", "Asia/Kolkata", "IN-SEBI", True, (4, 1), statutory_fifo=True, settle_days=1),
 )}
 
 _ALIASES = {"GB": "UK", "UNITED KINGDOM": "UK", "USA": "US", "UNITED STATES": "US", "INDIA": "IN",

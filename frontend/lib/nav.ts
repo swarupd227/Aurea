@@ -69,6 +69,8 @@ export const VIEWS: View[] = [
   { href: "/studio/plan", label: "Financial plan", icon: Compass, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["retirement", "social security", "pension", "withdrawal", "emergency fund", "debt", "education", "529", "monte carlo"] },
   { href: "/studio/client-file", label: "Client file", icon: FolderOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["trusted contact", "will", "power of attorney", "health directive", "life event", "marriage", "divorce"] },
   { href: "/studio/cash", label: "Cash movements", icon: Banknote, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["withdrawal", "wire", "standing instruction", "sloa", "rmd", "distribution", "phasing", "dollar cost"] },
+  { href: "/studio/trades", label: "Trades", icon: ArrowLeftRight, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["blotter", "confirmation", "settlement", "block", "allocation", "orders"] },
+  { href: "/studio/tax-documents", label: "Tax documents", icon: FileText, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["1099", "k-1", "tax forms", "tax summary"] },
   { href: "/studio/exits", label: "Departures and estates", icon: DoorOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["offboarding", "leaving", "acat", "transfer out", "death", "estate settlement", "executor", "step-up", "inherited"] },
   { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT], intent: "clients", keywords: ["bias", "nudge"] },
   { href: "/studio/beneficiary-audit", label: "Beneficiary audit", icon: UserCheck, roles: [A, P, PT, C], intent: "clients", keywords: ["registration", "beneficiaries"] },

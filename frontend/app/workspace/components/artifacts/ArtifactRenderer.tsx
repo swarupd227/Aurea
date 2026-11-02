@@ -24,6 +24,7 @@ import { ClientFileCard } from "./ClientFileCard";
 import { ExitsCard } from "./ExitsCard";
 import { PlanCard } from "./PlanCard";
 import { ShelfCard } from "./ShelfCard";
+import { TaxDocumentsCard, TradesCard } from "./TradesCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
@@ -133,6 +134,13 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_trades":
+        if (!Array.isArray(artifact.result?.trades)) return null;
+        return <TradesCard result={artifact.result as any} />;
+      case "read_tax_documents":
+      case "record_tax_document":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.expected)) return null;
+        return <TaxDocumentsCard result={artifact.result as any} />;
       case "read_cash_movements":
       case "request_cash_movement":
       case "record_cash_paid":

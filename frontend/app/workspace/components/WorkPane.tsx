@@ -31,6 +31,7 @@ import { ClientFileView } from "@/components/views/ClientFileView";
 import { ExitsView } from "@/components/views/ExitsView";
 import { FinancialPlanView } from "@/components/views/FinancialPlanView";
 import { ProductsView } from "@/components/views/ProductsView";
+import { TaxDocumentsView, TradesView } from "@/components/views/TradesView";
 import { NetWorthView } from "@/components/views/NetWorthView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
 import { useWorkspace } from "../context";
@@ -107,6 +108,10 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <ClientFileView household={pane.query.household ?? null} />;
     case "cash":
       return <CashMovementsView household={pane.query.household ?? null} />;
+    case "trades":
+      return <TradesView household={pane.query.household ?? null} />;
+    case "tax_documents":
+      return <TaxDocumentsView household={pane.query.household ?? null} />;
     case "products":
       return <ProductsView />;
     case "exits":

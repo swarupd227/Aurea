@@ -315,7 +315,7 @@ async def main() -> int:
             tools = ToolExecutors(s, adviser.id, UserRole.ADVISER, firm.id)
             sym = (await s.execute(select(Instrument.symbol).where(Instrument.firm_id == firm.id))).scalars().first()
             try:
-                await tools.execute_orders({"mandate_id": str(m_ia.id), "orders": [{"symbol": sym, "side": "buy", "quantity": 1}]})
+                await tools.execute_orders({"mandate_id": str(m_ia.id), "reason": "Test", "orders": [{"symbol": sym, "side": "buy", "quantity": 1}]})
                 check("an adviser's mandate cannot take one", False, True)
             except ExecutorError as exc:
                 check("an adviser's mandate cannot take one", "consent" in str(exc), True)

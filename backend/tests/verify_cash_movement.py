@@ -104,9 +104,9 @@ async def main() -> int:
             first = read["requests"][0]
             check("it opens, and moves nothing", (first["status"], float(a.cash_balance)), ("requested", 20000.0))
             check("the cash is held back", (await cm.held_back(s, firm, m))["total"], 15000.0)
-            await refused("a direct buy cannot spend it", ex.preview_change("execute_orders", {"mandate_id": str(m.id), "orders": [{"side": "buy", "symbol": "AAA", "quantity": 1000}]}), "does not hold the cash")
-            check("a smaller one can spend what is free", "Order 1" in await card("execute_orders", {"mandate_id": str(m.id), "orders": [{"side": "buy", "symbol": "AAA", "quantity": 100}]}), True)
-            check("selling is not stopped", "Order 1" in await card("execute_orders", {"mandate_id": str(m.id), "orders": [{"side": "sell", "symbol": "AAA", "quantity": 100}]}), True)
+            await refused("a direct buy cannot spend it", ex.preview_change("execute_orders", {"mandate_id": str(m.id), "reason": "Test", "orders": [{"side": "buy", "symbol": "AAA", "quantity": 1000}]}), "does not hold the cash")
+            check("a smaller one can spend what is free", "Order 1" in await card("execute_orders", {"mandate_id": str(m.id), "reason": "Test", "orders": [{"side": "buy", "symbol": "AAA", "quantity": 100}]}), True)
+            check("selling is not stopped", "Order 1" in await card("execute_orders", {"mandate_id": str(m.id), "reason": "Test", "orders": [{"side": "sell", "symbol": "AAA", "quantity": 100}]}), True)
             shown = await card("request_cash_movement", {**ask, "amount": 10000})
             check("a second one shows what is short", ("15,000" in shown["Already asked for"], "5,000" in shown["Short by"]), (True, True))
 
