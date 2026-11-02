@@ -39,11 +39,25 @@ export function Composer({
   const ref = useRef<HTMLTextAreaElement>(null);
   const pendingCaret = useRef<number | null>(null);
 
+  // Empty, the box is one line: the browser counts a wrapped placeholder in its height, so measuring an
+  // empty box on a narrow first layout left it 200px tall. With words it grows with them, and measures
+  // again when its width changes, as when a view opens beside the conversation.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = el.value ? `${Math.min(el.scrollHeight, 200)}px` : "";
+    };
+    fit();
+    let width = el.clientWidth;
+    const seen = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit();
+    });
+    seen.observe(el);
+    return () => seen.disconnect();
   }, [text]);
 
   useLayoutEffect(() => {
