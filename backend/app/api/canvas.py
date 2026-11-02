@@ -367,9 +367,12 @@ async def _resolve_heir_person(db, user, person_id, firm) -> Person:
 
 
 async def _get_or_create_journey(db, firm, person: Person) -> HeirJourney:
+    # The first read creates the journey, so two at once (a page that loads twice, two tabs) can each make
+    # one. The earliest is the journey; a second must not turn every later read into an error.
     j = (
-        await db.execute(select(HeirJourney).where(HeirJourney.person_id == person.id))
-    ).scalar_one_or_none()
+        await db.execute(select(HeirJourney).where(HeirJourney.person_id == person.id)
+                         .order_by(HeirJourney.created_at).limit(1))
+    ).scalars().first()
     if not j:
         j = HeirJourney(firm_id=firm.id, person_id=person.id, household_id=person.household_id,
                         status=HeirJourneyStatus.INVITED, steps=default_heir_steps(), captured={})

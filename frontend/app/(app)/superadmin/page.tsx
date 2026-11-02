@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Building2, Plus, CheckCircle2, Copy, Check, Power, RefreshCw } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, Spinner } from "@/components/ui";
@@ -22,13 +22,14 @@ export default function SuperadminPage() {
   const router = useRouter();
   const user = getUser();
 
-  // Guard
-  if (typeof window !== "undefined" && user && user.role !== "superadmin") {
-    router.replace("/");
-    return null;
-  }
+  // Guard. The redirect runs after render, and every hook is called first, so leaving does not change
+  // the order React sees hooks in.
+  const denied = typeof window !== "undefined" && !!user && user.role !== "superadmin";
+  useEffect(() => {
+    if (denied) router.replace("/");
+  }, [denied, router]);
 
-  const { data: firms, loading, refetch } = useApi<any[]>("/api/superadmin/firms");
+  const { data: firms, loading, refetch } = useApi<any[]>(denied ? null : "/api/superadmin/firms");
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({
     name: "", slug: "", legal_name: "", jurisdiction: "NZ", regulator: "FMA",
@@ -39,6 +40,7 @@ export default function SuperadminPage() {
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  if (denied) return null;
 
   function autoSlug(name: string) {
     return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");

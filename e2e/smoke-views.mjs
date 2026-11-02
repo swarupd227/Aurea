@@ -16,6 +16,16 @@ const ON_SCREEN = /Something went wrong|Application error|Unhandled Runtime Erro
 
 const nav = readFileSync(new URL("../frontend/lib/nav.ts", import.meta.url), "utf8");
 const routes = [...new Set([...nav.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]))];
+// Each persona opens the pages its role is offered, as nav.ts says; a page with no roles is everyone's.
+const LETTER = { A: "adviser", P: "paraplanner", PT: "portfolio_team", R: "research_cio", C: "compliance", O: "operations", B: "branch_leader" };
+const ROLE = { adviser: "adviser", "in-adviser": "adviser", operations: "operations", compliance: "compliance", "in-compliance": "compliance",
+  branch: "branch_leader", "in-portfolio-manager": "portfolio_team", admin: "admin" };
+const offered = {};
+for (const m of nav.matchAll(/href: "([^"]+)"([^\n]*)/g)) {
+  const roles = (m[2].match(/roles: \[([^\]]*)\]/)?.[1] ?? "").split(",").map((x) => LETTER[x.trim()]).filter(Boolean);
+  offered[m[1]] = roles;
+}
+const pagesFor = (persona) => routes.filter((r) => !offered[r]?.length || offered[r].includes(ROLE[persona]) || ROLE[persona] === "admin" && r.startsWith("/admin"));
 const wanted = process.argv.slice(2);
 const personas = [...STAFF, ...CLIENTS].filter((p) => !wanted.length || wanted.includes(p));
 
@@ -40,16 +50,18 @@ for (const persona of personas) {
   await page.click(`[data-testid="login-persona-${persona}"]`);
   // A dev server compiles a page the first time it is opened, which can take minutes.
   await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 300000 });
-  const list = CLIENTS.includes(persona) ? CANVAS : routes;
+  const list = CLIENTS.includes(persona) ? CANVAS : pagesFor(persona);
   let refused = 0;
   for (const route of list) {
     current = route;
-    const res = await page.goto(`${BASE}${route}`, { waitUntil: "networkidle", timeout: 180000 }).catch((e) => {
+    // Some pages poll, so the network never goes quiet: wait for the load and then a moment for data.
+    const res = await page.goto(`${BASE}${route}`, { waitUntil: "load", timeout: 180000 }).catch((e) => {
       found.push({ route, kind: "navigation", text: String(e.message).slice(0, 200) });
       return null;
     });
     if (res && res.status() >= 400) refused++;
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(3000);
+    if (process.env.VERBOSE) console.log(`  ${persona} ${route}`);
     const text = await page.locator("body").innerText().catch(() => "");
     const hit = text.match(ON_SCREEN);
     if (hit) found.push({ route, kind: "on_screen", text: hit[0] });
