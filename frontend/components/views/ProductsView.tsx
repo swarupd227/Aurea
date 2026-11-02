@@ -112,6 +112,7 @@ export function ProductsView() {
                         <span className="ml-2 text-xs text-ink-muted">{p.name}</span>
                         {p.share_class && <span className="ml-1 text-xs text-ink-muted">· {p.share_class}</span>}
                         {p.expense_ratio != null && <span className="ml-1 font-mono text-xs text-ink-muted">{(p.expense_ratio * 100).toFixed(2)}%</span>}
+                        {p.diversified && <span className="chip ml-1 text-ink-muted">diversified fund</span>}
                       </td>
                       <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{money(p.value_held)}</td>
                       <td className="px-4 py-2">

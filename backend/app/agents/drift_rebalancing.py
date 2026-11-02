@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import cash_movement, consent, firm_time, harvest_guard, ips, knowledge, licences, markets, shelf, tax_india, wash_sale
-from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX as _CAPACITY_EQUITY_MAX
+from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX as _CAPACITY_EQUITY_MAX, model_fit, on_file
 from app.aurea_core.rebalancing import Lot, Position, WashSaleGuard, optimise
 from app.aurea_core.valuation import latest_prices
 import uuid
@@ -85,6 +85,8 @@ class DriftRebalancingAgent(BaseAgent):
             await s.execute(select(Account).where(Account.mandate_id == mandate.id))
         ).scalars().all()
         prices = await latest_prices(s, ctx.firm.id)
+        accepted = await ips.accepted_terms(s, policy, today)
+        funds = await shelf.diversified(s, ctx.firm.id)
 
         # Adviser revision overrides (from a "Revise with comments" request) — applied for this
         # run only, never mutating the mandate. `protect` = do-not-sell holdings.
@@ -120,6 +122,8 @@ class DriftRebalancingAgent(BaseAgent):
                     "cost_basis": float(h.cost_basis or 0),
                     "account_id": str(acc.id), "custodian": acc.custodian or "—",
                     "excluded": excluded, "protected": bool(inst and inst.symbol in protect),
+                    "ips_restricted": bool(policy and inst and ips.restricted_by(inst, policy.restricted or []) and f"restricted:{inst.symbol}" not in accepted),
+                    "over_limit_accepted": bool(inst and f"position:{inst.symbol}" in accepted), "diversified": h.instrument_id in funds,
                     "tradeable": bool(inst and inst.market_type == MarketType.PUBLIC),
                     "confidence": float(h.confidence or 1.0),
                     "lots": [{"quantity": float(lt.quantity), "cost_per_unit": float(lt.cost_per_unit),
@@ -157,6 +161,7 @@ class DriftRebalancingAgent(BaseAgent):
             "cash": cash,
             "revision_note": ov.get("note"),
             "capacity_for_loss": capacity_for_loss,
+            "risk_profile": on_file(mandate.suitability)[0],
             "wash_sale": await wash_sale.guard(s, ctx.firm, mandate),
             "held_back": (await cash_movement.held_back(s, ctx.firm, mandate))["total"],
             "off_shelf": [str(i) for i in off_shelf],
@@ -223,6 +228,9 @@ class DriftRebalancingAgent(BaseAgent):
             fee_rate=float(exec_cfg.get("fee_bps", 10)) / 10000.0,
             fee_minimum=float(exec_cfg.get("fee_minimum", 5)),
             min_cash=policy.get("min_cash"), max_position=policy.get("max_position"), held_back=sensed.get("held_back") or 0.0,
+            restricted={p["instrument_id"] for p in sensed["positions"] if p.get("ips_restricted")},
+            keep_over_limit={p["instrument_id"] for p in sensed["positions"] if p.get("over_limit_accepted")},
+            funds={p["instrument_id"] for p in sensed["positions"] if p.get("diversified")},
             not_buyable=set(sensed.get("off_shelf") or []),
         )
         if not result.needs_rebalance:
@@ -260,6 +268,12 @@ class DriftRebalancingAgent(BaseAgent):
                     f"Proposed equity ({proposed_equity:.0%}) exceeds risk capacity limit "
                     f"({equity_max:.0%}) for capacity_for_loss='{capacity}'"
                 )
+
+        # An IPS outranks the model, so it is only the model's own risk that can part from the profile.
+        profile = sensed.get("risk_profile")
+        if not sensed.get("ips") and model_fit(profile, sensed["model"]["name"]) == "above_profile":
+            suitability_gaps.append(f"The {sensed['model']['name']} model takes more risk than this mandate's {profile} profile. "
+                                    f"A person should move the mandate to a model that fits, or keep it with a reason.")
 
         # Data confidence across positions.
         confs = [p["confidence"] for p in sensed["positions"]] or [1.0]
@@ -344,7 +358,7 @@ class DriftRebalancingAgent(BaseAgent):
         title = (
             f"Rebalance {sensed['mandate']['name']}: max drift "
             f"{result.max_drift:.1%} exceeds {result.drift_band:.0%} band"
-        )
+        ) if result.drifted else f"Sell down {sensed['mandate']['name']}: holdings outside its IPS"
         summary = (
             f"{len(sells)} sell / {len(buys)} buy orders, turnover "
             f"{say(result.turnover)} ({result.turnover_pct:.1%}). Estimated realised gain "
@@ -377,10 +391,13 @@ class DriftRebalancingAgent(BaseAgent):
         measured = (f"its accepted IPS (version {policy['version']})" if policy
                     else f"the {sensed['model']['name']} model, as no IPS is on file")
         fallback = (
-            f"The {sensed['mandate']['name']} mandate has drifted beyond its "
-            f"{result.drift_band:.0%} tolerance against {measured} (max drift {result.max_drift:.1%}). The proposed "
-            f"order set realigns the portfolio to target while managing tax: estimated realised "
-            f"gain {say(result.estimated_realised_gain)}"
+            (f"The {sensed['mandate']['name']} mandate has drifted beyond its "
+             f"{result.drift_band:.0%} tolerance against {measured} (max drift {result.max_drift:.1%}). The proposed "
+             f"order set realigns the portfolio to target while managing tax: estimated realised "
+             if result.drifted else
+             f"The {sensed['mandate']['name']} mandate holds positions its IPS does not allow. The proposed order set "
+             f"brings them back inside it while managing tax: estimated realised ")
+            + f"gain {say(result.estimated_realised_gain)}"
             + (f", with {say(result.harvested_losses)} of losses harvested" if result.harvested_losses else "")
             + f", on {say(result.turnover)} turnover. "
             + ("Lots are relieved first-in first-out, as the law requires for demat holdings, and tax is "

@@ -14,6 +14,7 @@ export interface Product {
   family: string | null;
   share_class: string | null;
   expense_ratio: number | null;
+  diversified: boolean;
   dearer_class: boolean;
   rationale: string | null;
   document: string | null;

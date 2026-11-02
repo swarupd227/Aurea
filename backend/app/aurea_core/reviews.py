@@ -72,7 +72,8 @@ def _status(next_due: date | None, today: date) -> str:
 def _review_view(r: ClientReview) -> dict:
     return {
         "id": str(r.id), "held_on": r.held_on.isoformat(), "covered": list(r.covered or []),
-        "not_covered": [t for t in TOPICS if t not in (r.covered or [])], "notes": r.notes,
+        # Nothing in `covered` is a carried review, where nobody said. That is unknown, not four topics missed.
+        "coverage_recorded": bool(r.covered), "not_covered": [t for t in TOPICS if t not in r.covered] if r.covered else [], "notes": r.notes,
         "meeting_id": str(r.meeting_id) if r.meeting_id else None,
         "recorded_by": r.recorded_by, "recorded_by_role": r.recorded_by_role,
     }

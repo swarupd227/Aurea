@@ -8,7 +8,7 @@ at that class, from a document. Neither is ever worked out.
 with the first decision would stop nearly every purchase in the firm. Until a person turns it on, a product with
 no decision may be bought, and the shelf says so. No decision on file does not mean a product was never reviewed.
 
-The rebalancer reads `barred` into its exclusions and a direct order reads it in `order_guard`, so neither can
+The rebalancer reads `barred` as what it may not buy and a direct order reads it in `order_guard`, so neither can
 buy what the other may not. Sales are never stopped: a closed product is a reason to leave it, and what the
 monitor raises about one already held is for a person. Share classes of one fund are compared within a family,
 because the cheapest available class is what regulators look for, and a dearer one is reported and not changed.
@@ -43,6 +43,11 @@ async def decisions(session: AsyncSession, firm_id: uuid.UUID) -> dict[uuid.UUID
     rows = (await session.execute(select(ProductDecision).where(ProductDecision.firm_id == firm_id)
                                   .order_by(ProductDecision.reviewed_on, ProductDecision.created_at))).scalars().all()
     return {r.instrument_id: r for r in rows}
+
+
+async def diversified(session: AsyncSession, firm_id: uuid.UUID) -> set[uuid.UUID]:
+    """The products the research team says are diversified funds. An instrument does not say what it is."""
+    return {i for i, row in (await decisions(session, firm_id)).items() if row.diversified}
 
 
 async def standing_of(session: AsyncSession, person_id: uuid.UUID, *, today: date) -> InvestorCertification | None:
@@ -94,7 +99,8 @@ def _day(value: date | None, today: date) -> date:
 
 async def prepare_decision(session: AsyncSession, firm_id: uuid.UUID, *, symbol: str | None, status: str | None, rationale: str | None,
                            document: str | None, reviewed_on: date | None = None, next_review_on: date | None = None, minimum_class: str | None = None,
-                           family: str | None = None, share_class: str | None = None, expense_ratio: float | None = None) -> dict:
+                           family: str | None = None, share_class: str | None = None, expense_ratio: float | None = None,
+                           is_diversified: bool | None = None) -> dict:
     """Everything recording would refuse, refused without writing, and who it reaches."""
     firm = await session.get(Firm, firm_id)
     today = firm_time.today(firm)
@@ -122,6 +128,8 @@ async def prepare_decision(session: AsyncSession, firm_id: uuid.UUID, *, symbol:
         Holding.instrument_id == inst.id, Holding.quantity > 0))).one()
     return {"instrument": inst, "status": status, "rationale": why, "document": named, "day": day, "next": next_review_on, "minimum": minimum_class,
             "family": (family or "").strip() or None, "share_class": (share_class or "").strip() or None, "expense": expense_ratio, "was": was,
+            # What it is does not change with what the team thinks of it, so a later decision carries it over.
+            "diversified": bool(was.diversified) if was and is_diversified is None else bool(is_diversified),
             "holdings": int(held[0] or 0), "value_held": float(held[1] or 0)}
 
 
@@ -129,7 +137,7 @@ async def record_decision(session: AsyncSession, firm_id: uuid.UUID, *, by: str,
     ready = await prepare_decision(session, firm_id, **terms)
     row = ProductDecision(firm_id=firm_id, instrument_id=ready["instrument"].id, status=ready["status"], rationale=ready["rationale"],
                           document=ready["document"], reviewed_on=ready["day"], next_review_on=ready["next"], minimum_class=ready["minimum"],
-                          family=ready["family"], share_class=ready["share_class"], expense_ratio=ready["expense"], decided_by=by, decided_by_role=str(role))
+                          family=ready["family"], share_class=ready["share_class"], expense_ratio=ready["expense"], diversified=ready["diversified"], decided_by=by, decided_by_role=str(role))
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="product_decision_recorded", actor=by, content={
@@ -221,7 +229,7 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict:
             "status": row.status if row else "not_reviewed", "mandates": mandates, "value_held": round(value, 2),
             "reviewed_on": row.reviewed_on.isoformat() if row else None, "next_review_on": row.next_review_on.isoformat() if row and row.next_review_on else None,
             "review_overdue": bool(row and row.next_review_on and row.next_review_on < today), "minimum_class": row.minimum_class if row else None,
-            "family": row.family if row else None, "share_class": row.share_class if row else None, "expense_ratio": expense,
+            "family": row.family if row else None, "share_class": row.share_class if row else None, "expense_ratio": expense, "diversified": bool(row and row.diversified),
             "dearer_class": bool(row and row.family and expense is not None and expense > cheapest[row.family]),
             "rationale": row.rationale if row else None, "document": row.document if row else None, "decided_by": row.decided_by if row else None,
         })

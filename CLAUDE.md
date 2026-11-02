@@ -74,7 +74,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   capacity apart, only from a complete form, and the lower is indicated. Nothing reaches a mandate until an
   adviser adopts it or keeps what is on file with a reason, and new answers reopen that. Adopting is refused
   above the model's equity, because a mandate over its ceiling pauses the rebalancer for the whole firm.
-  Every questionnaire stays on record in `risk_assessment`; a client is not shown the result.
+  Every questionnaire stays on record in `risk_assessment`; a client is not shown the result. A person or a trust can be asked for itself, and those answers speak for its own mandates. Wealth against needs sits beside the result as figures and never moves it. A model's name says what it is built for, and one above the profile is named, not moved: only a person moves a mandate. No questionnaire here does not mean the profile is unsupported.
 - **A person says a review happened.** `aurea_core/reviews.py` holds the evidence of ongoing service: when a
   review was held and what it covered, added and never edited. A meeting is not a review until someone records
   it; only `seed/client_review_backfill.py` carries one across, and marks what it covered as not recorded. The
@@ -84,7 +84,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   edited; a change is a new version. Only an adviser records one, from the document, and no term is worked out.
   What was accepted at onboarding is the one thing carried, and an IPS draft is not an IPS. Where one is in force
   the rebalancer works to it, the model only names what to buy, and `act()` places nothing if it has changed since
-  the proposal. No IPS on file means the model, says so, and does not mean no IPS. Neither recording an IPS nor
+  the proposal. The rebalancer sells a restricted holding and sells down one over its limit, whatever its class is doing, unless a person accepted the breach or held it back. A limit is not read against a product the research team marked a diversified fund. A sleeve nothing here can fill raises no rebalance alone. No IPS on file means the model, says so, and does not mean no IPS. Neither recording an IPS nor
   adopting a risk profile may put a mandate's equity over its capacity ceiling. The IPS monitor reports and never
   trades: approving accepts a breach, with a reason, for a limited time and only as far as it stood, and only an
   adviser or the portfolio team may (`decision_rights.IPS_AGENTS`), whatever its tier.
@@ -114,6 +114,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   retirement account. Closing is refused while anything is held, and a household that has left leaves every scan.
 - **A trade says what happened and when it settles.** `aurea_core/blotter.py` reads the orders and writes nothing. The book takes a trade on its trade date; settlement is worked from `markets.settle_days`, on weekdays, with holidays not modelled, and a firm with no market gets no date. Orders in one instrument on one side on one day across accounts show as a block, so a fair allocation can be seen. A direct order gives the person's own reason, and goes on the ledger, because it has no proposal to carry its record.
 - **A tax summary is never the form.** `aurea_core/tax_documents.py` reads the book, on the market's own tax year, and says it is not the official document. A document is expected only where the book shows a reason, and a person records one as received, from having it. Not on file does not mean not issued. A firm with no market is told nothing is expected.
+- **A client reads what is on file about them.** Canvas shows a client their net worth and the IPS terms they accepted, and the assistant may state both, from `aurea_core/balance_sheet.py` and `ips.py`. Not who recorded it, and not what the monitor found, which goes through their adviser. A client says a figure is wrong and it becomes a task: nothing changes until a person records it from a document.
 - **A market is resolved in one place, and a country with no rules is refused.** `aurea_core/markets.py` says
   what a jurisdiction fixes; `compliance/ontology.framework_for` matches a regulator as a word. A country with
   no market gets `NO_REGIME`, no tax report and a held activation, never New Zealand's rules. Money in a
@@ -145,7 +146,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

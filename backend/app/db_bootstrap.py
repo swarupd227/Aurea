@@ -174,6 +174,10 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE mandate ADD COLUMN IF NOT EXISTS exit_hold VARCHAR(16)"))
         await conn.execute(text("ALTER TABLE person ADD COLUMN IF NOT EXISTS deceased_on DATE"))
         await conn.execute(text("ALTER TABLE household ADD COLUMN IF NOT EXISTS left_on DATE"))
+        await conn.execute(text("ALTER TABLE product_decision ADD COLUMN IF NOT EXISTS diversified BOOLEAN NOT NULL DEFAULT FALSE"))
+        # A questionnaire can be one person's or one entity's, not only the household's.
+        await conn.execute(text("ALTER TABLE risk_assessment ADD COLUMN IF NOT EXISTS person_id UUID REFERENCES person(id) ON DELETE SET NULL"))
+        await conn.execute(text("ALTER TABLE risk_assessment ADD COLUMN IF NOT EXISTS entity_id UUID REFERENCES legal_entity(id) ON DELETE SET NULL"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS transfer_request (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

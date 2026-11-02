@@ -8,6 +8,11 @@ export interface RiskMandate {
   capacity_for_loss: string | null;
   status: RiskStatus;
   decision: { decision: string; reason: string; decided_by: string; decided_at: string } | null;
+  owner_id: string | null;
+  owner: string | null;
+  assessment: RiskAssessment | null;
+  model: string | null;
+  model_fit: "above_profile" | "below_profile" | "matches" | "not_stated" | "ips" | null;
 }
 
 export interface RiskAssessment {

@@ -347,7 +347,7 @@ async def main() -> int:
             check("run again it does nothing", await client_review_backfill.apply(s), 0)
             check("the first run carried only these", created >= 1, True)
             v = await seen(hal)
-            check("a carried review reads as not covered, in full", v["last_review"]["not_covered"], TOPICS)
+            check("a carried review is unknown, not four topics missed", (v["last_review"]["coverage_recorded"], v["last_review"]["not_covered"]), (False, []))
 
             await s.rollback()
     finally:

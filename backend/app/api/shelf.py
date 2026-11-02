@@ -35,6 +35,7 @@ class DecisionIn(BaseModel):
     family: str | None = None
     share_class: str | None = None
     expense_ratio_pct: float | None = None
+    diversified: bool | None = None
 
 
 class EnforceIn(BaseModel):
@@ -53,7 +54,8 @@ async def record_decision(body: DecisionIn, user: User = ReaderDep, firm: Firm =
     try:
         await shelf.record_decision(session, firm.id, by=user.email, role=user.role, symbol=body.symbol, status=body.status, rationale=body.rationale,
                                     document=body.document, next_review_on=body.next_review_on, minimum_class=body.minimum_class, family=body.family,
-                                    share_class=body.share_class, expense_ratio=body.expense_ratio_pct / 100 if body.expense_ratio_pct is not None else None)
+                                    share_class=body.share_class, expense_ratio=body.expense_ratio_pct / 100 if body.expense_ratio_pct is not None else None,
+                                    is_diversified=body.diversified)
     except shelf.ShelfError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return await shelf.for_firm(session, firm.id)

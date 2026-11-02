@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app.agents import _signals
 from app.api.deps import current_firm
-from app.aurea_core import goal_tradeoff, markets, messages as message_core, planning, retirement
+from app.aurea_core import balance_sheet, goal_tradeoff, ips, markets, messages as message_core, planning, retirement
 from app.aurea_core.graph import household_brain
 from app.core.db import get_db, utcnow
 from app.core.security import get_current_user
@@ -128,6 +128,52 @@ async def canvas_view(
     }
 
 
+def _client_item(i: dict) -> dict:
+    """A line of the balance sheet as its client reads it: what it is, how much, and as of when."""
+    return {k: i[k] for k in ("id", "side", "kind", "name", "amount", "currency", "person", "as_of")}
+
+
+@router.get("/net-worth")
+async def canvas_net_worth(
+    household_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user), firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """What this household owns and owes, as it is on file. A client corrects it through their adviser."""
+    hid = await _resolve_household(db, user, household_id)
+    sheet = await balance_sheet.for_household(db, hid, firm_id=firm.id)
+    if sheet is None:
+        raise HTTPException(status_code=404, detail="Household not found")
+    return {"household_id": str(hid), "currency": sheet["currency"], "net_worth": sheet["net_worth"], "basis": sheet["basis"], "assets": sheet["assets"],
+            "liabilities": sheet["liabilities"], "items": [_client_item(i) for i in sheet["items"]], "not_converted": [_client_item(i) for i in sheet["not_converted"]]}
+
+
+@router.get("/ips")
+async def canvas_ips(
+    household_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user), firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """The terms this client accepted. Only the terms: what the monitor finds goes to the adviser, who talks to them."""
+    hid = await _resolve_household(db, user, household_id)
+    view = await ips.for_household(db, hid, firm_id=firm.id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="Household not found")
+    return {"household_id": str(hid), "policies": [
+        {"mandate": m["mandate"], "version": t["version"], "accepted_on": t["accepted_on"], "targets": t["targets"], "drift_band": t["drift_band"],
+         "max_position": t["max_position"], "min_cash": t["min_cash"], "restricted": t["restricted"]}
+        for m in view["mandates"] if (t := m["ips"])], "without": [m["mandate"] for m in view["mandates"] if not m["ips"]]}
+
+
+async def _plan_on_file(db: AsyncSession, firm: Firm, hid: uuid.UUID, say) -> str:
+    """Net worth and the IPS as the assistant may state them, from the record."""
+    sheet = await balance_sheet.for_household(db, hid, firm_id=firm.id)
+    held = await ips.for_household(db, hid, firm_id=firm.id)
+    worth = (f"net worth on file {say(sheet['net_worth'])}" + ("" if sheet["basis"] != "assets_only" else ", assets only because no debt is on file")) if sheet else "no net worth on file"
+    terms = "; ".join(f"{m['mandate']}: IPS version {m['ips']['version']} accepted {m['ips']['accepted_on']}, targets "
+                      + ", ".join(f"{k.replace('_', ' ')} {v:.0%}" for k, v in m["ips"]["targets"].items())
+                      for m in (held or {}).get("mandates", []) if m["ips"]) or "no IPS on file, which does not mean none exists"
+    return f"{worth}; {terms}"
+
+
 @router.post("/assistant")
 async def canvas_assistant(
     body: dict, household_id: uuid.UUID | None = None,
@@ -160,7 +206,7 @@ async def canvas_assistant(
     ) or "none on file"
     context = (
         f"Total wealth {say(total)}; allocation: {invested}; goals: {goals}; in a COVID-style shock the "
-        f"portfolio would move {stress['covid_2020']['impact_pct']:.0%}."
+        f"portfolio would move {stress['covid_2020']['impact_pct']:.0%}; {await _plan_on_file(db, firm, hid, say)}."
     )
 
     def fallback() -> str:
@@ -374,7 +420,7 @@ async def heir_step(body: StepIn, user: User = Depends(get_current_user),
 # ── Client-initiated actions ──────────────────────────────────────────────────
 
 class ClientRequestIn(BaseModel):
-    request_type: str  # "meeting" | "goal_update" | "query" | "other"
+    request_type: str  # "meeting" | "goal_update" | "query" | "correction" | "other"
     notes: str = ""
     household_id: uuid.UUID | None = None
 
@@ -392,6 +438,7 @@ async def submit_client_request(
         "meeting": "Meeting request from client",
         "goal_update": "Client wants to update goals",
         "query": "Client query",
+        "correction": "Client says something on file is wrong",
         "other": "Client request",
     }
     title = titles.get(body.request_type, "Client request")
@@ -539,11 +586,13 @@ async def download_summary_pdf(
 class QuestionnaireIn(BaseModel):
     answers: dict  # key → selected value
     household_id: uuid.UUID | None = None
+    subject_id: uuid.UUID | None = None   # one person or entity in the household, where it is asked for itself
 
 
 @router.get("/questionnaire")
 async def get_questionnaire(
     household_id: uuid.UUID | None = None,
+    subject_id: uuid.UUID | None = None,
     user: User = Depends(get_current_user),
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
@@ -551,8 +600,9 @@ async def get_questionnaire(
     """Return the questions and this household's latest answers."""
     from app.aurea_core import risk_profile
     hid = await _resolve_household(db, user, household_id)
-    return {"schema": risk_profile.questions(), "household_id": str(hid),
-            "answers": await risk_profile.latest_answers(db, hid, firm_id=firm.id)}
+    return {"schema": risk_profile.questions(), "household_id": str(hid), "subjects": await risk_profile.subjects(db, hid),
+            "subject_id": str(subject_id) if subject_id else None,
+            "answers": await risk_profile.latest_answers(db, hid, firm_id=firm.id, subject_id=subject_id)}
 
 
 @router.post("/questionnaire")
@@ -567,7 +617,7 @@ async def submit_questionnaire(
     from app.aurea_core import risk_profile
     hid = await _resolve_household(db, user, body.household_id)
     try:
-        row = await risk_profile.submit(db, hid, body.answers, firm_id=firm.id, by=user.email, role=user.role)
+        row = await risk_profile.submit(db, hid, body.answers, firm_id=firm.id, by=user.email, role=user.role, subject_id=body.subject_id)
     except risk_profile.RiskProfileError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return {"ok": True, "saved": True, "assessment_id": str(row.id)}

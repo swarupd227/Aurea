@@ -21,7 +21,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time
+from app.aurea_core import firm_time, shelf
 from app.aurea_core.billing import _mandate_households
 from app.aurea_core.valuation import latest_prices
 from app.models.equity_comp import GRANT_KINDS, OPTION_KINDS, PLAN_METHODS, ConcentrationPlan, EquityGrant
@@ -72,6 +72,7 @@ async def _positions(session: AsyncSession, firm_id: uuid.UUID) -> dict[uuid.UUI
     accounts = (await session.execute(select(Account).where(Account.firm_id == firm_id, Account.status == "active"))).scalars().all()
     home = {a.id: owners.get(a.mandate_id) for a in accounts if a.mandate_id in owners and owners.get(a.mandate_id)}
     book: dict[uuid.UUID, dict] = defaultdict(lambda: {"total": 0.0, "holdings": {}})
+    funds = await shelf.diversified(session, firm_id)
     for a in accounts:
         if a.id in home:
             book[home[a.id]]["total"] += float(a.cash_balance or 0)
@@ -87,7 +88,7 @@ async def _positions(session: AsyncSession, firm_id: uuid.UUID) -> dict[uuid.UUI
         if household is None:
             continue
         book[household]["total"] += float(h.market_value or 0)
-        row = book[household]["holdings"].setdefault(inst.symbol, {"symbol": inst.symbol, "name": inst.name, "asset_class": str(inst.asset_class),
+        row = book[household]["holdings"].setdefault(inst.symbol, {"symbol": inst.symbol, "name": inst.name, "asset_class": "fund" if inst.id in funds else str(inst.asset_class),
                                                                   "quantity": 0.0, "value": 0.0, "cost": 0.0})
         row["quantity"] += float(h.quantity)
         row["value"] += float(h.market_value or 0)

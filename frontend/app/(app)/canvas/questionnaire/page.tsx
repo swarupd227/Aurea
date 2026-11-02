@@ -9,6 +9,7 @@ function QuestionnaireContent() {
   const params = useSearchParams();
   const router = useRouter();
   const hid = params.get("household_id");
+  const subjectParam = params.get("subject_id");
 
   const [schema, setSchema] = useState<any[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -17,16 +18,21 @@ function QuestionnaireContent() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [subject, setSubject] = useState<string | null>(subjectParam);
 
-  const draftKey = `aurea_questionnaire_draft:${hid || "self"}`;
+  const draftKey = `aurea_questionnaire_draft:${hid || "self"}:${subject || "household"}`;
 
   async function load() {
     setLoading(true);
     setLoadError(null);
     try {
-      const path = hid ? `/api/canvas/questionnaire?household_id=${hid}` : "/api/canvas/questionnaire";
-      const data = await api<any>(path);
+      const query = new URLSearchParams();
+      if (hid) query.set("household_id", hid);
+      if (subject) query.set("subject_id", subject);
+      const data = await api<any>(`/api/canvas/questionnaire${query.size ? `?${query}` : ""}`);
       setSchema(data.schema || []);
+      setSubjects(data.subjects || []);
       // Restore an in-progress draft if the client navigated away or refreshed.
       let restored: Record<string, string> | null = null;
       try {
@@ -45,7 +51,7 @@ function QuestionnaireContent() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hid]);
+  }, [hid, subject]);
 
   function choose(key: string, opt: string) {
     setAnswers((a) => {
@@ -69,6 +75,7 @@ function QuestionnaireContent() {
     try {
       const body: any = { answers };
       if (hid) body.household_id = hid;
+      if (subject) body.subject_id = subject;
       await api("/api/canvas/questionnaire", { body });
       try { sessionStorage.removeItem(draftKey); } catch {}
       setSaved(true);
@@ -89,6 +96,14 @@ function QuestionnaireContent() {
       </button>
       <div className="card p-6">
         <h1 className="font-serif text-2xl text-ink mb-1">Risk & suitability questionnaire</h1>
+        {subjects.length > 1 && !saved && (
+          <div className="flex flex-wrap gap-1.5 mb-3" data-testid="questionnaire-subject">
+            {[{ id: null, name: "Everyone" }, ...subjects].map((s: any) => (
+              <button key={s.id ?? "household"} type="button" onClick={() => setSubject(s.id)}
+                      className={`chip text-xs ${subject === s.id ? "bg-navy-800 text-white" : "border border-navy-100 text-ink-soft"}`}>{s.name}</button>
+            ))}
+          </div>
+        )}
         <p className="text-sm text-ink-muted mb-6">
           Your answers help your adviser ensure your investments match your goals and comfort level.
           All responses are saved securely and reviewed by your adviser.

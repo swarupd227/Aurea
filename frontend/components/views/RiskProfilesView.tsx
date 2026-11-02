@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { api } from "@/lib/api";
+import { money } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { withRef } from "@/lib/refs";
 import { RiskStatusChip, type RiskHousehold, type RiskMandate } from "@/app/workspace/components/artifacts/RiskProfileCard";
@@ -10,6 +11,22 @@ import { ViewLink, useViewNav } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
 const OPEN = ["more_risk", "less_risk", "none_on_file"];
+
+/** What the questionnaire cannot see, beside it: figures only, and they change nothing. */
+function WealthAgainstNeeds({ household }: { household: string }) {
+  const { data } = useApi<any>(`/api/risk-profiles/households/${household}`, [household]);
+  const w = data?.household_id === household ? data.wealth : null;
+  if (!w) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5" data-testid="risk-wealth">
+      <span className="chip text-ink-muted">can draw on {money(w.liquid)}</span>
+      <span className="chip text-ink-muted">{w.basis === "assets_only" ? "no debt on file" : `owes ${money(w.owed)}`}</span>
+      {w.status === "assessed"
+        ? <><span className="chip text-ink-muted">spends {money(w.annual_spending)} a year</span><span className="chip text-ink">covers {w.years_covered} years</span></>
+        : <span className="chip text-warn">spending not on file</span>}
+    </div>
+  );
+}
 
 /** What each client's questionnaire indicates, beside what is on file, or one client's when opened on
  * it. In the work pane, a decision is the conversation's tool behind its Confirm card; on a page the
@@ -83,7 +100,9 @@ export function RiskProfilesView({ household = null }: { household?: string | nu
           <span className="chip text-ink-muted">indicated: lower of tolerance and capacity</span>
           <span className="chip text-ink-muted">equity ceiling: low 40% · medium 70% · high 100%</span>
           {!household && s.tension > 0 && <span className="chip text-warn">{s.tension} with tolerance and capacity apart</span>}
+          {!household && s.model_above > 0 && <span className="chip text-crit">{s.model_above} on a model above their profile</span>}
         </div>
+        {household && <WealthAgainstNeeds household={household} />}
       </Card>
 
       {rows.length === 0 ? <Empty>No households.</Empty> : (
@@ -103,7 +122,7 @@ export function RiskProfilesView({ household = null }: { household?: string | nu
               </thead>
               <tbody className="divide-y divide-border-soft">
                 {rows.map(({ h, m }) => {
-                  const a = h.assessment;
+                  const a = m?.assessment ?? h.assessment;
                   const status = m?.status ?? h.status;
                   const taken = a?.status === "scored";
                   const mine = !!m && deciding?.id === m.mandate_id;
@@ -112,6 +131,8 @@ export function RiskProfilesView({ household = null }: { household?: string | nu
                       <td className="px-4 py-2">
                         <div className="text-ink">{m?.mandate ?? h.household}</div>
                         {m && <ViewLink href={`/studio/clients/${h.household_id}`} className="text-xs text-ink-muted hover:underline" data-testid="risk-client">{h.household}</ViewLink>}
+                        {m?.assessment && <span className="chip ml-1.5 text-ink-muted" data-testid="risk-asked-alone">asked for {m.owner}</span>}
+                        {m?.model_fit === "above_profile" && <span className="chip ml-1.5 text-crit" data-testid="risk-model-above">{m.model} above profile</span>}
                       </td>
                       <td className="px-4 py-2 font-mono text-xs text-ink-muted">{a?.tolerance ?? "—"}</td>
                       <td className="px-4 py-2 font-mono text-xs text-ink-muted">{a?.capacity ?? "—"}</td>
@@ -119,7 +140,7 @@ export function RiskProfilesView({ household = null }: { household?: string | nu
                       <td className="px-4 py-2 font-mono text-xs text-ink-muted">{m ? `${m.risk_profile ?? "—"} · ${m.capacity_for_loss ?? "—"}` : "—"}</td>
                       <td className="px-4 py-2" title={m?.decision?.reason || undefined}><RiskStatusChip status={status} /></td>
                       <td className="px-4 py-2 text-right">
-                        {!taken && <ViewLink className="btn-outline text-xs" href={`/canvas/questionnaire?household_id=${h.household_id}`}>Questionnaire</ViewLink>}
+                        {!taken && <ViewLink className="btn-outline text-xs" href={`/canvas/questionnaire?household_id=${h.household_id}${m?.owner_id ? `&subject_id=${m.owner_id}` : ""}`}>Questionnaire</ViewLink>}
                         {taken && m && OPEN.includes(status) && !mine && (
                           <div className="flex justify-end gap-1.5">
                             <button className="btn-outline text-xs" data-testid="risk-adopt" disabled={!canDecide || busy}

@@ -685,8 +685,12 @@ class ToolExecutors:
             if result is None:
                 raise ExecutorError(f"Household {household_id} not found or access denied")
             done = result["assessment"]
-            result["message"] = (f"{result['household']}: {result['status']}, indicated {done['indicated']}."
-                                 if done and done["indicated"] else f"{result['household']}: {result['status']}.")
+            wealth = result["wealth"]
+            said = (f" What could be drawn on, less debts, covers {wealth['years_covered']} years of recorded spending." if wealth and wealth["status"] == "assessed"
+                    else " Wealth against needs is not assessed: no spending is on file.")
+            result["message"] = (f"{result['household']}: {result['status']}, indicated {done['indicated']}." if done and done["indicated"]
+                                 else f"{result['household']}: no questionnaire is recorded here. That is all this shows. The firm may hold one elsewhere, so whether the profile on file is supported is not known: do not say it is unsupported."
+                                 if result["status"] == "not_taken" else f"{result['household']}: {result['status']}.") + said
             return result
         result = await risk_profile.for_firm(self.session, self.firm_id)
         s = result["summary"]
@@ -727,7 +731,8 @@ class ToolExecutors:
         on_file = f"{r['profile'] or 'None'} · {r['capacity'] or 'no capacity'}"
         return [("Mandate", r["mandate"].name), ("Decision", "Adopt the questionnaire" if decision == "adopt" else "Keep what is on file"),
                 ("On file", on_file), ("Questionnaire", f"{a.indicated} · {a.capacity}"),
-                ("Becomes", f"{a.indicated} · {a.capacity}" if decision == "adopt" else on_file), ("Reason", r["reason"])]
+                ("Becomes", f"{a.indicated} · {a.capacity}" if decision == "adopt" else on_file), ("Reason", r["reason"]),
+                ("Model", f"{r['model']} takes more risk than this profile, and stays until a person moves it" if r["model_fit"] == "above_profile" else None)]
 
     async def read_client_reviews(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import reviews
@@ -936,7 +941,7 @@ class ToolExecutors:
             raise ExecutorError("expense_ratio_pct must be a number.")
         return {"symbol": inputs.get("symbol"), "status": inputs.get("status"), "rationale": inputs.get("rationale"), "document": inputs.get("document"),
                 "next_review_on": self._exit_day(inputs.get("next_review_on"), "next_review_on"), "minimum_class": inputs.get("minimum_class") or None,
-                "family": inputs.get("family"), "share_class": inputs.get("share_class"), "expense_ratio": expense}
+                "family": inputs.get("family"), "share_class": inputs.get("share_class"), "expense_ratio": expense, "is_diversified": inputs.get("diversified")}
 
     def _investor_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {"investor_class": inputs.get("investor_class"), "as_of": self._exit_day(inputs.get("as_of"), "as_of"), "document": inputs.get("document"),
@@ -997,7 +1002,8 @@ class ToolExecutors:
                         ("Effect", effect), ("Held", f"{r['holdings']} holding(s), {say(r['value_held'])}" if r["holdings"] else None),
                         ("Investors", r["minimum"].replace("_", " ").capitalize() + " only" if r["minimum"] else None),
                         ("Share class", " · ".join(x for x in (r["family"], r["share_class"]) if x) or None),
-                        ("Expense ratio", f"{r['expense']:.2%}" if r["expense"] is not None else None), ("Reason", r["rationale"]), ("Document", r["document"]),
+                        ("Expense ratio", f"{r['expense']:.2%}" if r["expense"] is not None else None),
+                        ("Position limits", "Not read against this fund" if r["diversified"] else None), ("Reason", r["rationale"]), ("Document", r["document"]),
                         ("Next review", firm_time.spoken(r["next"]) if r["next"] else None)]
             if tool_key == "record_investor_status":
                 r = await shelf.prepare_certification(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._investor_args(inputs))

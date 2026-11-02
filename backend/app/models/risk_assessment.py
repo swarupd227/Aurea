@@ -23,6 +23,9 @@ class RiskAssessment(Base):
 
     firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
     household_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("household.id", ondelete="CASCADE"), index=True)
+    # Who was asked, where it was one person or one entity and not the household as a whole.
+    person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("person.id", ondelete="SET NULL"), nullable=True)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("legal_entity.id", ondelete="SET NULL"), nullable=True)
     answers: Mapped[dict] = mapped_column(JSON, default=dict)
     scoring_version: Mapped[int] = mapped_column(Integer, default=1)
     # All three are empty when the answers on file are incomplete: nothing is scored from part of a form.

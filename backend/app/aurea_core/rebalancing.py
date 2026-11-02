@@ -99,6 +99,7 @@ class Order:
 @dataclass
 class RebalanceResult:
     needs_rebalance: bool
+    drifted: bool
     total_value: float
     drift_band: float
     current_weights: dict[str, float]
@@ -120,7 +121,7 @@ class RebalanceResult:
 def _sell_with_lots(
     pos: Position, target_value: float, cgt_remaining: float, *, no_loss: bool = False,
     fifo: bool = False, whole_units: bool = False, gains: dict[str, float] | None = None,
-    bucket_left: dict[str, float] | None = None,
+    bucket_left: dict[str, float] | None = None, used: dict[int, float] | None = None,
 ) -> tuple[float, float, float]:
     """Sell up to target_value from a position using tax-optimal lots.
 
@@ -131,7 +132,8 @@ def _sell_with_lots(
 
     With `fifo` the law has already chosen: the oldest lot goes first, and a lot that cannot be sold
     cannot be stepped over, so reaching one ends the sale. Where lots carry a bucket, `gains` collects
-    the gain by bucket and `bucket_left` is a budget per bucket."""
+    the gain by bucket and `bucket_left` is a budget per bucket. `used` carries what earlier sales in
+    this run took from each lot, so one lot is not sold twice."""
     if pos.price <= 0 or not pos.lots:
         return 0.0, 0.0, 0.0
     # Order lots by gain-per-unit ascending (most negative / losses first).
@@ -148,7 +150,8 @@ def _sell_with_lots(
             continue
         remaining_value = target_value - value_sold
         max_qty_by_value = remaining_value / pos.price
-        qty = min(lot.quantity, max_qty_by_value)
+        left = lot.quantity - (used.get(id(lot), 0.0) if used is not None else 0.0)
+        qty = min(left, max_qty_by_value)
         if qty <= 0:
             continue
         lot_gain = gain_per_unit * qty
@@ -171,6 +174,8 @@ def _sell_with_lots(
         value_sold += qty * pos.price
         realised_gain += lot_gain
         qty_sold += qty
+        if used is not None:
+            used[id(lot)] = used.get(id(lot), 0.0) + qty
         if lot.bucket:
             if gains is not None:
                 gains[lot.bucket] = gains.get(lot.bucket, 0.0) + lot_gain
@@ -227,9 +232,14 @@ def optimise(
     bucket_budgets: dict[str, float] | None = None,
     say_money: Callable[[float], str] = _dollars,
     # What an IPS holds the mandate to, as fractions of its value: cash no buy may spend, and the most
-    # any one instrument may be after a buy. A breach already on the book is reported, not sold down.
+    # any one instrument may be. `restricted` is what it will not have held at all. Both are sold down,
+    # whatever the class is doing, and `keep_over_limit` is what a person has accepted past the limit.
+    # `funds` are diversified, so the limit is not read against them: it is about one issuer.
     min_cash: float | None = None,
     max_position: float | None = None,
+    restricted: set[str] | frozenset[str] = frozenset(),
+    keep_over_limit: set[str] | frozenset[str] = frozenset(),
+    funds: set[str] | frozenset[str] = frozenset(),
     # Cash that is spoken for: a payment waiting to go, or money still to be phased in.
     held_back: float = 0.0,
     # Instruments the product shelf bars. They stay where they are and are never added to.
@@ -237,7 +247,7 @@ def optimise(
 ) -> RebalanceResult:
     total_value = sum(p.market_value for p in positions) + cash
     if total_value <= 0:
-        return RebalanceResult(False, 0, drift_band, {}, target_weights, {}, [], 0, 0, 0, 0, [], [], 0)
+        return RebalanceResult(False, False, 0, drift_band, {}, target_weights, {}, [], 0, 0, 0, 0, [], [], 0)
     wash = wash or WashSaleGuard()
     held: list[dict] = []
     bucket_left = dict(bucket_budgets) if bucket_budgets else None
@@ -256,7 +266,17 @@ def optimise(
     current_weights = {c: by_class_value.get(c, 0.0) / total_value for c in classes}
     drifts = {c: current_weights.get(c, 0.0) - target_weights.get(c, 0.0) for c in classes}
     max_drift = max((abs(d) for c, d in drifts.items() if c != "cash"), default=0.0)
-    needs = max_drift > drift_band
+
+    # A sleeve nothing here can fill, like a private fund subscribed to outside the OMS, is reported and is
+    # not a reason to rebalance: an order would not clear it, so the proposal would only come back.
+    def _unfillable(cls: str) -> bool:
+        pick = (model_instruments or {}).get(cls)
+        here = [p for p in positions if p.asset_class == cls and not p.excluded]
+        return (pick is not None or bool(here)) and not any(p.tradeable for p in here) and not (pick is not None and pick.tradeable)
+
+    cannot_fill = {c for c, d in drifts.items() if c != "cash" and d < 0 and _unfillable(c)}
+    drifted = max((abs(d) for c, d in drifts.items() if c != "cash" and c not in cannot_fill), default=0.0) > drift_band
+    needs = drifted
 
     cgt_remaining = cgt_budget if cgt_budget is not None else float("inf")
     orders: list[Order] = []
@@ -268,12 +288,94 @@ def optimise(
     # still has to exist.
     underfunded: list[tuple[str, float, float]] = []
 
-    if needs:
+    must_sell: list[tuple[Position, float, str]] = []
+    if restricted or max_position is not None:
+        by_instrument: dict[str, list[Position]] = {}
+        for p in positions:
+            by_instrument.setdefault(p.instrument_id, []).append(p)
+        for instrument_id, rows in by_instrument.items():
+            value = sum(p.market_value for p in rows)
+            if instrument_id in restricted:
+                excess, reason = value, "Sell a holding the IPS restricts"
+            elif (max_position is not None and instrument_id not in keep_over_limit and instrument_id not in funds
+                  and value > max_position * total_value + 1e-6):
+                excess, reason = value - max_position * total_value, f"Sell down to the IPS limit of {max_position:.0%}"
+            else:
+                continue
+            for p in sorted(rows, key=lambda r: -r.market_value):
+                if p.protected or not p.tradeable:
+                    limitations.append(f"{p.symbol} is outside the IPS, and it {'was kept back by the adviser' if p.protected else 'is not traded here'}, so it was left.")
+                    continue
+                take = min(excess, p.market_value)
+                if take > 1e-6:
+                    must_sell.append((p, take, reason))
+                    excess -= take
+
+    used_lots: dict[int, float] = {}
+    sold: dict[str, float] = {}             # by holding: a position sold down may still be trimmed, but not sold twice
+    sold_of_class: dict[str, float] = {}
+
+    def _sell(pos: Position, want: float, policy_reason: str | None = None) -> float:
+        """Raise up to `want` from one position and add the order. Returns what the sale raised."""
+        nonlocal cgt_remaining, realised_gain, harvested
+        barred = wash.no_sell.get(pos.instrument_id)
+        if barred and barred.get("account_id") in (None, pos.account_id):
+            held.append({"side": "sell", "symbol": pos.symbol, "instrument_id": pos.instrument_id,
+                         "asset_class": pos.asset_class, "value": round(want, 2), **barred})
+            limitations.append(barred.get("say") or f"{pos.symbol} cannot be sold today.")
+            return 0.0
+        if whole_units and pos.price > 0:
+            want = math.floor(want / pos.price + 1e-9) * pos.price
+        window = wash.no_loss_sale.get(pos.instrument_id)
+        sale_gains: dict[str, float] = {}
+        value_sold, lot_gain, qty = _sell_with_lots(
+            pos, want, cgt_remaining, no_loss=bool(window), fifo=fifo, whole_units=whole_units,
+            gains=sale_gains, bucket_left=bucket_left, used=used_lots)
+        if window:
+            _hold_loss_lots(pos, want, window, held, limitations, say_money)
+        if qty <= 1e-9:
+            return 0.0
+        cgt_remaining -= max(lot_gain, 0.0)
+        realised_gain += lot_gain
+        if lot_gain < 0:
+            harvested += -lot_gain
+        reason = policy_reason or "Trim over-weight"
+        if policy_reason is None and pos.excluded:
+            reason = "Exit values-excluded holding & trim over-weight"
+        elif policy_reason is None and lot_gain < 0:
+            reason = "Harvest loss while trimming over-weight"
+        # Value the order the way settlement will — from the quantity actually
+        # carried, not the pre-rounding figure. Otherwise the card shows one number
+        # and the book moves by another.
+        sell_qty = _carried(qty)
+        if sell_qty <= 0:
+            return value_sold
+        for bucket, gain in sale_gains.items():
+            gains_by_bucket[bucket] = gains_by_bucket.get(bucket, 0.0) + gain
+        orders.append(Order(
+            side="sell", symbol=pos.symbol, name=pos.name, instrument_id=pos.instrument_id,
+            asset_class=pos.asset_class, quantity=sell_qty, est_price=round(pos.price, 4),
+            est_value=round(sell_qty * round(pos.price, 4), 2),
+            account_id=pos.account_id, custodian=pos.custodian,
+            est_realised_gain=round(lot_gain, 2), reason=reason,
+            gain_buckets={b: round(g, 2) for b, g in sale_gains.items()},
+        ))
+        sold[pos.holding_id] = sold.get(pos.holding_id, 0.0) + value_sold
+        return value_sold
+
+    if needs or must_sell:
+        # 0. What the IPS will not have on the book, whatever its class is doing.
+        for pos, want, reason in must_sell:
+            value_sold = _sell(pos, want, reason)
+            sold_of_class[pos.asset_class] = sold_of_class.get(pos.asset_class, 0.0) + value_sold
+            if want - value_sold >= _SHORTFALL_WORTH_SAYING:
+                limitations.append(f"{say_money(want - value_sold)} of {pos.symbol} could not be sold: {reason.lower()}.")
+
         # 1. Sell over-weight classes.
         for cls, drift in sorted(drifts.items(), key=lambda kv: kv[1]):
             if cls == "cash" or drift <= drift_band:
                 continue
-            sell_value = drift * total_value  # amount over target
+            sell_value = drift * total_value - sold_of_class.get(cls, 0.0)  # amount over target
             cls_positions = sorted(
                 [p for p in positions if p.asset_class == cls and not p.protected],  # never sell protected
                 key=lambda p: (not p.excluded, p.market_value - p.cost_basis),  # excluded & losses first
@@ -281,50 +383,7 @@ def optimise(
             for pos in cls_positions:
                 if sell_value <= 1e-6:
                     break
-                want = min(sell_value, pos.market_value)
-                barred = wash.no_sell.get(pos.instrument_id)
-                if barred and barred.get("account_id") in (None, pos.account_id):
-                    held.append({"side": "sell", "symbol": pos.symbol, "instrument_id": pos.instrument_id,
-                                 "asset_class": pos.asset_class, "value": round(want, 2), **barred})
-                    limitations.append(barred.get("say") or f"{pos.symbol} cannot be sold today.")
-                    continue
-                if whole_units and pos.price > 0:
-                    want = math.floor(want / pos.price + 1e-9) * pos.price
-                window = wash.no_loss_sale.get(pos.instrument_id)
-                sale_gains: dict[str, float] = {}
-                value_sold, lot_gain, qty = _sell_with_lots(
-                    pos, want, cgt_remaining, no_loss=bool(window), fifo=fifo, whole_units=whole_units,
-                    gains=sale_gains, bucket_left=bucket_left)
-                if window:
-                    _hold_loss_lots(pos, want, window, held, limitations, say_money)
-                if qty <= 1e-9:
-                    continue
-                cgt_remaining -= max(lot_gain, 0.0)
-                realised_gain += lot_gain
-                if lot_gain < 0:
-                    harvested += -lot_gain
-                sell_value -= value_sold
-                reason = "Trim over-weight"
-                if pos.excluded:
-                    reason = "Exit values-excluded holding & trim over-weight"
-                elif lot_gain < 0:
-                    reason = "Harvest loss while trimming over-weight"
-                # Value the order the way settlement will — from the quantity actually
-                # carried, not the pre-rounding figure. Otherwise the card shows one number
-                # and the book moves by another.
-                sell_qty = _carried(qty)
-                if sell_qty <= 0:
-                    continue
-                for bucket, gain in sale_gains.items():
-                    gains_by_bucket[bucket] = gains_by_bucket.get(bucket, 0.0) + gain
-                orders.append(Order(
-                    side="sell", symbol=pos.symbol, name=pos.name, instrument_id=pos.instrument_id,
-                    asset_class=cls, quantity=sell_qty, est_price=round(pos.price, 4),
-                    est_value=round(sell_qty * round(pos.price, 4), 2),
-                    account_id=pos.account_id, custodian=pos.custodian,
-                    est_realised_gain=round(lot_gain, 2), reason=reason,
-                    gain_buckets={b: round(g, 2) for b, g in sale_gains.items()},
-                ))
+                sell_value -= _sell(pos, min(sell_value, pos.market_value - sold.get(pos.holding_id, 0.0)))
 
         # 2. Buy under-weight classes from proceeds + cash — and only from those.
         #
@@ -348,7 +407,9 @@ def optimise(
         cash_floor = (min_cash or 0.0) * total_value + held_back
         available = max(0.0, cash + proceeds - cash_floor)
 
-        for cls, drift in sorted(drifts.items(), key=lambda kv: kv[1], reverse=True):
+        # A class may fall short only because of what the IPS made us sell, so buys read it as it now stands.
+        short = {c: d - sold_of_class.get(c, 0.0) / total_value for c, d in drifts.items()}
+        for cls, drift in sorted(short.items(), key=lambda kv: kv[1], reverse=True):
             if cls == "cash" or drift >= -drift_band:
                 continue
             wanted = (-drift) * total_value
@@ -364,7 +425,8 @@ def optimise(
             # Prefer an existing non-excluded holding in the class; else the instrument the
             # model nominates for it. Either way, not one the household sold at a loss inside
             # the window: buying it back would disallow that loss.
-            candidates = [p for p in positions if p.asset_class == cls and not p.excluded and p.instrument_id not in not_buyable]
+            candidates = [p for p in positions if p.asset_class == cls and not p.excluded
+                          and p.instrument_id not in not_buyable and p.instrument_id not in restricted]
             pick = (model_instruments or {}).get(cls)
             target_pos = next((p for p in candidates if p.instrument_id not in wash.no_buy), None)
             if target_pos is None and pick is not None and pick.instrument_id not in wash.no_buy:
@@ -414,7 +476,7 @@ def optimise(
                 target_pos = replace(target_pos, account_id=positions[0].account_id,
                                      custodian=positions[0].custodian)
             capped = False
-            if max_position is not None:
+            if max_position is not None and target_pos.instrument_id not in funds:
                 already = sum(p.market_value for p in positions if p.instrument_id == target_pos.instrument_id)
                 room = max(0.0, max_position * total_value - already)
                 if buy_value > room:
@@ -470,7 +532,8 @@ def optimise(
 
     turnover = sum(o.est_value for o in orders)
     return RebalanceResult(
-        needs_rebalance=needs,
+        needs_rebalance=needs or bool(orders),
+        drifted=drifted,
         total_value=round(total_value, 2),
         drift_band=drift_band,
         current_weights={c: round(w, 4) for c, w in current_weights.items()},

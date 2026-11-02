@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, Date, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -32,6 +32,7 @@ class ProductDecision(Base):
     family: Mapped[str | None] = mapped_column(String(120))         # share classes of one fund share a family
     share_class: Mapped[str | None] = mapped_column(String(24))
     expense_ratio: Mapped[float | None] = mapped_column(Numeric(6, 5))
+    diversified: Mapped[bool] = mapped_column(Boolean, default=False)   # a fund of many issuers, so a position limit is not read against it
     decided_by: Mapped[str] = mapped_column(String(200))
     decided_by_role: Mapped[str] = mapped_column(String(32))
 

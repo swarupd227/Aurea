@@ -15,20 +15,18 @@ Status last checked against the code: **2026-10-31**, by keyword search and read
 ## In progress
 
 The rest of L100, built and verified locally for one cloud build, the user's choice on 2 Nov because deploying
-each feature was costing them too much time. Scope: every open §5 and §6.1 gap below. Parked stays parked, and
-"Waiting on a decision" needs a figure or a yes from the user.
+each feature was costing them too much time. Every §5 and §6.1 gap from the audit is built and waits on that build.
+Parked stays parked, and "Waiting on a decision" needs a figure or a yes from the user.
 
 **The one cloud build must:** deploy both sides, which runs `app.db_bootstrap` for the new columns, then run
-`seed.ai_governance_backfill` for the new tools. Add to this line as each item lands.
+`seed.schedule_backfill` and `seed.ai_governance_backfill`. After it, one live pass over the batch, Not now on every
+card, moves these rows to Done.
 
 ## Next, in order
 
-From an audit of the guide against the code on 2 Nov. The guide is `Wealth_Management_L100_Foundation_Guide.docx`,
-with L200-1 and L200-2 beside it, in the user's Downloads.
-
-| ID | Item | L100 | Where it stands | Size |
-|---|---|---|---|---|
-| B-37, B-38, B-39 | Risk: model against profile, capacity from wealth against needs, a questionnaire per person or entity | §5.2, §5.5 | See Smaller items | Medium |
+Nothing from the 2 Nov audit of the guide against the code is left to build, apart from B-91, which is a decision to
+leave. The guide is `Wealth_Management_L100_Foundation_Guide.docx`, with L200-1 and L200-2 beside it, in the user's
+Downloads.
 
 ## Smaller items
 
@@ -39,23 +37,14 @@ with L200-1 and L200-2 beside it, in the user's Downloads.
 | B-16 | Household currency | - | Not stored; protection shows UK and US figures as NZD with no conversion |
 | B-18 | Wash-sale calendar for non-US households | - | The tool still reports for NZ households, though the rule binds US ones only |
 | B-19 | Double-count guard for pensions | - | A recorded pension now replaces the pots on a person's profile, but accounts have no wrapper type, so a pension both booked and recorded still counts twice |
-| B-37 | A mandate's model against its risk profile | §5.5 | Adopting changes the profile, not the model; only equity over the capacity ceiling is checked, so a conservative profile can sit on a Growth model unflagged |
-| B-38 | Capacity from wealth against needs | §5.2 | The questionnaire cannot see it, so capacity comes from horizon, income stability and liquidity alone |
-| B-39 | Questionnaire by person or entity | §5.2 | One set of answers per household, compared with every mandate; a trust is not asked separately |
-| B-44 | Astra overstates "not taken" | §5.2 | Live on 31 Oct it said nothing on file supports a mandate's profile. The tool knows only that no questionnaire is recorded here; a firm may hold one elsewhere |
-| B-69 | The client sees their net worth | §5.4 | Reading is staff only. A client's Canvas shows no net worth, and the client cannot correct what is on file |
-| B-91 | Goal projections read debts and spending | §5.3 | Retirement reads what is recorded (B-68). Other goals' projections do not |
+| B-91 | Goal projections read debts and spending | §5.3 | Retirement reads what is recorded (B-68). Other goals' projections do not, because which debt comes out of which goal is a planning choice, and any rule would move every client's on-track figure. Left as it is on 2 Nov. No live household has a debt on file yet |
 | B-48 | Over-promising rule reads a denial as a promise | - | `no_overpromise` matches words, so "does not mean a rebuy carries no risk" and "not a guarantee of outcome" fail it. Two Indian tax memos show this live. Every firm shares the rule and over-flagging is the safe direction, so the user chose on 31 Oct to leave it |
 | B-49 | Approve shown to a role that cannot approve | - | `RecommendationCard` shows Approve to everyone. The server refuses compliance on a proposal that moves a book, so the control holds, but the screen should read `decision_rights` |
 | B-51 | A lapsed Confirm card still offers Confirm | - | A pending action expires after 24 hours, but only when someone clicks. Until then the card shows live buttons; the server refuses the click and only then does it read Expired |
-| B-52 | Astra blurs "no review on record" | §5.10 | Live on 31 Oct it listed the Chens, reviewed on 14 Sep, among clients paying fees with no review on file. `read_client_reviews` was right. A carried review also reports all four topics as `not_covered` when they are unknown; the page says "not recorded" |
 | B-54 | Approved outreach under the right adviser's name | - | `client_care.act` signs with the first adviser found at the firm, not that client's adviser. Only matters with more than one adviser |
 | B-55 | A report's age at the moment of approval | - | Approving shows the period but no warning. The live Morrison draft is dated 13 Aug, so its figures were 11 weeks old on 31 Oct; a redraft refreshes the same draft |
 | B-73 | "Today" taken from the server's date | - | 58 places across 35 files use `utcnow().date()` or `date.today()`, including ages in protection and tax. Each can be a day out on the firm's calendar, and they are date-only so `on_firm_clock` cannot reach them. The conversation's own "today" is right (B-72). Move them to `firm_time.today` as each is touched, or in one pass |
 | B-61 | The signed-in app on a phone | - | `Shell.tsx` keeps a fixed `w-64` sidebar with no breakpoint, so at phone width it takes about half the screen and clips the page beside it. Seen on the client's Canvas |
-| B-63 | What an IPS limit does not do yet | §5.5 | The rebalancer stops a buy at a position limit and a cash floor, and never buys a restricted holding, but it does not sell down a holding already over its limit or restricted unless its class is overweight. The monitor reports those. A position limit also counts a diversified fund as one holding, because an instrument does not say what it is |
-| B-64 | The client sees their IPS | §5.5 | Reading is staff only. A client's Canvas shows no IPS, though the terms are theirs |
-| B-66 | A model sleeve the rebalancer cannot fill | §5.5 | Live on 1 Nov, all 15 mandates are outside their model's band with a rebalance open. Five Growth mandates hold none of the model's 10% alternatives, which is a private fund subscribed to outside the OMS, so a rebalance cannot clear it, and Patel and Wei & Mei are outside only because of it. The proposal reappears until the money goes in or the model changes |
 | B-65 | `verify_fees` fails before its first check | - | Its stub user has no `firm_id`, which `canvas._resolve_household` has needed since Canvas was held to its household. Same failure on the commit before B-04. It is not in the checks list, so nothing caught it. Thirteen more suites need a running server and do not run offline |
 | B-79 | An open tax memo goes stale when the book trades | - | Tax Intelligence runs on the 1st of the month and a filled order does not refresh it. Live on 1 Nov, Karthik Iyer's rebalance used the whole exemption and left ₹81,942 of estimated tax, while the open memo still reads ₹1,25,000 unused and a ₹18,646 saving. Banerjee's reads ₹39,300 harvestable against ₹25,812. The Tax page and Astra read live, so only the memo is wrong, until 1 Dec. `seed.india_demo_backfill` rewrites them by hand |
 
@@ -112,6 +101,9 @@ B-26 waits for a real custodian statement.
 | B-10, B-86, B-88 | The client file: trusted contacts, estate documents and whether they are out of date, life events that raise a review task, and beneficiaries who have died or are a former spouse (`aurea_core/client_file.py`, Client file) | Tests, 33 checks. Not deployed |
 | B-85, B-89 | Cash movements: payment requests, maker-checker, third-party callback, RMDs taken against required, standing instructions, and phasing new money in, with open requests and later stages held back from every purchase (`aurea_core/cash_movement.py`, Cash movements) | Tests, 50 checks. Standing instructions are recorded and show the next date; raising each payment is a person's. Not deployed |
 | B-87, B-81, B-13 | The trade lifecycle, direct orders and tax documents. A blotter with confirmations, settlement dates worked from the market, sources and blocks across accounts (`aurea_core/blotter.py`, Trades). A direct order needs the person's reason, goes on the provenance ledger, is refused above its capacity ceiling and names a stock past a fifth of the book. A year's summary and what it should produce, on the market's own tax year, with a person recording what arrives (`aurea_core/tax_documents.py`, Tax documents) | Tests, 42 checks. On the real model on throwaway data: Astra asked for a reason it had been making up, kept the client's words, read the blotter and said the venue was paper. Through the app locally: a sale from a sentence, its card, Confirm, and the blotter updating itself. Three things fell out of that run: a reason filled in by Astra, a bond fund called concentrated, and a calendar year used for every market. Surveillance still does not review a direct order, whose rules are written for proposals: the ledger is its record. Settlement does not model holidays, and the book still takes a trade at once on its trade date. Not deployed |
+| B-37, B-38, B-39, B-44, B-52 | Risk and wording. A mandate's model read against its profile (`model_fit`), named on the Risk profiles page, on the adopt card and as a gap on a rebalance. Wealth against needs beside the questionnaire, as figures that change nothing. A questionnaire per person or entity, so a trust is asked for itself. Astra no longer calls a profile unsupported, or a reviewed client unreviewed | Tests. On the real model on throwaway data: Astra said no questionnaire is recorded here and that it cannot call the profile unsupported, twice. It first still opened with "nothing supports it", so the tool result now says so outright. A model's profile is read from its name, which is the only thing that says; a name that does not say reads "not stated". Moving a mandate to another model is still a person's, from admin. Not deployed |
+| B-63, B-66 | The rebalancer acts on an IPS limit. A holding over its limit is sold down and a restricted one sold out, whatever its class is doing, inside the tax budget and the wash-sale guard, unless a person accepted the breach or holds it back. The research team can mark a product a diversified fund, and a limit is then not read against it, here, in the monitor, on a direct order or as concentration. A sleeve nothing here can fill, like a private fund, no longer raises a rebalance alone, and the monitor still reports it outside the band | Tests, 43 checks with B-64 and B-69, on the optimiser and through the agent. No mandate has an IPS live, so nothing sells until one is recorded (B-62). No live product is marked diversified. A fund is marked, not looked through: what it holds is not on file. Not deployed |
+| B-64, B-69 | A client sees their net worth and the IPS terms they accepted on Canvas, and the client assistant can state both. Only the terms, not what the monitor finds. A client says something is wrong by a message that raises a task for the adviser, and nothing changes until a person records it | Tests, including a client naming another household. Not deployed |
 | B-75 | The remaining Confirm cards on the live site | From B-67: client consent, registration, conflict, WSP evidence, the pipeline and corporate actions have been seen in tests only |
 
 ## Done

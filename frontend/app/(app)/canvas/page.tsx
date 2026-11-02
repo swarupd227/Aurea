@@ -27,6 +27,9 @@ export default function Canvas() {
   const [docsLoaded, setDocsLoaded] = useState(false);
   const [fees, setFees] = useState<any>(null);
   const [feesLoaded, setFeesLoaded] = useState(false);
+  const [worth, setWorth] = useState<any>(null);
+  const [policy, setPolicy] = useState<any>(null);
+  const [correction, setCorrection] = useState("");
 
   // Staff: choose a household to preview. Client: their own.
   useEffect(() => {
@@ -54,7 +57,11 @@ export default function Canvas() {
     setThread([]);
     try {
       const path = householdId ? `/api/canvas/me?household_id=${householdId}` : "/api/canvas/me";
-      setView(await api(path));
+      const qs = householdId ? `?household_id=${householdId}` : "";
+      const [me, sheet, terms] = await Promise.all([api(path), api(`/api/canvas/net-worth${qs}`).catch(() => null), api(`/api/canvas/ips${qs}`).catch(() => null)]);
+      setView(me);
+      setWorth(sheet);
+      setPolicy(terms);
     } finally {
       setLoading(false);
     }
@@ -77,10 +84,10 @@ export default function Canvas() {
     }
   }
 
-  async function sendRequest(type: string) {
+  async function sendRequest(type: string, notes = "") {
     setRequestBusy(true);
     try {
-      const body: any = { request_type: type };
+      const body: any = { request_type: type, notes };
       if (!isClient && hid) body.household_id = hid;
       await api("/api/canvas/requests", { body });
       setRequestDone(true);
@@ -242,6 +249,56 @@ export default function Canvas() {
           )}
         </div>
       </div>
+
+      {/* What is on file: figures, and a way to say one is wrong */}
+      <div className="grid md:grid-cols-2 gap-5 mt-5">
+        {worth && (
+          <div className="card p-5" data-testid="canvas-net-worth">
+            <div className="font-semibold text-ink mb-3 flex items-center justify-between">
+              <span>What you own and owe</span>
+              <span className="font-mono text-lg tabular-nums">{money(worth.net_worth)}</span>
+            </div>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between"><span className="text-ink-soft">Managed here</span><span className="tabular-nums">{money(worth.assets.managed)}</span></div>
+              {worth.items.filter((i: any) => i.side !== "expense").map((i: any) => (
+                <div key={i.id} className="flex justify-between">
+                  <span className="text-ink-soft">{i.name}</span>
+                  <span className={`tabular-nums ${i.side === "liability" ? "text-caution" : ""}`}>{i.side === "liability" ? "-" : ""}{money(i.amount)}</span>
+                </div>
+              ))}
+            </div>
+            {worth.basis === "assets_only" && <div className="chip mt-3 text-ink-muted">no debts on file</div>}
+            {worth.not_converted.length > 0 && <div className="chip mt-3 ml-1 text-ink-muted">{worth.not_converted.length} in another currency, not added</div>}
+          </div>
+        )}
+        {policy && (
+          <div className="card p-5" data-testid="canvas-ips">
+            <div className="font-semibold text-ink mb-3">Your investment policy</div>
+            {policy.policies.length === 0 ? <div className="chip text-ink-muted">not on file here</div> : (
+              <div className="space-y-3">
+                {policy.policies.map((p: any) => (
+                  <div key={p.mandate} className="text-sm">
+                    <div className="text-ink-soft">{p.mandate} · version {p.version} · {p.accepted_on}</div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {Object.entries(p.targets).map(([k, v]: any) => <span key={k} className="chip text-ink-muted">{titleCase(k.replace(/_/g, " "))} {pct(v, 0)}</span>)}
+                      {p.max_position != null && <span className="chip text-ink-muted">largest holding {pct(p.max_position, 0)}</span>}
+                      {p.min_cash != null && <span className="chip text-ink-muted">cash floor {pct(p.min_cash, 0)}</span>}
+                      {p.restricted.map((r: string) => <span key={r} className="chip text-ink-muted">not {r}</span>)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {isClient && (worth || policy) && (
+        <form className="card p-4 mt-5 flex gap-2" data-testid="canvas-correction"
+              onSubmit={(e) => { e.preventDefault(); sendRequest("correction", correction); setCorrection(""); }}>
+          <input className="input" aria-label="What is wrong" placeholder="Something here is wrong" value={correction} onChange={(e) => setCorrection(e.target.value)} />
+          <button className="btn-outline text-sm" disabled={requestBusy || correction.trim().length < 3}>Tell my adviser</button>
+        </form>
+      )}
 
       {/* Messages + Reports */}
       <div className="grid md:grid-cols-2 gap-5 mt-5">
@@ -416,7 +473,7 @@ export default function Canvas() {
             <div>
               <p className="text-xs text-ink-muted mb-2">Try asking:</p>
               <div className="flex flex-wrap gap-2">
-                {["Am I going to be okay?", "What happens if markets fall?", "Are my investments aligned to my values?"].map((s) => (
+                {["Am I going to be okay?", "What happens if markets fall?", "What is my net worth?", "What does my investment policy say?"].map((s) => (
                   <button key={s} onClick={() => ask(s)} className="chip bg-navy-50 text-navy-700 hover:bg-navy-100 border border-navy-100">{s}</button>
                 ))}
               </div>

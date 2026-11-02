@@ -21,7 +21,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time
+from app.aurea_core import firm_time, shelf
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX, on_file
 from app.aurea_core.valuation import latest_prices
 from app.models.enums import AssetClass
@@ -112,7 +112,8 @@ def findings_of(terms: dict, *, weights: dict[str, float], positions: list[dict]
                           "excess": round(abs(weight - target) - band, 5)})
     limit = terms.get("max_position")
     for p in positions:
-        if limit is not None and p["weight"] > limit:
+        # A limit is about one issuer. A diversified fund is many, and the research team says which those are.
+        if limit is not None and p["weight"] > limit and not p.get("diversified"):
             found.append({"term": f"position:{p['symbol']}", "kind": "position", "symbol": p["symbol"],
                           "weight": round(p["weight"], 4), "limit": limit, "excess": round(p["weight"] - limit, 5)})
         if p["restricted"]:
@@ -150,6 +151,11 @@ async def _exceptions(session: AsyncSession, policy: InvestmentPolicy | None, to
     return {r.term: r for r in rows}
 
 
+async def accepted_terms(session: AsyncSession, policy: InvestmentPolicy | None, today: date) -> set[str]:
+    """The terms a person has accepted a breach of, for now, so the rebalancer leaves them."""
+    return set(await _exceptions(session, policy, today))
+
+
 async def _book(session: AsyncSession, mandate: Mandate, restricted: list[str], prices: dict) -> dict:
     """The mandate's holdings and cash as weights, on the values the rebalancer reads."""
     accounts = (await session.execute(select(Account).where(Account.mandate_id == mandate.id))).scalars().all()
@@ -165,6 +171,7 @@ async def _book(session: AsyncSession, mandate: Mandate, restricted: list[str], 
     instruments = {i.id: i for i in (await session.execute(
         select(Instrument).where(Instrument.id.in_(list(by_instrument))))).scalars().all()} if by_instrument else {}
     positions, synthetic = [], False
+    funds = await shelf.diversified(session, mandate.firm_id)
     for instrument_id, value in by_instrument.items():
         inst = instruments.get(instrument_id)
         cls = str(inst.asset_class) if inst else "multi_asset"
@@ -172,7 +179,7 @@ async def _book(session: AsyncSession, mandate: Mandate, restricted: list[str], 
         total += value
         price = prices.get(instrument_id)
         synthetic = synthetic or (price is not None and not price.is_real)
-        positions.append({"symbol": inst.symbol if inst else "?", "value": value, "restricted": restricted_by(inst, restricted)})
+        positions.append({"symbol": inst.symbol if inst else "?", "value": value, "restricted": restricted_by(inst, restricted), "diversified": instrument_id in funds})
     if total <= 0:
         return {"total": 0.0, "weights": {}, "positions": [], "synthetic": False}
     return {"total": total, "weights": {c: v / total for c, v in by_class.items()}, "synthetic": synthetic,
@@ -192,7 +199,8 @@ async def book_after(session: AsyncSession, mandate: Mandate, *, firm: Firm, ord
         cls = str(o["instrument"].asset_class)
         values[cls] = values.get(cls, 0.0) + signed
         values["cash"] = values.get("cash", 0.0) - signed
-        row = positions.setdefault(o["symbol"], {"symbol": o["symbol"], "value": 0.0, "restricted": restricted_by(o["instrument"], restricted)})
+        row = positions.setdefault(o["symbol"], {"symbol": o["symbol"], "value": 0.0, "restricted": restricted_by(o["instrument"], restricted),
+                                                 "diversified": o["instrument"].id in await shelf.diversified(session, firm.id)})
         row["value"] += signed
     return {"total": total, "weights_before": book["weights"], "positions_before": book["positions"], "weights_after": {cls: value / total for cls, value in values.items()},
             "positions_after": [{**p, "weight": p["value"] / total} for p in positions.values() if p["value"] > 0]}

@@ -74,7 +74,7 @@ async def _fit(session: AsyncSession, firm: Firm, mandate: Mandate, filling: lis
     was, now = book["weights_before"].get("equity", 0.0), book["weights_after"].get("equity", 0.0)
     refused = [f"Equity would be {now:.1%} of this mandate, over the {ceiling:.0%} ceiling for {capacity} capacity for loss."] if ceiling is not None and now > ceiling and now > was else []
     bought = {o["symbol"] for o in filling if o["side"] == "buy" and str(instruments[o["symbol"]].asset_class) == "equity"}
-    concentrated = [f"{p['symbol']} {p['weight']:.1%}" for p in book["positions_after"] if p["symbol"] in bought and p["weight"] > CONCENTRATED]
+    concentrated = [f"{p['symbol']} {p['weight']:.1%}" for p in book["positions_after"] if p["symbol"] in bought and p["weight"] > CONCENTRATED and not p.get("diversified")]
     return refused, concentrated
 
 

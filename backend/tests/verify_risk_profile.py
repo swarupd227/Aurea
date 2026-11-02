@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 from fastapi import HTTPException
@@ -25,9 +25,11 @@ from app.core.tools import TOOLS, ToolChangeState
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.models.enums import UserRole
 from app.models.governance import LedgerEntry
-from app.models.graph import Household, LegalEntity, Mandate, Person
+from app.models.graph import Account, Household, LegalEntity, Mandate, Person
 from app.models.identity import User
 from app.models.portfolio import ModelPortfolio, TargetAllocation
+from app.models.balance_sheet import BalanceItem
+from app.models.portfolio import InvestmentPolicy
 from app.models.risk_assessment import RiskAssessment
 from app.models.tenant import Firm
 from seed import risk_assessment_backfill
@@ -275,6 +277,68 @@ async def main() -> int:
             from app.agents import drift_rebalancing
             check("the rebalancer and this module share it", drift_rebalancing._CAPACITY_EQUITY_MAX is rp.CAPACITY_EQUITY_MAX, True)
             check("with the same values", rp.CAPACITY_EQUITY_MAX, {"low": 0.40, "medium": 0.70, "high": 1.0})
+
+            print("\n=== A model against a profile ===")
+            check("a model's name says what it is built for", (rp.model_profile("Core Growth"), rp.model_profile("Core Balanced"), rp.model_profile("Cautious")), ("growth", "balanced", None))
+            check("above the profile", rp.model_fit("conservative", "Core Growth"), "above_profile")
+            check("the same", rp.model_fit("growth", "Core Growth"), "matches")
+            check("below it", rp.model_fit("growth", "Core Balanced"), "below_profile")
+            check("a name that does not say", rp.model_fit("conservative", "Cautious"), "not_stated")
+            check("no model", rp.model_fit("growth", None), None)
+            fit_h, fit_p = await household("Fay")
+            fit_m = mandate(fit_p, "Fay Growth", profile="conservative", capacity="high")
+            await s.flush()
+            seen = (await rp.for_household(s, fit_h.id, firm_id=firm.id))["mandates"][0]
+            check("a conservative profile on a growth model is named", (seen["model"], seen["model_fit"]), ("Growth", "above_profile"))
+            check("and the book counts it", (await rp.for_firm(s, firm.id))["summary"]["model_above"] >= 1, True)
+            await rp.submit(s, fit_h.id, form(loss=0), firm_id=firm.id, by="c@x", role="client")
+            ready = await rp.prepare_decision(s, firm.id, fit_m.id, decision="adopt", reason=None)
+            check("adopting says the model stays above", (ready["model"], ready["model_fit"]), ("Growth", "above_profile"))
+            s.add(InvestmentPolicy(firm_id=firm.id, mandate_id=fit_m.id, version=1, accepted_on=date(2026, 1, 1), targets={"equity": 0.3}, drift_band=0.05, restricted=[], document="IPS", recorded_by="a", recorded_by_role="adviser"))
+            await s.flush()
+            check("an IPS outranks the model", (await rp.for_household(s, fit_h.id, firm_id=firm.id))["mandates"][0]["model_fit"], "ips")
+
+            print("\n=== Wealth against needs ===")
+            rich_h, rich_p = await household("Gil")
+            acc = Account(id=uuid.uuid4(), firm_id=firm.id, mandate_id=mandate(rich_p, "Gil Growth").id, name="Gil A/C", currency=firm.base_currency, cash_balance=500000)
+            s.add(acc)
+            await s.flush()
+            wealth = (await rp.for_household(s, rich_h.id, firm_id=firm.id))["wealth"]
+            check("with no spending it is not assessed", (wealth["status"], wealth["years_covered"], wealth["liquid"]), ("not_assessed", None, 500000.0))
+            check("no debt on file says so", wealth["basis"], "assets_only")
+            s.add_all([BalanceItem(firm_id=firm.id, household_id=rich_h.id, side="expense", kind="living", name="Living", amount=40000, currency=firm.base_currency, as_of=date(2026, 1, 1), source_document="Statement", recorded_by="a"),
+                       BalanceItem(firm_id=firm.id, household_id=rich_h.id, side="liability", kind="mortgage", name="Home", amount=100000, annual_payment=10000, currency=firm.base_currency, as_of=date(2026, 1, 1), source_document="Statement", recorded_by="a")])
+            await s.flush()
+            wealth = (await rp.for_household(s, rich_h.id, firm_id=firm.id))["wealth"]
+            check("what is free against what goes out", (wealth["free"], wealth["annual_spending"], wealth["years_covered"]), (400000.0, 40000.0, 8.0))
+            check("it never moves what is indicated", (await rp.for_household(s, rich_h.id, firm_id=firm.id))["status"], "not_taken")
+
+            print("\n=== A trust is asked for itself ===")
+            tr_h, tr_p = await household("Hal")
+            tr_e = LegalEntity(id=uuid.uuid4(), firm_id=firm.id, household_id=tr_h.id, name="Hal Trust", entity_type="trust")
+            s.add(tr_e)
+            await s.flush()
+            own_m, tr_m = mandate(tr_p, "Hal Own"), mandate(tr_e, "Hal Trust", entity=True)
+            await s.flush()
+            check("who can be asked", [x["name"] for x in await rp.subjects(s, tr_h.id)], ["Hal", "Hal Trust"])
+            await canvas.submit_questionnaire(canvas.QuestionnaireIn(answers=form(loss=0), household_id=tr_h.id, subject_id=tr_e.id), user=staff, firm=firm, db=s)
+            v = await rp.for_household(s, tr_h.id, firm_id=firm.id)
+            by = {m["mandate"]: m for m in v["mandates"]}
+            check("the trust's answers speak for the trust", (by["Hal Trust"]["assessment"]["indicated"], by["Hal Trust"]["status"]), ("conservative", "more_risk"))
+            check("and not for the person beside it", (by["Hal Own"]["assessment"], by["Hal Own"]["status"]), (None, "not_taken"))
+            check("the household reads its worst", v["status"], "more_risk")
+            await rp.submit(s, tr_h.id, form(), firm_id=firm.id, by="c@x", role="client")
+            v = await rp.for_household(s, tr_h.id, firm_id=firm.id)
+            by = {m["mandate"]: m for m in v["mandates"]}
+            check("a household's answers stand for the rest", by["Hal Own"]["status"] != "not_taken", True)
+            check("the trust keeps its own", by["Hal Trust"]["assessment"]["indicated"], "conservative")
+            check("its decision rests on its own answers", (await rp.prepare_decision(s, firm.id, tr_m.id, decision="keep", reason="Trustees agreed"))["assessment"].entity_id, tr_e.id)
+            check("its answers come back to it alone", (await rp.latest_answers(s, tr_h.id, firm_id=firm.id, subject_id=tr_e.id))["loss_tolerance"], form(loss=0)["loss_tolerance"])
+            try:
+                await rp.submit(s, tr_h.id, form(), firm_id=firm.id, by="c@x", role="client", subject_id=ann_p.id)
+                check("someone from another household is refused", False, True)
+            except rp.RiskProfileError as exc:
+                check("someone from another household is refused", "not in this household" in str(exc), True)
 
             print("\n=== The tools and the routes ===")
             check("reading changes nothing", TOOLS["read_risk_profiles"].change_state, ToolChangeState.NO)
