@@ -84,6 +84,9 @@ class TaxIntelligenceAgent(BaseAgent):
         # AgentContext has, so the agent raised on its first line on every run, including
         # every scheduled one. The scheduler logged it and moved on.
         households = await list_households(ctx.session, ctx.firm.id)
+        if ctx.subject.type == "household" and ctx.subject.id:
+            # One household's memo brought up to date after a trade there (atlas/tax_refresh.py).
+            households = [h for h in households if h["id"] == str(ctx.subject.id)]
         results = []
         for h in households:
             import uuid

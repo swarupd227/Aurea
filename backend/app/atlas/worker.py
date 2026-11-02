@@ -95,6 +95,19 @@ async def _refresh_market_data() -> None:
                 log.warning("market_refresh_failed", firm=firm.slug, error=str(exc))
 
 
+async def _refresh_tax_after_trades() -> None:
+    """Rewrite an open tax memo once its household's book has traded (atlas/tax_refresh.py)."""
+    from app.atlas.tax_refresh import refresh_after_trades
+
+    async with SessionLocal() as s:
+        for firm in (await s.execute(select(Firm))).scalars().all():
+            try:
+                await refresh_after_trades(s, firm)
+            except Exception as exc:  # pragma: no cover
+                await s.rollback()
+                log.warning("tax_refresh_sweep_failed", firm=firm.slug, error=str(exc))
+
+
 async def _run_evaluation() -> None:
     from app.provenance.evaluation import evaluate_firm
 
@@ -372,6 +385,8 @@ async def main() -> None:
     scheduler.add_job(_run_evaluation, "interval", hours=12, id="evaluation")
     scheduler.add_job(_heartbeat, "interval", seconds=40, id="heartbeat")
     scheduler.add_job(_check_holding_alerts, "interval", hours=1, id="holding_alerts")
+    # A fill makes its household's open tax memo stale; the agent itself runs only monthly.
+    scheduler.add_job(_refresh_tax_after_trades, "interval", minutes=2, id="tax_after_trades")
     # Pick up cadence changes made in Admin without needing a worker restart.
     scheduler.add_job(_sync_agent_schedules, "interval", minutes=15, id="schedule_sync",
                       args=[scheduler])

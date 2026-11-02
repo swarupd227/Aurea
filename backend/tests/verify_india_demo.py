@@ -23,7 +23,7 @@ from app.agents import _signals
 from app.agents import drift_rebalancing as drift
 from app.agents import tax_intelligence as tax_agent
 from app.api import canvas
-from app.atlas import runtime
+from app.atlas import runtime, tax_refresh
 from app.atlas.base import Subject
 from app.aurea_core import disclosures, licences, markets, protection, tax_intelligence
 from app.aurea_core.graph import household_brain
@@ -33,7 +33,8 @@ from app.core.personas import INDIA_PERSONAS
 from app.llm import redaction
 from app.models.enums import AgentKey, AutonomyTier, HumanAction, RecommendationStatus
 from app.models.governance import Recommendation
-from app.models.graph import Goal, Household, Mandate
+from app.models.governance import AgentRun
+from app.models.graph import Goal, Household, LegalEntity, Mandate, Person
 from app.models.identity import User
 from app.models.portfolio import Price
 from app.models.tenant import AgentConfig
@@ -205,6 +206,75 @@ async def main() -> int:
             check("and a length that fits it", all("under 250 words" in p for p in asked), True)
             check("each saving has its source", all("from harvesting losses" in p and "from the exemption" in p for p in asked), True)
             check("a loss that saves nothing says so", any("saving ₹0 and carrying ₹" in p for p in asked), True)
+
+            print("\n=== A fill refreshes its household's tax memo ===")
+            check("a memo written after the last fill is current", await tax_refresh.stale_memos(s, firm), [])
+            memo_of = {m.subject_id: m for m in memos}
+
+            async def household_of(rec):
+                mandate = await s.get(Mandate, rec.subject_id)
+                owner = (await s.get(Person, mandate.person_id) if mandate.person_id
+                         else await s.get(LegalEntity, mandate.entity_id))
+                return owner.household_id
+
+            later = traded = None
+            for (track, _), rec in recs.items():
+                if track == "pms_discretionary" and rec.status == RecommendationStatus.PROPOSED \
+                        and await household_of(rec) in memo_of:
+                    later, traded = rec, await household_of(rec)
+                    break
+            check("a discretionary rebalance is left on a household with a memo", later is not None, True)
+            memo, later_id = memo_of[traded], later.id
+            await runtime.decide(s, firm=firm, recommendation=later, action=HumanAction.APPROVE,
+                                 actor_id=manager.id, actor_label=manager.email)
+            await s.commit()
+            check("its fill makes that memo stale, and no other", [r.id for r in await tax_refresh.stale_memos(s, firm)], [memo.id])
+            written = len(calls)
+            check("the refresh brings it up to date", await tax_refresh.refresh_after_trades(s, firm),
+                  {"refreshed": 1, "closed": 0, "failed": 0})
+            await s.refresh(memo)
+            rerun = await s.get(AgentRun, __import__("uuid").UUID(memo.payload["refreshed"]["last_run_id"]))
+            check("in place, by a run on that household after the trade",
+                  (memo.status, rerun.trigger, rerun.subject_id), ("proposed", "orders_settled", traded))
+            check("only that household's memo is written again",
+                  len([k for k in calls[written:] if "tax memo" in k.get("prompt", "")]), 1)
+            check("and nothing is stale until the next fill", await tax_refresh.stale_memos(s, firm), [])
+
+            async def another_fill():
+                last = (await s.execute(select(Order).where(Order.recommendation_id == later_id))).scalars().first()
+                last.settled_at = __import__("app.core.db", fromlist=["utcnow"]).utcnow()
+                await s.commit()
+
+            real = tax_agent.tax_intelligence.for_household
+
+            async def _broken(*a, **k):
+                raise RuntimeError("no prices")
+
+            await another_fill()
+            tax_agent.tax_intelligence.for_household = _broken
+            check("a run that fails is counted", await tax_refresh.refresh_after_trades(s, firm),
+                  {"refreshed": 0, "closed": 0, "failed": 1})
+            check("and kept as a failed run, so it is not retried every two minutes",
+                  await tax_refresh.stale_memos(s, firm), [])
+
+            async def _nothing(*a, **k):
+                return None
+
+            await another_fill()
+            tax_agent.tax_intelligence.for_household = _nothing
+            check("a household left with nothing to raise closes its memo",
+                  await tax_refresh.refresh_after_trades(s, firm), {"refreshed": 0, "closed": 1, "failed": 0})
+            await s.refresh(memo)
+            check("and says why", (memo.status, memo.decision_note),
+                  ("expired", "Nothing left to raise once the book had traded."))
+            tax_agent.tax_intelligence.for_household = real
+            await runtime.run_agent(s, firm=firm, agent_key=AgentKey.TAX_INTELLIGENCE, trigger="seed_scan",
+                                    subject=Subject("firm", firm.id, firm.name), require_human=True)
+            await s.flush()
+            back = (await s.execute(select(Recommendation).where(
+                Recommendation.agent_key == AgentKey.TAX_INTELLIGENCE, Recommendation.subject_id == traded,
+                Recommendation.status == RecommendationStatus.PROPOSED))).scalars().all()
+            check("a closed memo does not stop the next scan raising one", len(back), 1)
 
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)
