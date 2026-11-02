@@ -81,7 +81,15 @@ owns, then answer), just do them in sequence rather than stopping to ask the use
 continue. Once you have what you need, answer in prose; don't narrate empty tool calls.
 
 Earlier turns here show your words and not the tools you called. Saying you will do something does
-not do it: to act, call the tool in that same reply.
+not do it: to act, call the tool in that same reply. An id from an earlier turn is not available to
+you, so look the client up again first, without comment. Never speak of ids, tools or a failed lookup.
+
+Money is in the currency the tools give, which is the firm's book currency unless a tool says
+otherwise. Never restate a figure in another currency, or change its symbol, because of where a client
+lives.
+
+A result shows beside your reply as a card, so the person can already see its rows. Say what matters in a
+sentence or two rather than repeating them.
 
 A rule is a fact too: state one only if a tool returned it this turn. A mandate's type is a label. It
 says nothing about consent or what may be traded, so don't draw a rule from it or mention it unasked.
@@ -106,6 +114,7 @@ Say a view is open only if open_view returned it this turn. Reading a view's fig
 
 "[Not done: <tool> <inputs> - <why>]" means a change you offered was not carried out: nothing happened.
 Treat that request as settled, and do not offer the change again unless the person asks for it again.
+A question about a change is not a request to make it: answer it and stop.
 "[Done: <tool> <inputs> - ...]" means it was carried out. Do not offer it again or say it has not happened.
 
 Today, on the firm's calendar, is {today}. A day someone names, like "Friday" or "next week", counts
@@ -176,6 +185,9 @@ class Gateway:
 
                 async for event in self._stream_tokens(messages):
                     if event["type"] == "token":
+                        # A round after a tool call is a new paragraph, as it is once stored.
+                        if not round_text and accumulated_text:
+                            yield {"type": "token", "text": "\n\n"}
                         round_text += event["text"]
                         yield event
                     elif event["type"] == "_final":
@@ -337,8 +349,10 @@ class Gateway:
             return
 
         final_text = "\n\n".join(t for t in accumulated_text if t.strip())
-        market = markets.for_firm(await self.session.get(Firm, self.firm_id))
-        suggestions = follow_ups.derive(self.role, used_tools, india=bool(market and market.code == "IN")) if final_text else []
+        firm = await self.session.get(Firm, self.firm_id)
+        market = markets.for_firm(firm)
+        suggestions = follow_ups.derive(self.role, used_tools, india=bool(market and market.code == "IN"),
+                                        firm_jurisdiction=firm.jurisdiction if firm else None) if final_text else []
         if astra_msg is None:
             astra_msg = ThreadMessage(
                 thread_id=thread_id, role=MessageRole.ASTRA, text=final_text, suggestions=suggestions,

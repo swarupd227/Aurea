@@ -26,9 +26,17 @@ function Steps({ steps }: { steps: LiveTurn["steps"] }) {
   );
 }
 
+/** Text cut off mid-stream can end inside bold or a table row. Hold back a stray marker and close an
+ * open one, so nobody watches a raw "**" appear and vanish. */
+export function settled(text: string): string {
+  const cut = text.replace(/\*+$/, "");
+  return (cut.match(/\*\*/g)?.length ?? 0) % 2 === 1 ? `${cut}**` : cut;
+}
+
 /** Astra's turn while it's still streaming — accumulating text plus any tool steps,
  * rendered distinct from finalized messages until the turn lands and the thread reloads. */
 export function LiveMessage({ live, label = "Working" }: { live: LiveTurn; label?: string }) {
+  const text = settled(live.text);
   return (
     <div className="flex gap-3" aria-live="polite">
       <div
@@ -38,8 +46,8 @@ export function LiveMessage({ live, label = "Working" }: { live: LiveTurn; label
         A
       </div>
       <div className="min-w-0 flex-1 space-y-2">
-        {live.text ? (
-          <Markdown text={live.text} className="text-sm text-ink" />
+        {text ? (
+          <Markdown text={text} className="text-sm text-ink" />
         ) : (
           <div className="flex items-center gap-2 text-sm text-ink-muted">
             <span aria-hidden className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />

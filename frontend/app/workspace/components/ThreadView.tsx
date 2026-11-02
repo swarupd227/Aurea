@@ -55,20 +55,48 @@ export function ThreadView({
   const role = typeof window !== "undefined" ? getUser()?.role ?? "" : "";
   const ctx = useSuggestionContext();
   const starters = roleStarters(role, ctx);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  // The newest words stay in view while someone is reading the end of the thread. Opening a view
+  // beside it, or a card landing, changes its height, so following watches the size as well as the
+  // messages. Scrolling up to read stops it; sending starts it again.
+  const scroller = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [messages.length, streaming, live?.text, live?.steps.length]);
+    const box = scroller.current;
+    const inner = body.current;
+    if (!box || !inner) return;
+    const toEnd = () => {
+      if (following.current) box.scrollTop = box.scrollHeight;
+    };
+    const seen = new ResizeObserver(toEnd);
+    seen.observe(box);
+    seen.observe(inner);
+    return () => seen.disconnect();
+  }, []);
+  useEffect(() => {
+    if (pendingUser) following.current = true;
+    if (following.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+  }, [messages.length, pendingUser, streaming, live?.text, live?.steps.length]);
 
   const waiting = status === "awaiting_confirmation";
   const last = messages[messages.length - 1];
-  const suggestions = !streaming && !waiting && last && last.role !== "user" ? last.suggestions : [];
+  const offered = !streaming && !waiting && last && last.role !== "user" ? last.suggestions : [];
+  // Beside an open view the column is narrow: two, so they never push the conversation off the screen.
+  const suggestions = ws?.pane ? offered.slice(0, 2) : offered;
   const empty = messages.length === 0 && !streaming;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
+      <div
+        ref={scroller}
+        data-testid="thread-scroll"
+        className="min-h-0 flex-1 overflow-y-auto"
+        onScroll={(e) => {
+          const box = e.currentTarget;
+          following.current = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+        }}
+      >
+        <div ref={body} className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
           {empty && (
             <div className="pt-[6vh]">
               <h1 className="text-2xl font-semibold tracking-tight text-balance text-ink">
@@ -127,7 +155,6 @@ export function ThreadView({
             </div>
           )}
 
-          <div ref={bottomRef} />
         </div>
       </div>
 
@@ -140,7 +167,8 @@ export function ThreadView({
                   key={s}
                   type="button"
                   onClick={() => onSend(s)}
-                  className="rounded-full border border-border px-3 py-1 text-xs text-ink-soft hover:border-accent/60 hover:text-ink transition-colors"
+                  title={s}
+                  className="max-w-full truncate rounded-full border border-border px-3 py-1 text-xs text-ink-soft hover:border-accent/60 hover:text-ink transition-colors"
                 >
                   {s}
                 </button>

@@ -323,8 +323,8 @@ async def behaviour() -> None:
             check("a dismissed proposal leaves nothing waiting", await reports.waiting_draft(s, mine.id, chen.id), None)
             check("  and the read says dismissed", (await ex().execute("read_reports", {"report_id": third.payload["report_id"]}))["reports"][0]["proposal_status"], str(dropped.status))
 
-            print("\n=== other proposals keep their plain card ===")
-            check("an id that does not resolve", await ex().preview_change("decide_recommendation", {"recommendation_id": "nonsense"}), None)
+            print("\n=== other proposals name themselves ===")
+            check("an id that does not resolve keeps the plain card", await ex().preview_change("decide_recommendation", {"recommendation_id": "nonsense"}), None)
             other_run = AgentRun(id=uuid.uuid4(), firm_id=mine.id, agent_key="client_care", status=AgentRunStatus.COMPLETED,
                                  tier="tier_1", trigger="test", context={})
             s.add(other_run)
@@ -334,7 +334,9 @@ async def behaviour() -> None:
                                    priority=3, payload={}, evidence={}, citations=[])
             s.add(other)
             await s.commit()
-            check("another agent's proposal", await ex().preview_change("decide_recommendation", {"recommendation_id": str(other.id), "action": "approve"}), None)
+            named = {r["label"]: r["value"] for r in (await ex().preview_change(
+                "decide_recommendation", {"recommendation_id": str(other.id), "action": "approve"}))["rows"]}
+            check("another agent's proposal says which it is", (named["Proposal"], named["Decision"]), ("x", "Approve"))
 
             print("\n=== the page's routes ===")
             listed = await engage.list_reports(firm=mine, db=s)

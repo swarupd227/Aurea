@@ -1328,11 +1328,11 @@ TOOLS: dict[str, Tool] = {
         key="read_recommendations",
         name="Read Recommendations",
         speaking_agent="astra",
-        description="The agents' proposals waiting for a human decision (or recently decided), most urgent first, with the agent, the client it concerns, its priority, and whether the caller's role may decide it. Use it to find a recommendation_id before deciding one - never guess an id.",
+        description="The agents' proposals waiting for a human decision (or recently decided), most urgent first, with the agent, the client it concerns, its priority, its summary and whether the caller's role may decide it. A proposal that trades carries its exact orders, estimated realised gain and tax budget: state those, and never work out trades of your own from a target. Narrow to one proposal with subject to get its full rationale. Use it to find a recommendation_id before deciding one - never guess an id.",
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("status", "string", "open (default: waiting for a decision) or all", required=False),
+            ToolInput("status", "string", "open (default: waiting for a decision), or all only when past decisions are asked about", required=False),
             ToolInput("subject", "string", "Only proposals whose client or subject name contains this text", required=False),
             ToolInput("limit", "number", "Max results to return (default 20)", required=False),
         ],

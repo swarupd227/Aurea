@@ -244,6 +244,7 @@ class ToolExecutors:
 
             results.append({
                 "household_id": str(h.id), "name": h.name, "segment": str(h.segment),
+                "jurisdiction": (h.values or {}).get("jurisdiction"),
                 "accounts": [{
                     "account_id": str(a.id), "name": a.name, "custodian": a.custodian,
                 } for a in accounts],
@@ -841,7 +842,8 @@ class ToolExecutors:
             if result is None:
                 raise ExecutorError(f"Household {household_id} not found or access denied")
             result["message"] = (f"{result['household']}: net worth {say(result['net_worth'])}"
-                                 + (" before any debts, because none are recorded here." if result["basis"] == "assets_only" else "."))
+                                 + (" before any debts, because none are recorded here. It is neither a floor nor a ceiling: a debt "
+                                    "or an asset held elsewhere and not recorded would move it either way." if result["basis"] == "assets_only" else "."))
             return result
         result = await balance_sheet.for_firm(self.session, self.firm_id)
         s = result["summary"]
@@ -2191,10 +2193,28 @@ class ToolExecutors:
             "message": f"{mandate.name}: {len(holdings)} holding(s), cash {cash:,.2f}, total value {total_value:,.2f}",
         }
 
+    @staticmethod
+    def _proposed_trades(rec) -> dict[str, Any]:
+        """The exact orders a proposal would place, and what it says they do. Nothing for a proposal
+        that places none. A person's modified version is the one that would be placed."""
+        payload = rec.modified_payload or rec.payload or {}
+        orders = payload.get("order_set") or []
+        if not orders:
+            return {}
+        return {
+            "orders": [{"side": o.get("side"), "symbol": o.get("symbol"), "quantity": o.get("quantity"),
+                        "est_value": o.get("est_value"), "est_realised_gain": o.get("est_realised_gain"),
+                        "account_id": o.get("account_id"), "reason": o.get("reason")} for o in orders],
+            "estimated_realised_gain": payload.get("estimated_realised_gain"),
+            "cgt_budget": payload.get("cgt_budget"),
+        }
+
     async def read_recommendations(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """The proposals waiting for a decision, firm-scoped, with whether this role may decide
         each one. The answer comes from decision_rights, the same source decide_recommendation
         re-checks, so the card never offers a decision the server would refuse."""
+        from sqlalchemy import case
+
         from app.core import decision_rights
         from app.models.enums import RecommendationStatus
         from app.models.governance import Recommendation
@@ -2212,8 +2232,10 @@ class ToolExecutors:
         if subject:
             stmt = stmt.where(Recommendation.subject_label.ilike(f"%{subject}%"))
         total = (await self.session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+        # What can still be decided comes first, so history never buries it.
         recs = (await self.session.execute(
-            stmt.order_by(Recommendation.priority.asc(), Recommendation.created_at.desc()).limit(limit)
+            stmt.order_by(case((Recommendation.status == RecommendationStatus.PROPOSED, 0), else_=1),
+                          Recommendation.priority.asc(), Recommendation.created_at.desc()).limit(limit)
         )).scalars().all()
 
         role = UserRole(self.role)
@@ -2229,6 +2251,9 @@ class ToolExecutors:
                 "tier": str(r.tier),
                 "can_decide": role in decision_rights.roles_for(r.agent_key, "approve"),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                "summary": r.summary,
+                **({"rationale": r.rationale} if len(recs) <= 3 else {}),
+                **self._proposed_trades(r),
             }
             for r in recs
         ]
@@ -3016,13 +3041,64 @@ class ToolExecutors:
             ("Reason", note),
         ) if v]}
 
+    async def _proposal_preview(self, rec, action: str, note: str | None) -> list[tuple[str, Any]]:
+        """Any proposal: which one, what deciding it does, and for one that trades, each order and what
+        it leaves in cash. This is the card a person approves real orders on."""
+        from app.aurea_core import licences, markets
+        from app.conduit.execution import venue_for_firm
+        from app.core import decision_rights
+
+        if action not in ("approve", "modify", "dismiss"):
+            raise ExecutorError("Revise re-runs the agent, so it is done on the Recommendations page. Here a proposal can be approved, modified or dismissed."
+                                if action == "revise" else f"Invalid action: {action}. Must be approve, modify, or dismiss")
+        try:
+            decision_rights.check(self.role, rec.agent_key, action)
+        except decision_rights.DecisionForbidden as exc:
+            raise ExecutorError(str(exc))
+        if str(rec.status) != "proposed":
+            raise ExecutorError(f"Already {rec.status}")
+
+        firm = await self._firm()
+        say = markets.money_for(firm)
+        trades = self._proposed_trades(rec)
+        orders = trades.get("orders") or []
+        mandate = await self.session.get(Mandate, rec.subject_id) if rec.subject_type == "mandate" and rec.subject_id else None
+        track = licences.track_for(firm, mandate) if orders and mandate else None
+        waits = track is not None and (track.per_trade_consent or not track.may_execute)
+        decision = {"dismiss": "Dismiss: nothing is placed and the proposal closes",
+                    "modify": "Approve as modified",
+                    "approve": ("Approve: the orders wait for the client's consent" if waits
+                                else f"Approve: {len(orders)} order(s) are placed now" if orders else "Approve")}[action]
+        rows: list[tuple[str, Any]] = [("Decision", decision), ("Proposal", rec.title), ("Client", rec.subject_label)]
+        if not orders:
+            return [*rows, ("Agent", str(rec.agent_key).replace("_", " ")), ("Note", (note or "").strip() or None)]
+
+        for n, o in enumerate(orders, 1):
+            units = f"{float(o['quantity'] or 0):,.3f}".rstrip("0").rstrip(".")
+            rows.append((f"Order {n}", f"{str(o['side']).title()} {units} {o['symbol']}, {say(float(o['est_value'] or 0))}"))
+        accounts = {uuid.UUID(str(o["account_id"])) for o in orders if o.get("account_id")}
+        cash = float((await self.session.execute(
+            select(func.coalesce(func.sum(Account.cash_balance), 0)).where(
+                Account.firm_id == self.firm_id, Account.id.in_(list(accounts))))).scalar_one())
+        moved = sum(float(o["est_value"] or 0) * (1 if o["side"] == "sell" else -1) for o in orders)
+        gain, budget = trades.get("estimated_realised_gain"), trades.get("cgt_budget")
+        venue = venue_for_firm(firm)
+        return [*rows, ("Cash, before fees", f"{say(cash)} becomes {say(cash + moved)}"),
+                ("Realised gain", f"{say(float(gain))} of a {say(float(budget))} budget" if gain is not None and budget is not None
+                 else say(float(gain)) if gain is not None else None),
+                ("Venue", venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached"),
+                ("Note", (note or "").strip() or None)]
+
     async def _report_decision_preview(self, inputs: dict[str, Any]) -> dict[str, Any] | None:
         """A decision on a report's proposal names the report, because approving it puts it in front
-        of the client. Any other proposal, or an id that does not resolve, keeps the plain card and
-        fails, if it fails, where it always has."""
+        of the client. Every other proposal names itself. Only an id that does not resolve keeps the
+        plain card, and fails where it always has."""
         from app.aurea_core import reports
         from app.models.enums import AgentKey
         from app.models.governance import Recommendation
+
+        def card(pairs) -> dict[str, Any]:
+            return {"rows": [{"label": k, "value": str(v)} for k, v in pairs if v]}
 
         try:
             rec = await self.session.get(Recommendation, _parse_uuid(inputs.get("recommendation_id") or "", "recommendation_id"))
@@ -3038,11 +3114,14 @@ class ToolExecutors:
                 ("Client", rec.subject_label), ("Gaps", rec.summary),
                 ("Decision", "Approve, and add a task to review this cover" if action == "approve" else action.title()),
             ) if v]}
-        if rec is None or rec.firm_id != self.firm_id or str(rec.agent_key) != AgentKey.RESEARCH_REPORTING.value:
+        if rec is None or rec.firm_id != self.firm_id:
             return None
+        action, note = str(inputs.get("action") or ""), inputs.get("note")
+        if str(rec.agent_key) != AgentKey.RESEARCH_REPORTING.value:
+            return card(await self._proposal_preview(rec, action, note))
         report = await reports.of_proposal(self.session, self.firm_id, rec.payload)
         if report is None:
-            return None
+            return card(await self._proposal_preview(rec, action, note))
         if str(rec.status) != "proposed":
             raise ExecutorError(f"Already {rec.status}")
         household = await self.session.get(Household, report.household_id)

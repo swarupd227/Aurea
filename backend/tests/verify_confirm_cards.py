@@ -527,6 +527,47 @@ async def main() -> int:
             check("the write goes through the same checks", row.status, "posted")
             await refused("posted once only", run.preview_change("post_corporate_action_entitlement", post), "exactly once")
 
+            print("\n=== Deciding a proposal that trades ===")
+            await s.refresh(account)
+            cash = float(account.cash_balance)
+            rebalance_run = AgentRun(firm_id=firm.id, agent_key="drift_rebalancing", status="awaiting", tier="tier_2", trigger="manual", started_at=utcnow())
+            s.add(rebalance_run)
+            await s.flush()
+            trades = [{"side": "sell", "symbol": "AAA", "instrument_id": str(aaa.id), "account_id": str(account.id), "quantity": 9.6, "est_value": 120.0, "est_realised_gain": 40.0},
+                      {"side": "buy", "symbol": "CCC", "instrument_id": str(ccc.id), "account_id": str(account.id), "quantity": 60, "est_value": 300.0, "est_realised_gain": 0}]
+            rebalance = Recommendation(firm_id=firm.id, run_id=rebalance_run.id, agent_key="drift_rebalancing", tier="tier_2", status=RecommendationStatus.PROPOSED,
+                                       title="Rebalance Ann mandate: max drift 12% exceeds 5% band", summary="1 sell / 1 buy", subject_type="mandate",
+                                       subject_id=mandate.id, subject_label="Ann mandate",
+                                       payload={"order_set": trades, "estimated_realised_gain": 40.0, "cgt_budget": 500.0})
+            s.add(rebalance)
+            await s.flush()
+            approve = {"recommendation_id": str(rebalance.id), "action": "approve"}
+            shown = await card(ex, "decide_recommendation", approve)
+            check("names the proposal and the client", (shown["Proposal"], shown["Client"]), (rebalance.title, "Ann mandate"))
+            check("says what approving does", shown["Decision"], "Approve: 2 order(s) are placed now")
+            check("each order, by name and size", (shown["Order 1"].startswith("Sell 9.6 AAA"), shown["Order 2"].startswith("Buy 60 CCC")), (True, True))
+            check("what it leaves in cash", f"{cash + 120 - 300:,.0f}" in shown["Cash, before fees"], True)
+            check("the gain against its budget", ("40" in shown["Realised gain"], "500" in shown["Realised gain"]), (True, True))
+            check("a paper venue says so", shown["Venue"].startswith("Paper"), True)
+            shown = await card(ex, "decide_recommendation", {**approve, "action": "dismiss"})
+            check("dismissing places nothing", shown["Decision"], "Dismiss: nothing is placed and the proposal closes")
+            await refused("compliance may not approve a trade", ToolExecutors(s, adviser.id, UserRole.COMPLIANCE, firm.id).preview_change("decide_recommendation", approve))
+            await refused("revise is the page's", ex.preview_change("decide_recommendation", {**approve, "action": "revise"}), "Recommendations page")
+            await refused("another firm's proposal keeps the plain card and is refused when it runs", outsider.decide_recommendation(approve), "not found")
+            check("  its card names nothing", await outsider.preview_change("decide_recommendation", approve), None)
+            listed = (await ex.read_recommendations({"subject": "Ann mandate"}))["recommendations"]
+            mine = next(r for r in listed if r["id"] == str(rebalance.id))
+            check("the model reads the exact orders", [(o["side"], o["symbol"], o["quantity"]) for o in mine["orders"]], [("sell", "AAA", 9.6), ("buy", "CCC", 60)])
+            check("  with the gain and the budget", (mine["estimated_realised_gain"], mine["cgt_budget"]), (40.0, 500.0))
+            rebalance.status = RecommendationStatus.DISMISSED
+            await s.flush()
+            await refused("a decided proposal", ex.preview_change("decide_recommendation", approve), "Already")
+            s.add(Recommendation(firm_id=firm.id, run_id=rebalance_run.id, agent_key="client_care", tier="tier_1", status=RecommendationStatus.PROPOSED,
+                                 title="Call Ann", summary="s", priority=5, created_at=utcnow() - timedelta(days=30)))
+            await s.flush()
+            everything = (await ex.read_recommendations({"status": "all"}))["recommendations"]
+            check("asked for everything, what is still open comes first", [r["status"] for r in everything][:1], ["proposed"])
+
             print("\n=== Every card names its change ===")
             source = Path(executors.__file__).read_text(encoding="utf-8")
             body = source[source.index("async def preview_change"):]

@@ -1,5 +1,13 @@
 // Figures and chips only - the agent's message carries the sentences. Each row is one proposal;
-// "may decide" is the server's answer for the caller's role (decision_rights), never a guess here.
+// whether it may be decided is the server's answer for the caller's role (decision_rights), never a
+// guess here. A row says so only when the answer is no: "you may decide" on every line says nothing.
+interface RecOrder {
+  side: string;
+  symbol: string;
+  quantity: number;
+  est_value: number;
+}
+
 interface RecRow {
   id: string;
   title: string;
@@ -10,6 +18,7 @@ interface RecRow {
   confidence: number;
   tier: string;
   can_decide: boolean;
+  orders?: RecOrder[];
 }
 
 interface RecsPayload {
@@ -18,6 +27,8 @@ interface RecsPayload {
 }
 
 const PRIORITY_COLOR: Record<number, string> = { 1: "text-crit", 2: "text-warn" };
+
+const units = (n: number) => Number(n).toLocaleString("en-NZ", { maximumFractionDigits: 3 });
 
 export function RecommendationsCard({ result }: { result: RecsPayload }) {
   return (
@@ -29,35 +40,36 @@ export function RecommendationsCard({ result }: { result: RecsPayload }) {
           {result.total > result.recommendations.length ? ` of ${result.total}` : ""}
         </div>
       </div>
-      <table className="w-full text-sm">
-        <tbody className="divide-y divide-border-soft">
-          {result.recommendations.map((r) => (
-            <tr key={r.id}>
-              <td className="px-3 py-1.5">
-                <div className="text-ink">{r.title}</div>
-                <div className="text-xs text-ink-muted">
-                  {r.subject_label || "Firm-wide"} · {r.agent_key.replace(/_/g, " ")}
+      <ul className="divide-y divide-border-soft text-sm">
+        {result.recommendations.map((r) => (
+          <li key={r.id} className="flex items-start gap-3 px-3 py-1.5">
+            <div className="min-w-0 flex-1">
+              <div className="text-ink">{r.title}</div>
+              <div className="text-xs text-ink-muted">
+                {r.subject_label || "Firm-wide"} · {r.agent_key.replace(/_/g, " ")}
+              </div>
+              {!!r.orders?.length && (
+                <div className="mt-1 flex flex-wrap gap-1.5" data-testid="recommendation-orders">
+                  {r.orders.map((o, i) => (
+                    <span key={i} className="chip text-ink-muted">
+                      {o.side} {units(o.quantity)} {o.symbol}
+                    </span>
+                  ))}
                 </div>
-              </td>
-              <td className={`px-3 py-1.5 font-mono text-xs tabular-nums ${PRIORITY_COLOR[r.priority] || "text-ink-muted"}`}>
-                P{r.priority}
-              </td>
-              <td className="px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink-muted whitespace-nowrap">
-                {Math.round(r.confidence * 100)}%
-              </td>
-              <td className="px-3 py-1.5 text-right text-xs whitespace-nowrap">
-                {r.status !== "proposed" ? (
-                  <span className="text-ink-muted">{r.status}</span>
-                ) : r.can_decide ? (
-                  <span className="text-ok">you may decide</span>
-                ) : (
-                  <span className="text-ink-muted">not yours to decide</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              )}
+            </div>
+            <div className="shrink-0 text-right font-mono text-xs tabular-nums">
+              <div className={PRIORITY_COLOR[r.priority] || "text-ink-muted"} title="Priority">P{r.priority}</div>
+              <div className="text-ink-muted" title="Agent's confidence">{Math.round(r.confidence * 100)}%</div>
+              {r.status !== "proposed" ? (
+                <div className="font-sans text-ink-muted">{r.status}</div>
+              ) : !r.can_decide ? (
+                <div className="font-sans text-ink-muted">not yours</div>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

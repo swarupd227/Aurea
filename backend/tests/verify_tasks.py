@@ -316,7 +316,7 @@ async def behaviour() -> None:
             check("  the reminder is said to the model", "called no tool" in hearing_rounds[1], True)
             stored = (await s.execute(select(ThreadMessage.text).where(ThreadMessage.thread_id == t10.id))).scalars().all()
             check("  and never stored", any("called no tool" in (x or "") for x in stored), False)
-            check("  its reason reaches the person", "".join(e.get("text", "") for e in events if e["type"] == "token"), "Let me do that.That needs a title from you first.")
+            check("  its reason reaches the person", "".join(e.get("text", "") for e in events if e["type"] == "token"), "Let me do that.\n\nThat needs a title from you first.")
             t11, events, reply = await turn(say("I'll do it."), say("I'll do it now."))
             check("asked once, then the turn ends", reply.text, "I'll do it.\n\nI'll do it now.")
             for words in ("The fee is 1.2%.", "Let me know if you want more.", "Shall I go ahead?", "Would you like me to, and I'll check?"):

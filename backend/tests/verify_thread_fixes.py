@@ -97,7 +97,7 @@ def suggestions() -> None:
             [{"tool_key": "read_agent_history", "inputs": {}, "result": {"by_status": {"failed": 2}}}],
         ]
         for used in cases:
-            out = follow_ups.derive(role, used)
+            out = follow_ups.derive(role, used, firm_jurisdiction="US")
             check(f"{role.value}: at most four", len(out) <= 4, True)
             check(f"{role.value}: every suggestion is answerable by a tool the role holds",
                   all(any(s == sent and t in held_by[role] for t, sent in
@@ -114,6 +114,23 @@ def suggestions() -> None:
     out = follow_ups.derive(R.COMPLIANCE, [{"tool_key": "read_recommendations", "inputs": {}, "result": {"recommendations": [
         {"title": "Rebalance Chen", "agent_key": "drift_rebalancing", "can_decide": False, "status": "proposed"}]}}])
     check("compliance is not offered an approval it cannot give", any(s.startswith("Approve") for s in out), False)
+    two = [{"title": "Rebalance Chen", "agent_key": "drift_rebalancing", "can_decide": True, "status": "proposed"},
+           {"title": "Estate review", "agent_key": "estate_succession", "can_decide": True, "status": "proposed"}]
+    out = follow_ups.derive(R.ADVISER, [{"tool_key": "read_recommendations", "inputs": {}, "result": {"recommendations": two}}])
+    check("from a list, one press asks about the top proposal rather than approving it", out[0],
+          'What does the proposal "Rebalance Chen" do, and why was it raised?')
+    check("  and offers no approval", any(s.startswith("Approve") for s in out), False)
+    found = [{"tool_key": "search_households", "inputs": {}, "result": {"results": [{"name": "The Hartley Family", "jurisdiction": "UK"}]}}]
+    out = follow_ups.derive(R.ADVISER, found, firm_jurisdiction="NZ")
+    check("a household not taxed in the US is not offered a wash-sale check", any("wash-sale" in s for s in out), False)
+    check("  it is offered its net worth instead", "What is the Hartley Family's net worth, and what is it made of?" in out, True)
+    found[0]["result"]["results"][0]["jurisdiction"] = "US"
+    check("a household taxed in the US is", any("wash-sale" in s for s in follow_ups.derive(R.ADVISER, found, firm_jurisdiction="NZ")), True)
+    check("with nothing said, the firm's market decides", any("wash-sale" in s for s in follow_ups.derive(
+        R.ADVISER, [{"tool_key": "search_households", "inputs": {}, "result": {"results": [{"name": "The Chen Family"}]}}], firm_jurisdiction="NZ")), False)
+    out = follow_ups.derive(R.ADVISER, [{"tool_key": "read_balance_sheet", "inputs": {}, "result": {"household": "The Hartley Family"}}])
+    check("a net worth leads to protection and reviews", out[:2], ["What happens to the Hartley Family if an earner dies or can't work?",
+                                                                  "When was the Hartley Family last reviewed, and when is the next review due?"])
     out = follow_ups.derive(R.ADVISER, [{"tool_key": "read_agent_history", "inputs": {}, "result": {"by_status": {"failed": 2}}}])
     check("a failed run leads to the failed runs", out[0], "Show me the agent runs that failed.")
     out = follow_ups.derive(R.ADVISER, [{"tool_key": "read_agent_history", "inputs": {}, "result": {"by_status": {"completed": 2}}}])

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import RecommendationCard from "@/components/RecommendationCard";
 import { SkeletonList, Empty, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
-import { useViewNav } from "./ViewNav";
+import { ViewLink, useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 
 const STATUSES = [
@@ -12,20 +12,17 @@ const STATUSES = [
   { key: "all", label: "All" },
 ];
 
-/** The agents' proposals, for a human decision. `focusId` (the `rec` query) brings one proposal to
- * the top, opened - a Needs-you row or a conversation card lands on the proposal it named. */
+/** The agents' proposals, for a human decision. `focusId` (the `rec` query) opens one proposal alone,
+ * with the way back to the rest - a Needs-you row or a conversation card lands on the proposal it
+ * named, not on a hundred others. */
 export function RecommendationsView({ focusId }: { focusId?: string | null }) {
   const nav = useViewNav();
   const [status, setStatus] = useState("open");
   const { data, loading, error, refetch } = useApi<any[]>(`/api/studio/feed?status=${status}`, [status]);
 
-  const rows = useMemo(() => {
-    const list = data || [];
-    if (!focusId) return list;
-    const hit = list.find((r) => String(r.id) === focusId);
-    return hit ? [hit, ...list.filter((r) => r !== hit)] : list;
-  }, [data, focusId]);
-  const focusMissing = !!focusId && !loading && !!data && !rows.some((r) => String(r.id) === focusId);
+  const hit = useMemo(() => (focusId ? (data || []).find((r) => String(r.id) === focusId) ?? null : null), [data, focusId]);
+  const rows = hit ? [hit] : data || [];
+  const focusMissing = !!focusId && !loading && !!data && !hit;
 
   // A proposal asked for by id may already be decided: look in all of them before saying so.
   useEffect(() => {
@@ -44,7 +41,9 @@ export function RecommendationsView({ focusId }: { focusId?: string | null }) {
       <ViewHeader
         title="Recommendations"
         meta={data ? <span className={chip} data-testid="recs-count">{open} open{status === "all" ? ` · ${data.length} shown` : ""}</span> : null}
-        actions={
+        actions={hit ? (
+          <ViewLink href="/studio/review" className="btn-outline text-xs" data-testid="recs-all">All proposals</ViewLink>
+        ) : (
           <div role="tablist" aria-label="Which proposals" className="flex overflow-hidden rounded-lg border border-border text-sm">
             {STATUSES.map((s) => (
               <button
@@ -58,7 +57,7 @@ export function RecommendationsView({ focusId }: { focusId?: string | null }) {
               </button>
             ))}
           </div>
-        }
+        )}
       />
       {loading ? (
         <SkeletonList count={3} />

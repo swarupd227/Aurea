@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from app.aurea_core import wash_sale
 from app.core.tools import tools_for_role
 from app.models.enums import UserRole
 
@@ -39,13 +40,32 @@ def _household(name: str) -> list[Candidate]:
     ]
 
 
+def _wash_sale_name(text: str) -> str:
+    return text.removeprefix("Check ").removesuffix(" household for wash-sale conflicts.")
+
+
 def _for_india(candidate: Candidate) -> Candidate:
     """India has no wash-sale rule, so the sentence that follows a household there is its tax."""
     tool, text = candidate
     if tool != "check_household_wash_sale":
         return candidate
-    name = text.removeprefix("Check ").removesuffix(" household for wash-sale conflicts.")
-    return "read_tax_position", f"What is {name}'s tax position this tax year, taxpayer by taxpayer?"
+    return "read_tax_position", f"What is {_wash_sale_name(text)}'s tax position this tax year, taxpayer by taxpayer?"
+
+
+def _taxed_in(result: dict[str, Any]) -> str | None:
+    """Where this turn's household says it is taxed, if it says. Else the firm's market decides."""
+    brain = result.get("brain") or {}
+    household = brain.get("household") if isinstance(brain.get("household"), dict) else {}
+    first = ((result.get("results") or [{}])[0] or {})
+    return first.get("jurisdiction") or (household.get("values") or {}).get("jurisdiction")
+
+
+def _not_taxed_in_us(candidate: Candidate) -> Candidate:
+    """The wash-sale rule binds a household taxed in the US and nobody else, so nobody else is offered it."""
+    tool, text = candidate
+    if tool != "check_household_wash_sale":
+        return candidate
+    return "read_balance_sheet", f"What is {_wash_sale_name(text)}'s net worth, and what is it made of?"
 
 
 def _name_of(result: dict[str, Any]) -> str | None:
@@ -59,8 +79,10 @@ def _from_recommendations(inputs: dict, result: dict) -> list[Candidate]:
     recs = result.get("recommendations") or []
     out: list[Candidate] = []
     top = next((r for r in recs if r.get("can_decide") and r.get("status") == "proposed"), None)
-    if top:
+    if top and len(recs) == 1:
         out.append(("decide_recommendation", f"Approve the proposal \"{top['title']}\"."))
+    elif top:       # One press should not reach approving something picked off the top of a list.
+        out.append(("read_recommendations", f"What does the proposal \"{top['title']}\" do, and why was it raised?"))
     if any(r.get("agent_key") == "drift_rebalancing" for r in recs):
         out.append(("read_recommendations", "Which of the open proposals move money on a client's book?"))
     return out + [RUNS]
@@ -86,6 +108,15 @@ def _from_onboarding(inputs: dict, result: dict) -> list[Candidate]:
     return [BENEFICIARIES, WAITING]
 
 
+def _from_balance_sheet(inputs: dict, result: dict) -> list[Candidate]:
+    name = result.get("household")
+    if not name:
+        return []
+    return [("read_protection", f"What happens to {_the(name)} if an earner dies or can't work?"),
+            ("read_client_reviews", f"When was {_the(name)} last reviewed, and when is the next review due?"),
+            ("read_recommendations", f"What proposals are open for {_the(name)}?")]
+
+
 def _from_search(inputs: dict, result: dict) -> list[Candidate]:
     near = result.get("did_you_mean") or []
     if near:
@@ -104,6 +135,7 @@ FOLLOWS: dict[str, Callable[[dict, dict], list[Candidate]]] = {
     "explain_invoice": lambda i, r: _household(_name_of(r))[:2] if _name_of(r) else [],
     "read_billing": lambda i, r: [("read_billing", "Which bills are held, and why?")] if not i.get("household_id") else [],
     "run_billing": lambda i, r: [("read_billing", "Which bills are held, and why?")],
+    "read_balance_sheet": _from_balance_sheet,
     "read_recommendations": _from_recommendations,
     "read_agents": _from_agents,
     "read_agent_history": _from_history,
@@ -120,12 +152,13 @@ FOLLOWS: dict[str, Callable[[dict, dict], list[Candidate]]] = {
 }
 
 
-def derive(role: UserRole | str, used: list[dict[str, Any]], *, india: bool = False) -> list[str]:
+def derive(role: UserRole | str, used: list[dict[str, Any]], *, india: bool = False, firm_jurisdiction: str | None = None) -> list[str]:
     """Up to four sentences, each answerable by a tool `role` holds, shaped by the tools this turn
     used (most recent first) and finished with the role's general next steps."""
     held = tools_for_role(UserRole(role))
     if not held:
         return []
+    taxed_in = next((j for j in (_taxed_in(c.get("result") or {}) for c in reversed(used)) if j), firm_jurisdiction)
     candidates: list[Candidate] = []
     for call in reversed(used):
         follow = FOLLOWS.get(call["tool_key"])
@@ -138,6 +171,8 @@ def derive(role: UserRole | str, used: list[dict[str, Any]], *, india: bool = Fa
     candidates += [WAITING, AGENTS]
     if india:
         candidates = [_for_india(c) for c in candidates]
+    elif not wash_sale.applies(taxed_in):
+        candidates = [_not_taxed_in_us(c) for c in candidates]
 
     # Do not offer what the turn has just done.
     seen: set[str] = set()
