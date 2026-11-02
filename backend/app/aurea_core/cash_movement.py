@@ -72,13 +72,16 @@ async def _open_requests(session: AsyncSession, account_ids: list[uuid.UUID]) ->
 
 
 async def held_back(session: AsyncSession, firm: Firm, mandate: Mandate) -> dict:
-    """Cash this mandate may not spend on a purchase, and why."""
+    """Cash this mandate may not spend on a purchase, and why: open payments out, money still to be phased in, and deposits on hold."""
     accounts = (await session.execute(select(Account.id).where(Account.mandate_id == mandate.id))).scalars().all()
     reserved = sum(float(r.amount) for r in await _open_requests(session, list(accounts)))
     today = firm_time.today(firm)
     plans = (await session.execute(select(PhaseInPlan).where(PhaseInPlan.mandate_id == mandate.id, PhaseInPlan.ended_on.is_(None)))).scalars().all()
     phasing = sum(float(p.amount) * tranches_left(p, today) / p.tranches for p in plans)
-    return {"requests": round(reserved, 2), "phasing": round(phasing, 2), "total": round(reserved + phasing, 2)}
+    from app.aurea_core import money_in
+
+    deposits = await money_in.holds_for(session, firm, list(accounts))     # large deposits still inside their hold
+    return {"requests": round(reserved, 2), "phasing": round(phasing, 2), "deposits": deposits, "total": round(reserved + phasing + deposits, 2)}
 
 
 async def prepare_request(session: AsyncSession, account_id: uuid.UUID, *, firm_id: uuid.UUID, kind: str | None, amount, payee: str | None, reason: str | None,

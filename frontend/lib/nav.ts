@@ -71,6 +71,7 @@ export const VIEWS: View[] = [
   { href: "/studio/trades", label: "Trades", icon: ArrowLeftRight, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["blotter", "confirmation", "settlement", "block", "allocation", "orders"] },
   { href: "/studio/tax-documents", label: "Tax documents", icon: FileText, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["1099", "k-1", "tax forms", "tax summary"] },
   { href: "/studio/onboarding-queues", label: "Onboarding queues", icon: Workflow, roles: [A, P, C, O, B], intent: "operate", keywords: ["exceptions", "nigo", "clocks", "sla", "account opening", "funding"] },
+  { href: "/studio/money-in", label: "Money in", icon: Wallet, roles: [A, P, C, O, B], intent: "govern", keywords: ["ach", "deposit", "bank link", "micro-deposit", "return", "hold", "standing instruction", "revalidate"] },
   { href: "/studio/monitoring", label: "Transaction monitoring", icon: ShieldCheck, roles: [C, O], intent: "govern", keywords: ["aml", "monitoring", "sar", "str", "suspicious", "investigation", "structuring", "alerts"] },
   { href: "/studio/transfers", label: "Transfers in", icon: ArrowLeftRight, roles: [A, P, C, O, B], intent: "govern", keywords: ["acat", "transfer", "reject", "cost basis", "rollover", "1035", "asset memo", "residual"] },
   { href: "/studio/document-matrix", label: "Document matrix", icon: ScrollText, roles: [A, P, C, O, B], intent: "govern", keywords: ["nigo", "documents", "registration", "tenancy", "custodian forms", "signatures", "beneficiaries"] },

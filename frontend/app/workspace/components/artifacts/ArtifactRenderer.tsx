@@ -30,6 +30,7 @@ import { ConsentsCard } from "./ConsentsCard";
 import { DocumentMatrixCard } from "./DocumentMatrixCard";
 import { TransfersCard } from "./TransfersCard";
 import { MonitoringCard } from "./MonitoringCard";
+import { MoneyInCard } from "./MoneyInCard";
 import { OnboardingQueuesCard } from "./OnboardingQueuesCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
@@ -148,6 +149,12 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_money_in":
+      case "record_bank_link":
+      case "record_deposit":
+      case "revalidate_standing_instruction":
+        if (!Array.isArray(artifact.result?.deposits)) return null;
+        return <MoneyInCard result={artifact.result as any} />;
       case "read_transaction_monitoring":
       case "decide_monitoring_alert":
       case "record_investigation_step":

@@ -79,6 +79,10 @@ class ToolExecutors:
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
             "rate_aml_risk": self.rate_aml_risk,
+            "read_money_in": self.read_money_in,
+            "record_bank_link": self.record_bank_link,
+            "record_deposit": self.record_deposit,
+            "revalidate_standing_instruction": self.revalidate_standing_instruction,
             "read_transaction_monitoring": self.read_transaction_monitoring,
             "decide_monitoring_alert": self.decide_monitoring_alert,
             "record_investigation_step": self.record_investigation_step,
@@ -1753,6 +1757,106 @@ class ToolExecutors:
                 ("Step", e["step"].replace("_", " ").capitalize()), ("On", firm_time.spoken(r["day"])), ("Reference", e.get("reference")),
                 ("Forum", ", ".join(e["attendees"]) if e.get("attendees") else None), ("Outcome", e.get("outcome")), ("Minutes", e.get("minutes")),
                 ("Note", e["note"])]
+
+    def _link_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        failed = inputs.get("failed")
+        if isinstance(failed, str):
+            failed = failed.strip().lower() in ("true", "yes", "1", "y")
+        return {"account_id": _parse_uuid(inputs.get("account_id") or "", "account_id"), "bank": inputs.get("bank"), "last4": inputs.get("last4"),
+                "owner_name": inputs.get("owner_name"), "method": inputs.get("method"), "evidence": inputs.get("evidence"),
+                "verified_on": self._exit_day(inputs.get("verified_on"), "verified_on"), "callback_by": inputs.get("callback_by"), "failed": bool(failed)}
+
+    def _deposit_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        uid = lambda k: _parse_uuid(inputs[k], k) if inputs.get(k) else None  # noqa: E731
+        return {"account_id": uid("account_id"), "deposit_id": uid("deposit_id"), "bank_link_id": uid("bank_link_id"), "method": inputs.get("method"),
+                "amount": inputs.get("amount"), "on": self._exit_day(inputs.get("on"), "on"), "evidence": inputs.get("evidence"), "return_code": inputs.get("return_code")}
+
+    def _revalidation_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"standing_id": _parse_uuid(inputs.get("standing_id") or "", "standing_id"), "evidence": inputs.get("evidence"),
+                "on": self._exit_day(inputs.get("on"), "on"), "callback_by": inputs.get("callback_by")}
+
+    async def read_money_in(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import money_in
+
+        result = await money_in.for_firm(self.session, self.firm_id,
+                                         household_id=_parse_uuid(inputs["household_id"], "household_id") if inputs.get("household_id") else None)
+        s = result["summary"]
+        result["message"] = f"{len(result['deposits'])} deposit(s), {s['returned']} returned; {s['instructions_overdue']} instruction(s) overdue for revalidation."
+        return result
+
+    async def record_bank_link(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import money_in
+
+        try:
+            result = await money_in.record_link(self.session, self.firm_id, by=await self._shelf_user(), **self._link_args(inputs))
+        except money_in.MoneyInError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _bank_link_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, money_in
+
+        try:
+            r = await money_in.prepare_link(self.session, self.firm_id, **self._link_args(inputs))
+        except money_in.MoneyInError as exc:
+            raise ExecutorError(str(exc))
+        return [("Account", r["account"].name), ("Bank", f"{r['bank']} ending {r['last4']}"), ("Owner", r["owner"]),
+                ("Party", "Third party" if r["third_party"] else "In the household"), ("Callback by", r["callback_by"]),
+                ("Verified by", r["method"].replace("_", " ")), ("On", firm_time.spoken(r["on"])), ("Evidence", r["evidence"]),
+                ("Status", r["status"].capitalize())]
+
+    async def record_deposit(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import money_in
+
+        try:
+            result = await money_in.record_deposit(self.session, self.firm_id, by=await self._shelf_user(), **self._deposit_args(inputs))
+        except money_in.MoneyInError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _deposit_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, markets, money_in
+        from app.models.tenant import Firm
+
+        try:
+            r = await money_in.prepare_deposit(self.session, self.firm_id, **self._deposit_args(inputs))
+        except money_in.MoneyInError as exc:
+            raise ExecutorError(str(exc))
+        money = markets.money_for(await self.session.get(Firm, self.firm_id))
+        if r["kind"] == "return":
+            d = r["deposit"]
+            return [("Account", r["account"].name), ("Deposit", f"{money(float(d.amount))} by {d.method.upper()} on {firm_time.spoken(d.received_on)}"),
+                    ("Returned", f"{r['code']} {money_in.RETURN_CODES[r['code']]}"), ("On", firm_time.spoken(r["on"])), ("Evidence", r["evidence"]),
+                    ("Already available", "Yes: it may have been invested" if r["after_available"] else "No: it was still on hold"),
+                    ("Bank link", "Revoked" if r["revokes"] else None)]
+        return [("Account", r["account"].name), ("Amount", money(r["amount"])), ("By", r["method"].upper()),
+                ("From", f"{r['link'].bank} ending {r['link'].last4}" if r["link"] else None), ("Received", firm_time.spoken(r["on"])),
+                ("Hold", f"Until {firm_time.spoken(r['hold_until'])}" if r["hold_until"] else "None"), ("Evidence", r["evidence"])]
+
+    async def revalidate_standing_instruction(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import money_in
+
+        try:
+            result = await money_in.record_revalidation(self.session, self.firm_id, by=await self._shelf_user(), **self._revalidation_args(inputs))
+        except money_in.MoneyInError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _revalidation_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, markets, money_in
+        from app.models.tenant import Firm
+
+        try:
+            r = await money_in.prepare_revalidation(self.session, self.firm_id, **self._revalidation_args(inputs))
+        except money_in.MoneyInError as exc:
+            raise ExecutorError(str(exc))
+        s = r["standing"]
+        money = markets.money_for(await self.session.get(Firm, self.firm_id))
+        return [("Account", r["account"].name), ("Pays", f"{s.payee}, {money(float(s.amount))} {s.frequency}"), ("Third party", "Yes" if s.third_party else "No"),
+                ("Callback by", r["callback_by"]), ("Confirmed", firm_time.spoken(r["on"])), ("Evidence", r["evidence"]), ("Next due", firm_time.spoken(r["next"]))]
 
     async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_risk
@@ -3685,6 +3789,12 @@ class ToolExecutors:
             return rows(*await self._alert_preview(inputs))
         if tool_key == "record_investigation_step":
             return rows(*await self._step_preview(inputs))
+        if tool_key == "record_bank_link":
+            return rows(*await self._bank_link_preview(inputs))
+        if tool_key == "record_deposit":
+            return rows(*await self._deposit_preview(inputs))
+        if tool_key == "revalidate_standing_instruction":
+            return rows(*await self._revalidation_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):
