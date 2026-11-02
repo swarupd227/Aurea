@@ -1015,6 +1015,63 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
+    "read_document_matrix": Tool(
+        key="read_document_matrix",
+        name="Read Document Matrix",
+        speaking_agent="astra",
+        description="The document matrix: for each registration, the documents that must be on file (any one of a set satisfies a line) and the registration detail it needs; what each custodian adds; the states that allow tenancy by the entirety and community property. Give case_id for one onboarding case's check before submission: missing documents and detail, unsigned signers, stale or future dates, tenancy against state, shares that do not make 100. Reading it opens nothing: to show the matrix beside the conversation call open_view with view document_matrix.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("case_id", "uuid", "One onboarding case, from read_onboarding_cases", required=False)],
+        output=ToolOutput("object", "The matrix, and the case's check"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_registration_detail": Tool(
+        key="record_registration_detail",
+        name="Record Registration Detail",
+        speaking_agent="astra",
+        description="Records an onboarding case's registration detail and the documents received, from the application or a document, for the check before submission. Give only what the client's paperwork shows; never fill a field in. documents is a comma-separated list of kinds received (passport, drivers_licence, trust_certification, trust_deed, entity_formation, entity_resolution, partnership_agreement, death_certificate, letters_testamentary, beneficiary_form, custodian_application, transfer_form, w9, plan_distribution_form). evidence says where it comes from.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this registration detail?",
+        inputs=[
+            ToolInput("case_id", "uuid", "The onboarding case", required=True),
+            ToolInput("state", "string", "Two-letter state whose law governs the account", required=False),
+            ToolInput("married", "string", "For tenancy by the entirety or community property: are the owners married to each other", required=False),
+            ToolInput("tod", "string", "Transfer on death elected on an individual or joint account", required=False),
+            ToolInput("funding", "string", "For an IRA: contribution, rollover, conversion or transfer", required=False),
+            ToolInput("contribution_tax_year", "string", "For an IRA contribution: the tax year it is for", required=False),
+            ToolInput("plan_tax_year", "string", "For a SEP or SIMPLE IRA: the plan's tax year", required=False),
+            ToolInput("decedent_date_of_death", "string", "For an inherited IRA or an estate: the date of death, YYYY-MM-DD, from the death certificate", required=False),
+            ToolInput("year_of_death_rmd", "string", "For an inherited IRA: taken, not_taken or not_required", required=False),
+            ToolInput("trust_date", "string", "For a trust: the date it was signed, YYYY-MM-DD", required=False),
+            ToolInput("tax_id_type", "string", "For a trust: ein, or ssn for a grantor trust", required=False),
+            ToolInput("tax_id", "string", "The EIN, NN-NNNNNNN", required=False),
+            ToolInput("termination_age", "string", "For a UTMA or UGMA: the age the state's act sets", required=False),
+            ToolInput("successor", "string", "For a 529, HSA or DAF: the successor named", required=False),
+            ToolInput("signed_by", "string", "Who signed the application, comma separated, as the application shows", required=False),
+            ToolInput("signed_on", "string", "The day the application was signed, YYYY-MM-DD", required=False),
+            ToolInput("documents", "string", "Documents received, comma separated", required=False),
+            ToolInput("evidence", "string", "Where it comes from", required=True),
+        ],
+        output=ToolOutput("object", "The case's check after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "set_custodian_documents": Tool(
+        key="set_custodian_documents",
+        name="Set Custodian Documents",
+        speaking_agent="astra",
+        description="Sets the forms a custodian requires on every new account, from the custodian's own new-account guide, replacing what was set. documents is a comma-separated list of kinds; an empty list clears it. source says where the custodian sets it out.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Set this custodian's documents?",
+        inputs=[ToolInput("custodian", "string", "The custodian, as cases name it", required=True),
+                ToolInput("documents", "string", "Kinds, comma separated", required=False),
+                ToolInput("source", "string", "Where the custodian sets this out", required=True)],
+        output=ToolOutput("object", "The matrix"),
+        roles_required={UserRole.OPERATIONS, UserRole.COMPLIANCE},
+    ),
+
     "rate_aml_risk": Tool(
         key="rate_aml_risk",
         name="Rate AML Risk",
@@ -1695,7 +1752,7 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
             "exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural and regulatory_countdown show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
@@ -1707,7 +1764,7 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, document_matrix, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
             ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural or regulatory_countdown to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
@@ -2325,6 +2382,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "tax_documents": ("/studio/tax-documents", "Tax documents", {_A, _P, _PT, _C, _O, _B}),
     "aml": ("/studio/aml", "AML reviews", {_A, _C, _O, _B}),
     "consents": ("/studio/consents", "Consents", {_A, _P, _C, _O, _B}),
+    "document_matrix": ("/studio/document-matrix", "Document matrix", {_A, _P, _C, _O, _B}),
     "onboarding_queues": ("/studio/onboarding-queues", "Onboarding queues", {_A, _P, _C, _O, _B}),
     "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
     "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),

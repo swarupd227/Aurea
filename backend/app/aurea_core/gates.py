@@ -42,7 +42,8 @@ def sanctions_open(case, party_status: dict) -> list[str]:
 
 def evaluate(case, *, party_status: dict, disclosure_status: dict,
              fee_status: dict | None = None, held_away_count: int | None = None,
-             transfer_status: dict | None = None, consent_status: dict | None = None) -> dict:
+             transfer_status: dict | None = None, consent_status: dict | None = None,
+             registration_status: dict | None = None) -> dict:
     """All activation gates for a case, and whether any of them blocks.
 
     Optional arguments degrade gracefully: a caller that has not loaded the fee schedule or
@@ -144,6 +145,17 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
         ha_state, ha_detail = FAIL, "Not yet asked — advice on a partial balance sheet."
     gates.append(_gate("held_away_captured", "Off-platform assets captured",
                        ha_state, ha_detail, track="account"))
+
+    # ── Track B — the package in good order ──────────────────────────────────
+    # What a custodian would reject: documents, registration detail, signatures, dates, tenancy, shares.
+    if registration_status is not None:
+        blocking_issues = [i for i in registration_status["issues"] if i["severity"] in ("critical", "high")]
+        gates.append(_gate(
+            "registration_in_good_order", "Registration in good order",
+            FAIL if blocking_issues else PASS,
+            "; ".join(i["description"] for i in blocking_issues) or "Documents, detail and signatures are in order.",
+            track="account",
+        ))
 
     # ── Track B — party completeness ─────────────────────────────────────────
     role_gaps = party_status.get("role_gaps", [])

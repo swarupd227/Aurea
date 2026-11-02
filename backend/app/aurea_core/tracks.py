@@ -35,23 +35,7 @@ TRACKS = [
     ("D", "funding", "Funding & transfer", "Operations + external"),
 ]
 
-# Required documents by registration type. Mirrors the NIGO agent's matrix; the two should
-# converge on one source, which is noted in the redesign as its own step.
-_DOC_MATRIX: dict[str, set[str]] = {
-    "individual": {"passport", "drivers_licence"},
-    "joint_jtwros": {"passport", "drivers_licence"},
-    "joint_tic": {"passport", "drivers_licence"},
-    "traditional_ira": {"passport", "drivers_licence"},
-    "roth_ira": {"passport", "drivers_licence"},
-    "employer_rollover": {"passport", "drivers_licence"},
-    "trust": {"trust_deed", "passport"},
-    "entity_llc": {"trust_deed", "passport"},
-    "entity_corp": {"trust_deed", "passport"},
-    "entity_partnership": {"trust_deed", "passport"},
-    "custodial_utma": {"passport", "drivers_licence"},
-    "custodial_ugma": {"passport", "drivers_licence"},
-    "estate_inherited": {"passport"},
-}
+# Required documents come from the one matrix, aurea_core/document_matrix.py.
 
 _SETTLED = "settled"
 _IN_FLIGHT = {"in_transit"}
@@ -76,9 +60,9 @@ def _track_a(case, disclosure_status: dict) -> dict:
 
 def _track_b(case, party_status: dict, documents: list) -> dict:
     """Account establishment — parties, documents, custodian account."""
-    have_docs = {d.doc_type for d in documents}
-    required_docs = _DOC_MATRIX.get(case.registration_type or "individual", set())
-    missing_docs = sorted(required_docs - have_docs)
+    from app.aurea_core import document_matrix
+
+    missing_docs = [m["label"] for m in document_matrix.missing_documents(case, documents)]
 
     role_gaps = party_status.get("role_gaps", [])
     ownership_issues = party_status.get("ownership_issues", [])
@@ -96,7 +80,7 @@ def _track_b(case, party_status: dict, documents: list) -> dict:
     if missing_docs:
         return {
             "state": IN_PROGRESS,
-            "detail": f"Missing {', '.join(d.replace('_', ' ') for d in missing_docs)}.",
+            "detail": f"Missing {', '.join(missing_docs)}.",
             "next_action": "Collect the outstanding documents.",
         }
     # Complete once the package is submission-ready. Opening the custodian account is the

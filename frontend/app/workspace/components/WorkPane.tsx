@@ -34,6 +34,7 @@ import { ProductsView } from "@/components/views/ProductsView";
 import { TaxDocumentsView, TradesView } from "@/components/views/TradesView";
 import { AmlReviewsView } from "@/components/views/AmlReviewsView";
 import { ConsentsView } from "@/components/views/ConsentsView";
+import { DocumentMatrixView } from "@/components/views/DocumentMatrixView";
 import { OnboardingQueuesView } from "@/components/views/OnboardingQueuesView";
 import { NetWorthView } from "@/components/views/NetWorthView";
 import { AnalyticsView } from "@/components/views/AnalyticsView";
@@ -132,6 +133,8 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <CashMovementsView household={pane.query.household ?? null} />;
     case "onboarding_queues":
       return <OnboardingQueuesView />;
+    case "document_matrix":
+      return <DocumentMatrixView />;
     case "consents":
       return <ConsentsView household={pane.query.household ?? null} />;
     case "aml":

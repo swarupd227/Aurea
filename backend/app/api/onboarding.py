@@ -110,7 +110,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
         select(TransferRequest).where(TransferRequest.case_id == case.id)
     )).scalars().all())
     decided = await aml_review.decisions_for(db, [p.id for p in party_rows])
-    from app.aurea_core import consents
+    from app.aurea_core import consents, document_matrix
     disclosure_status = disclosures.status_for(firm.jurisdiction, case.registration_type, list(disc_rows), case.engagement_type)
     fee_status = await _fee_status(db, case)
     return gates_core.evaluate(
@@ -120,6 +120,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
         consent_status=consents.gate_status(await consents.for_case_rows(db, case), disclosure_items=disclosure_status["items"],
                                             fee_assigned=bool(fee_status and fee_status.get("assigned"))),
         fee_status=fee_status,
+        registration_status=await document_matrix.check_case(db, case, firm),
         held_away_count=held_away_n,
         transfer_status=transfer_controls.status_for(
             xfer_rows, party_names=[p.legal_name for p in party_rows]

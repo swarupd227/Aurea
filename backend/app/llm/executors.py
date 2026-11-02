@@ -79,6 +79,9 @@ class ToolExecutors:
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
             "rate_aml_risk": self.rate_aml_risk,
+            "read_document_matrix": self.read_document_matrix,
+            "record_registration_detail": self.record_registration_detail,
+            "set_custodian_documents": self.set_custodian_documents,
             "read_consents": self.read_consents,
             "record_consent": self.record_consent,
             "read_onboarding_queues": self.read_onboarding_queues,
@@ -1492,6 +1495,96 @@ class ToolExecutors:
         return [("Client", r["whose"]), ("Consent", consents.LABELS[r["kind"]]), ("Status", r["status"].capitalize()), ("Given by", r["given_by"]),
                 ("Given on", firm_time.spoken(r["given_on"])), ("How", r["method"].replace("_", " ")), ("Evidence", r["evidence"]),
                 ("Effect", (effect if r["status"] == "granted" else "No longer stands") if effect else None)]
+
+    def _case_registration_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"case_id": _parse_uuid(inputs.get("case_id") or "", "case_id"),
+                "fields": {f: inputs.get(f) for f in ("state", "married", "tod", "funding", "contribution_tax_year", "plan_tax_year", "decedent_date_of_death", "year_of_death_rmd", "trust_date", "tax_id_type", "tax_id", "termination_age", "successor", "signed_by", "signed_on")},
+                "documents": [d for d in (inputs.get("documents") or "").split(",") if d.strip()], "evidence": inputs.get("evidence")}
+
+    async def read_document_matrix(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import document_matrix
+        from app.models.onboarding import OnboardingCase
+        from app.models.tenant import Firm
+
+        firm = await self.session.get(Firm, self.firm_id)
+        result = document_matrix.matrix(firm)
+        if inputs.get("case_id"):
+            case = await self.session.get(OnboardingCase, _parse_uuid(inputs["case_id"], "case_id"))
+            if case is None or case.firm_id != self.firm_id:
+                raise ExecutorError("Case not found.")
+            result["check"] = {**await document_matrix.check_case(self.session, case, firm), "case_id": str(case.id), "case": case.prospect_name}
+            c = result["check"]
+            result["message"] = "In good order." if c["in_good_order"] else f"{len(c['issues'])} issue(s) before submission."
+        else:
+            result["message"] = f"{len(result['registrations'])} registrations; {len(result['custodians'])} custodian(s) with their own forms."
+        return result
+
+    async def record_registration_detail(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import document_matrix
+        from app.models.tenant import Firm
+
+        firm = await self.session.get(Firm, self.firm_id)
+        try:
+            check = await document_matrix.record_detail(self.session, firm, by=await self._shelf_user(), **self._case_registration_args(inputs))
+        except document_matrix.MatrixError as exc:
+            raise ExecutorError(str(exc))
+        result = {**document_matrix.matrix(firm), "check": {**check, "case_id": inputs.get("case_id")}}
+        result["message"] = "Recorded. " + ("In good order." if check["in_good_order"] else f"{len(check['issues'])} issue(s) remain.")
+        return result
+
+    async def _case_registration_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        import types
+        from datetime import date
+
+        from app.aurea_core import document_matrix, firm_time
+        from app.models.onboarding import OnboardingDocument, OnboardingParty
+        from app.models.tenant import Firm
+
+        try:
+            r = await document_matrix.prepare_detail(self.session, self.firm_id, **self._case_registration_args(inputs))
+        except document_matrix.MatrixError as exc:
+            raise ExecutorError(str(exc))
+        case, firm = r["case"], await self.session.get(Firm, self.firm_id)
+        reg = {**((case.intake or {}).get("registration") or {}), **r["fields"]}
+        reg["documents"] = {**(reg.get("documents") or {}), **{k: {} for k in r["documents"]}}
+        after = types.SimpleNamespace(registration_type=case.registration_type, custodian_name=case.custodian_name, intake={**(case.intake or {}), "registration": reg})
+        parties = (await self.session.execute(select(OnboardingParty).where(OnboardingParty.case_id == case.id))).scalars().all()
+        docs = (await self.session.execute(select(OnboardingDocument).where(OnboardingDocument.case_id == case.id))).scalars().all()
+        check = document_matrix.check(after, list(parties), list(docs), firm=firm, today=firm_time.today(firm))
+        def show(f, v):
+            if isinstance(v, list):
+                return ", ".join(v)
+            if isinstance(v, bool):
+                return "Yes" if v else "No"
+            return firm_time.spoken(date.fromisoformat(v)) if f in ("trust_date", "decedent_date_of_death", "signed_on") else v
+
+        shown = [(document_matrix.FIELD_LABELS[f], show(f, v)) for f, v in r["fields"].items()]
+        return [("Case", case.prospect_name), ("Registration", (case.registration_type or "individual").replace("_", " ")), *shown,
+                ("Documents received", ", ".join(document_matrix.DOCUMENTS[k] for k in r["documents"]) or None), ("Evidence", r["evidence"]),
+                ("After this", "In good order" if check["in_good_order"] else f"{sum(1 for i in check['issues'] if i['severity'] in ('critical', 'high'))} issue(s) still block submission")]
+
+    async def set_custodian_documents(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import document_matrix
+
+        try:
+            result = await document_matrix.record_custodian(self.session, self.firm_id, by=await self._shelf_user(), custodian=inputs.get("custodian"),
+                                                            documents=[d for d in (inputs.get("documents") or "").split(",") if d.strip()], source=inputs.get("source"))
+        except document_matrix.MatrixError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Set."
+        return result
+
+    async def _custodian_documents_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import document_matrix
+
+        try:
+            r = await document_matrix.prepare_custodian(self.session, self.firm_id, custodian=inputs.get("custodian"),
+                                                        documents=[d for d in (inputs.get("documents") or "").split(",") if d.strip()], source=inputs.get("source"))
+        except document_matrix.MatrixError as exc:
+            raise ExecutorError(str(exc))
+        label = lambda ks: ", ".join(document_matrix.DOCUMENTS.get(k, k) for k in ks) or "None"  # noqa: E731
+        return [("Custodian", r["custodian"]), ("Forms required", label(r["documents"])), ("Was", label(r["was"])), ("Source", r["source"]),
+                ("Effect", "Every open case at this custodian needs these before submission")]
 
     async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_risk
@@ -3405,6 +3498,10 @@ class ToolExecutors:
             return rows(*await self._corporate_preview(tool_key, inputs))
         if tool_key == "record_consent":
             return rows(*await self._consent_registry_preview(inputs))
+        if tool_key == "record_registration_detail":
+            return rows(*await self._case_registration_preview(inputs))
+        if tool_key == "set_custodian_documents":
+            return rows(*await self._custodian_documents_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

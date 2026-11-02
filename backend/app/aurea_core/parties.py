@@ -60,6 +60,24 @@ _REQUIRED: dict[str, list[tuple[str, int, str]]] = {
         (PartyRole.BENEFICIARY, 1,
          "Missing beneficiary designations send retirement assets through probate."),
     ],
+    "joint_tbe": [
+        (PartyRole.OWNER, 1, "The primary account holder."),
+        (PartyRole.JOINT_OWNER, 1, "Tenancy by the entirety is a married couple."),
+    ],
+    "community_property": [
+        (PartyRole.OWNER, 1, "The primary account holder."),
+        (PartyRole.JOINT_OWNER, 1, "Community property is a married couple."),
+    ],
+    "sep_ira": [
+        (PartyRole.OWNER, 1, "The account holder."),
+        (PartyRole.BENEFICIARY, 1,
+         "Missing beneficiary designations send retirement assets through probate."),
+    ],
+    "simple_ira": [
+        (PartyRole.OWNER, 1, "The account holder."),
+        (PartyRole.BENEFICIARY, 1,
+         "Missing beneficiary designations send retirement assets through probate."),
+    ],
     "employer_rollover": [
         (PartyRole.OWNER, 1, "The account holder."),
         (PartyRole.BENEFICIARY, 1,

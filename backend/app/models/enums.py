@@ -237,8 +237,12 @@ class RegistrationType(StrEnum):
     INDIVIDUAL = "individual"
     JOINT_JTWROS = "joint_jtwros"       # Joint Tenants with Right of Survivorship
     JOINT_TIC = "joint_tic"             # Tenants in Common
+    JOINT_TBE = "joint_tbe"             # Tenancy by the entirety: spouses, in a state that allows it
+    COMMUNITY_PROPERTY = "community_property"
     TRADITIONAL_IRA = "traditional_ira"
     ROTH_IRA = "roth_ira"
+    SEP_IRA = "sep_ira"
+    SIMPLE_IRA = "simple_ira"
     EMPLOYER_ROLLOVER = "employer_rollover"
     TRUST = "trust"
     ENTITY_LLC = "entity_llc"

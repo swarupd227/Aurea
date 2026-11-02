@@ -1,7 +1,7 @@
 """NIGO Prevention Agent (L200 A1 enhanced). Tier 2.
 
-Triggered on document upload to an onboarding case. Validates documents against the
-registration-type document matrix, computes a pre-submission readiness score (0–100),
+Triggered on document upload to an onboarding case. Checks the package against the one
+document matrix (aurea_core/document_matrix.py), computes a pre-submission readiness score (0–100),
 and flags NIGO risks before the package is submitted — turning reject-and-rework into
 catch-and-fix.
 
@@ -13,37 +13,10 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import document_matrix
 from app.aurea_core.document_intel import DOC_LABELS
 from app.models.enums import AgentKey, AutonomyTier, NIGORootCause
-from app.models.onboarding import BeneficialOwner, OnboardingCase, OnboardingDocument
-
-# Required document sets by registration type.
-_DOC_MATRIX: dict[str, set[str]] = {
-    "individual":         {"passport", "drivers_licence"},
-    "joint_jtwros":       {"passport", "drivers_licence"},
-    "joint_tic":          {"passport", "drivers_licence"},
-    "traditional_ira":    {"passport", "drivers_licence"},
-    "roth_ira":           {"passport", "drivers_licence"},
-    "employer_rollover":  {"passport", "drivers_licence"},
-    "trust":              {"trust_deed", "passport"},
-    "entity_llc":         {"trust_deed", "passport"},          # trust_deed covers entity docs
-    "entity_corp":        {"trust_deed", "passport"},
-    "entity_partnership": {"trust_deed", "passport"},
-    "custodial_utma":     {"passport", "drivers_licence"},
-    "custodial_ugma":     {"passport", "drivers_licence"},
-    "estate_inherited":   {"passport"},
-}
-
-# Registration types that require beneficial owner certification.
-_BO_REQUIRED_TYPES = {"entity_llc", "entity_corp", "entity_partnership", "trust"}
-
-# Registration types that require beneficiary designation.
-_BENEFICIARY_REQUIRED_TYPES = {
-    "traditional_ira", "roth_ira", "employer_rollover", "custodial_utma", "custodial_ugma"
-}
-
-# Registration types that require rollover PTE 2020-02 documentation.
-_PTE_REQUIRED_TYPES = {"employer_rollover", "traditional_ira", "roth_ira"}
+from app.models.onboarding import OnboardingCase, OnboardingDocument
 
 
 def _readiness_score(issues: list[dict]) -> int:
@@ -65,29 +38,22 @@ class NIGOPreventionAgent(BaseAgent):
         if not case or case.firm_id != ctx.firm.id:
             return {"applicable": False}
 
-        reg_type = getattr(case, "registration_type", None) or (
-            "trust" if getattr(case, "is_entity", False) else "individual"
-        )
-        required_docs = _DOC_MATRIX.get(reg_type, {"passport"})
-
         docs = (
             await s.execute(select(OnboardingDocument).where(OnboardingDocument.case_id == case.id))
         ).scalars().all()
         present_docs = {d.doc_type for d in docs}
 
-        bos = (
-            await s.execute(select(BeneficialOwner).where(BeneficialOwner.case_id == case.id))
-        ).scalars().all()
-
-        intake = case.intake or {}
+        check = await document_matrix.check_case(s, case, ctx.firm)
+        reg_type = check["registration_type"]
 
         return {
             "applicable": True,
             "case_id": str(case.id),
             "case_name": case.prospect_name,
             "registration_type": reg_type,
-            "required_docs": list(required_docs),
-            "present_docs": list(present_docs),
+            "required_docs": [r["label"] for r in check["requirements"]["documents"]],
+            "present_docs": sorted(present_docs),
+            "matrix_issues": check["issues"],
             "docs": [
                 {
                     "doc_type": d.doc_type,
@@ -99,10 +65,6 @@ class NIGOPreventionAgent(BaseAgent):
                 }
                 for d in docs
             ],
-            "n_bos": len(bos),
-            "has_beneficiary": bool(intake.get("beneficiary_name") or intake.get("beneficiaries")),
-            "has_sow": bool(intake.get("source_of_wealth")),
-            "intake": intake,
         }
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
@@ -110,18 +72,8 @@ class NIGOPreventionAgent(BaseAgent):
             return []
 
         reg_type = sensed["registration_type"]
-        required = set(sensed["required_docs"])
-        present = set(sensed["present_docs"])
-        issues: list[dict] = []
-
-        # Missing required documents.
-        for missing in required - present:
-            issues.append({
-                "root_cause": NIGORootCause.MISSING_ID.value,
-                "severity": "critical",
-                "description": f"Missing required document: {DOC_LABELS.get(missing, missing)}.",
-                "field": missing,
-            })
+        # The one matrix's check: documents, registration detail, signatures, dates, tenancy and shares.
+        issues: list[dict] = [dict(i) for i in sensed["matrix_issues"]]
 
         # Low-confidence fields in uploaded documents.
         for doc in sensed["docs"]:
@@ -135,35 +87,6 @@ class NIGOPreventionAgent(BaseAgent):
                                        f"low confidence on '{field}' ({int(conf*100)}%).",
                         "field": field,
                     })
-
-        # Beneficial owner completeness for entity accounts.
-        if reg_type in _BO_REQUIRED_TYPES and sensed["n_bos"] == 0:
-            issues.append({
-                "root_cause": NIGORootCause.BENEFICIAL_OWNER_INCOMPLETE.value,
-                "severity": "critical",
-                "description": "Entity account requires beneficial owner certification "
-                               "(CDD Rule — 25%+ owners + control person).",
-                "field": "beneficial_owners",
-            })
-
-        # Beneficiary check for IRA / custodial accounts.
-        if reg_type in _BENEFICIARY_REQUIRED_TYPES and not sensed["has_beneficiary"]:
-            issues.append({
-                "root_cause": NIGORootCause.MISSING_BENEFICIARY.value,
-                "severity": "high",
-                "description": "Beneficiary designation required for IRA/custodial accounts.",
-                "field": "beneficiary",
-            })
-
-        # PTE 2020-02 for rollover accounts.
-        if reg_type in _PTE_REQUIRED_TYPES and not sensed["has_sow"]:
-            issues.append({
-                "root_cause": NIGORootCause.STALE_FORM.value,
-                "severity": "medium",
-                "description": "Rollover account — source of wealth/funds not documented. "
-                               "Required for PTE 2020-02 rationale.",
-                "field": "source_of_wealth",
-            })
 
         score = _readiness_score(issues)
         critical_count = sum(1 for i in issues if i["severity"] == "critical")
