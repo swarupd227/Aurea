@@ -130,6 +130,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
       { label: "Billing", prompt: withRef("Why was this household billed what it was?", "household", household) },
       { label: "Next review", prompt: withRef("When was this household last reviewed, and when is the next review due?", "household", household) },
       { label: "Against its IPS", prompt: withRef("How does this household's portfolio sit against its IPS?", "household", household) },
+      { label: "Concentration", prompt: withRef("Does this household have a concentrated position or equity grants, and what is the plan?", "household", household) },
       { label: "Leaving or estate", prompt: withRef("Is a departure or an estate open for this household, and what is left to do?", "household", household) },
       { label: "Net worth", prompt: withRef("What is this household's net worth, and what is on file for it?", "household", household) },
     ];
@@ -185,6 +186,12 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Overdue reviews", prompt: "Which client reviews are overdue, and what have those clients paid since?" },
         { label: "No record", prompt: "Which households have no review on record?" },
         h1 ? { label: `${short(h1)}'s review`, prompt: `When was ${the(h1)} last reviewed, and what did it cover?` } : { label: "Due soon", prompt: "Which client reviews fall due in the next month?" },
+      ];
+    case "/studio/equity-comp":
+      return [
+        { label: "No plan", prompt: "Which concentrated positions have no plan to reduce them?" },
+        { label: "Vesting soon", prompt: "Which grants vest in the next twelve months, and what are they worth?" },
+        { label: "Plans behind", prompt: "Which concentration plans have passed their target date?" },
       ];
     case "/studio/products":
       return [

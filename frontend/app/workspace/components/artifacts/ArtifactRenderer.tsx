@@ -18,6 +18,7 @@ import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
 import { IpsCard } from "./IpsCard";
 import { BalanceSheetCard } from "./BalanceSheetCard";
+import { EquityCompCard } from "./EquityCompCard";
 import { ExitsCard } from "./ExitsCard";
 import { ShelfCard } from "./ShelfCard";
 import { InvoiceCard } from "./InvoiceCard";
@@ -129,6 +130,12 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_equity_comp":
+      case "record_equity_grant":
+      case "end_equity_grant":
+      case "record_concentration_plan":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.grants)) return null;
+        return <EquityCompCard result={artifact.result as any} />;
       case "read_product_shelf":
       case "record_product_decision":
       case "set_approved_products_only":

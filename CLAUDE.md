@@ -93,6 +93,10 @@ pages are artifact views the agents open. Full guideline, including what is buil
   household's tax window, before its card and again at Confirm, the set as a whole. The rules stay in their own
   modules. A breach an order leaves no worse is the monitor's, so a sale that helps is not stopped by it, and an
   Indian rebuy after a loss stays a flag.
+- **Equity compensation is read from the plan statement.** `aurea_core/equity_comp.py` takes a grant as a person
+  recorded it, works out what has vested from its schedule, and values it only on a real price. Grants sit beside net
+  worth and are not added to it. Selling paths hold the price flat and stop at the gain: tax, AMT and withholding are
+  named as not modelled. A concentration plan is what an adviser and client agreed, and it places no order.
 - **The shelf says what may be bought, and a person says what is on it.** `aurea_core/shelf.py` holds the research
   team's decisions, added and never edited. Closed stops every purchase at once, and a gated product needs a
   certification from a document, never worked out from wealth. "Approved products only" is a separate switch a person
@@ -136,7 +140,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

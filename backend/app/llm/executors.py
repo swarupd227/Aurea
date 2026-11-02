@@ -77,6 +77,10 @@ class ToolExecutors:
             "book_client_review": self.book_client_review,
             "read_ips_monitoring": self.read_ips_monitoring,
             "read_client_exits": self.read_client_exits,
+            "read_equity_comp": self.read_equity_comp,
+            "record_equity_grant": self.record_equity_grant,
+            "end_equity_grant": self.end_equity_grant,
+            "record_concentration_plan": self.record_concentration_plan,
             "read_product_shelf": self.read_product_shelf,
             "record_product_decision": self.record_product_decision,
             "record_investor_status": self.record_investor_status,
@@ -987,6 +991,90 @@ class ToolExecutors:
                     ("Their value", say(r["value_unreviewed"]) if r["unreviewed_held"] else None),
                     ("Effect", "Those stay and may be sold, and cannot be added to" if r["on"] else "A product with no decision may be bought")]
         except shelf.ShelfError as exc:
+            raise ExecutorError(str(exc))
+
+    async def read_equity_comp(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import equity_comp, markets
+
+        say = markets.money_for(await self._firm())
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await equity_comp.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            result["message"] = (f"{result['household']}: {len(result['grants'])} grant(s), {say(result['value_vested'])} vested and "
+                                 f"{say(result['value_unvested'])} unvested, {sum(1 for e in result['exposures'] if e['concentrated'])} concentrated position(s).")
+            return result
+        result = await equity_comp.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = f"{s['with_grants']} household(s) with grants on file, {s['concentrated']} concentrated position(s), {s['no_plan']} with no plan."
+        return result
+
+    def _grant_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"kind": inputs.get("kind"), "employer": inputs.get("employer"), "units": inputs.get("units"), "grant_date": self._exit_day(inputs.get("grant_date"), "grant_date"),
+                "source_document": inputs.get("source_document"), "symbol": inputs.get("symbol"), "strike": inputs.get("strike"), "vesting": inputs.get("vesting"),
+                "expires_on": self._exit_day(inputs.get("expires_on"), "expires_on")}
+
+    def _plan_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        target = inputs.get("target_weight_pct")
+        try:
+            target = float(target) / 100
+        except (TypeError, ValueError):
+            raise ExecutorError("target_weight_pct must be a number.")
+        return {"symbol": inputs.get("symbol"), "method": inputs.get("method"), "target_weight": target, "target_date": self._exit_day(inputs.get("target_date"), "target_date"),
+                "rationale": inputs.get("rationale"), "source_document": inputs.get("source_document")}
+
+    async def _equity_write(self, write) -> dict[str, Any]:
+        from app.aurea_core import equity_comp
+
+        try:
+            row = await write(equity_comp, await self._shelf_user())
+        except equity_comp.EquityCompError as exc:
+            raise ExecutorError(str(exc))
+        return await equity_comp.for_household(self.session, row.household_id, firm_id=self.firm_id)
+
+    async def record_equity_grant(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        person_id = _parse_uuid(inputs.get("person_id") or "", "person_id")
+        args = self._grant_args(inputs)
+        result = await self._equity_write(lambda e, by: e.record_grant(self.session, person_id, firm_id=self.firm_id, by=by, **args))
+        result["message"] = f"Recorded. {result['household']} has {len(result['grants'])} grant(s) on file."
+        return result
+
+    async def end_equity_grant(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        grant_id = _parse_uuid(inputs.get("grant_id") or "", "grant_id")
+        result = await self._equity_write(lambda e, by: e.end_grant(self.session, grant_id, firm_id=self.firm_id, by=by, reason=inputs.get("reason")))
+        result["message"] = f"Ended. {result['household']} has {len(result['grants'])} grant(s) on file."
+        return result
+
+    async def record_concentration_plan(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        args = self._plan_args(inputs)
+        result = await self._equity_write(lambda e, by: e.record_plan(self.session, household_id, firm_id=self.firm_id, by=by, **args))
+        result["message"] = f"The plan for {args['symbol']} is on file. No order has been placed."
+        return result
+
+    async def _equity_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import equity_comp, firm_time, markets
+
+        say = markets.money_for(await self._firm())
+        try:
+            if tool_key == "record_equity_grant":
+                r = await equity_comp.prepare_grant(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._grant_args(inputs))
+                vests = r["vesting"]
+                return [("Person", r["person"].full_name), ("Grant", f"{r['kind'].upper()} · {r['employer']}"), ("Symbol", r["symbol"]), ("Units", f"{r['units']:,.0f}"),
+                        ("Strike", say(r["strike"]) if r["strike"] else None), ("Granted", firm_time.spoken(r["grant_date"])),
+                        ("Vesting", f"{len(vests)} dates, {vests[0]['on']} to {vests[-1]['on']}" if vests else "No schedule given, so all counts as vested"),
+                        ("Expires", firm_time.spoken(r["expires_on"]) if r["expires_on"] else None), ("Document", r["document"])]
+            if tool_key == "end_equity_grant":
+                r = await equity_comp.prepare_end(self.session, _parse_uuid(inputs.get("grant_id") or "", "grant_id"), firm_id=self.firm_id, reason=inputs.get("reason"))
+                g = r["grant"]
+                return [("Person", r["person"].full_name if r["person"] else None), ("Grant", f"{g.kind.upper()} · {g.employer}"), ("Units", f"{float(g.units):,.0f}"), ("Reason", r["reason"])]
+            r = await equity_comp.prepare_plan(self.session, _parse_uuid(inputs.get("household_id") or "", "household_id"), firm_id=self.firm_id, **self._plan_args(inputs))
+            now = r["now"]
+            return [("Client", r["household"].name), ("Position", r["symbol"]), ("Now", f"{now['weight']:.1%} of the book" if now else "Not above the line"),
+                    ("Method", r["method"].replace("_", " ")), ("Down to", f"{r['target']:.1%}"), ("By", firm_time.spoken(r["day"])), ("Why", r["rationale"]),
+                    ("Agreed in", r["document"]), ("Orders", "None placed")]
+        except equity_comp.EquityCompError as exc:
             raise ExecutorError(str(exc))
 
     async def read_client_exits(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2665,6 +2753,8 @@ class ToolExecutors:
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):
             return rows(*await self._balance_preview(tool_key, inputs))
+        if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):
+            return rows(*await self._equity_preview(tool_key, inputs))
         if tool_key in ("record_product_decision", "record_investor_status", "set_approved_products_only"):
             return rows(*await self._shelf_preview(tool_key, inputs))
         if tool_key in ("start_client_departure", "record_client_death", "record_executor", "record_account_transfer", "close_client_exit", "withdraw_client_exit"):

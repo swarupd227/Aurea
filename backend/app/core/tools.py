@@ -578,6 +578,77 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.RESEARCH_CIO, UserRole.BRANCH_LEADER},
     ),
 
+    "read_equity_comp": Tool(
+        key="read_equity_comp",
+        name="Read Equity Compensation",
+        speaking_agent="astra",
+        description="Equity grants on file and concentrated positions: what has vested and what is coming, the value at real prices, each position's share of the book, any plan to reduce it and how it stands, and selling paths over 3, 5 and 7 years. Paths hold the price flat and take the gain at the position's average cost, not lot by lot. Tax on the gain, AMT and withholding are not modelled, so leave those to the client's CPA. Give household_id for one client.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household, or leave out for the firm", required=False)],
+        output=ToolOutput("object", "Grants, concentrated positions, plans and paths"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_equity_grant": Tool(
+        key="record_equity_grant",
+        name="Record Equity Grant",
+        speaking_agent="astra",
+        description="Record an RSU, ISO, NSO, ESPP or restricted stock grant from the plan statement. An option needs its strike. vesting is a list of {on: YYYY-MM-DD, units}. Never worked out: only what the statement says.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this grant?",
+        inputs=[
+            ToolInput("person_id", "uuid", "The person (from read_household)", required=True),
+            ToolInput("kind", "string", "rsu, iso, nso, espp or restricted_stock", required=True),
+            ToolInput("employer", "string", "The employer", required=True),
+            ToolInput("units", "number", "Units granted", required=True),
+            ToolInput("grant_date", "string", "YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "The plan statement", required=True),
+            ToolInput("symbol", "string", "The listed symbol, if there is one", required=False),
+            ToolInput("strike", "number", "The strike price, for an option", required=False),
+            ToolInput("vesting", "list[object]", "Vesting dates: {on, units}", required=False),
+            ToolInput("expires_on", "string", "When it expires, YYYY-MM-DD", required=False),
+        ],
+        output=ToolOutput("object", "The household's grants and positions"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "end_equity_grant": Tool(
+        key="end_equity_grant",
+        name="End Equity Grant",
+        speaking_agent="astra",
+        description="Mark a grant as no longer standing: exercised, sold, forfeited or lapsed, with the reason. It stays on record.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="End this grant?",
+        inputs=[
+            ToolInput("grant_id", "uuid", "From read_equity_comp", required=True),
+            ToolInput("reason", "string", "Why it has ended", required=True),
+        ],
+        output=ToolOutput("object", "The household's grants and positions"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "record_concentration_plan": Tool(
+        key="record_concentration_plan",
+        name="Record Concentration Plan",
+        speaking_agent="astra",
+        description="Record what an adviser and client agreed about a concentrated position: staged_sale, 10b5_1, exchange_fund, collar, gift or hold, the share of the book to come down to, and by when. It places no order. A new plan replaces the last.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this plan? It places no order.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household", required=True),
+            ToolInput("symbol", "string", "The position", required=True),
+            ToolInput("method", "string", "staged_sale, 10b5_1, exchange_fund, collar, gift or hold", required=True),
+            ToolInput("target_weight_pct", "number", "The percent of the book to come down to", required=True),
+            ToolInput("target_date", "string", "YYYY-MM-DD", required=True),
+            ToolInput("rationale", "string", "Why this plan", required=True),
+            ToolInput("source_document", "string", "The meeting note or letter where it was agreed", required=True),
+        ],
+        output=ToolOutput("object", "The household's grants and positions"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
     "read_client_exits": Tool(
         key="read_client_exits",
         name="Read Departures and Estates",
@@ -988,20 +1059,20 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled) or products (the approved product list). ips, reviews, protection, risk_profiles, net_worth and "
-            "exits show every client unless given household_id: when the conversation is about one client, look them up "
+            "settled), products (the approved product list) or equity_comp (grants and concentrated stock). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits, equity_comp show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages, read_balance_sheet, read_protection, "
-            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits); an id from memory or an earlier turn is refused."
+            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits or products", required=True),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth or exits to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products or equity_comp", required=True),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits or equity_comp to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -1562,9 +1633,10 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "net_worth": ("/studio/net-worth", "Net worth", {_A, _P, _PT, _C, _O, _B}),
     "exits": ("/studio/exits", "Departures and estates", {_A, _P, _PT, _C, _O, _B}),
     "products": ("/studio/products", "Product shelf", {_A, _P, _PT, _C, _O, _B, _R}),
+    "equity_comp": ("/studio/equity-comp", "Equity compensation", {_A, _P, _PT, _C, _O, _B}),
 }
 # The views of every client that can open on one, through `?household=`.
-ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits"}
+ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp"}
 
 
 def get_tool(key: str) -> Tool | None:
