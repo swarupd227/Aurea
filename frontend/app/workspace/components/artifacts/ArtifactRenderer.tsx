@@ -35,6 +35,7 @@ import { FirmDefinitionCheckCard } from "./FirmDefinitionCheckCard";
 import { RecommendationsCard } from "./RecommendationsCard";
 import { AgentsCard } from "./AgentsCard";
 import { AgentRunCard, isAgentRunData } from "./AgentRunCard";
+import { BookScreenCard } from "./BookScreenCard";
 import {
   AgentHistoryCard, AnalyticsCard, CapacityCard, MessagesCard, OnboardingCasesCard, ProvenanceCard, ReportsCard, TasksCard,
 } from "./PageReadCards";
@@ -262,6 +263,10 @@ export function artifactCard(artifact: Artifact) {
       case "read_agents":
         if (!Array.isArray(artifact.result?.agents)) return null;
         return <AgentsCard result={artifact.result as any} />;
+      case "screen_book":
+        if (!Array.isArray(artifact.result?.households) || typeof artifact.result?.households_screened !== "number"
+          || !artifact.result.households.every((h: any) => Array.isArray(h?.equity) && h?.values && Array.isArray(h?.next_gen))) return null;
+        return <BookScreenCard result={artifact.result as any} />;
       case "read_firm_definition_check":
         if (typeof artifact.result?.clean !== "boolean") return null;
         return <FirmDefinitionCheckCard result={artifact.result as any} />;

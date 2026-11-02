@@ -12,11 +12,8 @@ from app.api.deps import current_firm
 from app.atlas import history as history_svc
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
-from app.aurea_core import markets
-from app.aurea_core.graph import household_brain, list_households
 from app.core.db import get_db
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
-from app.llm import usage as llm_usage
 from app.llm.service import firm_llm_creds, llm_service
 from app.models.enums import AgentKey, AgentRunStatus, HumanAction, MandateType, RecommendationStatus
 from app.models.governance import AgentRun, Recommendation
@@ -312,84 +309,6 @@ async def draft_communication(
 async def capacity(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     """Capacity & outcomes — how AI-reclaimed time is translating into client outcomes."""
     return await history_svc.capacity_outcomes(db, firm.id)
-
-@router.post("/ask")
-async def ask_your_book(
-    body: dict, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
-):
-    """Ask-your-book: natural-language / what-if query over the client brain (cited, governed)."""
-    question = (body.get("question") or "").strip()
-    if not question:
-        raise HTTPException(status_code=400, detail="Empty question")
-
-    households = await list_households(db, firm.id)
-    # Build a compact, governed snapshot of the book to ground the answer.
-    snapshot_lines = []
-    structured = []
-    say = markets.money_for(firm)
-    for h in households[:40]:
-        brain = await household_brain(db, uuid.UUID(h["id"]), firm_id=firm.id)
-        if not brain:
-            continue
-        mix = brain["totals"]["by_asset_class"]
-        total = brain["totals"]["total_value"] or 1.0
-        equity_pct = mix.get("equity", 0) / total
-        losers = [
-            p for acc in brain["accounts"] for p in acc["positions"] if p["unrealised_gain"] < 0
-        ]
-        structured.append({
-            "household": h["name"], "total": total, "equity_pct": round(equity_pct, 3),
-            "has_loss_to_harvest": bool(losers),
-            "loss_total": round(sum(p["unrealised_gain"] for p in losers), 2),
-        })
-        snapshot_lines.append(
-            f"- {h['name']}: total {say(total)}; equity {equity_pct:.0%}; "
-            f"{'has' if losers else 'no'} harvestable losses "
-            f"({say(-sum(p['unrealised_gain'] for p in losers))})."
-        )
-
-    snapshot = "\n".join(snapshot_lines) or "No client data."
-
-    def fallback() -> str:
-        ql = question.lower()
-        hits = []
-        for s in structured:
-            if "overweight" in ql and "equit" in ql and s["equity_pct"] > 0.6:
-                hits.append(s["household"])
-            elif ("loss" in ql or "harvest" in ql) and s["has_loss_to_harvest"]:
-                hits.append(s["household"])
-        if hits:
-            return "Households matching your query: " + ", ".join(sorted(set(hits))) + "."
-        return ("I read this over the governed client brain. Based on the current snapshot, no "
-                "households clearly match — refine the question (e.g. 'overweight equities with a "
-                "loss to harvest').")
-
-    gp = await llm_usage.gateway_params(db, firm, base_max_tokens=700)
-    result = await llm_service.generate(
-        task="advice",
-        system=("You answer an adviser's natural-language questions strictly from the governed "
-                "client-brain snapshot provided. Cite household names. If the data does not "
-                "support an answer, say so. Never invent figures."),
-        prompt=f"Question: {question}\n\nGoverned client-brain snapshot:\n{snapshot}",
-        firm_model_config=firm.model_config_json or {},
-        creds=firm_llm_creds(firm),
-        fallback=fallback,
-        max_tokens=gp["max_tokens"],
-        pii_terms=gp["pii_terms"], pii_categories=gp["pii_categories"], redact=gp["redact"],
-        allow_fallback=gp["allow_fallback"], force_fallback=gp["force_fallback"],
-    )
-    try:
-        await llm_usage.record(db, firm.id, agent="ask", task="advice", result=result)
-    except Exception:
-        pass
-    return {
-        "question": question,
-        "answer": result.text,
-        "grounded_on": [s["household"] for s in structured],
-        "is_fallback": result.is_fallback,
-        "governed": True,
-    }
-
 
 # ── Notification bell feed ────────────────────────────────────────────────────
 

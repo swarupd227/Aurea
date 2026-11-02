@@ -7,7 +7,7 @@ import { firmMarket } from "./format";
 // else it may open lives under "More views", grouped by intent, and is reachable by typing in
 // the palette. Routes here are stable: never rename or remove one.
 import {
-  LayoutDashboard, Users, ClipboardCheck, MessageSquareText, ShieldCheck, Sparkles, Settings,
+  LayoutDashboard, Users, ClipboardCheck, ShieldCheck, Sparkles, Settings,
   PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare, MessageSquare, Gauge, Activity,
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
   Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2, ArrowLeftRight, Umbrella,
@@ -51,7 +51,6 @@ export const VIEWS: View[] = [
 
   // Clients & advice
   { href: "/studio/clients", label: "Clients", icon: Users, roles: [A, P, PT, R, O, B], intent: "clients", keywords: ["households", "families"] },
-  { href: "/studio/ask", label: "Ask your book", icon: MessageSquareText, roles: [A, P, R, B], intent: "clients", keywords: ["question", "search"] },
   { href: "/studio/meetings", label: "Meetings", icon: CalendarClock, roles: [A, P], intent: "clients", keywords: ["prep", "brief", "calendar"] },
   { href: "/studio/reports", label: "Reports", icon: FileText, roles: [A, P, R], intent: "clients", keywords: ["research", "packs"] },
   { href: "/studio/messages", label: "Messages", icon: MessageSquare, roles: [A, P], intent: "clients", keywords: ["client care", "outreach"] },

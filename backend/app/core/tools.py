@@ -1308,6 +1308,22 @@ TOOLS: dict[str, Tool] = {
                        UserRole.COMPLIANCE, UserRole.RESEARCH_CIO, UserRole.OPERATIONS, UserRole.ADMIN},
     ),
 
+    "screen_book": Tool(
+        key="screen_book",
+        name="Screen Book",
+        speaking_agent="astra",
+        description="The whole book, one row per household, for a question about all of it: who is over their equity target, who holds a loss, whose values exclusions a mandate does not carry or who holds against them, who has a next generation on file. Equity is measured per mandate against its IPS where one is in force, else its model, outside the same drift band; a mandate with neither is not measured. A loss is what the book shows, not what may be harvested: read_tax_position answers that, and check_household_wash_sale for a household taxed in the US only. Give only to narrow it; several filters must all match.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("only", "list[string]", "Filters that must all match, from: over_equity_target, unrealised_loss, values_gap, next_gen", required=False),
+            ToolInput("limit", "number", "Max households to return, largest first", required=False),
+        ],
+        output=ToolOutput("object", "Households with equity against target per mandate, unrealised loss, values gaps and next generation, and counts"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM,
+                       UserRole.RESEARCH_CIO, UserRole.BRANCH_LEADER},
+    ),
+
     "search_holdings": Tool(
         key="search_holdings",
         name="Search Holdings",

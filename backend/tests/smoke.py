@@ -63,10 +63,6 @@ def main():
     flags = call("/api/provenance/surveillance", token=tok)
     print("SURVEILLANCE flags:", len(flags), [(f["severity"], f["category"]) for f in flags[:4]])
 
-    # Ask-your-book.
-    ans = call("/api/studio/ask", {"question": "which clients are overweight equities with a loss to harvest?"}, token=tok)
-    print("\nASK-YOUR-BOOK:", ans["answer"][:200], "| fallback:", ans["is_fallback"])
-
     print("\nSMOKE TEST PASSED")
 
 

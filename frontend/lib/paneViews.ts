@@ -254,6 +254,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";
+    case "screen_book": {
+      const hs = Array.isArray(r.households) ? r.households : [];
+      return hs.length === 1 && hs[0]?.household_id ? `/studio/clients/${hs[0].household_id}` : "/studio/clients";
+    }
     case "search_households": {
       const hits = Array.isArray(r.results) ? r.results : [];
       return hits.length === 1 && hits[0]?.household_id ? `/studio/clients/${hits[0].household_id}` : hits.length ? "/studio/clients" : null;

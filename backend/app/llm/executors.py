@@ -130,6 +130,7 @@ class ToolExecutors:
             "read_beneficiary_audit": self.read_beneficiary_audit,
             "read_portfolio": self.read_portfolio,
             "search_holdings": self.search_holdings,
+            "screen_book": self.screen_book,
             "read_recommendations": self.read_recommendations,
             "read_agents": self.read_agents,
             "open_view": self.open_view,  # outside the gateway's turn no id is grounded, so only id-free views open
@@ -3341,6 +3342,20 @@ class ToolExecutors:
             "autonomy_changes": changes,
             "message": f"{integrity} {len(open_flags)} open surveillance flag(s). {len(evaluations)} agent(s) scored.",
         }
+
+    async def screen_book(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """The whole book, a row per household, filtered (aurea_core/book_screen.py)."""
+        from app.aurea_core import book_screen
+
+        only = inputs.get("only") or []
+        if isinstance(only, str):
+            only = [x for x in only.split(",")]
+        limit = inputs.get("limit")
+        try:
+            return await book_screen.screen(self.session, self.firm_id, only=list(only),
+                                            limit=int(limit) if limit else None)
+        except book_screen.ScreenError as exc:
+            raise ExecutorError(str(exc))
 
     async def search_holdings(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Search for instruments by symbol or name across the firm."""

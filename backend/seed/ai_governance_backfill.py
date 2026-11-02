@@ -111,6 +111,8 @@ _TOOLS = [
      "Records a client's life, TPD or income cover from a document; it changes the household's protection gap. Confirm-gated; cover is never estimated."),
     ("end_protection_policy", "End Protection Policy (tool)", "tool", "Head of Advice", "medium",
      "Marks a policy as no longer in force, which widens the protection gap; the policy is kept with the reason. Confirm-gated."),
+    ("screen_book", "Screen Book (tool)", "tool", "Head of Advice", "low",
+     "The whole book a row per household: equity against each mandate's IPS or model, losses the book shows, values exclusions a mandate does not carry, the next generation on file. Read-only; replaced Ask-your-book's snapshot in a prompt."),
     ("read_tax_position", "Read Tax Position (tool)", "tool", "Head of Advice", "low",
      "A household's tax position on the firm's tax rules; for India, taxpayer by taxpayer. Read-only; estimates for a qualified person to check."),
     ("read_licences", "Read Licences (tool)", "tool", "Head of Compliance", "low",
