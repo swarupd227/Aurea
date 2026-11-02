@@ -75,7 +75,9 @@ export function MessageView({
   const role = typeof window !== "undefined" ? getUser()?.role ?? "" : "";
   const viewable = (route: string | null) => (route && matchPaneView(route, role) ? route : null);
   const offered = new Set<string>();
-  const cards = message.artifacts.map((a) => {
+  // A tool called twice in one reply (a wide read, then a narrow one) shows its latest answer only.
+  const latest = message.artifacts.filter((a, i, all) => !all.slice(i + 1).some((b) => b.tool_key === a.tool_key));
+  const cards = latest.map((a) => {
     const route = viewable(paneRouteForArtifact(a.tool_key, a.result));
     const node = artifactCard(a);
     const open = route && node && !offered.has(route) ? route : null;

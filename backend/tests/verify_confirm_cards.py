@@ -554,7 +554,7 @@ async def main() -> int:
             await refused("compliance may not approve a trade", ToolExecutors(s, adviser.id, UserRole.COMPLIANCE, firm.id).preview_change("decide_recommendation", approve))
             await refused("revise is the page's", ex.preview_change("decide_recommendation", {**approve, "action": "revise"}), "Recommendations page")
             await refused("another firm's proposal keeps the plain card and is refused when it runs", outsider.decide_recommendation(approve), "not found")
-            check("  its card names nothing", await outsider.preview_change("decide_recommendation", approve), None)
+            await refused("  and gets no card at all", outsider.preview_change("decide_recommendation", approve), "not a proposal on file")
             listed = (await ex.read_recommendations({"subject": "Ann mandate"}))["recommendations"]
             mine = next(r for r in listed if r["id"] == str(rebalance.id))
             check("the model reads the exact orders", [(o["side"], o["symbol"], o["quantity"]) for o in mine["orders"]], [("sell", "AAA", 9.6), ("buy", "CCC", 60)])

@@ -5,7 +5,8 @@ export function Markdown({ text, className = "" }: { text: string; className?: s
   return (
     <div className={`astra-md ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        // "~" means "about" in a figure. Two of them must not strike out the words between.
+        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
         components={{
           a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" />,
         }}

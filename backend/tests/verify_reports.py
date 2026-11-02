@@ -324,7 +324,8 @@ async def behaviour() -> None:
             check("  and the read says dismissed", (await ex().execute("read_reports", {"report_id": third.payload["report_id"]}))["reports"][0]["proposal_status"], str(dropped.status))
 
             print("\n=== other proposals name themselves ===")
-            check("an id that does not resolve keeps the plain card", await ex().preview_change("decide_recommendation", {"recommendation_id": "nonsense"}), None)
+            await refused("an id that is no id gets no card", ex().preview_change("decide_recommendation", {"recommendation_id": "nonsense"}))
+            await refused("nor one that names no proposal", ex().preview_change("decide_recommendation", {"recommendation_id": str(uuid.uuid4()), "action": "approve"}), "Look it up")
             other_run = AgentRun(id=uuid.uuid4(), firm_id=mine.id, agent_key="client_care", status=AgentRunStatus.COMPLETED,
                                  tier="tier_1", trigger="test", context={})
             s.add(other_run)
