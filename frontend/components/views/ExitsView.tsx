@@ -22,13 +22,14 @@ type Form =
  * In the work pane each act is the conversation's tool behind its Confirm card; on a page it acts directly. */
 export function ExitsView({ household = null }: { household?: string | null }) {
   const nav = useViewNav();
-  const { data, loading, error, refetch } = useApi<any>(household ? `/api/exits?household=${household}` : "/api/exits");
+  const { data, loading, error, refetch } = useApi<any>(household ? `/api/exits?household=${household}` : "/api/exits", [household]);
   const [form, setForm] = useState<Form | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   if (error) return <div className="view-container"><Card><ErrorState what="departures and estates" message={error} onRetry={refetch} /></Card></div>;
-  if (loading || !data) return <div className="view-container"><SkeletonList count={3} /></div>;
+  // Moving between the firm and one client, the last response is still here for a render.
+  if (loading || !data || (data.household_id ?? null) !== household) return <div className="view-container"><SkeletonList count={3} /></div>;
   const s = data.summary;
   const rows: ClientExit[] = data.exits;
   const name: string | null = data.household ?? null;

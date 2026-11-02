@@ -153,9 +153,10 @@ function Grants({ grants }: { grants: Grant[] }) {
  * because its vesting schedule is read from a statement; a plan can be from here. */
 export function EquityCompView({ household = null }: { household?: string | null }) {
   const nav = useViewNav();
-  const { data, loading, error, refetch } = useApi<any>(household ? `/api/equity-comp?household=${household}` : "/api/equity-comp");
+  const { data, loading, error, refetch } = useApi<any>(household ? `/api/equity-comp?household=${household}` : "/api/equity-comp", [household]);
   if (error) return <div className="view-container"><Card><ErrorState what="equity compensation" message={error} onRetry={refetch} /></Card></div>;
-  if (loading || !data) return <div className="view-container"><SkeletonList count={3} /></div>;
+  // Moving between the firm and one client, the last response is still here for a render.
+  if (loading || !data || (data.household_id ?? null) !== household) return <div className="view-container"><SkeletonList count={3} /></div>;
   const rows: EquityHousehold[] = household ? [data] : data.households;
   const s = data.summary;
   return (

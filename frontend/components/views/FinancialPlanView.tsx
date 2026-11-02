@@ -22,9 +22,10 @@ const num = "px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted"
 /** One household's plan, read beside the conversation. What it works from is recorded through Astra, because
  * each figure comes from a statement; with no household it lists whom to open. */
 export function FinancialPlanView({ household = null }: { household?: string | null }) {
-  const { data, loading, error, refetch } = useApi<any>(household ? `/api/plan?household=${household}` : "/api/plan");
+  const { data, loading, error, refetch } = useApi<any>(household ? `/api/plan?household=${household}` : "/api/plan", [household]);
   if (error) return <div className="view-container"><Card><ErrorState what="the financial plan" message={error} onRetry={refetch} /></Card></div>;
-  if (loading || !data) return <div className="view-container"><SkeletonList count={4} /></div>;
+  // Moving between the list and one client, the last response is still here for a render.
+  if (loading || !data || (data.household_id ?? null) !== household) return <div className="view-container"><SkeletonList count={4} /></div>;
 
   if (!household) {
     return (
