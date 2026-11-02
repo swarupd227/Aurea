@@ -205,6 +205,10 @@ export default function RecommendationCard({
   const orders: any[] = payload.order_set || [];
   const ev = rec.evidence || {};
   const isDrift = !!(payload.drifts && payload.target_weights && orders.length);
+  // What the caller's role may do here, from the server (decision_rights). A proposal fetched from
+  // somewhere that does not send it keeps every button, and the server still refuses.
+  const may = (d: string) => !rec.rights || !!rec.rights[d];
+  const footerLabel = may("approve") ? "Decision needed" : may("dismiss") ? "Veto only" : "View only";
   const harvested = payload.harvested_losses ?? 0;
   const realised = payload.estimated_realised_gain ?? 0;
   const budget = payload.cgt_budget ?? ev.cgt_budget ?? null;
@@ -518,23 +522,28 @@ export default function RecommendationCard({
         <div className="border-t border-border p-3">
           {!mode ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-ink-muted mr-auto">Decision needed</span>
-              <button className="btn-outline" data-testid="rec-dismiss" onClick={() => { setMode("dismiss"); setOpen(true); }}>
-                <X size={15} /> Dismiss
-              </button>
-              {isDrift && (
+              <span className="font-mono text-[11px] uppercase tracking-wider text-ink-muted mr-auto"
+                data-testid="rec-footer-label">{footerLabel}</span>
+              {may("dismiss") && (
+                <button className="btn-outline" data-testid="rec-dismiss" onClick={() => { setMode("dismiss"); setOpen(true); }}>
+                  <X size={15} /> Dismiss
+                </button>
+              )}
+              {isDrift && may("revise") && (
                 <button className="btn-outline" data-testid="rec-revise" onClick={() => { setMode("revise"); setOpen(true); }}>
                   <Wand2 size={15} /> Revise
                 </button>
               )}
-              {orders.length > 0 && (
+              {orders.length > 0 && may("modify") && (
                 <button className="btn-outline" data-testid="rec-modify" onClick={() => { setMode("modify"); setOpen(true); }}>
                   <Pencil size={15} /> Modify
                 </button>
               )}
-              <button className="btn-primary" data-testid="rec-approve" onClick={() => { setMode("approve"); setOpen(true); }}>
-                <Check size={15} /> Approve
-              </button>
+              {may("approve") && (
+                <button className="btn-primary" data-testid="rec-approve" onClick={() => { setMode("approve"); setOpen(true); }}>
+                  <Check size={15} /> Approve
+                </button>
+              )}
             </div>
           ) : mode === "revise" ? (
             <div className="space-y-2">
@@ -627,7 +636,7 @@ export default function RecommendationCard({
               <button className="btn-ghost text-xs" onClick={() => { setDraftOpen(!draftOpen); setDraft(null); }}>
                 <Mail size={13} /> Draft client letter
               </button>
-              {!confirmRollback ? (
+              {!may("rollback") ? null : !confirmRollback ? (
                 <button className="btn-ghost text-xs text-crit" data-testid="rec-rollback" disabled={busy} onClick={() => setConfirmRollback(true)}>
                   <Undo2 size={13} /> Roll back
                 </button>

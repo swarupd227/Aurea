@@ -160,8 +160,31 @@ async def once_only() -> None:
     await engine.dispose()
 
 
+def the_page_shows_what_the_server_allows() -> None:
+    """B-49: the studio API sends each proposal's rights for the caller, so the card shows only those buttons."""
+    from app.api.studio import DECISIONS, _rights
+
+    drift = AgentKey.DRIFT_REBALANCING.value
+    print("\n=== the page is told what the caller may do (B-49) ===")
+    check("compliance on a trade: dismiss and roll back, no approve, modify or revise",
+          _rights(UserRole.COMPLIANCE, drift),
+          {"approve": False, "modify": False, "dismiss": True, "revise": False, "rollback": True})
+    check("an adviser on a trade: every decision", _rights(UserRole.ADVISER, drift), {d: True for d in DECISIONS})
+    check("an administrator on a trade: none", _rights(UserRole.ADMIN, drift), {d: False for d in DECISIONS})
+    check("compliance on a proposal that moves no money: every decision",
+          _rights("compliance", AgentKey.CLIENT_CARE.value), {d: True for d in DECISIONS})
+    for role in UserRole:
+        if role == UserRole.CLIENT:
+            continue
+        for d in DECISIONS:
+            if _rights(role, drift)[d] != may(role, drift, d):
+                check(f"{role.value} / {d}: the page and the server agree", _rights(role, drift)[d], may(role, drift, d))
+    check("for every staff role and decision, the page and the server agree", True, True)
+
+
 def main() -> int:
     rights()
+    the_page_shows_what_the_server_allows()
     starting_is_not_deciding()
     asyncio.run(once_only())
     print(f"\n{'=' * 64}\n{len(PASS)} passed, {len(FAIL)} failed")

@@ -30,8 +30,20 @@ class DecisionIn(BaseModel):
     modified_payload: dict | None = None
 
 
-def _rec_dict(r: Recommendation) -> dict:
-    return {
+DECISIONS = ("approve", "modify", "dismiss", "revise", "rollback")
+
+
+def _rights(role, agent_key) -> dict[str, bool]:
+    """What this role may do to this agent's proposal, so a page shows only the buttons that work."""
+    from app.core import decision_rights
+    from app.models.enums import UserRole
+
+    role = UserRole(role)
+    return {d: role in decision_rights.roles_for(agent_key, d) for d in DECISIONS}
+
+
+def _rec_dict(r: Recommendation, role=None) -> dict:
+    out = {
         "id": str(r.id), "run_id": str(r.run_id), "agent_key": r.agent_key, "tier": r.tier,
         "status": r.status, "title": r.title, "summary": r.summary, "rationale": r.rationale,
         "confidence": r.confidence, "priority": r.priority, "subject_label": r.subject_label,
@@ -41,11 +53,15 @@ def _rec_dict(r: Recommendation) -> dict:
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "decided_at": r.decided_at.isoformat() if r.decided_at else None,
     }
+    if role is not None:
+        out["rights"] = _rights(role, r.agent_key)
+    return out
 
 
 @router.get("/feed")
 async def nba_feed(
-    status: str = "open", firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+    status: str = "open", user: User = Depends(get_current_user),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     """The next-best-action feed: prioritised open recommendations across the book."""
     stmt = select(Recommendation).where(Recommendation.firm_id == firm.id)
@@ -54,17 +70,18 @@ async def nba_feed(
     recs = (
         await db.execute(stmt.order_by(Recommendation.priority.asc(), Recommendation.created_at.desc()).limit(200))
     ).scalars().all()
-    return [_rec_dict(r) for r in recs]
+    return [_rec_dict(r, user.role) for r in recs]
 
 
 @router.get("/recommendations/{rec_id}")
 async def recommendation_detail(
-    rec_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
+    rec_id: uuid.UUID, user: User = Depends(get_current_user),
+    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     rec = await db.get(Recommendation, rec_id)
     if not rec or rec.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Recommendation not found")
-    return _rec_dict(rec)
+    return _rec_dict(rec, user.role)
 
 
 @router.get("/recommendations/{rec_id}/compliance")
@@ -109,7 +126,7 @@ async def decide_recommendation(
     except AlreadyDecidedError as exc:
         # Lost a race with a concurrent decision — it took the proposal first.
         raise HTTPException(status_code=409, detail=str(exc))
-    return _rec_dict(rec)
+    return _rec_dict(rec, user.role)
 
 
 def _require_right(user: User, rec: Recommendation, decision: str) -> None:
@@ -190,7 +207,7 @@ async def revise_recommendation(
     if not new_recs:
         return {"revised": True, "new_recommendation": None,
                 "message": "After your changes there is nothing to rebalance — within tolerance."}
-    return {"revised": True, "new_recommendation": _rec_dict(new_recs[0])}
+    return {"revised": True, "new_recommendation": _rec_dict(new_recs[0], user.role)}
 
 
 @router.post("/scan")
@@ -237,7 +254,7 @@ async def rollback_recommendation(
                                 note=(body or {}).get("note"))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
-    return _rec_dict(rec)
+    return _rec_dict(rec, user.role)
 
 
 class DraftCommIn(BaseModel):
