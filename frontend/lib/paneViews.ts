@@ -11,7 +11,7 @@ import { viewsForRole } from "./nav";
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
-  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "document_matrix" | "transfers" | "monitoring" | "money_in" | "account_features" | "onboarding_scoreboard" | "onboarding_queues"
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "document_matrix" | "transfers" | "monitoring" | "money_in" | "account_features" | "onboarding_scoreboard" | "repapering" | "onboarding_queues"
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
   | "corporate_actions" | "pipeline" | "tax" | "estate" | "family" | "behavioural" | "regulatory_countdown" | "workforce"
   | "skills" | "book_integration" | "book_batch";
@@ -64,6 +64,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "money_in", pattern: /^\/studio\/money-in\/?$/, base: "/studio/money-in", label: "Money in" },
   { key: "account_features", pattern: /^\/studio\/account-features\/?$/, base: "/studio/account-features", label: "Account features and holds" },
   { key: "onboarding_scoreboard", pattern: /^\/studio\/onboarding-scoreboard\/?$/, base: "/studio/onboarding-scoreboard", label: "Onboarding scoreboard" },
+  { key: "repapering", pattern: /^\/studio\/repapering\/?$/, base: "/studio/repapering", label: "Repapering" },
   { key: "onboarding_queues", pattern: /^\/studio\/onboarding-queues\/?$/, base: "/studio/onboarding-queues", label: "Onboarding queues" },
   { key: "analytics", pattern: /^\/studio\/analytics\/?$/, base: "/studio/analytics", label: "Analytics" },
   { key: "capacity", pattern: /^\/studio\/capacity\/?$/, base: "/studio/capacity", label: "Capacity & outcomes" },
@@ -229,6 +230,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_balance_item":
     case "end_balance_item":
       return onClient("/studio/net-worth");
+    case "read_repapering":
+    case "start_repapering":
+    case "record_repapering":
+      return "/studio/repapering";
     case "read_onboarding_scoreboard":
     case "record_onboarding_feedback":
       return "/studio/onboarding-scoreboard";

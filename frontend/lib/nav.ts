@@ -71,6 +71,7 @@ export const VIEWS: View[] = [
   { href: "/studio/trades", label: "Trades", icon: ArrowLeftRight, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["blotter", "confirmation", "settlement", "block", "allocation", "orders"] },
   { href: "/studio/tax-documents", label: "Tax documents", icon: FileText, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["1099", "k-1", "tax forms", "tax summary"] },
   { href: "/studio/onboarding-queues", label: "Onboarding queues", icon: Workflow, roles: [A, P, C, O, B], intent: "operate", keywords: ["exceptions", "nigo", "clocks", "sla", "account opening", "funding"] },
+  { href: "/studio/repapering", label: "Repapering", icon: ScrollText, roles: [A, P, C, O, B], intent: "govern", keywords: ["repapering", "negative consent", "affirmative consent", "conversion", "recruitment", "bulk"] },
   { href: "/studio/onboarding-scoreboard", label: "Onboarding scoreboard", icon: Gauge, roles: [A, P, C, O, B], intent: "govern", keywords: ["days to invest", "abandonment", "nps", "raci", "fte", "scoreboard", "onboarding metrics"] },
   { href: "/studio/account-features", label: "Account features", icon: SlidersHorizontal, roles: [A, P, C, O, B], intent: "govern", keywords: ["margin", "options", "checkwriting", "senior", "2165", "exploitation", "hold", "trusted contact"] },
   { href: "/studio/money-in", label: "Money in", icon: Wallet, roles: [A, P, C, O, B], intent: "govern", keywords: ["ach", "deposit", "bank link", "micro-deposit", "return", "hold", "standing instruction", "revalidate"] },

@@ -33,6 +33,7 @@ import { MonitoringCard } from "./MonitoringCard";
 import { MoneyInCard } from "./MoneyInCard";
 import { AccountFeaturesCard } from "./AccountFeaturesCard";
 import { OnboardingScoreboardCard } from "./OnboardingScoreboardCard";
+import { RepaperingCard } from "./RepaperingCard";
 import { OnboardingQueuesCard } from "./OnboardingQueuesCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
@@ -151,6 +152,11 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_repapering":
+      case "start_repapering":
+      case "record_repapering":
+        if (!Array.isArray(artifact.result?.campaigns)) return null;
+        return <RepaperingCard result={artifact.result as any} />;
       case "read_onboarding_scoreboard":
       case "record_onboarding_feedback":
         if (!artifact.result?.days_to_invest) return null;

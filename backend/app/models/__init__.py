@@ -19,6 +19,7 @@ from app.models import (  # noqa: F401
     money_in,
     account_features,
     onboarding_feedback,
+    repapering,
     corporate_actions,
     crm,
     engagement,

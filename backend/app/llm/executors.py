@@ -79,6 +79,9 @@ class ToolExecutors:
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
             "rate_aml_risk": self.rate_aml_risk,
+            "read_repapering": self.read_repapering,
+            "start_repapering": self.start_repapering,
+            "record_repapering": self.record_repapering,
             "record_private_transfer_item": self.record_private_transfer_item,
             "read_onboarding_scoreboard": self.read_onboarding_scoreboard,
             "record_onboarding_feedback": self.record_onboarding_feedback,
@@ -2049,6 +2052,77 @@ class ToolExecutors:
             rows += [("Security", d["security"]), ("Outcome", "Legend removed" if d["outcome"] == "removed" else "Legend stays"), ("Opinion", d["opinion"])]
         return rows + [("Evidence", r["evidence"])]
 
+    def _household_list(self, value) -> list:
+        return [_parse_uuid(x.strip(), "household_ids") for x in (value if isinstance(value, list) else str(value or "").split(",")) if str(x).strip()]
+
+    async def read_repapering(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import repapering
+
+        result = await repapering.for_firm(self.session, self.firm_id,
+                                           campaign_id=_parse_uuid(inputs["campaign_id"], "campaign_id") if inputs.get("campaign_id") else None)
+        result["message"] = "; ".join(f"{c['name']}: {c['ready']} of {c['total']} ready" for c in result["campaigns"]) or "No campaigns."
+        return result
+
+    async def start_repapering(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import repapering
+
+        try:
+            result = await repapering.start(self.session, self.firm_id, by=await self._shelf_user(), name=inputs.get("name"), change_type=inputs.get("change_type"),
+                                            document=inputs.get("document"), household_ids=self._household_list(inputs.get("household_ids")))
+        except repapering.RepaperingError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Started."
+        return result
+
+    async def _repapering_start_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import repapering
+
+        try:
+            r = await repapering.prepare_campaign(self.session, self.firm_id, name=inputs.get("name"), change_type=inputs.get("change_type"),
+                                                  document=inputs.get("document"), household_ids=self._household_list(inputs.get("household_ids")))
+        except repapering.RepaperingError as exc:
+            raise ExecutorError(str(exc))
+        rule = r["rule"]
+        consent = (f"Negative: silence for {rule['notice_days']} days after sending is consent" if rule["consent"] == "negative"
+                   else "Affirmative: only a signed answer counts")
+        return [("Campaign", r["name"]), ("Change", rule["label"]), ("Consent", consent), ("Table", "The firm's" if rule["set_by_firm"] else "The platform's"),
+                ("Households", f"{len(r['households'])}: " + ", ".join(h.name for h in r["households"][:5]) + ("…" if len(r["households"]) > 5 else "")),
+                ("Document", r["document"])]
+
+    async def record_repapering(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import repapering
+
+        try:
+            result = await repapering.record_step(self.session, self.firm_id, by=await self._shelf_user(),
+                                                  campaign_id=_parse_uuid(inputs.get("campaign_id") or "", "campaign_id"), action=inputs.get("action"),
+                                                  evidence=inputs.get("evidence"), on=self._exit_day(inputs.get("on"), "on"),
+                                                  household_ids=self._household_list(inputs.get("household_ids")))
+        except repapering.RepaperingError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _repapering_step_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from datetime import timedelta
+
+        from app.aurea_core import firm_time, repapering
+        from app.models.graph import Household
+
+        try:
+            r = await repapering.prepare_step(self.session, self.firm_id, campaign_id=_parse_uuid(inputs.get("campaign_id") or "", "campaign_id"),
+                                              action=inputs.get("action"), evidence=inputs.get("evidence"), on=self._exit_day(inputs.get("on"), "on"),
+                                              household_ids=self._household_list(inputs.get("household_ids")))
+        except repapering.RepaperingError as exc:
+            raise ExecutorError(str(exc))
+        c = r["campaign"]
+        names = [(await self.session.get(Household, a.household_id)).name for a in r["answers"]]
+        effect = (f"The notice period runs to {firm_time.spoken(r['on'] + timedelta(days=c.notice_days))}" if r["action"] == "sent" and c.notice_days
+                  else "Signatures are now awaited" if r["action"] == "sent"
+                  else "Ready to convert" if r["action"] == "consented"
+                  else "Kept off the conversion" if r["action"] == "objected" else "Silence is not consent for these: they need another notice or a signature")
+        return [("Campaign", c.name), ("Action", r["action"].capitalize()), ("On", firm_time.spoken(r["on"])),
+                ("Households", ", ".join(names) or None), ("Evidence", r["evidence"]), ("Effect", effect)]
+
     async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_risk
 
@@ -3996,6 +4070,10 @@ class ToolExecutors:
             return rows(*await self._feedback_preview(inputs))
         if tool_key == "record_private_transfer_item":
             return rows(*await self._private_preview(inputs))
+        if tool_key == "start_repapering":
+            return rows(*await self._repapering_start_preview(inputs))
+        if tool_key == "record_repapering":
+            return rows(*await self._repapering_step_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):
