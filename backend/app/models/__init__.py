@@ -18,6 +18,7 @@ from app.models import (  # noqa: F401
     transfer_file,
     money_in,
     account_features,
+    onboarding_feedback,
     corporate_actions,
     crm,
     engagement,

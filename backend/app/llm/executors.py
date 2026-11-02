@@ -79,6 +79,8 @@ class ToolExecutors:
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
             "rate_aml_risk": self.rate_aml_risk,
+            "read_onboarding_scoreboard": self.read_onboarding_scoreboard,
+            "record_onboarding_feedback": self.record_onboarding_feedback,
             "read_account_features": self.read_account_features,
             "request_account_feature": self.request_account_feature,
             "decide_account_feature": self.decide_account_feature,
@@ -1958,6 +1960,42 @@ class ToolExecutors:
         if r["action"] == "release":
             rows += [("Effect", "Payments out may be requested again")]
         return rows
+
+    def _feedback_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"case_id": _parse_uuid(inputs.get("case_id") or "", "case_id"), "score": inputs.get("score"), "comment": inputs.get("comment"),
+                "given_on": self._exit_day(inputs.get("given_on"), "given_on"), "source": inputs.get("source")}
+
+    async def read_onboarding_scoreboard(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.api.onboarding_scoreboard import scoreboard
+
+        result = await scoreboard(self.session, await self._firm())
+        d, n = result["days_to_invest"], result["nps"]
+        result["message"] = (f"Days to invest: median {d['p50']} across {d['n']} account(s). {result['abandonment']['stalled']} stalled. "
+                             + (f"NPS {n['nps']} from {n['responses']} answer(s)." if n["nps"] is not None else "NPS not measured."))
+        return result
+
+    async def record_onboarding_feedback(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.api.onboarding_scoreboard import scoreboard
+        from app.aurea_core import onboarding_scoreboard
+
+        try:
+            await onboarding_scoreboard.record_feedback(self.session, self.firm_id, by=await self._shelf_user(), **self._feedback_args(inputs))
+        except onboarding_scoreboard.ScoreboardError as exc:
+            raise ExecutorError(str(exc))
+        result = await scoreboard(self.session, await self._firm())
+        result["message"] = "Recorded."
+        return result
+
+    async def _feedback_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, onboarding_scoreboard
+
+        try:
+            r = await onboarding_scoreboard.prepare_feedback(self.session, self.firm_id, **self._feedback_args(inputs))
+        except onboarding_scoreboard.ScoreboardError as exc:
+            raise ExecutorError(str(exc))
+        band = "Promoter" if r["score"] >= 9 else "Detractor" if r["score"] <= 6 else "Passive"
+        return [("Client", r["case"].prospect_name), ("Score", f"{r['score']} of 10"), ("Counts as", band), ("Comment", r["comment"]),
+                ("Given", firm_time.spoken(r["on"])), ("Source", r["source"])]
 
     async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_risk
@@ -3902,6 +3940,8 @@ class ToolExecutors:
             return rows(*await self._feature_decision_preview(inputs))
         if tool_key == "record_senior_hold":
             return rows(*await self._senior_hold_preview(inputs))
+        if tool_key == "record_onboarding_feedback":
+            return rows(*await self._feedback_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):
