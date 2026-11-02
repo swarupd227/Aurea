@@ -25,6 +25,7 @@ import { ExitsCard } from "./ExitsCard";
 import { PlanCard } from "./PlanCard";
 import { ShelfCard } from "./ShelfCard";
 import { TaxDocumentsCard, TradesCard } from "./TradesCard";
+import { AmlCard } from "./AmlCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
@@ -135,6 +136,11 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_aml_reviews":
+      case "record_screening_decision":
+      case "sign_off_edd":
+        if (!Array.isArray(artifact.result?.hits)) return null;
+        return <AmlCard result={artifact.result as any} />;
       case "read_trades":
         if (!Array.isArray(artifact.result?.trades)) return null;
         return <TradesCard result={artifact.result as any} />;

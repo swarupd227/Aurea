@@ -22,6 +22,8 @@ def _days(a: datetime | None, b: datetime | None) -> float | None:
     """Days from a to b, or None if either end is missing."""
     if not a or not b:
         return None
+    # Postgres keeps the zone and SQLite drops it; a time with none is UTC, as every stamp here is written.
+    a, b = (t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t for t in (a, b))
     return round((b - a).total_seconds() / 86400, 2)
 
 
@@ -44,7 +46,7 @@ def _summary(values: list[float]) -> dict:
 
 
 def compute(cases: list, *, parties_by_case: dict, disclosures_by_case: dict,
-            transfers_by_case: dict, now: datetime | None = None) -> dict:
+            transfers_by_case: dict, now: datetime | None = None, decisions_by_party: dict | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
 
     open_cases = [c for c in cases if c.status not in ("approved", "rejected")]
@@ -87,10 +89,18 @@ def compute(cases: list, *, parties_by_case: dict, disclosures_by_case: dict,
     all_parties = [p for ps in parties_by_case.values() for p in ps]
     screened = [p for p in all_parties if (p.screening_status or "not_screened") != "not_screened"]
     with_hits = [p for p in screened if p.screening_hits]
-    # A hit dispositioned "clear" was a false positive. L200 notes real-world screening
-    # runs 95%+ false positives, so tracking the rate is how a firm sizes its alert queue.
-    false_positives = [p for p in with_hits if p.screening_status == "clear"]
-    fp_rate = round(len(false_positives) / len(with_hits) * 100, 1) if with_hits else None
+    # The false-positive share is of hits a person has decided, true match or false positive. L200 notes
+    # real-world screening runs 95%+ false positives, so it is how a firm sizes its alert queue. It used to
+    # read the screener's own status, which no person ever set, so it could only be nothing.
+    from app.aurea_core.aml_review import hit_key, hit_state
+    finals = []
+    for p in with_hits:
+        rows = (decisions_by_party or {}).get(p.id, [])
+        for h in p.screening_hits or []:
+            st = hit_state([r for r in rows if r.hit_key == hit_key(h)])
+            if st["state"] in ("false_positive", "true_match"):
+                finals.append(st["state"])
+    fp_rate = round(finals.count("false_positive") / len(finals) * 100, 1) if finals else None
     edd_backlog = [c for c in open_cases if c.edd_status == "edd_pending"]
     edd_ages = [d for d in (_days(c.created_at, now) for c in edd_backlog) if d is not None]
 
@@ -153,6 +163,7 @@ def compute(cases: list, *, parties_by_case: dict, disclosures_by_case: dict,
                 round(len(screened) / len(all_parties) * 100, 1) if all_parties else None
             ),
             "parties_with_hits": len(with_hits),
+            "hits_decided": len(finals),
             "false_positive_pct": fp_rate,
             "edd_backlog": len(edd_backlog),
             "edd_backlog_age_days": _summary(edd_ages),

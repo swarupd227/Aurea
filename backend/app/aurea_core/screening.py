@@ -12,13 +12,13 @@ from difflib import SequenceMatcher
 
 # Synthetic watchlist. Names are fictional and for demo only.
 WATCHLIST: list[dict] = [
-    {"name": "Viktor Sokolov", "category": "pep", "country": "RU",
+    {"name": "Viktor Sokolov", "category": "pep", "country": "RU", "dob": "1961-03-14",
      "note": "Senior political figure; enhanced due diligence required."},
-    {"name": "Imelda Castellanos", "category": "sanctions", "country": "VE",
+    {"name": "Imelda Castellanos", "category": "sanctions", "country": "VE", "dob": "1958-11-02",
      "note": "Appears on a sanctions list; onboarding must not proceed without escalation."},
-    {"name": "Marcus Delacroix", "category": "adverse_media", "country": "FR",
+    {"name": "Marcus Delacroix", "category": "adverse_media", "country": "FR", "dob": "1970-07-21",
      "note": "Adverse media — alleged financial misconduct (unproven)."},
-    {"name": "Olena Petrenko", "category": "pep", "country": "UA",
+    {"name": "Olena Petrenko", "category": "pep", "country": "UA", "dob": "1975-05-09",
      "note": "Close associate of a domestic political figure."},
 ]
 
@@ -33,6 +33,9 @@ class Hit:
     score: float
     country: str
     note: str
+    # What a reviewer compares beyond the name: the date of birth on file against the list's. A name alone
+    # decides nothing, and these do not decide either: they are what a person weighs.
+    discriminators: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -63,7 +66,13 @@ def _similarity(a: str, b: str) -> float:
     return max(seq, token)
 
 
-def screen(name: str, *, provider: str = "World-Check (mock)", threshold: float = 0.82) -> ScreeningResult:
+def _compare(ours: str | None, theirs: str | None) -> str:
+    if not ours or not theirs:
+        return "unknown"
+    return "match" if ours.strip()[:10] == theirs.strip()[:10] else "differs"
+
+
+def screen(name: str, *, provider: str = "World-Check (mock)", threshold: float = 0.82, dob: str | None = None) -> ScreeningResult:
     """Screen a single name against the watchlist."""
     result = ScreeningResult(subject=name, provider=provider)
     for entry in WATCHLIST:
@@ -73,6 +82,7 @@ def screen(name: str, *, provider: str = "World-Check (mock)", threshold: float 
                 matched_name=entry["name"], category=entry["category"],
                 severity=SEVERITY[entry["category"]], score=round(score, 3),
                 country=entry["country"], note=entry["note"],
+                discriminators={"dob": _compare(dob, entry.get("dob"))},
             ))
     if any(h.severity == "high" for h in result.hits):
         result.status = "blocked"
@@ -81,9 +91,9 @@ def screen(name: str, *, provider: str = "World-Check (mock)", threshold: float 
     return result
 
 
-def screen_parties(parties: list[str], *, provider: str = "World-Check (mock)") -> dict:
+def screen_parties(parties: list[str], *, provider: str = "World-Check (mock)", dobs: dict | None = None) -> dict:
     """Screen a set of associated parties (e.g. applicant + trustees). Returns a summary."""
-    results = [screen(p, provider=provider) for p in parties if p]
+    results = [screen(p, provider=provider, dob=(dobs or {}).get(p)) for p in parties if p]
     statuses = {r.status for r in results}
     overall = "blocked" if "blocked" in statuses else ("review" if "review" in statuses else "clear")
     return {

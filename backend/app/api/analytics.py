@@ -77,33 +77,22 @@ async def get_onboarding_metrics(firm: Firm = Depends(current_firm), db: AsyncSe
     for c in cases:
         funnel[c.status] = funnel.get(c.status, 0) + 1
 
-    # Cycle time (days from created_at to updated_at) for approved cases
-    approved = [c for c in cases if c.status == "approved" and c.created_at and c.updated_at]
-    cycle_by_reg: dict[str, list[float]] = {}
-    for c in approved:
-        days = (c.updated_at - c.created_at).total_seconds() / 86400
-        key = c.registration_type or "unspecified"
-        cycle_by_reg.setdefault(key, []).append(days)
+    # Cycle time and first-pass yield come from the onboarding metrics, so the two dashboards cannot disagree.
+    # This one used to measure to the case's last edit, and counted open cases in the yield.
+    from app.aurea_core import onboarding_metrics
 
-    def _pctile(vals: list[float], p: int) -> float:
-        if not vals:
-            return 0.0
-        s = sorted(vals)
-        idx = max(0, min(len(s) - 1, int(len(s) * p / 100)))
-        return round(s[idx], 1)
-
+    m = onboarding_metrics.compute(list(cases), parties_by_case={}, disclosures_by_case={}, transfers_by_case={}, now=now)
+    ct = m["cycle_time_days"]
     cycle_times = [
-        {"registration_type": rt, "count": len(vals),
-         "p50_days": _pctile(vals, 50), "p90_days": _pctile(vals, 90)}
-        for rt, vals in sorted(cycle_by_reg.items())
+        {"registration_type": rt, "count": s["n"], "p50_days": s["p50"] or 0.0, "p90_days": s["p90"] or 0.0}
+        for rt, s in ct["by_registration_type"].items()
     ]
-    all_days = [d for vals in cycle_by_reg.values() for d in vals]
-    overall_p50 = _pctile(all_days, 50)
-    overall_p90 = _pctile(all_days, 90)
+    overall_p50 = ct["intake_to_activation"]["p50"] or 0.0
+    overall_p90 = ct["intake_to_activation"]["p90"] or 0.0
 
-    # First-pass yield (no NIGO flag)
     nigo_count = sum(1 for c in cases if getattr(c, "nigo_flag", False))
-    first_pass_yield = round((total - nigo_count) / total, 3) if total else 0.0
+    fpy = m["quality"]["first_pass_yield_pct"]
+    first_pass_yield = round(fpy / 100, 3) if fpy is not None else 0.0
 
     # NIGO root-cause breakdown
     nigo_causes: dict[str, int] = {}
@@ -116,8 +105,12 @@ async def get_onboarding_metrics(firm: Firm = Depends(current_firm), db: AsyncSe
     terminal = {"approved", "rejected"}
     amber_threshold = now - timedelta(days=3)
     red_threshold = now - timedelta(days=7)
-    stalled_amber = [c for c in cases if c.status not in terminal and c.updated_at and c.updated_at < amber_threshold and c.updated_at >= red_threshold]
-    stalled_red = [c for c in cases if c.status not in terminal and c.updated_at and c.updated_at < red_threshold]
+    # Postgres keeps the zone and SQLite drops it; a time with none is UTC.
+    from datetime import timezone
+
+    touched = lambda c: c.updated_at.replace(tzinfo=timezone.utc) if c.updated_at.tzinfo is None else c.updated_at  # noqa: E731
+    stalled_amber = [c for c in cases if c.status not in terminal and c.updated_at and red_threshold <= touched(c) < amber_threshold]
+    stalled_red = [c for c in cases if c.status not in terminal and c.updated_at and touched(c) < red_threshold]
     abandonment_by_status: dict[str, int] = {}
     for c in stalled_red + stalled_amber:
         abandonment_by_status[c.status] = abandonment_by_status.get(c.status, 0) + 1

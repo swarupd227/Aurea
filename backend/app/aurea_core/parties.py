@@ -15,6 +15,7 @@ Kept as data so the matrix is configurable rather than tribal knowledge.
 """
 from __future__ import annotations
 
+from app.aurea_core.aml_review import SETTLED, party_state
 from app.models.enums import PartyRole
 
 # CDD Rule 31 CFR 1010.230 — a beneficial owner is a 25%+ owner.
@@ -100,19 +101,21 @@ _REQUIRED: dict[str, list[tuple[str, int, str]]] = {
 }
 
 _ENTITY_TYPES = {"entity_llc", "entity_corp", "entity_partnership"}
-_SCREENED_OK = {"clear", "review", "blocked"}   # anything other than not_screened
 
 
 def required_roles(registration_type: str | None) -> list[tuple[str, int, str]]:
     return _REQUIRED.get(registration_type or "individual", _REQUIRED["individual"])
 
 
-def completeness_for(registration_type: str | None, parties: list) -> dict:
+def completeness_for(registration_type: str | None, parties: list, decisions: dict | None = None) -> dict:
     """Evaluate role coverage, screening coverage and the CDD ownership rules.
 
     Returns the gate result: `blocks_activation` is true when any required role is
-    missing, any party is unscreened, or the entity ownership rules are unmet.
+    missing, any party is not screened or has a hit nobody has decided, or the entity
+    ownership rules are unmet. `decisions` are each party's decisions on its hits
+    (aml_review.decisions_for); without them every hit is open.
     """
+    states = {p.id: party_state(p, (decisions or {}).get(p.id, [])) for p in parties}
     by_role: dict[str, list] = {}
     for p in parties:
         by_role.setdefault(p.role, []).append(p)
@@ -139,12 +142,13 @@ def completeness_for(registration_type: str | None, parties: list) -> dict:
                 "why": why,
             })
 
-    # 2. Every party screened? This is the sanctions-breach control.
+    # 2. Every party screened, and every hit decided? This is the sanctions-breach control:
+    # the screener running is not the same as the party being cleared.
     unscreened = [
         {"id": str(p.id), "legal_name": p.legal_name, "role": p.role,
-         "label": ROLE_LABELS.get(p.role, p.role)}
+         "label": ROLE_LABELS.get(p.role, p.role), "state": states[p.id]["state"]}
         for p in parties
-        if (p.screening_status or "not_screened") not in _SCREENED_OK
+        if states[p.id]["state"] not in SETTLED
     ]
 
     # 3. Entity ownership rules under the CDD Rule.
@@ -193,6 +197,8 @@ def completeness_for(registration_type: str | None, parties: list) -> dict:
         "n_parties": len(parties),
         "role_gaps": role_gaps,
         "unscreened": unscreened,
+        "sanctions": [p.legal_name for p in parties if states[p.id]["sanctions"]],
+        "names": [p.legal_name for p in parties],
         "ownership_issues": ownership_issues,
         "screened_count": len(parties) - len(unscreened),
         "blocks_activation": blocks,

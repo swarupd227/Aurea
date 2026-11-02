@@ -77,6 +77,9 @@ class ToolExecutors:
             "book_client_review": self.book_client_review,
             "read_ips_monitoring": self.read_ips_monitoring,
             "read_client_exits": self.read_client_exits,
+            "read_aml_reviews": self.read_aml_reviews,
+            "record_screening_decision": self.record_screening_decision,
+            "sign_off_edd": self.sign_off_edd,
             "read_trades": self.read_trades,
             "read_tax_documents": self.read_tax_documents,
             "record_tax_document": self.record_tax_document,
@@ -1415,6 +1418,86 @@ class ToolExecutors:
         except tax_documents.TaxDocumentError as exc:
             raise ExecutorError(str(exc))
         return [("Client", r["household"].name), ("Document", r["label"]), ("Year", r["year_label"]), ("For", r["issuer"]), ("Filed at", r["document"]), ("Was expected", "No, the book did not call for it" if not r["expected"] else None)]
+
+    async def read_aml_reviews(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import aml_review
+
+        try:
+            if inputs.get("case_id"):
+                result = await aml_review.for_case(self.session, _parse_uuid(inputs["case_id"], "case_id"), firm_id=self.firm_id)
+            else:
+                result = await aml_review.for_firm(self.session, self.firm_id)
+        except aml_review.AmlReviewError as exc:
+            raise ExecutorError(str(exc))
+        s = result["summary"]
+        result["message"] = (f"{s['open']} hit(s) open, {s['awaiting_confirmation']} true match(es) waiting for a second reviewer, {s['qa_due']} due for QA; "
+                             f"{s['edd_pending']} EDD file(s) awaiting sign-off, {s['edd_declined']} declined.")
+        return result
+
+    def _screening_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"hit": inputs.get("hit"), "kind": inputs.get("kind"), "decision": inputs.get("decision"), "rationale": inputs.get("rationale")}
+
+    def _edd_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        evidence = {}
+        for line in inputs.get("evidence") or []:
+            key, _, source = str(line).partition(":")
+            if key.strip() and source.strip():
+                evidence[key.strip().lower().replace(" ", "_")] = source.strip()
+        return {"wealth_type": inputs.get("wealth_type"), "evidence": evidence, "conclusion": inputs.get("conclusion"),
+                "decision": inputs.get("decision"), "rationale": inputs.get("rationale")}
+
+    async def record_screening_decision(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import aml_review
+
+        try:
+            result = await aml_review.record_decision(self.session, _parse_uuid(inputs.get("party_id") or "", "party_id"), firm_id=self.firm_id,
+                                                      by=await self._shelf_user(), role=self.role, **self._screening_args(inputs))
+        except aml_review.AmlReviewError as exc:
+            raise ExecutorError(str(exc))
+        s = result["summary"]
+        result["message"] = f"Recorded. On this case: {s['open']} hit(s) open, {s['awaiting_confirmation']} waiting for a second reviewer."
+        return result
+
+    async def sign_off_edd(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import aml_review
+
+        try:
+            result = await aml_review.record_edd(self.session, _parse_uuid(inputs.get("case_id") or "", "case_id"), firm_id=self.firm_id,
+                                                 by=await self._shelf_user(), role=self.role, **self._edd_args(inputs))
+        except aml_review.AmlReviewError as exc:
+            raise ExecutorError(str(exc))
+        edd = result["edd"][0] if result["edd"] else {}
+        result["message"] = f"Recorded. EDD on {result.get('case')} is now {str(edd.get('edd_status', '')).replace('_', ' ')}."
+        return result
+
+    async def _aml_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import aml_review
+
+        try:
+            if tool_key == "record_screening_decision":
+                r = await aml_review.prepare_decision(self.session, _parse_uuid(inputs.get("party_id") or "", "party_id"), firm_id=self.firm_id,
+                                                      by=await self._shelf_user(), role=self.role, **self._screening_args(inputs))
+                h = r["hit"]
+                effect = {("disposition", "true_match"): "Waits for a second reviewer in compliance",
+                          ("disposition", "false_positive"): "Clears this hit; it may be sampled for QA",
+                          ("disposition", "needs_info"): "The hit stays open",
+                          ("confirmation", "confirmed"): "Stops the case" if h.get("category") == "sanctions" else "Opens enhanced due diligence",
+                          ("confirmation", "rejected"): "Reopens the hit",
+                          ("qa", "agree"): "The false positive stands", ("qa", "overturn"): "Reopens the hit"}[(r["kind"], r["decision"])]
+                dob = (h.get("discriminators") or {}).get("dob")
+                return [("Case", r["case"].prospect_name), ("Party", f"{r['party'].legal_name} · {r['party'].role.replace('_', ' ')}"),
+                        ("Hit", f"{str(h.get('category')).replace('_', ' ')} · {h.get('matched_name')} · score {h.get('score')}"),
+                        ("Date of birth", dob if dob and dob != "unknown" else None), ("Was", r["was"].replace("_", " ")),
+                        ("Decision", f"{r['kind'].capitalize()}: {r['decision'].replace('_', ' ')}"), ("Effect", effect), ("Reason", r["rationale"])]
+            r = await aml_review.prepare_edd(self.session, _parse_uuid(inputs.get("case_id") or "", "case_id"), firm_id=self.firm_id, role=self.role,
+                                             **self._edd_args(inputs))
+            effect = {"approve": "Completes EDD", "decline": "The account does not open", "more_info": "EDD stays pending"}[r["decision"]]
+            return [("Case", r["case"].prospect_name), ("Risk", (r["tier"] or "not rated").capitalize()), ("Decision", r["decision"].replace("_", " ").capitalize()),
+                    ("Wealth", r["wealth_type"].replace("_", " ") if r["wealth_type"] != "unstated" else None),
+                    ("Sources", "; ".join(f"{k.replace('_', ' ')}: {v}" for k, v in r["evidence"].items()) or None),
+                    ("Conclusion", r["conclusion"].replace("_", " ")), ("Effect", effect), ("Reason", r["rationale"])]
+        except aml_review.AmlReviewError as exc:
+            raise ExecutorError(str(exc))
 
     async def read_client_exits(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import exits, markets
@@ -3192,6 +3275,8 @@ class ToolExecutors:
             return rows(*await self._crm_preview(tool_key, inputs))
         if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):
             return rows(*await self._corporate_preview(tool_key, inputs))
+        if tool_key in ("record_screening_decision", "sign_off_edd"):
+            return rows(*await self._aml_preview(tool_key, inputs))
         named = {"record_tax_document": self._tax_document_preview, "execute_orders": self._orders_preview, "credit_invoice": self._credit_preview,
                  "record_valuation": self._valuation_preview, "record_client_consent": self._consent_preview,
                  "refresh_prices": self._refresh_preview, "run_billing": self._billing_preview,

@@ -57,7 +57,7 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
             parties += list(intake.get("poa_holders", []))
             parties = sorted(set(p for p in parties if p))
 
-            screening = screen_parties(parties)
+            screening = screen_parties(parties, dobs={p.legal_name: p.dob for p in party_rows if p.dob})
 
             # Stamp the outcome onto the party records here, in sense(), not in act().
             #
@@ -76,7 +76,8 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
                 party.screening_status = result["status"]
                 party.screening_hits = result["hits"]
                 party.screened_at = now
-                party.disposition_note = "Screened by Adverse Media & PEP Screener agent."
+                # Screened, not decided: what each hit means is a person's, and survives this rescreen.
+                party.disposition_note = "Screened by Adverse Media & PEP Screener agent. Hits await a person's decision."
             # Enrich each party result with PEP and adverse-media categorisation.
             has_pep = any(
                 h["category"] == "pep"

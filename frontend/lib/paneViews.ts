@@ -11,7 +11,7 @@ import { viewsForRole } from "./nav";
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
-  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents"
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml"
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
   | "corporate_actions" | "pipeline";
 
@@ -55,6 +55,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "cash", pattern: /^\/studio\/cash\/?$/, base: "/studio/cash", label: "Cash movements" },
   { key: "trades", pattern: /^\/studio\/trades\/?$/, base: "/studio/trades", label: "Trades" },
   { key: "tax_documents", pattern: /^\/studio\/tax-documents\/?$/, base: "/studio/tax-documents", label: "Tax documents" },
+  { key: "aml", pattern: /^\/studio\/aml\/?$/, base: "/studio/aml", label: "AML reviews" },
   { key: "analytics", pattern: /^\/studio\/analytics\/?$/, base: "/studio/analytics", label: "Analytics" },
   { key: "capacity", pattern: /^\/studio\/capacity\/?$/, base: "/studio/capacity", label: "Capacity & outcomes" },
   { key: "agent_history", pattern: /^\/studio\/agent-history\/?$/, base: "/studio/agent-history", label: "Agent history" },
@@ -185,6 +186,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_balance_item":
     case "end_balance_item":
       return onClient("/studio/net-worth");
+    case "read_aml_reviews":
+    case "record_screening_decision":
+    case "sign_off_edd":
+      return "/studio/aml";
     case "read_trades":
       return onClient("/studio/trades");
     case "read_tax_documents":

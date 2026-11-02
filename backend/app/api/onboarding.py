@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_firm
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
-from app.aurea_core import disclosures, sample_docs
+from app.aurea_core import aml_review, disclosures, sample_docs
 from app.aurea_core import parties as parties_core
 from app.aurea_core import fees as fees_core
 from app.aurea_core import gates as gates_core
@@ -108,9 +108,10 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
     xfer_rows = list((await db.execute(
         select(TransferRequest).where(TransferRequest.case_id == case.id)
     )).scalars().all())
+    decided = await aml_review.decisions_for(db, [p.id for p in party_rows])
     return gates_core.evaluate(
         case,
-        party_status=parties_core.completeness_for(case.registration_type, party_rows),
+        party_status=parties_core.completeness_for(case.registration_type, party_rows, decided),
         disclosure_status=disclosures.status_for(
             firm.jurisdiction, case.registration_type, list(disc_rows)
         ),
@@ -149,7 +150,8 @@ async def _tracks_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dic
     )).scalars().all()
     return tracks_core.evaluate(
         case,
-        party_status=parties_core.completeness_for(case.registration_type, party_rows),
+        party_status=parties_core.completeness_for(case.registration_type, party_rows,
+                                                   await aml_review.decisions_for(db, [p.id for p in party_rows])),
         disclosure_status=disclosures.status_for(
             firm.jurisdiction, case.registration_type, list(disc_rows)
         ),
@@ -446,6 +448,7 @@ async def onboarding_metrics(
         parties_by_case=parties_by_case,
         disclosures_by_case=disclosures_by_case,
         transfers_by_case=transfers_by_case,
+        decisions_by_party=await aml_review.decisions_for(db, [p.id for ps in parties_by_case.values() for p in ps]),
     )
 
     # Which controls block most often across the open book.
@@ -827,7 +830,7 @@ async def list_parties(
     rows = await _load_parties(db, case.id)
     return {
         "parties": [_party_dict(p) for p in rows],
-        "completeness": parties_core.completeness_for(case.registration_type, rows),
+        "completeness": parties_core.completeness_for(case.registration_type, rows, await aml_review.decisions_for(db, [p.id for p in rows])),
         "roles": [
             {"value": r, "label": parties_core.ROLE_LABELS[r]}
             for r in parties_core.ROLE_LABELS
@@ -863,7 +866,7 @@ async def add_party(
     await db.commit()
     return {
         "parties": [_party_dict(p) for p in rows],
-        "completeness": parties_core.completeness_for(case.registration_type, rows),
+        "completeness": parties_core.completeness_for(case.registration_type, rows, await aml_review.decisions_for(db, [p.id for p in rows])),
     }
 
 

@@ -31,6 +31,15 @@ def _gate(key, label, state, detail, *, blocks=True, track=None) -> dict:
     }
 
 
+def sanctions_open(case, party_status: dict) -> list[str]:
+    """Who carries a sanctions hit not shown to be a false positive: a party, as decided, or a name screened at intake
+    that is not a party, as the vendor reported it."""
+    names = set(party_status.get("names", []))
+    intake = [p.get("subject") for p in (getattr(case, "screening", None) or {}).get("parties", [])
+              if p.get("status") == "blocked" and p.get("subject") not in names]
+    return list(party_status.get("sanctions", [])) + intake
+
+
 def evaluate(case, *, party_status: dict, disclosure_status: dict,
              fee_status: dict | None = None, held_away_count: int | None = None,
              transfer_status: dict | None = None) -> dict:
@@ -141,21 +150,21 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
     unscreened = party_status.get("unscreened", [])
     n_parties = party_status.get("n_parties", 0)
     gates.append(_gate(
-        "parties_screened", "Every party screened",
+        "parties_screened", "Every party screened and every hit decided",
         FAIL if (unscreened or not n_parties) else PASS,
         "No parties to screen." if not n_parties
-        else (f"{len(unscreened)} unscreened: "
-              + ", ".join(p["legal_name"] for p in unscreened) + "."
-              if unscreened else f"All {n_parties} parties screened."),
+        else (f"{len(unscreened)} not cleared: "
+              + ", ".join(f"{p['legal_name']} ({p.get('state', 'not_screened').replace('_', ' ')})" for p in unscreened) + "."
+              if unscreened else f"All {n_parties} parties screened, every hit decided."),
         track="financial_crime",
     ))
 
-    sanctions_blocked = (case.screening or {}).get("status") == "blocked"
+    sanctioned = sanctions_open(case, party_status)
     gates.append(_gate(
         "no_sanctions_match", "No unresolved sanctions match",
-        FAIL if sanctions_blocked else PASS,
-        "Sanctions match must be dispositioned by compliance."
-        if sanctions_blocked else "No blocking match.",
+        FAIL if sanctioned else PASS,
+        f"Sanctions match on {', '.join(sanctioned)}: compliance must show it is a false positive, or the account does not open."
+        if sanctioned else "No blocking match.",
         track="financial_crime",
     ))
 
@@ -169,8 +178,11 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
     gates.append(_gate(
         "edd_resolved", "Enhanced due diligence resolved",
         NA if case.edd_status in (None, "", "none") else
-        (FAIL if case.edd_status == "edd_pending" else PASS),
+        (FAIL if case.edd_status in ("edd_pending", "edd_declined") else PASS),
         "No EDD required." if case.edd_status in (None, "", "none")
+        else "EDD declined: the wealth was not shown to be explicable, and the account does not open."
+        if case.edd_status == "edd_declined"
+        else "Awaiting sign-off of the source-of-wealth file." if case.edd_status == "edd_pending"
         else f"EDD status: {case.edd_status}.",
         track="financial_crime",
     ))

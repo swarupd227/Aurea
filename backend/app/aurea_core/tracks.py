@@ -19,6 +19,8 @@ is that a track cannot be set by hand — which is the right trade for a complia
 """
 from __future__ import annotations
 
+from app.aurea_core.gates import sanctions_open
+
 # Track states, ordered from least to most advanced for roll-up purposes.
 NOT_STARTED = "not_started"
 IN_PROGRESS = "in_progress"
@@ -120,8 +122,8 @@ def _track_c(case, party_status: dict) -> dict:
     unscreened = party_status.get("unscreened", [])
     n_parties = party_status.get("n_parties", 0)
 
-    # A sanctions hit stops everything.
-    if getattr(case, "screening", None) and (case.screening or {}).get("status") == "blocked":
+    # A sanctions hit stops everything, until a person shows it is a false positive.
+    if sanctions_open(case, party_status):
         return {
             "state": BLOCKED,
             "detail": "Sanctions match — case cannot proceed without compliance clearance.",
@@ -144,6 +146,12 @@ def _track_c(case, party_status: dict) -> dict:
             "state": WAITING_EXTERNAL,
             "detail": "CIP returned review — awaiting provider or manual verification.",
             "next_action": "Resolve the CIP review outcome.",
+        }
+    if case.edd_status == "edd_declined":
+        return {
+            "state": BLOCKED,
+            "detail": "EDD declined — the source of wealth was not shown to be explicable.",
+            "next_action": "Decline the case, or reopen EDD with new evidence.",
         }
     if case.edd_status == "edd_pending":
         return {

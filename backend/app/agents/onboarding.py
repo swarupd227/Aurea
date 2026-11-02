@@ -49,9 +49,12 @@ async def _activation_gates(session, firm, case) -> dict:
     schedule = (
         await session.get(FeeSchedule, case.fee_schedule_id) if case.fee_schedule_id else None
     )
+    from app.aurea_core import aml_review
+
     return gates_core.evaluate(
         case,
-        party_status=parties_core.completeness_for(case.registration_type, party_rows),
+        party_status=parties_core.completeness_for(case.registration_type, party_rows,
+                                                   await aml_review.decisions_for(session, [p.id for p in party_rows])),
         disclosure_status=disclosures.status_for(
             firm.jurisdiction, case.registration_type, disc_rows
         ),
