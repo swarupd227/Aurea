@@ -49,6 +49,9 @@ export function TransfersView() {
                   {t.partial && <span className="chip text-warn">partial · {t.staying.length} stay</span>}
                   {t.debit_open && <span className="chip text-warn">debit {money(t.debit_amount)}</span>}
                   {t.exchanges.length > 0 && <span className="chip">1035</span>}
+                  {(t.private?.assignments ?? []).map((a: any) => <span key={a.fund} className="chip">{a.fund} · {a.stage.replace(/_/g, " ")}</span>)}
+                  {(t.private?.capital_calls ?? []).filter((c: any) => c.open).map((c: any, i: number) => <span key={i} className="chip text-critical">call {money(c.amount)} due {reviewDay(c.due_on)}</span>)}
+                  {(t.private?.restricted ?? []).map((r: any) => <span key={r.security} className={`chip ${r.legend === "on" ? "text-warn" : ""}`}>{r.security} · 144 {r.holding_period_met ? "met" : `to ${reviewDay(r.holding_period_ends)}`} · legend {r.legend}</span>)}
                 </div></td>
                 <td className="px-4 py-2 text-xs text-ink-muted">{t.owner ?? "—"}</td>
                 <td className="px-4 py-2 font-mono text-xs text-ink-muted">{t.days_to_receive ?? "—"}</td>

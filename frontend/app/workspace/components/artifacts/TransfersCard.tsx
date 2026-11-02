@@ -28,6 +28,11 @@ export function TransfersCard({ result }: { result: any }) {
           ))}
         </tbody></table>
       )}
+      {result.transfers.some((t: any) => t.private?.needs?.length) && (
+        <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-2" data-testid="transfers-private">
+          {result.transfers.flatMap((t: any) => (t.private?.needs ?? []).map((n: string) => <span key={`${t.transfer_id}-${n}`} className="chip text-warn">{n.split(":")[0]} · {n.split(": ")[1]}</span>))}
+        </div>
+      )}
       {roll?.applies && (
         <div className="border-t border-border-soft px-3 py-2" data-testid="rollover-points">
           <div className="mb-1 text-[10px] uppercase tracking-wide text-ink-muted">Rollover</div>

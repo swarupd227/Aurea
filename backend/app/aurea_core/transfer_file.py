@@ -8,6 +8,12 @@ stands, whose move it is, and what is late. The delivering firm owes the cost ba
 (Treas. Reg. 1.6045A-1); a file past that says so. Nothing here moves holdings or cash: the custodian does, and
 reconciliation reads what it did.
 
+A private fund interest moves by assignment, not ACAT: requested, consented to by the general partner, then
+re-registered, and a capital call due between the request and the re-registration is flagged until someone records
+which side funds it. Restricted stock is read against Rule 144: the holding period from the acquisition date (six
+months for an issuer that has reported for 90 days, a year otherwise), the affiliate's sale conditions, and a legend
+that comes off only on the issuer's counsel's opinion.
+
 A rollover from an employer plan is laid out, not advised on. From the plan statement as a person recorded it, the
 analysis compares the costs, and sets out direct against indirect, net unrealized appreciation on employer stock, an
 outstanding plan loan, the required distribution that must come out first, and the age-55 exception that an IRA does
@@ -15,6 +21,7 @@ not keep. A point with no fact on file is "not assessed", never filled in. The a
 """
 from __future__ import annotations
 
+import calendar
 import uuid
 from datetime import date, timedelta
 
@@ -31,7 +38,11 @@ KINDS = {
     "submitted": "Submitted to the delivering firm", "rejected": "Rejected", "resubmitted": "Resubmitted",
     "asset_memo": "Asset memo", "debit_balance": "Debit balance", "debit_cleared": "Debit balance cleared",
     "received": "Assets received", "cost_basis": "Cost basis received", "residual": "Residual swept", "exchange_1035": "1035 exchange",
+    # Private funds and restricted stock (L200-1 §6.4): they do not move by ACAT.
+    "assignment_requested": "Assignment requested", "gp_consent": "General partner consented", "reregistered": "Re-registered",
+    "capital_call": "Capital call", "restricted_stock": "Restricted stock", "legend_review": "Legend review",
 }
+PRIVATE_KINDS = {"assignment_requested", "gp_consent", "reregistered", "capital_call", "restricted_stock", "legend_review"}
 REJECT_CODES = {
     "title_mismatch": "Account title does not match", "tax_id_mismatch": "Tax ID does not match", "account_number": "Account number not found",
     "account_closed": "Account closed or flat", "duplicate": "Duplicate request", "signature": "Signature missing or wrong",
@@ -94,7 +105,58 @@ def file_state(transfer: TransferRequest, entries: list[TransferFileEntry], toda
             "cost_basis_due": basis_due.isoformat() if basis_due else None, "cost_basis_on": basis.on.isoformat() if basis else None,
             "residuals": [{"on": e.on.isoformat(), "amount": (e.detail or {}).get("amount")} for e in ordered if e.kind == "residual"],
             "exchanges": [{"on": e.on.isoformat(), **(e.detail or {})} for e in ordered if e.kind == "exchange_1035"],
-            "late": late, "entries": [_entry(e) for e in ordered]}
+            "late": late, "private": private_state(ordered, today), "entries": [_entry(e) for e in ordered]}
+
+
+def holding_period_met(acquired: date, today: date, *, reporting_issuer: bool) -> tuple[bool, date]:
+    """Rule 144(d): six months for a company that has reported for at least 90 days, a year otherwise."""
+    months = 6 if reporting_issuer else 12
+    m = acquired.month - 1 + months
+    year, month = acquired.year + m // 12, m % 12 + 1
+    ends = date(year, month, min(acquired.day, calendar.monthrange(year, month)[1]))   # never early
+    return today >= ends, ends
+
+
+def private_state(ordered: list, today: date) -> dict:
+    """Assignments of private fund interests, capital calls that fall across the transfer, and restricted stock."""
+    funds: dict = {}
+    for e in ordered:
+        d = e.detail or {}
+        if e.kind in ("assignment_requested", "gp_consent", "reregistered"):
+            f = funds.setdefault(d.get("fund"), {"fund": d.get("fund"), "requested_on": None, "consent_on": None, "reregistered_on": None})
+            f[{"assignment_requested": "requested_on", "gp_consent": "consent_on", "reregistered": "reregistered_on"}[e.kind]] = e.on.isoformat()
+            if e.kind == "assignment_requested":
+                f.update({"commitment": d.get("commitment"), "unfunded": d.get("unfunded")})
+    for f in funds.values():
+        f["stage"] = "reregistered" if f["reregistered_on"] else "gp_consented" if f["consent_on"] else "requested"
+        f["owner"] = {"requested": "General partner", "gp_consented": "Fund administrator", "reregistered": None}[f["stage"]]
+    calls = []
+    for e in ordered:
+        if e.kind != "capital_call":
+            continue
+        d = e.detail or {}
+        f = funds.get(d.get("fund"), {})
+        start, end = f.get("requested_on"), f.get("reregistered_on")
+        due = d.get("due_on")
+        across = bool(start and due and due >= start and (end is None or due <= end))
+        calls.append({"fund": d.get("fund"), "amount": d.get("amount"), "due_on": due, "funded_by": d.get("funded_by"),
+                      "across_transfer": across, "open": across and not d.get("funded_by")})
+    restricted: dict = {}
+    for e in ordered:
+        d = e.detail or {}
+        if e.kind == "restricted_stock":
+            met, ends = holding_period_met(date.fromisoformat(d["acquired_on"]), today, reporting_issuer=bool(d.get("reporting_issuer")))
+            restricted[d["security"]] = {"security": d["security"], "shares": d.get("shares"), "affiliate": bool(d.get("affiliate")),
+                                         "reporting_issuer": bool(d.get("reporting_issuer")), "acquired_on": d["acquired_on"],
+                                         "holding_period_ends": ends.isoformat(), "holding_period_met": met, "legend": "on", "opinion": None}
+        if e.kind == "legend_review" and d.get("security") in restricted:
+            r = restricted[d["security"]]
+            r["legend"] = "removed" if d.get("outcome") == "removed" else "stays"
+            r["opinion"] = d.get("opinion")
+    needs = ([f"{f['fund']}: waiting on the {f['owner'].lower()}" for f in funds.values() if f["owner"]]
+             + [f"{c['fund']}: a capital call due {c['due_on']} falls across the transfer; record who funds it" for c in calls if c["open"]]
+             + [f"{r['security']}: legend review" for r in restricted.values() if r["legend"] == "on"])
+    return {"assignments": list(funds.values()), "capital_calls": calls, "restricted": list(restricted.values()), "needs": needs}
 
 
 # ── The rollover analysis ─────────────────────────────────────────────────────
@@ -209,6 +271,11 @@ async def for_case(session: AsyncSession, firm_id: uuid.UUID, *, case_id: uuid.U
     case = None
     if case_id is not None:
         case = await session.get(OnboardingCase, case_id)
+        if case is None:
+            # A transfer's own id names its case just as well.
+            moved = await session.get(TransferRequest, case_id)
+            case = await session.get(OnboardingCase, moved.case_id) if moved is not None and moved.firm_id == firm_id else None
+            case_id = case.id if case is not None else case_id
         if case is None or case.firm_id != firm_id:
             raise TransferFileError("Case not found.")
         q = q.where(TransferRequest.case_id == case_id)
@@ -317,6 +384,84 @@ async def record_entry(session: AsyncSession, firm_id: uuid.UUID, *, by: str, **
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="transfer_file_entry", actor=by,
                               content={"transfer_id": str(t.id), "kind": r["kind"], "on": r["on"].isoformat(), "detail": r["detail"], "evidence": r["evidence"]})
+    return await for_case(session, firm_id, case_id=t.case_id)
+
+
+async def prepare_private(session: AsyncSession, firm_id: uuid.UUID, *, transfer_id: uuid.UUID, kind: str | None, on: date | None, evidence: str | None,
+                          fund: str | None = None, commitment=None, unfunded=None, amount=None, due_on: date | None = None, funded_by: str | None = None,
+                          security: str | None = None, shares=None, acquired_on: date | None = None, affiliate: bool | None = None,
+                          reporting_issuer: bool | None = None, outcome: str | None = None, opinion: str | None = None) -> dict:
+    t = await session.get(TransferRequest, transfer_id)
+    if t is None or t.firm_id != firm_id:
+        raise TransferFileError("Transfer not found.")
+    firm = await session.get(Firm, firm_id)
+    today = firm_time.today(firm)
+    kind = (kind or "").strip().lower()
+    if kind not in PRIVATE_KINDS:
+        raise TransferFileError(f"What happened is one of {', '.join(sorted(PRIVATE_KINDS))}.")
+    day = on or today
+    if day > today:
+        raise TransferFileError("Nothing is recorded ahead of the day it happened.")
+    if len((evidence or "").strip()) < 5:
+        raise TransferFileError("Say where it comes from: the assignment agreement, the consent letter, the call notice, the stock certificate, counsel's opinion.")
+
+    def num(v, label):
+        try:
+            x = float(str(v).replace(",", ""))
+        except (TypeError, ValueError):
+            raise TransferFileError(f"Give {label}, as the document shows it.")
+        if x < 0:
+            raise TransferFileError(f"{label.capitalize()} cannot be negative.")
+        return round(x, 2)
+
+    entries = (await session.execute(select(TransferFileEntry).where(TransferFileEntry.transfer_id == t.id))).scalars().all()
+    detail: dict = {}
+    if kind in ("assignment_requested", "gp_consent", "reregistered", "capital_call"):
+        if len((fund or "").strip()) < 2:
+            raise TransferFileError("Name the fund.")
+        detail["fund"] = fund.strip()
+        requested = any(e.kind == "assignment_requested" and (e.detail or {}).get("fund") == detail["fund"] for e in entries)
+        if kind == "assignment_requested":
+            detail.update({"commitment": num(commitment, "the commitment"), "unfunded": num(unfunded, "the unfunded commitment")})
+        elif kind in ("gp_consent", "reregistered") and not requested:
+            raise TransferFileError(f"No assignment of {detail['fund']} has been requested on this transfer.")
+        if kind == "reregistered" and not any(e.kind == "gp_consent" and (e.detail or {}).get("fund") == detail["fund"] for e in entries):
+            raise TransferFileError("A fund interest is re-registered only after the general partner consents.")
+        if kind == "capital_call":
+            if due_on is None:
+                raise TransferFileError("Give the date the call is due.")
+            detail.update({"amount": num(amount, "the amount called"), "due_on": due_on.isoformat(), "funded_by": (funded_by or "").strip() or None})
+    if kind in ("restricted_stock", "legend_review"):
+        if len((security or "").strip()) < 1:
+            raise TransferFileError("Name the security.")
+        detail["security"] = security.strip().upper()
+    if kind == "restricted_stock":
+        if acquired_on is None:
+            raise TransferFileError("Give the date the shares were acquired and paid for: the holding period runs from it.")
+        if affiliate is None or reporting_issuer is None:
+            raise TransferFileError("Record whether the holder is an affiliate of the issuer, and whether the issuer has been reporting for at least 90 days.")
+        detail.update({"shares": num(shares, "the number of shares"), "acquired_on": acquired_on.isoformat(), "affiliate": bool(affiliate),
+                       "reporting_issuer": bool(reporting_issuer)})
+    if kind == "legend_review":
+        if not any(e.kind == "restricted_stock" and (e.detail or {}).get("security") == detail["security"] for e in entries):
+            raise TransferFileError(f"{detail['security']} is not recorded as restricted on this transfer.")
+        outcome = (outcome or "").strip().lower()
+        if outcome not in ("removed", "stays"):
+            raise TransferFileError("The review's outcome is removed or stays.")
+        if outcome == "removed" and len((opinion or "").strip()) < 5:
+            raise TransferFileError("A legend comes off only on the issuer's counsel's opinion: give its reference.")
+        detail.update({"outcome": outcome, "opinion": (opinion or "").strip() or None})
+    case = await session.get(OnboardingCase, t.case_id)
+    return {"transfer": t, "client": case.prospect_name if case else None, "kind": kind, "on": day, "detail": detail, "evidence": evidence.strip(), "today": today}
+
+
+async def record_private(session: AsyncSession, firm_id: uuid.UUID, *, by: str, **terms) -> dict:
+    r = await prepare_private(session, firm_id, **terms)
+    t = r["transfer"]
+    session.add(TransferFileEntry(firm_id=firm_id, transfer_id=t.id, kind=r["kind"], on=r["on"], detail=r["detail"], evidence=r["evidence"], recorded_by=by))
+    await session.flush()
+    await ledger.append_entry(session, firm_id=firm_id, event_type="transfer_file_entry", actor=by,
+                              content={"transfer_id": str(t.id), "kind": r["kind"], "detail": r["detail"], "evidence": r["evidence"]})
     return await for_case(session, firm_id, case_id=t.case_id)
 
 

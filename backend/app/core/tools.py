@@ -1107,6 +1107,28 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.OPERATIONS},
     ),
 
+    "record_private_transfer_item": Tool(
+        key="record_private_transfer_item",
+        name="Record Private Transfer Item",
+        speaking_agent="astra",
+        description="Records what happened to a private fund interest or restricted stock in a transfer into the firm, from its document. kind is assignment_requested (fund, commitment, unfunded), gp_consent (fund), reregistered (fund, only after consent), capital_call (fund, amount, due_on, and funded_by once someone has said which side pays), restricted_stock (security, shares, acquired_on, affiliate yes/no, reporting_issuer yes/no: has the issuer reported for at least 90 days), or legend_review (security, outcome removed or stays, and for removed the issuer's counsel's opinion). Never fill a fact in; ask for it.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this on the transfer's file?",
+        inputs=[ToolInput("transfer_id", "uuid", "The transfer, from read_transfer_files", required=True), ToolInput("kind", "string", "What happened", required=True),
+                ToolInput("evidence", "string", "The document", required=True), ToolInput("on", "string", "YYYY-MM-DD. Defaults to today", required=False),
+                ToolInput("fund", "string", "The fund", required=False), ToolInput("commitment", "number", "The commitment", required=False),
+                ToolInput("unfunded", "number", "The unfunded commitment", required=False), ToolInput("amount", "number", "A capital call's amount", required=False),
+                ToolInput("due_on", "string", "A capital call's due date, YYYY-MM-DD", required=False), ToolInput("funded_by", "string", "Who funds the call", required=False),
+                ToolInput("security", "string", "The restricted security", required=False), ToolInput("shares", "number", "Shares", required=False),
+                ToolInput("acquired_on", "string", "When acquired and paid for, YYYY-MM-DD", required=False),
+                ToolInput("affiliate", "boolean", "Is the holder an affiliate of the issuer", required=False),
+                ToolInput("reporting_issuer", "boolean", "Has the issuer reported for at least 90 days", required=False),
+                ToolInput("outcome", "string", "A legend review's outcome: removed or stays", required=False),
+                ToolInput("opinion", "string", "For removed: counsel's opinion reference", required=False)],
+        output=ToolOutput("object", "The case's transfer files"),
+        roles_required={UserRole.OPERATIONS},
+    ),
+
     "record_rollover_facts": Tool(
         key="record_rollover_facts",
         name="Record Rollover Facts",

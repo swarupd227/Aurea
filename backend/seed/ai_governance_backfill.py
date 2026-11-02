@@ -243,6 +243,8 @@ _TOOLS = [
      "Records a step on an AML investigation: suspicion, report with its reference, no report, review, or a forum's exit decision. Confirm-gated."),
     ("read_transaction_monitoring", "Read Transaction Monitoring (tool)", "tool", "Head of Compliance", "medium",
      "Reads monitoring alerts, investigations and report clocks. Never shown to a client."),
+    ("record_private_transfer_item", "Record Private Transfer Item (tool)", "tool", "Head of Operations", "medium",
+     "Records a private fund assignment, a capital call across a transfer, or restricted stock and its legend review. Confirm-gated."),
     ("record_transfer_event", "Record Transfer Event (tool)", "tool", "Head of Operations", "medium",
      "Records what happened to a transfer into the firm, from the document that says so. Moves nothing. Confirm-gated."),
     ("record_rollover_facts", "Record Rollover Facts (tool)", "tool", "Head of Compliance", "medium",

@@ -79,6 +79,7 @@ class ToolExecutors:
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
             "rate_aml_risk": self.rate_aml_risk,
+            "record_private_transfer_item": self.record_private_transfer_item,
             "read_onboarding_scoreboard": self.read_onboarding_scoreboard,
             "record_onboarding_feedback": self.record_onboarding_feedback,
             "read_account_features": self.read_account_features,
@@ -1996,6 +1997,57 @@ class ToolExecutors:
         band = "Promoter" if r["score"] >= 9 else "Detractor" if r["score"] <= 6 else "Passive"
         return [("Client", r["case"].prospect_name), ("Score", f"{r['score']} of 10"), ("Counts as", band), ("Comment", r["comment"]),
                 ("Given", firm_time.spoken(r["on"])), ("Source", r["source"])]
+
+    def _private_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        def yes(k):
+            v = inputs.get(k)
+            if v is None or v == "":
+                return None
+            return v if isinstance(v, bool) else str(v).strip().lower() in ("true", "yes", "1", "y")
+
+        return {"transfer_id": _parse_uuid(inputs.get("transfer_id") or "", "transfer_id"), "kind": inputs.get("kind"), "evidence": inputs.get("evidence"),
+                "on": self._exit_day(inputs.get("on"), "on"), "fund": inputs.get("fund"), "commitment": inputs.get("commitment"), "unfunded": inputs.get("unfunded"),
+                "amount": inputs.get("amount"), "due_on": self._exit_day(inputs.get("due_on"), "due_on") if inputs.get("due_on") else None,
+                "funded_by": inputs.get("funded_by"), "security": inputs.get("security"), "shares": inputs.get("shares"),
+                "acquired_on": self._exit_day(inputs.get("acquired_on"), "acquired_on") if inputs.get("acquired_on") else None,
+                "affiliate": yes("affiliate"), "reporting_issuer": yes("reporting_issuer"), "outcome": inputs.get("outcome"), "opinion": inputs.get("opinion")}
+
+    async def record_private_transfer_item(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import transfer_file
+
+        try:
+            result = await transfer_file.record_private(self.session, self.firm_id, by=await self._shelf_user(), **self._private_args(inputs))
+        except transfer_file.TransferFileError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _private_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from datetime import date
+
+        from app.aurea_core import firm_time, markets, transfer_file
+        from app.models.tenant import Firm
+
+        try:
+            r = await transfer_file.prepare_private(self.session, self.firm_id, **self._private_args(inputs))
+        except transfer_file.TransferFileError as exc:
+            raise ExecutorError(str(exc))
+        money = markets.money_for(await self.session.get(Firm, self.firm_id))
+        d = r["detail"]
+        rows = [("Client", r["client"]), ("What happened", transfer_file.KINDS[r["kind"]]), ("On", firm_time.spoken(r["on"]))]
+        if d.get("fund"):
+            rows.append(("Fund", d["fund"]))
+        if r["kind"] == "assignment_requested":
+            rows += [("Commitment", money(d["commitment"])), ("Unfunded", money(d["unfunded"]))]
+        if r["kind"] == "capital_call":
+            rows += [("Called", money(d["amount"])), ("Due", firm_time.spoken(date.fromisoformat(d["due_on"]))), ("Funded by", d["funded_by"] or "Not yet said")]
+        if r["kind"] == "restricted_stock":
+            met, ends = transfer_file.holding_period_met(date.fromisoformat(d["acquired_on"]), r["today"], reporting_issuer=d["reporting_issuer"])
+            rows += [("Security", f"{d['security']}, {d['shares']:g} shares"), ("Holding period", ("Met " if met else "Ends ") + firm_time.spoken(ends)),
+                     ("Affiliate", "Yes: volume, manner-of-sale and notice conditions apply to every sale" if d["affiliate"] else "No")]
+        if r["kind"] == "legend_review":
+            rows += [("Security", d["security"]), ("Outcome", "Legend removed" if d["outcome"] == "removed" else "Legend stays"), ("Opinion", d["opinion"])]
+        return rows + [("Evidence", r["evidence"])]
 
     async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_risk
@@ -3942,6 +3994,8 @@ class ToolExecutors:
             return rows(*await self._senior_hold_preview(inputs))
         if tool_key == "record_onboarding_feedback":
             return rows(*await self._feedback_preview(inputs))
+        if tool_key == "record_private_transfer_item":
+            return rows(*await self._private_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

@@ -174,6 +174,7 @@ export function artifactCard(artifact: Artifact) {
         return <MonitoringCard result={artifact.result as any} />;
       case "read_transfer_files":
       case "record_transfer_event":
+      case "record_private_transfer_item":
       case "record_rollover_facts":
         if (!Array.isArray(artifact.result?.transfers)) return null;
         return <TransfersCard result={artifact.result as any} />;

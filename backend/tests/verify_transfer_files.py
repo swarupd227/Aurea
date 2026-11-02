@@ -159,6 +159,42 @@ async def main() -> int:
             check("with the reason on file the agent documents it, quoting the adviser",
                   (len(drafts), drafts[0].payload["adviser_reason"] if drafts else None), (1, "She wants one adviser for four plans"))
             check("its figures are the recorded ones", (drafts[0].payload["plan_expense_ratio_bps"], drafts[0].payload["advisory_fee_bps"]), (35.0, 95.0))
+
+            print("\n=== Private funds and restricted stock ===")
+            check("a holding period ending on the 31st is not early", tf.holding_period_met(date(2026, 1, 31), date(2026, 7, 30), reporting_issuer=True),
+                  (False, date(2026, 7, 31)))
+            check("a non-reporting issuer's is a year", tf.holding_period_met(date(2026, 1, 15), today, reporting_issuer=False)[1], date(2027, 1, 15))
+            pt = TransferRequest(id=uuid.uuid4(), firm_id=firm.id, case_id=c.id, transfer_type="acat", direction="in", delivering_firm="Old Wealth", status="initiated")
+            s.add(pt)
+            await s.flush()
+            pid = str(pt.id)
+            item = lambda kind, days_ago=0, **kw: {"transfer_id": pid, "kind": kind, "on": (today - timedelta(days=days_ago)).isoformat(),  # noqa: E731
+                                                   "evidence": "Fund administrator letter", **kw}
+            await refused("consent needs a request first", ex["ops"].preview_change("record_private_transfer_item", item("gp_consent", fund="Ridge Capital III")), "no assignment")
+            await ex["ops"].record_private_transfer_item(item("assignment_requested", 20, fund="Ridge Capital III", commitment=500000, unfunded=150000))
+            await refused("no re-registration before consent", ex["ops"].preview_change("record_private_transfer_item", item("reregistered", fund="Ridge Capital III")), "consents")
+            due = (today + timedelta(days=10)).isoformat()
+            card = {r["label"]: r["value"] for r in (await ex["ops"].preview_change("record_private_transfer_item",
+                    item("capital_call", 1, fund="Ridge Capital III", amount=25000, due_on=due)))["rows"]}
+            check("the call card says nobody has said who pays", card["Funded by"], "Not yet said")
+            out = await ex["ops"].record_private_transfer_item(item("capital_call", 1, fund="Ridge Capital III", amount=25000, due_on=due))
+            priv = next(x for x in out["transfers"] if x["transfer_id"] == pid)["private"]
+            check("a call due mid-transfer is open", ([cc["open"] for cc in priv["capital_calls"]], priv["assignments"][0]["owner"]), ([True], "General partner"))
+            await refused("restricted stock needs its acquisition date and status", ex["ops"].preview_change("record_private_transfer_item",
+                          item("restricted_stock", security="ACME", shares=1000)), "acquired")
+            card = {r["label"]: r["value"] for r in (await ex["ops"].preview_change("record_private_transfer_item",
+                    item("restricted_stock", security="acme", shares=1000, acquired_on=(today - timedelta(days=100)).isoformat(), affiliate=True, reporting_issuer=True)))["rows"]}
+            check("bought 100 days ago it is still in its holding period, and an affiliate's conditions are named",
+                  (card["Holding period"].startswith("Ends"), card["Affiliate"].startswith("Yes")), (True, True))
+            await ex["ops"].record_private_transfer_item(item("restricted_stock", security="acme", shares=1000, acquired_on=(today - timedelta(days=100)).isoformat(),
+                                                              affiliate=True, reporting_issuer=True))
+            await refused("a legend comes off only on counsel's opinion", ex["ops"].preview_change("record_private_transfer_item",
+                          item("legend_review", security="ACME", outcome="removed")), "counsel")
+            await ex["ops"].record_private_transfer_item(item("gp_consent", 2, fund="Ridge Capital III"))
+            out = await ex["ops"].record_private_transfer_item(item("legend_review", security="ACME", outcome="stays"))
+            priv = next(x for x in out["transfers"] if x["transfer_id"] == pid)["private"]
+            check("what is still needed is named", sorted(n.split(":")[0] for n in priv["needs"]), ["Ridge Capital III", "Ridge Capital III"])
+            check("and the holding-period chip reads from the record", (priv["restricted"][0]["legend"], priv["restricted"][0]["holding_period_met"]), ("stays", False))
     finally:
         await db.dispose()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")

@@ -248,6 +248,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
       return "/studio/monitoring";
     case "read_transfer_files":
     case "record_transfer_event":
+    case "record_private_transfer_item":
     case "record_rollover_facts":
       return "/studio/transfers";
     case "read_document_matrix":
