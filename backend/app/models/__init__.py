@@ -17,6 +17,7 @@ from app.models import (  # noqa: F401
     consent_registry,
     transfer_file,
     money_in,
+    account_features,
     corporate_actions,
     crm,
     engagement,

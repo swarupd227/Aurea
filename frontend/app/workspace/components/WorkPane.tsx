@@ -38,6 +38,7 @@ import { DocumentMatrixView } from "@/components/views/DocumentMatrixView";
 import { TransfersView } from "@/components/views/TransfersView";
 import { MonitoringView } from "@/components/views/MonitoringView";
 import { MoneyInView } from "@/components/views/MoneyInView";
+import { AccountFeaturesView } from "@/components/views/AccountFeaturesView";
 import { OnboardingQueuesView } from "@/components/views/OnboardingQueuesView";
 import { NetWorthView } from "@/components/views/NetWorthView";
 import { AnalyticsView } from "@/components/views/AnalyticsView";
@@ -136,6 +137,8 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <CashMovementsView household={pane.query.household ?? null} />;
     case "onboarding_queues":
       return <OnboardingQueuesView />;
+    case "account_features":
+      return <AccountFeaturesView />;
     case "money_in":
       return <MoneyInView />;
     case "monitoring":

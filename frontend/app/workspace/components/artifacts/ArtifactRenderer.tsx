@@ -31,6 +31,7 @@ import { DocumentMatrixCard } from "./DocumentMatrixCard";
 import { TransfersCard } from "./TransfersCard";
 import { MonitoringCard } from "./MonitoringCard";
 import { MoneyInCard } from "./MoneyInCard";
+import { AccountFeaturesCard } from "./AccountFeaturesCard";
 import { OnboardingQueuesCard } from "./OnboardingQueuesCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
@@ -149,6 +150,12 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_account_features":
+      case "request_account_feature":
+      case "decide_account_feature":
+      case "record_senior_hold":
+        if (!Array.isArray(artifact.result?.features)) return null;
+        return <AccountFeaturesCard result={artifact.result as any} />;
       case "read_money_in":
       case "record_bank_link":
       case "record_deposit":

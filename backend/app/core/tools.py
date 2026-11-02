@@ -1235,6 +1235,64 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
+    "read_account_features": Tool(
+        key="read_account_features",
+        name="Read Account Features",
+        speaking_agent="astra",
+        description="Account features (margin, options level 1 to 4, checkwriting) asked for and decided, with the agreement each rests on; and temporary holds on suspected exploitation of a specified adult under FINRA Rule 2165, with when each ends, its extensions, whether the trusted contacts were told within two business days, and who they are. Called with no input it covers the book; give household_id for one client.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household", required=False)],
+        output=ToolOutput("object", "Features and holds"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "request_account_feature": Tool(
+        key="request_account_feature",
+        name="Request Account Feature",
+        speaking_agent="astra",
+        description="Asks for margin, an options level or checkwriting on an account, on the client's signed agreement, for a principal to decide. For options give level (1 covered calls and protective puts, 2 buying calls and puts and cash-secured puts, 3 spreads, 4 uncovered writing), and the experience_years and objective (income, growth, hedging, speculation) the client gave on the options agreement; never fill those in. A retirement or custodial account takes no margin or checkwriting and a limited options level.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Ask for this feature?",
+        inputs=[ToolInput("account_id", "uuid", "The account", required=True), ToolInput("feature", "string", "margin, options or checkwriting", required=True),
+                ToolInput("agreement", "string", "The signed agreement it rests on", required=True), ToolInput("level", "number", "For options: 1 to 4", required=False),
+                ToolInput("experience_years", "number", "For options: as the client gave it", required=False),
+                ToolInput("objective", "string", "For options: as the client gave it", required=False)],
+        output=ToolOutput("object", "Features and holds"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "decide_account_feature": Tool(
+        key="decide_account_feature",
+        name="Decide Account Feature",
+        speaking_agent="astra",
+        description="A principal approves or declines a feature request, or removes an approved feature, with the reason as the record of review. The person who asked cannot approve it. feature_id comes from read_account_features.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this decision?",
+        inputs=[ToolInput("feature_id", "uuid", "The request", required=True), ToolInput("decision", "string", "approve, decline or remove", required=True),
+                ToolInput("reason", "string", "The principal's reason", required=True)],
+        output=ToolOutput("object", "Features and holds"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_senior_hold": Tool(
+        key="record_senior_hold",
+        name="Record Senior Hold",
+        speaking_agent="astra",
+        description="A temporary hold under FINRA Rule 2165 on the account of a specified adult the firm reasonably believes is being financially exploited. action place (account_id, reason; impairment if the client is under 65 and impaired) stops every new payment out for 15 business days; notify (hold_id, who was told in notified, or why someone was not in not_notified_why) is due within two business days; extend adds 10 business days after review, then 30 once reported to a state agency or court (give its reference); release ends it. reason is always the person's own. US only.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this on the hold?",
+        inputs=[ToolInput("action", "string", "place, notify, extend or release", required=True), ToolInput("reason", "string", "Why, in full", required=True),
+                ToolInput("account_id", "uuid", "For place: the account", required=False), ToolInput("hold_id", "uuid", "For the rest: the hold", required=False),
+                ToolInput("impairment", "string", "For place, under 65: the impairment recorded", required=False),
+                ToolInput("notified", "string", "For notify: who was told, comma separated", required=False),
+                ToolInput("not_notified_why", "string", "For notify: why someone was not told", required=False),
+                ToolInput("reference", "string", "For the second extension: the report to the state agency or court", required=False),
+                ToolInput("on", "string", "YYYY-MM-DD. Defaults to today", required=False)],
+        output=ToolOutput("object", "Features and holds"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER},
+    ),
+
     "rate_aml_risk": Tool(
         key="rate_aml_risk",
         name="Rate AML Risk",
@@ -1915,7 +1973,7 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
             "exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural and regulatory_countdown show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
@@ -1927,7 +1985,7 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, account_features, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
             ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural or regulatory_countdown to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
@@ -2549,6 +2607,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "transfers": ("/studio/transfers", "Transfers in", {_A, _P, _C, _O, _B}),
     "monitoring": ("/studio/monitoring", "Transaction monitoring", {_C, _O}),
     "money_in": ("/studio/money-in", "Money in", {_A, _P, _C, _O, _B}),
+    "account_features": ("/studio/account-features", "Account features and holds", {_A, _P, _C, _O, _B}),
     "onboarding_queues": ("/studio/onboarding-queues", "Onboarding queues", {_A, _P, _C, _O, _B}),
     "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
     "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),

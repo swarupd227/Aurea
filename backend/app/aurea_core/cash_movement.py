@@ -92,6 +92,9 @@ async def prepare_request(session: AsyncSession, account_id: uuid.UUID, *, firm_
     mandate = await session.get(Mandate, account.mandate_id) if account.mandate_id else None
     if mandate is not None and mandate.exit_hold == "deceased":
         raise CashMovementError("This client has died and no executor is on file, so nothing may be paid out.")
+    from app.aurea_core import account_features
+    if await account_features.active_hold(session, await session.get(Firm, firm_id), account.id):
+        raise CashMovementError("A temporary hold is in force on this account, so nothing may be paid out until it ends or is released.")
     money = _money(amount, "The amount")
     to, why = (payee or "").strip(), (reason or "").strip()
     if len(to) < 2:

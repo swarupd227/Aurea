@@ -79,6 +79,10 @@ class ToolExecutors:
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
             "rate_aml_risk": self.rate_aml_risk,
+            "read_account_features": self.read_account_features,
+            "request_account_feature": self.request_account_feature,
+            "decide_account_feature": self.decide_account_feature,
+            "record_senior_hold": self.record_senior_hold,
             "read_money_in": self.read_money_in,
             "record_bank_link": self.record_bank_link,
             "record_deposit": self.record_deposit,
@@ -1857,6 +1861,103 @@ class ToolExecutors:
         money = markets.money_for(await self.session.get(Firm, self.firm_id))
         return [("Account", r["account"].name), ("Pays", f"{s.payee}, {money(float(s.amount))} {s.frequency}"), ("Third party", "Yes" if s.third_party else "No"),
                 ("Callback by", r["callback_by"]), ("Confirmed", firm_time.spoken(r["on"])), ("Evidence", r["evidence"]), ("Next due", firm_time.spoken(r["next"]))]
+
+    def _feature_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"account_id": _parse_uuid(inputs.get("account_id") or "", "account_id"), "feature": inputs.get("feature"), "level": inputs.get("level"),
+                "agreement": inputs.get("agreement"), "experience_years": inputs.get("experience_years"), "objective": inputs.get("objective")}
+
+    def _hold_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        uid = lambda k: _parse_uuid(inputs[k], k) if inputs.get(k) else None  # noqa: E731
+        return {"action": inputs.get("action"), "account_id": uid("account_id"), "hold_id": uid("hold_id"), "reason": inputs.get("reason"),
+                "impairment": inputs.get("impairment"), "notified": inputs.get("notified"), "not_notified_why": inputs.get("not_notified_why"),
+                "reference": inputs.get("reference"), "on": self._exit_day(inputs.get("on"), "on")}
+
+    async def read_account_features(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import account_features
+
+        result = await account_features.for_firm(self.session, self.firm_id,
+                                                 household_id=_parse_uuid(inputs["household_id"], "household_id") if inputs.get("household_id") else None)
+        s = result["summary"]
+        result["message"] = f"{s['waiting']} feature request(s) waiting; {s['holds_active']} hold(s) in force, {s['notices_late']} with notice late."
+        return result
+
+    async def request_account_feature(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import account_features
+
+        try:
+            result = await account_features.request(self.session, self.firm_id, by=await self._shelf_user(), **self._feature_args(inputs))
+        except account_features.FeatureError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Asked; a principal decides."
+        return result
+
+    async def _feature_request_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import account_features
+
+        try:
+            r = await account_features.prepare_request(self.session, self.firm_id, **self._feature_args(inputs))
+        except account_features.FeatureError as exc:
+            raise ExecutorError(str(exc))
+        p = r["profile"]
+        return [("Account", r["account"].name), ("Feature", account_features.FEATURES[r["feature"]]),
+                ("Level", f"{r['level']}: {account_features.OPTION_LEVELS[r['level']]}" if r["level"] else None),
+                ("Experience", f"{p['experience_years']} years" if p else None), ("Objective", p.get("objective") if p else None),
+                ("Agreement", r["agreement"]), ("Replaces", f"Level {r['replaces'].level}" if r["replaces"] else None), ("Next", "A principal decides")]
+
+    async def decide_account_feature(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import account_features
+
+        try:
+            result = await account_features.decide(self.session, self.firm_id, by=await self._shelf_user(),
+                                                   feature_id=_parse_uuid(inputs.get("feature_id") or "", "feature_id"),
+                                                   decision=inputs.get("decision"), reason=inputs.get("reason"))
+        except account_features.FeatureError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Decided."
+        return result
+
+    async def _feature_decision_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import account_features
+
+        try:
+            r = await account_features.prepare_decision(self.session, self.firm_id, by=await self._shelf_user(),
+                                                         feature_id=_parse_uuid(inputs.get("feature_id") or "", "feature_id"),
+                                                         decision=inputs.get("decision"), reason=inputs.get("reason"))
+        except account_features.FeatureError as exc:
+            raise ExecutorError(str(exc))
+        f = r["feature"]
+        return [("Account", r["account"].name), ("Feature", account_features.FEATURES[f.feature] + (f" level {f.level}" if f.level else "")),
+                ("Asked by", f.requested_by), ("Agreement", f.agreement), ("Decision", r["decision"].capitalize()), ("Reason", r["reason"])]
+
+    async def record_senior_hold(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import account_features
+
+        try:
+            result = await account_features.record_hold(self.session, self.firm_id, by=await self._shelf_user(), **self._hold_args(inputs))
+        except account_features.FeatureError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _senior_hold_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import account_features, firm_time
+
+        try:
+            r = await account_features.prepare_hold(self.session, self.firm_id, **self._hold_args(inputs))
+        except account_features.FeatureError as exc:
+            raise ExecutorError(str(exc))
+        rows = [("Account", r["account"].name), ("Action", r["action"].capitalize()), ("On", firm_time.spoken(r["on"])), ("Reason", r["reason"])]
+        if r["action"] == "place":
+            rows += [("Specified adult", f"{r['age']} years old" if r["adult"] == "age_65" else f"Impairment: {r['impairment']}"),
+                     ("Ends", firm_time.spoken(r["expires"])), ("Effect", "No new payment out of this account while it stands"),
+                     ("Notice due", firm_time.spoken(account_features.business_days_after(r["on"], account_features.NOTIFY_DAYS)))]
+        if r["action"] == "notify":
+            rows += [("Told", ", ".join(r["notified"]) or None), ("Not told, because", r["not_notified_why"])]
+        if r["action"] == "extend":
+            rows += [("By", f"{r['days']} business days"), ("Now ends", firm_time.spoken(r["expires"])), ("Report", r["reference"])]
+        if r["action"] == "release":
+            rows += [("Effect", "Payments out may be requested again")]
+        return rows
 
     async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_risk
@@ -3795,6 +3896,12 @@ class ToolExecutors:
             return rows(*await self._deposit_preview(inputs))
         if tool_key == "revalidate_standing_instruction":
             return rows(*await self._revalidation_preview(inputs))
+        if tool_key == "request_account_feature":
+            return rows(*await self._feature_request_preview(inputs))
+        if tool_key == "decide_account_feature":
+            return rows(*await self._feature_decision_preview(inputs))
+        if tool_key == "record_senior_hold":
+            return rows(*await self._senior_hold_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):
