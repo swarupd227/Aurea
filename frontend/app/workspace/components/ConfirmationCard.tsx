@@ -124,10 +124,6 @@ export function ConfirmationCard({
           {unavailable}
         </div>
       )}
-      <div className="mt-1 font-mono text-[11px] text-ink-muted">
-        <code className="bg-border-soft px-1.5 py-0.5 rounded">{action.tool_key}</code>
-      </div>
-
       <div className="mt-4 flex items-center gap-2">
         {decided ? (
           <span

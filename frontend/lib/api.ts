@@ -36,7 +36,7 @@ export class ApiError extends Error {
 const HTTP_FALLBACK: Record<number, string> = {
   400: "That request wasn't valid.",
   403: "You don't have permission to view this.",
-  404: "This isn't available yet.",
+  404: "Not found.",
   408: "The server took too long to respond.",
   409: "That conflicts with something that already exists.",
   422: "Some of the details weren't valid.",

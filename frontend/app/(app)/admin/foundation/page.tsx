@@ -39,8 +39,8 @@ export default function Foundation() {
 
   return (
     <div>
-      <PageHeader title="The common foundation"
-        sub="The scaffold every agent inherits — and every knob below changes real behaviour."
+      <PageHeader title="Agent controls"
+        sub="Settings every agent reads on every run."
         actions={<button className="btn-primary" onClick={save} disabled={saving}><Save size={16} /> {saving ? "Saving…" : saved ? "Saved" : "Save configuration"}</button>} />
 
       {/* Six pillars */}
@@ -71,7 +71,7 @@ export default function Foundation() {
       {/* Configuration — wired controls */}
       <Card className="mb-6">
         <div className="font-semibold text-ink mb-1 flex items-center gap-2"><Settings2 size={17} /> Policy configuration</div>
-        <p className="text-xs text-ink-muted mb-4">Stored per firm and read by the engines on every run — these are live controls, not labels.</p>
+        <p className="text-xs text-ink-muted mb-4">Read by the agents on every run.</p>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-5">
 
           <Group title="Model gateway" icon={Network}>
@@ -186,8 +186,7 @@ function AIGovernancePanel() {
         <span className="text-xs text-ink-muted">{data.active} active · {data.by_risk_tier.high} high-risk · {data.entitlement_violations.total} violation(s) logged</span>
       </div>
       <p className="text-xs text-ink-muted mb-3">
-        Every agent and high-stakes tool, with an owner and a risk tier (L200-8 §8) — the register that ties
-        ownership to the eval-gate and usage signals below.
+        Every agent and high-stakes tool, with its owner and risk tier.
       </p>
       <div className="divide-y divide-navy-50 max-h-96 overflow-y-auto">
         {(useCases?.items || []).map((u: any) => (

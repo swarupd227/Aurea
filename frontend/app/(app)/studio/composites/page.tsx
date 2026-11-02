@@ -82,8 +82,8 @@ function FirmDefinitionCheck() {
     <Card>
       <div className="font-semibold text-ink mb-1 flex items-center gap-2"><FileCheck size={17} /> Firm definition check</div>
       <p className="text-xs text-ink-muted mb-3">
-        GIPS's "foundational sin" per L200-5 §2.5: a firm definition narrowed to exclude bad history. Every
-        discretionary account should be captured in a composite.
+        Every discretionary account should be in a composite. A firm definition that leaves accounts out
+        misstates performance.
       </p>
       <div className="flex items-center gap-3">
         {data.clean
@@ -103,7 +103,7 @@ export default function Composites() {
   return (
     <div>
       <PageHeader title="Composites"
-        sub="GIPS composite reporting by strategy (L200-5 §2.5) — firm definition, construction, dispersion, and an ex-post standard deviation honestly labelled by how many months of history it actually used." />
+        sub="GIPS composites by strategy: firm definition, construction, dispersion, and ex-post standard deviation with the months of history it used." />
 
       <div className="space-y-5">
         <FirmDefinitionCheck />

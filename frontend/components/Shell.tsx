@@ -202,9 +202,6 @@ export default function Shell({ children }: { children: ReactNode }) {
           <Mark accent={branding.accent} />
           <div>
             <div className="text-white font-semibold leading-none">Astra for Wealth</div>
-            <div className="text-[10px] uppercase tracking-wider text-navy-200/70 mt-1">
-              Wealth Intelligence Platform
-            </div>
             {user.firm?.demonstration && (
               <div className="mt-1.5 inline-block rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-navy-100/80" data-testid="demonstration-firm">
                 Demonstration · invented clients

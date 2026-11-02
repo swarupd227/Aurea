@@ -64,7 +64,7 @@ export default function Ask() {
                   {!m.error && (
                     <div className="flex items-center gap-2 mt-2 text-xs text-ink-muted">
                       <ShieldCheck size={13} className="text-positive" />
-                      Governed answer{m.is_fallback ? " · deterministic (no LLM key)" : " · LLM-grounded"}
+                      From your book
                       {m.grounded_on?.length ? ` · ${m.grounded_on.length} households` : ""}
                     </div>
                   )}

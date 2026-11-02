@@ -315,16 +315,6 @@ export default function EstatePage() {
         sub="Trust governance, wealth concentration, heir readiness, and jurisdiction-aware compliance — across the book."
       />
 
-      {/* Great Wealth Transfer context */}
-      <div className="mb-5 rounded-xl border border-gold-200 bg-gold-soft/30 px-4 py-3 flex items-start gap-3">
-        <div className="h-5 w-5 shrink-0 mt-0.5 rounded-full bg-gold-400/30 flex items-center justify-center text-gold-700 text-xs font-bold">$</div>
-        <p className="text-sm text-ink-soft leading-relaxed">
-          <span className="font-semibold text-ink">The greatest intergenerational wealth transfer in history is underway.</span>{" "}
-          An estimated $84 trillion will pass from baby boomers to millennials and Gen X over the next two decades.
-          Heir readiness, trust governance, and proactive estate structuring have never been more consequential.
-        </p>
-      </div>
-
       {/* Summary tiles */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <div className="card p-4">

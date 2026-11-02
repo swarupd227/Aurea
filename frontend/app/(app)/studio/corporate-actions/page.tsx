@@ -114,7 +114,7 @@ export default function CorporateActions() {
   return (
     <div>
       <PageHeader title="Corporate actions"
-        sub="Capture, entitlement, election, and posting — the operations track L100 never named (L200-4 §5)." />
+        sub="Capture, entitlement, election and posting." />
 
       <div className="grid grid-cols-2 gap-4 mb-6">
         <StatTile label="Total actions" value={data?.items?.length || 0} />

@@ -11,7 +11,7 @@ export default function BeneficiaryAudit() {
   return (
     <div>
       <PageHeader title="Beneficiary audit"
-        sub="Every account whose registration type needs a beneficiary designation, and whether it has one that adds up to 100% (L200-1 §4) — the periodic confirmation campaign, always current." />
+        sub="Accounts whose registration needs a beneficiary, and whether their designations add up to 100%." />
 
       {data && (
         <div className="grid grid-cols-2 gap-4 mb-6">

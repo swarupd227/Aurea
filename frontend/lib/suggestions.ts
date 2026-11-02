@@ -48,6 +48,8 @@ const short = (h: string) => h.replace(/^the\s+/i, "");
 
 const WAITING: Suggestion = { label: "What's waiting on me", prompt: "What proposals are waiting for my decision?" };
 const AGENTS: Suggestion = { label: "Which agents can I run", prompt: "Which agents can I run?" };
+const REPLIES: Suggestion = { label: "Clients waiting on me", prompt: "Which clients are waiting for a reply from me?" };
+const MEETINGS: Suggestion = { label: "This week's meetings", prompt: "What meetings do I have this week, and what do I need to prepare?" };
 const RUNS: Suggestion = { label: "Recent agent runs", prompt: "Show me the most recent agent runs and whether any failed." };
 const CAPACITY: Suggestion = { label: "Capacity", prompt: "How much capacity have the agents reclaimed, and what is still open?" };
 const ANALYTICS: Suggestion = { label: "Headline analytics", prompt: "Give me the firm's headline analytics." };
@@ -84,9 +86,9 @@ export function roleStarters(role: string, ctx: SuggestionContext): Suggestion[]
   switch (role) {
     case "adviser":
       if (firmMarket() === "IN") return [WAITING, { label: "Waiting on clients", prompt: "Which proposals are waiting for a client's consent?" }, washSale(h1), perf(h1)];
-      return [WAITING, perf(h1), washSale(h2 ?? h1), AGENTS];
+      return [WAITING, REPLIES, MEETINGS, perf(h1)];
     case "paraplanner":
-      return [view(h1), { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }, AGENTS, WAITING];
+      return [view(h1), { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }, MEETINGS, WAITING];
     case "portfolio_team":
       return [WAITING, { label: "Composites", prompt: "How are the composites performing?" }, ANALYTICS, AGENTS];
     case "research_cio":

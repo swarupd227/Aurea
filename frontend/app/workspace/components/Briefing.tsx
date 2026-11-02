@@ -50,11 +50,6 @@ export function Briefing({ onSend }: { onSend: (text: string) => void }) {
           </li>
         ))}
       </ul>
-      {data.not_shown.map((line) => (
-        <p key={line} className="mt-2 text-xs text-ink-muted">
-          {line}
-        </p>
-      ))}
     </section>
   );
 }

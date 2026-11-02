@@ -165,7 +165,7 @@ export function IpsView({ household = null }: { household?: string | null }) {
                         <td className="px-4 py-2">
                           <div className="flex flex-wrap gap-1.5">
                             <IpsStatusChip status={m.status} />
-                            {m.price_source === "synthetic" && <span className="chip text-warn">synthetic price</span>}
+                            {m.price_source === "synthetic" && <span className="chip text-warn">no market price</span>}
                           </div>
                         </td>
                         <td className="px-4 py-2 text-right">

@@ -25,7 +25,7 @@ export default function BookIntegration() {
     <div>
       <PageHeader
         title="Book integration"
-        sub="Map an acquired book into the client brain. Conflicts are flagged for review before committing."
+        sub="Map an acquired book into your client records. Conflicts are flagged for review before anything is committed."
         actions={<button className="btn-gold" disabled={busy} onClick={newBatch}><Plus size={16} /> {busy ? "Loading…" : "New acquisition"}</button>}
       />
       {loading ? (

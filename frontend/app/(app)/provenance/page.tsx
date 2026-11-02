@@ -181,7 +181,7 @@ export default function Provenance() {
       {/* Data quality (Analytics §2.5) */}
       {dq?.data_quality && (
         <Card className="mb-6">
-          <div className="font-semibold text-ink mb-3 flex items-center gap-2"><Activity size={17} className="text-navy-600" /> Data quality · the brain's health</div>
+          <div className="font-semibold text-ink mb-3 flex items-center gap-2"><Activity size={17} className="text-navy-600" /> Data quality</div>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[["Score", dq.data_quality.score], ["Completeness", dq.data_quality.completeness],
               ["Timeliness", dq.data_quality.timeliness], ["Accuracy", dq.data_quality.accuracy],
@@ -194,7 +194,6 @@ export default function Provenance() {
           </div>
           <div className="text-xs text-ink-muted mt-2">
             AML: {dq.aml.by_status.review || 0} review · {dq.aml.by_status.blocked || 0} blocked · {dq.aml.total_hits} watchlist hit(s).
-            Keeps agents from acting on bad numbers — analytics quality is downstream of data quality.
           </div>
         </Card>
       )}
@@ -208,7 +207,7 @@ export default function Provenance() {
           </button>
         </div>
         {!evals?.length ? (
-          <p className="text-sm text-ink-muted">Run the evaluation harness to score agents against outcomes. A quality regression narrows autonomy automatically.</p>
+          <p className="text-sm text-ink-muted">No agent has been scored yet.</p>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {evals.map((e) => (
@@ -325,12 +324,8 @@ export default function Provenance() {
               <div className="flex items-center gap-2 text-sm text-positive">
                 <CheckCircle2 size={16} /> No open flags.
               </div>
-              <p className="text-xs text-ink-muted mt-1">
-                The surveillance agent reviews every recommendation for suitability, conduct and
-                fair-treatment risk, and can auto-pause an agent on a high-severity outlier.
-              </p>
               <p className="text-[11px] text-ink-muted mt-2 flex items-center gap-1">
-                Last reviewed: on every recommendation decision · <span className="font-medium">automated, continuous</span>
+                Reviewed on every decision
               </p>
             </Card>
           ) : (

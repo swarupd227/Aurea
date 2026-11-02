@@ -12,6 +12,11 @@ import { readable } from "@/lib/refs";
 import { roleStarters, useSuggestionContext } from "@/lib/suggestions";
 import type { LiveTurn, Message, Mentionable, ThreadStatus } from "../types";
 
+function greeting(): string {
+  const hour = new Date().getHours();
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}
+
 export function ThreadView({
   messages,
   status,
@@ -52,7 +57,10 @@ export function ThreadView({
     } else onSend(text);
   };
   const streaming = live !== null;
-  const role = typeof window !== "undefined" ? getUser()?.role ?? "" : "";
+  const me = typeof window !== "undefined" ? getUser() : null;
+  const role = me?.role ?? "";
+  const firstName = String(me?.full_name ?? "").split(" ")[0];
+  const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
   const ctx = useSuggestionContext();
   const starters = roleStarters(role, ctx);
   // The newest words stay in view while someone is reading the end of the thread. Opening a view
@@ -99,17 +107,13 @@ export function ThreadView({
         <div ref={body} className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
           {empty && (
             <div className="pt-[6vh]">
-              <h1 className="text-2xl font-semibold tracking-tight text-balance text-ink">
-                What should your agents do?
+              <h1 className="text-2xl font-semibold tracking-tight text-balance text-ink" data-testid="workspace-greeting">
+                {greeting()}{firstName ? `, ${firstName}` : ""}
               </h1>
-              <p className="mt-2 max-w-prose text-sm text-ink-muted">
-                Ask about your clients, portfolios and recommendations, or have Astra do the
-                work. Anything that changes the platform waits for your confirmation, and every
-                answer shows what tools it used.
-              </p>
+              <p className="mt-1 text-sm text-ink-muted">{today}</p>
               <Briefing onSend={onSend} />
               <div className="mt-6" data-testid="workspace-starters">
-                <h2 className="font-mono text-[11px] uppercase tracking-wider text-ink-muted">Try saying</h2>
+                <h2 className="font-mono text-[11px] uppercase tracking-wider text-ink-muted">Ask Astra</h2>
                 <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                   {starters.map((s) => (
                     <li key={s.prompt}>

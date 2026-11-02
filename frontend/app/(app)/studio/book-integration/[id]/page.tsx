@@ -47,8 +47,8 @@ export default function BatchDetail() {
         <div className="card p-4 mb-5 border-positive/30 flex items-center gap-3">
           <CheckCircle2 className="text-positive" />
           <div className="text-sm">
-            <span className="font-semibold text-ink">Committed as golden records.</span>
-            <span className="text-ink-muted"> {b.committed?.new_clients} new clients, {b.committed?.created_instruments} instruments, {b.committed?.holdings_written} holdings written into the brain.</span>
+            <span className="font-semibold text-ink">Committed.</span>
+            <span className="text-ink-muted"> {b.committed?.new_clients} new clients, {b.committed?.created_instruments} instruments, {b.committed?.holdings_written} holdings recorded.</span>
           </div>
         </div>
       )}
@@ -94,7 +94,7 @@ export default function BatchDetail() {
             {m.holding_conflicts?.length > 0 && (
               <Card className="border-critical/30">
                 <div className="font-semibold text-ink mb-3 flex items-center gap-2"><AlertTriangle size={16} className="text-critical" /> Holding conflicts</div>
-                <Table head={["Client", "Security", "Inbound", "In brain", "Δ"]}>
+                <Table head={["Client", "Security", "Inbound", "On file", "Δ"]}>
                   {m.holding_conflicts.map((c: any, i: number) => (
                     <tr key={i} className="border-t border-navy-50">
                       <td className="py-1.5 text-ink">{c.client}</td>
@@ -129,11 +129,11 @@ export default function BatchDetail() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-semibold text-ink">Operations validation</div>
-                  <p className="text-xs text-ink-muted">Tier 2 — commit the mappings as golden records, or dismiss.</p>
+                  <p className="text-xs text-ink-muted">Commit the mappings, or dismiss them.</p>
                 </div>
                 <div className="flex gap-2">
                   <button className="btn-outline" disabled={!!busy} onClick={() => decide("dismiss")}><X size={15} /> Dismiss</button>
-                  <button className="btn-gold" disabled={!!busy} onClick={() => decide("approve")}><Check size={15} /> Commit golden records</button>
+                  <button className="btn-gold" disabled={!!busy} onClick={() => decide("approve")}><Check size={15} /> Commit mappings</button>
                 </div>
               </div>
             </Card>

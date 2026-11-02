@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -18,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.atlas import narration
-from app.core import agent_runs
-from app.core.db import SessionLocal, get_db
+from app.aurea_core import firm_time, messages, tasks
+from app.core.db import SessionLocal, get_db, utcnow
 from app.core.decision_rights import queue_action, roles_for
 from app.core.logging import get_logger
 from app.core.security import get_current_user
@@ -27,7 +28,9 @@ from app.core.tools import tools_for_role
 from app.llm import turns
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.llm.gateway import Gateway, GatewayError
-from app.models.enums import RecommendationStatus, UserRole
+from app.models.engagement import Meeting
+from app.models.enums import MeetingStatus, RecommendationStatus, UserRole
+from app.models.tenant import Firm
 from app.models.governance import Recommendation
 from app.models.identity import User
 from app.models.thread import (
@@ -347,44 +350,36 @@ async def briefing(
     )
     needs_count = (await session.execute(needs_stmt)).scalar_one() + len(await _my_open_proposals(session, user))
 
-    threads_stmt = select(func.count(Thread.id)).where(
-        Thread.firm_id == user.firm_id, Thread.created_by_user_id == user.id)
-    threads_count = (await session.execute(threads_stmt)).scalar_one()
+    def row(key: str, label: str, count: int, prompt: str, detail: str | None = None) -> dict:
+        return {"id": key, "label": label, "count": count, "detail": detail, "prompt": prompt,
+                "tone": "attention" if count > 0 else "neutral"}
 
-    # Agents, not tools: the count of agents this role may start from a conversation.
-    agents_count = len(agent_runs.runnable_agents(user.role))
+    rows = [row("needs", "Waiting on your decision", needs_count, "Show me what's waiting on my decision.")]
 
-    rows = [
-        {
-            "id": "needs",
-            "label": "Waiting on a decision",
-            "count": needs_count,
-            "detail": None,
-            "prompt": "Show me what's waiting on my decision.",
-            "tone": "attention" if needs_count > 0 else "neutral",
-        },
-        {
-            "id": "agents",
-            "label": "Agents you can run",
-            "count": agents_count,
-            "detail": None,
-            "prompt": "What agents can I run?",
-            "tone": "neutral",
-        },
-        {
-            "id": "conversations",
-            "label": "Conversations",
-            "count": threads_count,
-            "detail": None,
-            "prompt": "Show me my recent conversations.",
-            "tone": "neutral",
-        },
-    ]
-
-    return {
-        "rows": rows,
-        "not_shown": ["Cost and outcome value aren't shown here — the rates behind them aren't measured yet."],
-    }
+    # The person's day, each row only where their role reads it.
+    held = tools_for_role(user.role)
+    firm = await session.get(Firm, user.firm_id)
+    if "read_messages" in held:
+        owed = [t for t in await messages.inbox(session, user.firm_id) if t["needs_reply"]]
+        rows.append(row("replies", "Clients waiting for a reply", len(owed), "Which clients are waiting for a reply from me?",
+                        ", ".join(t["household_name"] for t in owed[:3] if t["household_name"]) or None))
+    if "read_meetings" in held:
+        now = utcnow()
+        coming = (await session.execute(
+            select(Meeting).where(Meeting.firm_id == user.firm_id, Meeting.scheduled_at >= now,
+                                  Meeting.scheduled_at < now + timedelta(days=7),
+                                  Meeting.status != MeetingStatus.COMPLETED)
+            .order_by(Meeting.scheduled_at))).scalars().all()
+        first = coming[0] if coming else None
+        rows.append(row("meetings", "Meetings in the next 7 days", len(coming), "What meetings do I have this week, and what do I need to prepare?",
+                        f"{first.title} · {firm_time.spoken(firm_time.today(firm, first.scheduled_at))}" if first else None))
+    if "read_tasks" in held:
+        today = firm_time.today(firm)
+        mine = await tasks.for_firm(session, user.firm_id, status="open", assigned_to=user.id)
+        late = [t for t in mine if tasks.overdue(t, today)]
+        rows.append(row("tasks", "Your tasks overdue", len(late), "Which of my tasks are overdue?",
+                        f"{len(mine)} open" if mine else None))
+    return {"rows": rows}
 
 
 @router.get("/mentionables")

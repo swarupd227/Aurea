@@ -27,7 +27,7 @@ export default function AgentStream({
   const [sense, setSense] = useState<Phase>("idle");
   const [senseDetail, setSenseDetail] = useState("");
   const [reason, setReason] = useState<Phase>("idle");
-  const [reasonLabel, setReasonLabel] = useState("Reasoning over the client brain");
+  const [reasonLabel, setReasonLabel] = useState("Reading the client record");
   const [check, setCheck] = useState<Phase>("idle");
   const [checkDetail, setCheckDetail] = useState("Suitability vs mandate · fair-conduct · pre-trade compliance");
   const [checkFlagged, setCheckFlagged] = useState(false);
@@ -97,7 +97,7 @@ export default function AgentStream({
     : decided ? `${titleCase(rec.status)} by you`
     : pending ? "Awaiting your approval — approve / modify / dismiss"
     : "Adviser reviews";
-  const actDetail = autonomous || decided ? "Routed to the OMS · written to the decision ledger"
+  const actDetail = autonomous || decided ? "Sent for execution · recorded on the decision ledger"
     : "Pending your approval";
 
   return (
@@ -119,7 +119,7 @@ export default function AgentStream({
 
         {/* sense → reason → check → decide → act */}
         <div className="mt-3 space-y-1.5">
-          <Step icon={Brain} state={sense} label="Sense" detail={senseDetail || "Gathering signals from the brain"} />
+          <Step icon={Brain} state={sense} label="Sense" detail={senseDetail || "Gathering what is on file"} />
           <Step icon={Cpu} state={reason} label="Reason" detail={reasonLabel} />
           <Step icon={ShieldCheck} state={check} label="Check" detail={checkDetail} flagged={checkFlagged} />
           <Step icon={UserCheck} state={decide} label="Decide" detail={decideDetail} />

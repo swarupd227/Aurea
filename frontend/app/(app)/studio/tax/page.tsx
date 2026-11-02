@@ -894,7 +894,7 @@ export default function TaxIntelligencePage() {
           </div>
           <p className="text-sm text-ink-muted dark:text-neutral-400">
             {india ? "Taxpayer by taxpayer, first-in first-out. Estimates for a qualified person to check."
-              : "Jurisdiction-dispatched tax optimisation — NZ (PIE / KiwiSaver / bright-line), US (CGT / RMD / Roth), UK (CGT allowance / ISA / pension)."}
+              : "Tax for NZ, US and UK households: PIE, KiwiSaver and bright-line; CGT, RMD and Roth; the CGT allowance, ISA and pension."}
           </p>
         </div>
         <button onClick={() => mode === "book" ? loadBook() : loadHousehold(selectedHH)} disabled={loading}

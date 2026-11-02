@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Astra for Wealth — Wealth Intelligence Platform",
+  title: "Astra for Wealth",
   description: "Governed, agentic wealth management. Truly personal advice, at scale.",
 };
 

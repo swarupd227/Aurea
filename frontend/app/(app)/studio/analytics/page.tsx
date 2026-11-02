@@ -37,7 +37,7 @@ export default function Analytics() {
     <div>
       <PageHeader
         title="Analytics"
-        sub="Metrics across portfolios, clients, the practice and risk — computed live from the client brain."
+        sub="Portfolios, clients, the practice and risk."
       />
 
       <div className="flex gap-1 mb-6 border-b border-navy-100 overflow-x-auto">
@@ -52,21 +52,6 @@ export default function Analytics() {
       </div>
 
       {tab === "overview" && (<>
-      {/* Maturity climb */}
-      <div className="flex flex-wrap gap-2 mb-6 overflow-x-auto pb-1">
-        {data.maturity.map((m: any, i: number) => (
-          <div key={m.stage} className="flex items-center gap-2 shrink-0">
-            <div className={`rounded-xl border px-3 py-2 ${m.live ? "border-navy-200 bg-surface" : "border-navy-100 opacity-60"}`}>
-              <div className="text-sm font-medium text-ink flex items-center gap-1.5">
-                {m.stage} {m.live && <span className="h-1.5 w-1.5 rounded-full bg-positive animate-pulse" />}
-              </div>
-              <div className="text-[11px] text-ink-muted">{m.question}</div>
-            </div>
-            {i < data.maturity.length - 1 && <span className="text-navy-300 shrink-0">→</span>}
-          </div>
-        ))}
-      </div>
-
       {/* Headline KPIs — click to jump to the relevant tab */}
       <div className="text-xs text-ink-muted mb-2 flex items-center gap-1">
         Click any metric to open the detail tab ↓
@@ -418,8 +403,7 @@ export default function Analytics() {
             )}
 
             <div className="text-xs text-ink-muted bg-navy-50 rounded-lg px-4 py-3">
-              <strong>ROI methodology:</strong> Hours saved = (decisions × 25 min) + (agent runs × 15 min) of analyst / compliance time displaced.
-              Cost displaced = hours × $75/h analyst rate. These are indicative estimates — configure assumptions to match your firm's cost structure.
+              <strong>Estimated:</strong> 25 minutes for each decision and 15 for each agent run, at $75 an hour.
             </div>
           </div>
         )}
@@ -691,8 +675,7 @@ export default function Analytics() {
               <ShieldCheck className={rd.audit.chain_valid ? "text-positive" : "text-critical"} />
               <div className="text-sm text-ink-soft">
                 <span className="font-semibold text-ink">{rd.audit.ledger_entries}</span> ledger entries ·
-                chain <span className={rd.audit.chain_valid ? "text-positive" : "text-critical"}>{rd.audit.chain_valid ? "valid" : "broken"}</span> ·
-                every decision fully reconstructable.
+                chain <span className={rd.audit.chain_valid ? "text-positive" : "text-critical"}>{rd.audit.chain_valid ? "valid" : "broken"}</span>
               </div>
             </div>
           </Card>
@@ -723,7 +706,7 @@ function Layer({ n, title, q, icon: Icon, children, active = true }: any) {
       <div className="flex items-center gap-2 mb-3">
         <span className="h-8 w-8 rounded-lg bg-navy-800 text-white flex items-center justify-center"><Icon size={16} /></span>
         <div>
-          <div className="font-semibold text-ink">{n} · {title}</div>
+          <div className="font-semibold text-ink">{title}</div>
           <div className="text-xs text-ink-muted">{q}</div>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { Wrench, DatabaseZap } from "lucide-react";
+import { sourceLabel } from "@/lib/sourceLabel";
 import type { Artifact } from "../types";
 
 function pricingSummary(artifacts: Artifact[]): { text: string; allReal: boolean } | null {
@@ -7,8 +8,8 @@ function pricingSummary(artifacts: Artifact[]): { text: string; allReal: boolean
     if (pricing && (pricing.real || pricing.synthetic)) {
       const total = pricing.real + pricing.synthetic;
       if (pricing.synthetic === 0) return { text: `${total} holding(s), real market prices`, allReal: true };
-      if (pricing.real === 0) return { text: `${total} holding(s), synthetic prices (demo data)`, allReal: false };
-      return { text: `${pricing.real} real, ${pricing.synthetic} synthetic price(s)`, allReal: false };
+      if (pricing.real === 0) return { text: `${total} holding(s), none priced from the market`, allReal: false };
+      return { text: `${pricing.real} priced from the market, ${pricing.synthetic} not`, allReal: false };
     }
   }
   return null;
@@ -29,10 +30,10 @@ export function ProofStrip({ tools, artifacts }: { tools: string[]; artifacts: A
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-soft pt-2 font-mono text-[11px]">
       <span
         className="inline-flex items-center gap-1.5 text-ink-muted"
-        title={`Tool call(s) this answer used: ${tools.join(", ")}`}
+        title="What this answer read"
       >
         <Wrench className="h-3 w-3 shrink-0 text-ok" aria-hidden />
-        {tools.map((t) => t.replace(/_/g, " ")).join(" · ")}
+        {tools.map(sourceLabel).join(" · ")}
       </span>
       {pricing && (
         <span
@@ -40,7 +41,7 @@ export function ProofStrip({ tools, artifacts }: { tools: string[]; artifacts: A
           title={
             pricing.allReal
               ? "Every holding priced from the real market feed."
-              : "At least one holding used a synthetic price — this environment's demo data, not a live quote. Never presented as a real market price."
+              : "At least one holding has no market price, so its value is not a live quote."
           }
         >
           <DatabaseZap className="h-3 w-3 shrink-0" aria-hidden />

@@ -53,7 +53,7 @@ function ConflictsAndWsp() {
       <div className="flex items-center gap-2">
         <ClipboardList size={18} className="text-ink-muted" />
         <h2 className="text-lg font-semibold text-ink">Conflicts inventory & WSP grid</h2>
-        <span className="text-xs text-ink-muted">L200-7 — the evidence factory behind the framework above</span>
+        <span className="text-xs text-ink-muted">Evidence for the framework above</span>
       </div>
 
       <div className="grid grid-cols-3 gap-4">

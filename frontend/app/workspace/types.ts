@@ -105,7 +105,6 @@ export interface BriefingRow {
 
 export interface Briefing {
   rows: BriefingRow[];
-  not_shown: string[];
 }
 
 export interface Mentionable {

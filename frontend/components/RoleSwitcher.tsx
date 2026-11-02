@@ -49,7 +49,7 @@ export default function RoleSwitcher() {
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute bottom-full mb-2 left-0 w-72 max-h-[70vh] overflow-y-auto bg-surface rounded-xl shadow-lift border border-navy-100 z-50 p-2">
             <div className="px-2 py-1.5 text-[10px] uppercase tracking-wide text-ink-muted">
-              Sign in as a persona · demo
+              Switch role
             </div>
             {Object.entries(groups).map(([group, items]) => (
               <div key={group} className="mb-1">

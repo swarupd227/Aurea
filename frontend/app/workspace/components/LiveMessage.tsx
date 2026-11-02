@@ -1,10 +1,7 @@
 import { Check, CircleAlert, Loader2 } from "lucide-react";
+import { sourceLabel } from "@/lib/sourceLabel";
 import { Markdown } from "./Markdown";
 import type { LiveTurn } from "../types";
-
-function toolLabel(key: string) {
-  return key.replace(/_/g, " ");
-}
 
 function Steps({ steps }: { steps: LiveTurn["steps"] }) {
   if (steps.length === 0) return null;
@@ -19,7 +16,7 @@ function Steps({ steps }: { steps: LiveTurn["steps"] }) {
           ) : (
             <CircleAlert className="h-3 w-3 shrink-0 text-crit" aria-label="failed" />
           )}
-          <span className="text-ink-soft">{toolLabel(s.tool_key)}</span>
+          <span className="text-ink-soft">{sourceLabel(s.tool_key)}</span>
         </li>
       ))}
     </ol>

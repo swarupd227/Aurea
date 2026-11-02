@@ -203,7 +203,6 @@ export default function Canvas() {
           <div className="h-10 w-10 rounded-xl bg-gold-soft/40 text-gold-dark flex items-center justify-center"><Sprout size={18} /></div>
           <div className="flex-1">
             <div className="font-medium text-ink">Next-gen journey for {view.next_gen[0].name}</div>
-            <div className="text-xs text-ink-muted">An education-led, digital-first space to learn about the family's wealth.</div>
           </div>
           <ArrowRight className="text-gold group-hover:translate-x-0.5 transition" size={18} />
         </Link>
@@ -467,7 +466,7 @@ export default function Canvas() {
       {/* Assistant */}
       <div className="card p-5 mt-5">
         <div className="font-semibold text-ink mb-1">Ask {view.adviser?.name?.split(" ")[0] || "your adviser"}’s assistant</div>
-        <p className="text-xs text-ink-muted mb-3">Always-on, in {view.firm?.name}’s voice. For advice, it hands off to your named adviser.</p>
+        <p className="text-xs text-ink-muted mb-3">For advice, it passes you to your adviser.</p>
         <div className="space-y-3 mb-3">
           {thread.length === 0 && (
             <div>

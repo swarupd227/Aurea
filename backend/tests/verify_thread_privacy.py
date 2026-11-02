@@ -80,9 +80,6 @@ async def behaviour(Session) -> None:
               [t["title"] for t in (await T.list_threads(user=admin, session=s))["threads"]], ["Fetch prices now."])
         check("someone with none sees none", (await T.list_threads(user=outsider, session=s))["threads"], [])
 
-        print("\n=== the briefing counts only your own ===")
-        row = next(r for r in (await T.briefing(user=adviser, session=s))["rows"] if r["id"] == "conversations")
-        check("conversations on the adviser's home", row["count"], 1)
 
         print("\n=== another person's conversation reads as not found ===")
         check("the author can open it", await status_of(T.get_thread(mine.id, user=adviser, session=s)), 200)

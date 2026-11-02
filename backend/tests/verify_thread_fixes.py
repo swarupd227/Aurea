@@ -2,7 +2,7 @@
 
     python -m tests.verify_thread_fixes
 
-  (a) the Briefing's "Agents you can run" counted tools, not agents;
+  (a) the Briefing is the person's day: decisions, replies owed, meetings and overdue tasks;
   (b) the follow-up suggestions under a reply were three fixed strings nothing could answer;
   (c) a reply streamed to a browser that navigated away was lost, along with the question;
   (d) compliance's Needs-you listed every proposal it could technically approve.
@@ -14,19 +14,22 @@ import os
 import sys
 import tempfile
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  — registers every table on Base.metadata
-from app.core import agent_runs, decision_rights as dr
-from app.core.db import Base
+from app.core import decision_rights as dr
+from app.core.db import Base, utcnow
 from app.core.tools import tools_for_role
 from app.llm import follow_ups, gateway as gw_mod
 from app.llm.gateway import Gateway
-from app.models.enums import AgentKey, RecommendationStatus, UserRole
+from app.models.client_experience import Message
+from app.models.engagement import Meeting, Task
+from app.models.enums import AgentKey, MessageAuthor, RecommendationStatus, UserRole
 from app.models.governance import AgentRun, Recommendation
+from app.models.graph import Household
 from app.models.identity import User
 from app.models.tenant import Firm
 from app.models.thread import MessageRole, PendingAction, PendingActionStatus, Thread, ThreadKind, ThreadMessage, ToolCall
@@ -212,13 +215,27 @@ async def routes(Session) -> None:
         b = await T.briefing(user=compliance, session=s)
         check("and the briefing counts the pause plus the two vetoes", b["rows"][0]["count"], 3)
 
-        print("\n=== (a) the briefing counts agents, not tools ===")
+        print("\n=== (a) the briefing is the person's day, each row where their role reads it ===")
         for u, label in ((adviser, "adviser"), (ops, "operations"), (admin, "admin"), (compliance, "compliance")):
-            row = next(r for r in (await T.briefing(user=u, session=s))["rows"] if r["id"] == "agents")
-            check(f"{label}: agents you can run", row["count"], len(agent_runs.runnable_agents(u.role)))
-            check(f"{label}: and not the size of the toolbox", row["count"] == len(tools_for_role(u.role)), False)
-        row = next(r for r in (await T.briefing(user=adviser, session=s))["rows"] if r["id"] == "agents")
-        check("an adviser's count is every agent they can run", row["count"], len(agent_runs.runnable_agents(adviser.role)))
+            b = await T.briefing(user=u, session=s)
+            held = tools_for_role(u.role)
+            check(f"{label}: rows only for what the role reads", [r["id"] for r in b["rows"]],
+                  ["needs"] + [k for k, tool in (("replies", "read_messages"), ("meetings", "read_meetings"), ("tasks", "read_tasks")) if tool in held])
+            check(f"{label}: nothing about the software", any(r["id"] in ("agents", "conversations") for r in b["rows"]) or "not_shown" in b, False)
+        lee = Household(id=uuid.uuid4(), firm_id=firm.id, name="The Lee Family")
+        s.add(lee)
+        await s.flush()
+        s.add_all([Message(firm_id=firm.id, household_id=lee.id, author_role=MessageAuthor.CLIENT, author_name="Ann Lee", body="Can we talk?"),
+                   Meeting(firm_id=firm.id, household_id=lee.id, title="Annual review — The Lee Family", scheduled_at=utcnow() + timedelta(days=2)),
+                   Meeting(firm_id=firm.id, household_id=lee.id, title="Next quarter", scheduled_at=utcnow() + timedelta(days=20)),
+                   Task(firm_id=firm.id, household_id=lee.id, title="Send forms", due_date=date.today() - timedelta(days=3), assigned_to=adviser.id),
+                   Task(firm_id=firm.id, title="Later", due_date=date.today() + timedelta(days=3), assigned_to=adviser.id),
+                   Task(firm_id=firm.id, title="Someone else's", due_date=date.today() - timedelta(days=3), assigned_to=ops.id)])
+        await s.commit()
+        day = {r["id"]: r for r in (await T.briefing(user=adviser, session=s))["rows"]}
+        check("a client waiting for a reply is counted and named", (day["replies"]["count"], day["replies"]["detail"]), (1, "The Lee Family"))
+        check("meetings in the next 7 days, the next one named", (day["meetings"]["count"], day["meetings"]["detail"].startswith("Annual review")), (1, True))
+        check("your overdue tasks, of those open to you", (day["tasks"]["count"], day["tasks"]["detail"]), (1, "2 open"))
 
         print("\n=== (b) the suggestions on a real reply ===")
         thread = Thread(firm_id=firm.id, kind=ThreadKind.ASK_ASTRA, created_by_user_id=adviser.id, title="s")

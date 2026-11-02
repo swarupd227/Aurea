@@ -170,7 +170,7 @@ export default function Pipeline() {
   return (
     <div>
       <PageHeader title="Growth pipeline"
-        sub="Contacts, opportunities, and activity — kept separate from the client graph until a deal converts (L200-8 §2.1)."
+        sub="Contacts, opportunities and activity. A contact becomes a client when a deal is won."
         actions={<AddContactForm onAdded={refetchAll} />} />
 
       {summary && (

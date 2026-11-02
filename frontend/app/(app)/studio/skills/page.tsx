@@ -162,7 +162,7 @@ export default function Skills() {
     <div>
       <PageHeader
         title="Skills"
-        sub="Build your own agents in plain English. Save them to your workspace, share with colleagues, or publish to the firm — each runs with Claude under full governance."
+        sub="Agents you describe in plain English. Keep them to yourself, share them with colleagues, or publish them to the firm."
         actions={<button className="btn-gold" onClick={openNew}><Plus size={16} /> New skill</button>}
       />
 
@@ -236,7 +236,7 @@ export default function Skills() {
               )}
             </div>
             <div className="text-[11px] text-ink-muted flex items-center gap-1">
-              <ShieldCheck size={12} /> Skills are assistive — they propose, never act without your approval, and every proposal is checked against your regulatory framework.
+              <ShieldCheck size={12} /> A skill proposes. Nothing happens without your approval.
             </div>
             <div className="flex justify-end gap-2">
               <button className="btn-ghost" onClick={() => { setEditing(null); setForm(BLANK); }}>Cancel</button>
@@ -310,7 +310,7 @@ export default function Skills() {
                   <div className="mt-4 border-t border-navy-100 pt-3">
                     <div className="flex items-center gap-2 text-xs text-ink-muted mb-2">
                       <Zap size={12} className="text-gold" />
-                      {isStreaming ? <span className="animate-pulse text-gold-dark font-medium">Claude is scanning your book…</span>
+                      {isStreaming ? <span className="animate-pulse text-gold-dark font-medium">Scanning your book…</span>
                         : r.mode === "test"
                         ? <span><b>Dry run complete</b> · scanned {r.scanned} · {r.surfaced} would be surfaced <span className="text-ink-muted">(nothing saved)</span></span>
                         : <span>Scanned {r.scanned} · <b>{r.surfaced} surfaced</b> — proposals are in your feed, awaiting your approval.</span>}

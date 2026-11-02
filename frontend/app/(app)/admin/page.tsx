@@ -646,7 +646,7 @@ function ModelsTab() {
         <div className="text-sm mb-3 flex items-center gap-2">
           <span className={`h-2 w-2 rounded-full ${llm.enabled ? "bg-positive" : "bg-caution"}`} />
           <span className={llm.enabled ? "text-positive" : "text-caution"}>
-            {llm.enabled ? "Connected — agents use live Claude reasoning" : "Not connected — running deterministic fallbacks"}
+            {llm.enabled ? "Connected — agents write their own reasoning" : "Not connected — agents use rule-based text"}
           </span>
           {llm.anthropic_configured && <span className="chip bg-positive/10 text-positive">Anthropic key set</span>}
           {llm.anthropic_from_env && <span className="chip bg-navy-50 text-ink-muted">from environment</span>}

@@ -72,7 +72,7 @@ export default function Capacity() {
               </div>
             </>
           ) : (
-            <p className="text-sm text-ink-muted">Run the evaluation harness in Provenance to populate agent health.</p>
+            <p className="text-sm text-ink-muted">No agent has been scored yet.</p>
           )}
         </Card>
       </div>
@@ -83,8 +83,7 @@ export default function Capacity() {
           <p className="text-sm text-ink-soft">
             The workforce has handled <span className="font-semibold text-ink">{cap.total_agent_runs}</span> runs and
             reclaimed an estimated <span className="font-semibold text-ink">{cap.estimated_hours_reclaimed} hours</span> of
-            preparation, monitoring and documentation — capacity that shifts from administration to relationships,
-            decoupling service cost from book growth.
+            preparation, monitoring and documentation.
           </p>
         </div>
       </Card>
