@@ -292,7 +292,8 @@ async def behaviour() -> None:
             gw_mod.llm_service.stream = hearing
             async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t8.id, "Thanks"):
                 pass
-            check("a confirmed change is not marked", "Not done" in said_to_model(), False)
+            check("a confirmed change is not called undone", "Not done" in said_to_model(), False)
+            check("  it reads as done", "[Done: create_task" in said_to_model() and "Confirmed one" in said_to_model(), True)
 
             print("\n=== saying it is not doing it ===")
             async def turn(*rounds):

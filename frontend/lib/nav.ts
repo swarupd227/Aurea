@@ -11,7 +11,7 @@ import {
   PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare, MessageSquare, Gauge, Activity,
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
   Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2, ArrowLeftRight, Umbrella,
-  SlidersHorizontal, BadgeCheck, CalendarCheck, ScrollText, Wallet, DoorOpen, PackageCheck, Gem,
+  SlidersHorizontal, BadgeCheck, CalendarCheck, ScrollText, Wallet, DoorOpen, PackageCheck, Gem, Compass,
 } from "lucide-react";
 
 export type ViewIntent = "decide" | "clients" | "operate" | "govern" | "configure" | "platform";
@@ -66,6 +66,7 @@ export const VIEWS: View[] = [
   { href: "/studio/net-worth", label: "Net worth", icon: Wallet, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["balance sheet", "liabilities", "debts", "mortgage", "held away", "expenses", "cash flow", "assets"] },
   { href: "/studio/products", label: "Product shelf", icon: PackageCheck, roles: [A, P, PT, C, O, B, R], intent: "clients", keywords: ["approved list", "due diligence", "funds", "share class", "accredited", "closed"] },
   { href: "/studio/equity-comp", label: "Equity compensation", icon: Gem, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["rsu", "iso", "espp", "stock options", "concentrated stock", "vesting", "10b5-1", "collar"] },
+  { href: "/studio/plan", label: "Financial plan", icon: Compass, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["retirement", "social security", "pension", "withdrawal", "emergency fund", "debt", "education", "529", "monte carlo"] },
   { href: "/studio/exits", label: "Departures and estates", icon: DoorOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["offboarding", "leaving", "acat", "transfer out", "death", "estate settlement", "executor", "step-up", "inherited"] },
   { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT], intent: "clients", keywords: ["bias", "nudge"] },
   { href: "/studio/beneficiary-audit", label: "Beneficiary audit", icon: UserCheck, roles: [A, P, PT, C], intent: "clients", keywords: ["registration", "beneficiaries"] },

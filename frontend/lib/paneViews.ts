@@ -11,7 +11,7 @@ import { viewsForRole } from "./nav";
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
-  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp";
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -48,6 +48,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "exits", pattern: /^\/studio\/exits\/?$/, base: "/studio/exits", label: "Departures and estates" },
   { key: "products", pattern: /^\/studio\/products\/?$/, base: "/studio/products", label: "Product shelf" },
   { key: "equity_comp", pattern: /^\/studio\/equity-comp\/?$/, base: "/studio/equity-comp", label: "Equity compensation" },
+  { key: "plan", pattern: /^\/studio\/plan\/?$/, base: "/studio/plan", label: "Financial plan" },
 ];
 
 /** The list a single-item view sits under, so one opened straight from the conversation still has
@@ -168,6 +169,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_balance_item":
     case "end_balance_item":
       return onClient("/studio/net-worth");
+    case "read_financial_plan":
+    case "record_income_stream":
+    case "end_income_stream":
+    case "record_education_goal":
+      return onClient("/studio/plan");
     case "read_equity_comp":
     case "record_equity_grant":
     case "end_equity_grant":

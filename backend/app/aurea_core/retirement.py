@@ -206,8 +206,15 @@ async def for_household(
 
     # Income target (today's $): explicit, else a ~5% draw on the funded retirement pot. Anchoring to
     # the funded value (not the aspirational goal lump sum) keeps the projection realistic.
-    default_income = a.get("annual_income") or current_value * 0.05
-    annual_income = float(overrides.get("annual_income") or default_income)
+    # Spending on file, and the debts that outlast the working years, is the income to plan for; income that
+    # has started by then is what the portfolio need not find. With nothing recorded this changes nothing.
+    from app.aurea_core import financial_plan  # local import avoids a cycle
+
+    on_file = await financial_plan.retirement_inputs(session, household_id, firm_id=firm_id, retirement_age=retirement_age, current_age=current_age)
+    recorded = on_file["spending"] + on_file["debt_payments"] if on_file["spending"] else None
+    default_income = a.get("annual_income") or recorded or current_value * 0.05
+    income_need = float(overrides.get("annual_income") or default_income)
+    annual_income = max(income_need - on_file["guaranteed"], 0.0)
     annual_contribution = float(overrides.get("annual_contribution") if overrides.get("annual_contribution") is not None
                                 else a.get("annual_contribution", 0.0))
 
@@ -217,6 +224,10 @@ async def for_household(
         annual_income=annual_income, annual_contribution=annual_contribution,
     )
     plan["household"] = {"id": str(household_id), "name": brain["household"]["name"]}
+    plan["income_need"] = round(income_need)
+    plan["income_basis"] = "stated" if overrides.get("annual_income") or a.get("annual_income") else "recorded_spending" if recorded else "assumed_draw"
+    plan["guaranteed_income"] = on_file["guaranteed"]
+    plan["starts_later"] = on_file["starts_later"]
     plan["goal"] = rgoal["name"] if rgoal else "Retirement"
     plan["funding_share"] = funding_share
     plan["inputs_editable"] = ["retirement_age", "longevity_age", "annual_income", "annual_contribution"]

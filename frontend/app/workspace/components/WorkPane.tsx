@@ -27,6 +27,7 @@ import { RiskProfilesView } from "@/components/views/RiskProfilesView";
 import { ReconciliationView } from "@/components/views/ReconciliationView";
 import { EquityCompView } from "@/components/views/EquityCompView";
 import { ExitsView } from "@/components/views/ExitsView";
+import { FinancialPlanView } from "@/components/views/FinancialPlanView";
 import { ProductsView } from "@/components/views/ProductsView";
 import { NetWorthView } from "@/components/views/NetWorthView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
@@ -98,6 +99,8 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <NetWorthView household={pane.query.household ?? null} />;
     case "equity_comp":
       return <EquityCompView household={pane.query.household ?? null} />;
+    case "plan":
+      return <FinancialPlanView household={pane.query.household ?? null} />;
     case "products":
       return <ProductsView />;
     case "exits":

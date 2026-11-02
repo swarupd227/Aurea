@@ -28,8 +28,6 @@ with L200-1 and L200-2 beside it, in the user's Downloads.
 
 | ID | Item | L100 | Where it stands | Size |
 |---|---|---|---|---|
-| B-83 | Retirement income: withdrawal rate and pension elections | §5.4 | Monte Carlo exists. No sustainable withdrawal rate and no pension election | Medium |
-| B-84 | Cash flow: reserves, debt and a projection | §5.4 | Net worth shows today. No emergency reserve measure, debt strategy or balance-sheet projection. Goes with B-68 | Medium |
 | B-85 | Client money movement | §5.3, §5.8 | No withdrawal request, no raising cash for one or an RMD, no standing instruction | Medium |
 | B-86 | Life-event changes | §5.8 | No record of a marriage, divorce, inheritance or sale of a business, so nothing triggers a plan or portfolio revision | Small |
 | B-87 | The trade lifecycle | §6.1 | No trade confirmation, settlement date or block allocation. An order settles at once. Goes with B-81 | Medium |
@@ -41,8 +39,6 @@ with L200-1 and L200-2 beside it, in the user's Downloads.
 | ID | Item | L100 | Where it stands |
 |---|---|---|---|
 | B-10 | Trusted contact | §5.3 | Not built |
-| B-11 | Social Security claiming | §5.4 | Not built |
-| B-12 | Education funding | §5.4 | Passing mentions only |
 | B-13 | Tax documents (1099, K-1 and local equivalents) | §5.9 | Not built |
 | B-14 | Binary document storage | - | Text only |
 | B-15 | Book scan covers every scheduled agent | - | `POST /api/studio/scan` runs three agents |
@@ -53,7 +49,6 @@ with L200-1 and L200-2 beside it, in the user's Downloads.
 | B-38 | Capacity from wealth against needs | §5.2 | The questionnaire cannot see it, so capacity comes from horizon, income stability and liquidity alone |
 | B-39 | Questionnaire by person or entity | §5.2 | One set of answers per household, compared with every mandate; a trust is not asked separately |
 | B-44 | Astra overstates "not taken" | §5.2 | Live on 31 Oct it said nothing on file supports a mandate's profile. The tool knows only that no questionnaire is recorded here; a firm may hold one elsewhere |
-| B-68 | Plans that read debts and spending | §5.4 | Net worth and protection read them. Goal and retirement projections do not: they still assume no debt payments and no recorded spending |
 | B-69 | The client sees their net worth | §5.4 | Reading is staff only. A client's Canvas shows no net worth, and the client cannot correct what is on file |
 | B-81 | A direct order and the compliance rules | - | Surveillance reviews recommendations, and a direct order is not one, so `execute_orders` gets no surveillance flag and none of the pre-trade rules a proposal is measured by. It is held to the IPS and the tax window (B-71), and the thread records who confirmed it, but nothing there writes it to the provenance ledger |
 | B-48 | Over-promising rule reads a denial as a promise | - | `no_overpromise` matches words, so "does not mean a rebuy carries no risk" and "not a guarantee of outcome" fail it. Two Indian tax memos show this live. Every firm shares the rule and over-flagging is the safe direction, so the user chose on 31 Oct to leave it |
@@ -119,6 +114,7 @@ B-26 waits for a real custodian statement.
 | B-07 | Offboarding and wealth transfer: a departure or a death recorded from a document, the book kept as it stood that day, the mandate held, what a custodian moved booked to holdings, lots and cash, beneficiaries paid by designation, basis stepped up where the law does, and accounts, mandates and the household closing (`aurea_core/exits.py`, Departures and estates) | Tests, 86 checks. On the real model on throwaway data: a departure and a death from a plain sentence, Astra opening the view on one client, a payout from the form in the pane through its Confirm card, the view updating itself. Three things fell out of that run: Astra wrongly required an executor and a share for a named beneficiary (tool wording), a form dated by the browser's day where the firm's is the one checked, and an estate card that read as blocked. A final part-period fee shows as days unbilled and is raised by hand. Estate tax and a spouse's half step-up are not modelled. Not deployed |
 | B-08 | Approved product list: research decisions added and never edited, closed stopping every purchase, gates needing a certification from a document, an "approved products only" switch a person throws, dearer share classes found within a family, and the rebalancer and direct orders reading the same answer (`aurea_core/shelf.py`, Product shelf) | Tests, 44 checks. On the real model on throwaway data: a product closed from a sentence and confirmed, and Astra warning before the firm-wide switch that nothing was approved yet. The page rendered locally. No decision is on file anywhere, so nothing changes live until the research team records one. Not deployed |
 | B-09 | Equity compensation and concentrated stock: grants recorded from the plan statement, vesting from the schedule, value only on a real price, a position measured with what is granted, selling paths over 3, 5 and 7 years, and a plan read against the position (`aurea_core/equity_comp.py`, Equity compensation) | Tests, 50 checks. On the real model on throwaway data: concentration and paths from a question, a grant recorded through its card. The page rendered locally. Tax, AMT and withholding are named as not modelled. A broad equity fund above a fifth reads as concentrated, as in B-63. Not deployed |
+| B-83, B-11, B-84, B-12, B-68 | The financial plan: retirement with withdrawal rates, income to count on, Social Security claiming, pension elections, the cash reserve, debts by cost, a ten-year projection and education funding, one view on one client (`aurea_core/financial_plan.py`, Financial plan). Recorded spending and debts now drive retirement. Goal projections outside retirement still do not read them | Tests, 62 checks, with the statutory factors checked against known figures. With nothing recorded the retirement figures do not change. On the real model on throwaway data: a plan read, a statement recorded and confirmed, claiming ages laid out. Not deployed |
 | B-75 | The remaining Confirm cards on the live site | From B-67: client consent, registration, conflict, WSP evidence, the pipeline and corporate actions have been seen in tests only |
 
 ## Done

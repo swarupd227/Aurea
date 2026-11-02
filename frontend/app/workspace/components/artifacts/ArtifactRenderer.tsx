@@ -20,6 +20,7 @@ import { IpsCard } from "./IpsCard";
 import { BalanceSheetCard } from "./BalanceSheetCard";
 import { EquityCompCard } from "./EquityCompCard";
 import { ExitsCard } from "./ExitsCard";
+import { PlanCard } from "./PlanCard";
 import { ShelfCard } from "./ShelfCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
@@ -130,6 +131,12 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_financial_plan":
+      case "record_income_stream":
+      case "end_income_stream":
+      case "record_education_goal":
+        if (!artifact.result?.cash) return null;
+        return <PlanCard result={artifact.result as any} />;
       case "read_equity_comp":
       case "record_equity_grant":
       case "end_equity_grant":

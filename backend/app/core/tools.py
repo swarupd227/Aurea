@@ -649,6 +649,76 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
+    "read_financial_plan": Tool(
+        key="read_financial_plan",
+        name="Read Financial Plan",
+        speaking_agent="astra",
+        description="One household's plan: will the money last (probability of success, sustainable income and withdrawal rate, sequence risk, the levers), the income it can count on and how far that covers essentials, Social Security claiming at 62, full age and 70 for a US household, what a pension's choices imply, the cash reserve, each debt's rate and years to clear, a ten-year net worth projection, and education funding. All of it is an estimate from what is on file. Say so, name what is not assessed, and do not advise on an irreversible election: lay the numbers out.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "The household (from search_households)", required=True)],
+        output=ToolOutput("object", "Retirement, income, cash, debts, projection and education"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_income_stream": Tool(
+        key="record_income_stream",
+        name="Record Income Stream",
+        speaking_agent="astra",
+        description="Record income a person can count on, from the statement: social_security, state_pension, employer_pension, annuity, rental or other. For Social Security give the benefit at full retirement age, as the statement does, and start_age as when they plan to claim. For a pension, give its lump_sum and joint-life options if the statement shows them.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this income? It changes what the portfolio must provide in retirement.",
+        inputs=[
+            ToolInput("person_id", "uuid", "The person (from read_household)", required=True),
+            ToolInput("kind", "string", "social_security, state_pension, employer_pension, annuity, rental or other", required=True),
+            ToolInput("annual_amount", "number", "The yearly amount", required=True),
+            ToolInput("start_age", "number", "The age it starts, or they plan to claim", required=True),
+            ToolInput("source_document", "string", "The statement", required=True),
+            ToolInput("name", "string", "A name for it", required=False),
+            ToolInput("inflation_linked", "boolean", "Whether it rises with inflation", required=False),
+            ToolInput("lump_sum", "number", "A pension's cash alternative", required=False),
+            ToolInput("joint_annual", "number", "A pension's joint-life yearly amount", required=False),
+            ToolInput("joint_survivor_share_pct", "number", "The percent a survivor keeps on the joint option", required=False),
+        ],
+        output=ToolOutput("object", "The household's plan"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "end_income_stream": Tool(
+        key="end_income_stream",
+        name="End Income Stream",
+        speaking_agent="astra",
+        description="Mark an income stream as no longer standing, with the reason. It stays on record.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="End this income? It stops counting in the plan.",
+        inputs=[
+            ToolInput("stream_id", "uuid", "From read_financial_plan", required=True),
+            ToolInput("reason", "string", "Why it has ended", required=True),
+        ],
+        output=ToolOutput("object", "The household's plan"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "record_education_goal": Tool(
+        key="record_education_goal",
+        name="Record Education Goal",
+        speaking_agent="astra",
+        description="Record an education goal: who for, the starting year, how many years, and the yearly cost in today's money from a named source such as the school's published fees. Never estimate the cost.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this goal?",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household", required=True),
+            ToolInput("student", "string", "Who it is for", required=True),
+            ToolInput("start_year", "number", "The year it starts", required=True),
+            ToolInput("years", "number", "How many years", required=True),
+            ToolInput("annual_cost", "number", "The yearly cost in today's money", required=True),
+            ToolInput("cost_source", "string", "Where the cost comes from", required=True),
+        ],
+        output=ToolOutput("object", "The household's plan"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
     "read_client_exits": Tool(
         key="read_client_exits",
         name="Read Departures and Estates",
@@ -1059,20 +1129,20 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) or equity_comp (grants and concentrated stock). ips, reviews, protection, risk_profiles, net_worth and "
-            "exits, equity_comp show every client unless given household_id: when the conversation is about one client, look them up "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) or plan (one client's financial plan). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits, equity_comp, plan show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages, read_balance_sheet, read_protection, "
-            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp); an id from memory or an earlier turn is refused."
+            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products or equity_comp", required=True),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits or equity_comp to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp or plan", required=True),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp or plan to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -1634,9 +1704,10 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "exits": ("/studio/exits", "Departures and estates", {_A, _P, _PT, _C, _O, _B}),
     "products": ("/studio/products", "Product shelf", {_A, _P, _PT, _C, _O, _B, _R}),
     "equity_comp": ("/studio/equity-comp", "Equity compensation", {_A, _P, _PT, _C, _O, _B}),
+    "plan": ("/studio/plan", "Financial plan", {_A, _P, _PT, _C, _O, _B}),
 }
 # The views of every client that can open on one, through `?household=`.
-ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp"}
+ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan"}
 
 
 def get_tool(key: str) -> Tool | None:

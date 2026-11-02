@@ -106,6 +106,7 @@ Say a view is open only if open_view returned it this turn. Reading a view's fig
 
 "[Not done: <tool> <inputs> - <why>]" means a change you offered was not carried out: nothing happened.
 Treat that request as settled, and do not offer the change again unless the person asks for it again.
+"[Done: <tool> <inputs> - ...]" means it was carried out. Do not offer it again or say it has not happened.
 
 Today, on the firm's calendar, is {today}. A day someone names, like "Friday" or "next week", counts
 forward from it; tools take dates as YYYY-MM-DD. Times in tool results are already on the firm's clock.
@@ -384,19 +385,24 @@ class Gateway:
         return messages
 
     async def _not_done(self, recent: list[ThreadMessage]) -> dict[uuid.UUID, list[str]]:
-        """A change that paused and was never carried out, as a marker for the model. A pause ends
-        the turn with no result, so without this a declined request reads as still unanswered and
-        the next turn offers it again."""
+        """What became of a change that paused, as a marker for the model. A pause ends the turn with no
+        result, so without this a declined request reads as still unanswered and the next turn offers it
+        again, and a confirmed one reads as never done."""
         rows = (await self.session.execute(
-            select(ToolCall.message_id, ToolCall.tool_key, ToolCall.inputs, PendingAction.status)
+            select(ToolCall.message_id, ToolCall.tool_key, ToolCall.inputs, PendingAction.status, ToolCall.status)
             .join(PendingAction, PendingAction.tool_call_id == ToolCall.id)
             .where(ToolCall.message_id.in_([m.id for m in recent]),
-                   PendingAction.status.in_([PendingActionStatus.REJECTED, PendingActionStatus.EXPIRED]))
+                   PendingAction.status.in_([PendingActionStatus.REJECTED, PendingActionStatus.EXPIRED, PendingActionStatus.CONFIRMED]))
         )).all()
         out: dict[uuid.UUID, list[str]] = {}
-        for message_id, tool_key, inputs, status in rows:
-            why = "the person chose Not now" if status == PendingActionStatus.REJECTED else "its confirmation expired"
-            out.setdefault(message_id, []).append(f"[Not done: {tool_key} {json.dumps(inputs, default=str)} - {why}]")
+        for message_id, tool_key, inputs, status, ran in rows:
+            said = json.dumps(inputs, default=str)
+            if status == PendingActionStatus.CONFIRMED and ran == ToolCallStatus.DONE:
+                out.setdefault(message_id, []).append(f"[Done: {tool_key} {said} - the person confirmed it and it was carried out]")
+                continue
+            why = ("the person chose Not now" if status == PendingActionStatus.REJECTED else "its confirmation expired"
+                   if status == PendingActionStatus.EXPIRED else "it was confirmed and then failed")
+            out.setdefault(message_id, []).append(f"[Not done: {tool_key} {said} - {why}]")
         return out
 
     async def _stream_tokens(self, messages: list[dict[str, Any]]) -> AsyncGenerator[dict[str, Any], None]:

@@ -77,6 +77,10 @@ class ToolExecutors:
             "book_client_review": self.book_client_review,
             "read_ips_monitoring": self.read_ips_monitoring,
             "read_client_exits": self.read_client_exits,
+            "read_financial_plan": self.read_financial_plan,
+            "record_income_stream": self.record_income_stream,
+            "end_income_stream": self.end_income_stream,
+            "record_education_goal": self.record_education_goal,
             "read_equity_comp": self.read_equity_comp,
             "record_equity_grant": self.record_equity_grant,
             "end_equity_grant": self.end_equity_grant,
@@ -1075,6 +1079,83 @@ class ToolExecutors:
                     ("Method", r["method"].replace("_", " ")), ("Down to", f"{r['target']:.1%}"), ("By", firm_time.spoken(r["day"])), ("Why", r["rationale"]),
                     ("Agreed in", r["document"]), ("Orders", "None placed")]
         except equity_comp.EquityCompError as exc:
+            raise ExecutorError(str(exc))
+
+    async def read_financial_plan(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import financial_plan, markets
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        result = await financial_plan.for_household(self.session, household_id, firm_id=self.firm_id)
+        if result is None:
+            raise ExecutorError(f"Household {household_id} not found or access denied")
+        say = markets.money_for(await self._firm())
+        r = result["retirement"]
+        result["message"] = (f"{result['household']}: {r['success_probability']:.0%} probability of success, sustainable income {say(r['sustainable_income'])} a year. "
+                             "These are estimates from what is on file." if r else f"{result['household']}: no retirement projection.")
+        return result
+
+    def _stream_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        share = inputs.get("joint_survivor_share_pct")
+        try:
+            share = float(share) / 100 if share not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ExecutorError("joint_survivor_share_pct must be a number.")
+        return {"kind": inputs.get("kind"), "name": inputs.get("name"), "annual_amount": inputs.get("annual_amount"), "start_age": inputs.get("start_age"),
+                "source_document": inputs.get("source_document"), "inflation_linked": str(inputs.get("inflation_linked")).lower() == "true", "lump_sum": inputs.get("lump_sum"),
+                "joint_annual": inputs.get("joint_annual"), "joint_survivor_share": share}
+
+    def _education_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {k: inputs.get(k) for k in ("student", "start_year", "years", "annual_cost", "cost_source")}
+
+    async def _plan_write(self, write) -> dict[str, Any]:
+        from app.aurea_core import financial_plan
+
+        try:
+            row = await write(financial_plan, await self._shelf_user())
+        except financial_plan.PlanError as exc:
+            raise ExecutorError(str(exc))
+        return await financial_plan.for_household(self.session, row.household_id, firm_id=self.firm_id)
+
+    async def record_income_stream(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        person_id = _parse_uuid(inputs.get("person_id") or "", "person_id")
+        args = self._stream_args(inputs)
+        result = await self._plan_write(lambda e, by: e.record_stream(self.session, person_id, firm_id=self.firm_id, by=by, **args))
+        result["message"] = f"Recorded. {result['household']} has {len(result['streams'])} income stream(s) on file."
+        return result
+
+    async def end_income_stream(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        stream_id = _parse_uuid(inputs.get("stream_id") or "", "stream_id")
+        result = await self._plan_write(lambda e, by: e.end_stream(self.session, stream_id, firm_id=self.firm_id, by=by, reason=inputs.get("reason")))
+        result["message"] = f"Ended. {result['household']} has {len(result['streams'])} income stream(s) on file."
+        return result
+
+    async def record_education_goal(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        args = self._education_args(inputs)
+        result = await self._plan_write(lambda e, by: e.record_education(self.session, household_id, firm_id=self.firm_id, by=by, **args))
+        result["message"] = f"Recorded for {args['student']}."
+        return result
+
+    async def _plan_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import financial_plan, markets
+
+        say = markets.money_for(await self._firm())
+        try:
+            if tool_key == "record_income_stream":
+                r = await financial_plan.prepare_stream(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._stream_args(inputs))
+                social = r["kind"] == "social_security"
+                return [("Person", r["person"].full_name), ("Income", f"{r['kind'].replace('_', ' ').capitalize()} · {r['name']}"),
+                        ("At full retirement age" if social else "A year", say(r["amount"])), ("Claiming at" if social else "From age", str(r["age"])),
+                        ("Rises with inflation", "Yes" if r["inflation_linked"] else None), ("Lump sum", say(r["lump_sum"]) if r["lump_sum"] else None),
+                        ("Joint-life", say(r["joint_annual"]) if r["joint_annual"] else None), ("Survivor keeps", f"{r['survivor_share']:.0%}" if r["survivor_share"] else None),
+                        ("Document", r["document"])]
+            if tool_key == "end_income_stream":
+                r = await financial_plan.prepare_end(self.session, _parse_uuid(inputs.get("stream_id") or "", "stream_id"), firm_id=self.firm_id, reason=inputs.get("reason"))
+                g = r["stream"]
+                return [("Person", r["person"].full_name if r["person"] else None), ("Income", g.name), ("A year", say(float(g.annual_amount))), ("Reason", r["reason"])]
+            r = await financial_plan.prepare_education(self.session, _parse_uuid(inputs.get("household_id") or "", "household_id"), firm_id=self.firm_id, **self._education_args(inputs))
+            return [("Client", r["household"].name), ("For", r["student"]), ("Starts", str(r["start_year"])), ("Years", str(r["years"])), ("A year, today", say(r["annual_cost"])), ("Source", r["source"])]
+        except financial_plan.PlanError as exc:
             raise ExecutorError(str(exc))
 
     async def read_client_exits(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2753,6 +2834,8 @@ class ToolExecutors:
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):
             return rows(*await self._balance_preview(tool_key, inputs))
+        if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
+            return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):
             return rows(*await self._equity_preview(tool_key, inputs))
         if tool_key in ("record_product_decision", "record_investor_status", "set_approved_products_only"):
