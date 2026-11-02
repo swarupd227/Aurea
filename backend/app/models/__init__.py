@@ -2,6 +2,7 @@
 from app.models import (  # noqa: F401
     ai_governance,
     aml_review,
+    aml_risk,
     balance_sheet,
     billing,
     cash_movement,

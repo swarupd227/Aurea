@@ -979,6 +979,31 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
     ),
 
+    "rate_aml_risk": Tool(
+        key="rate_aml_risk",
+        name="Rate AML Risk",
+        speaking_agent="astra",
+        description="Records an onboarding client's risk rating from facts a person gives: residence_country, citizenship, source_of_funds_country (two-letter codes), wealth_source (employment, investments, equity_compensation, inheritance, business_sale, property_sale, cash_business, crypto or other), channel (face_to_face or remote), wires_per_year, expected_annual_inflow, third_party_payments and layered. residence_country, wealth_source and channel are required; the rest are optional, so rate on what the person gives without waiting for them. The model scores them, with confirmed screening matches, into low, medium or high; the band sets due diligence, the approver and how often the client is reviewed, and designed paths (PEP, non-resident, layered structure, crypto, cash business) set a floor and say what more is needed. band overrides the model, with reason, and is kept beside what the model said; never below a path's floor. Missing facts are refused, not guessed. Operations or compliance rates; high is compliance's.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this risk rating?",
+        inputs=[
+            ToolInput("case_id", "uuid", "The onboarding case", required=True),
+            ToolInput("residence_country", "string", "Where the client lives, as a two-letter code", required=False),
+            ToolInput("citizenship", "string", "Citizenship, as a two-letter code", required=False),
+            ToolInput("source_of_funds_country", "string", "Where the money comes from, as a two-letter code", required=False),
+            ToolInput("wealth_source", "string", "What kind of wealth, from the list", required=False),
+            ToolInput("channel", "string", "face_to_face or remote", required=False),
+            ToolInput("wires_per_year", "number", "Wires expected a year", required=False),
+            ToolInput("expected_annual_inflow", "number", "Money expected in a year", required=False),
+            ToolInput("third_party_payments", "boolean", "Payments to or from third parties expected", required=False),
+            ToolInput("layered", "boolean", "A layered or offshore structure", required=False),
+            ToolInput("band", "string", "low, medium or high, only to override the model", required=False),
+            ToolInput("reason", "string", "Why, for an override", required=False),
+        ],
+        output=ToolOutput("object", "The rating, its factors and what it requires"),
+        roles_required={UserRole.COMPLIANCE, UserRole.OPERATIONS},
+    ),
+
     "read_aml_reviews": Tool(
         key="read_aml_reviews",
         name="Read AML Reviews",

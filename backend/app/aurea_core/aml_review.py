@@ -319,8 +319,12 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict:
     data = await _rows(session, firm_id)
     order = {"awaiting_confirmation": 0, "open": 1, "needs_info": 2, "true_match": 3, "false_positive": 4}
     hits = sorted(data["hits"], key=lambda h: (order.get(h["state"], 9), not h["qa_due"], h["case"]))
+    from app.aurea_core import aml_risk, firm_time
+    from app.models.tenant import Firm
+
+    due = await aml_risk.reviews_due(session, firm_id, today=firm_time.today(await session.get(Firm, firm_id)))
     return {"hits": hits, "edd": data["edd"], "checklists": {k: [{"key": a, "label": b} for a, b in v] for k, v in CHECKLISTS.items()},
-            "summary": _summary(data), "case_id": None}
+            "summary": {**_summary(data), "reviews_due": len(due)}, "reviews_due": due, "case_id": None}
 
 
 async def for_case(session: AsyncSession, case_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict:
@@ -330,5 +334,8 @@ async def for_case(session: AsyncSession, case_id: uuid.UUID, *, firm_id: uuid.U
     case = await session.get(OnboardingCase, case_id)
     if case is None or case.firm_id != firm_id:
         raise AmlReviewError("Case not found.")
+    from app.aurea_core import aml_risk
+
+    risk = aml_risk.view(await aml_risk.assess(session, case_id, firm_id=firm_id))
     return {"hits": data["hits"], "edd": data["edd"], "checklists": {k: [{"key": a, "label": b} for a, b in v] for k, v in CHECKLISTS.items()},
-            "summary": _summary(data), "case_id": str(case_id), "case": case.prospect_name}
+            "summary": _summary(data), "case_id": str(case_id), "case": case.prospect_name, "risk": risk}

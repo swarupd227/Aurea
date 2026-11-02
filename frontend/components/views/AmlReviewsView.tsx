@@ -50,6 +50,29 @@ export function AmlReviewsView({ caseId = null }: { caseId?: string | null }) {
         {!nav.say && <span className="chip text-ink-muted">decide beside the conversation</span>}
       </div></Card>
 
+      {data.risk && (
+        <Card className="mb-4" data-testid="aml-risk">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label">Risk rating</span>
+            {data.risk.rating ? <span className={`chip ${data.risk.rating.band === "high" ? "text-crit" : data.risk.rating.band === "medium" ? "text-warn" : "text-ok"}`}>{data.risk.rating.band}</span>
+              : <span className="chip text-ink-muted">not rated</span>}
+            <span className="chip text-ink-muted">model {data.risk.model_band} · {Math.round(data.risk.score)}</span>
+            {data.risk.rating?.override_reason && <span className="chip text-warn" title={data.risk.rating.override_reason}>override</span>}
+            {data.risk.rating && <span className="chip text-ink-muted">review {reviewDay(data.risk.rating.next_review_on)}</span>}
+            {data.risk.missing.map((m: string) => <span key={m} className="chip text-warn">{m.replace(/_/g, " ")} not recorded</span>)}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {data.risk.factors.filter((f: any) => f.points).map((f: any, i: number) => <span key={i} className="chip text-ink-muted">{f.why} +{f.points}</span>)}
+            {data.risk.paths.map((p: any) => <span key={p.path} className="chip text-warn" title={p.requires.join(" · ")}>{p.path.replace(/_/g, " ")} path</span>)}
+          </div>
+        </Card>
+      )}
+      {!caseId && data.reviews_due?.length > 0 && (
+        <Card className="mb-4"><div className="flex flex-wrap gap-1.5" data-testid="aml-reviews-due">
+          {data.reviews_due.map((d: any) => <span key={d.case_id} className="chip text-warn">{d.case} · {d.band} review due {reviewDay(d.due)}</span>)}
+        </div></Card>
+      )}
+
       {data.hits.length === 0 ? <Empty>No screening hits.</Empty> : (
         <Card className="mb-4 overflow-hidden p-0"><div className="overflow-x-auto"><table className="w-full text-sm" data-testid="aml-hits">
           <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Party</th><th className={th}>Hit</th><th className={th}>Birth date</th><th className={th}>State</th><th className={`${th} text-right`}>Decide</th></tr></thead>

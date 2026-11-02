@@ -32,12 +32,13 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
             cases = [await s.get(OnboardingCase, ctx.subject.id)]
             cases = [c for c in cases if c and c.firm_id == ctx.firm.id]
         else:
-            # Scheduled: scan all active (non-terminal) cases for the firm.
+            # Scheduled: the whole book's parties, clients already onboarded included, because a client can
+            # become sanctioned on day 400. Only a declined case is left out.
             cases = (
                 await s.execute(
                     select(OnboardingCase).where(
                         OnboardingCase.firm_id == ctx.firm.id,
-                        OnboardingCase.status.not_in(["approved", "rejected"]),
+                        OnboardingCase.status != "rejected",
                     )
                 )
             ).scalars().all()

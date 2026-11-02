@@ -201,6 +201,8 @@ _TOOLS = [
      "Reads what a tax year should produce and a summary from the book, which is not the official form."),
     ("read_trades", "Read Trades (tool)", "tool", "Head of Operations", "low",
      "Reads the blotter: confirmations, settlement dates, sources and block allocation."),
+    ("rate_aml_risk", "Rate AML Risk (tool)", "tool", "Head of Compliance", "high",
+     "Records a customer risk rating from recorded facts with a documented, versioned model; overrides keep their reason. Confirm-gated."),
     ("read_onboarding_queues", "Read Onboarding Queues (tool)", "tool", "Head of Operations", "low",
      "Reads each onboarding account's state and owner, the exception queues and the three clocks."),
     ("record_screening_decision", "Record Screening Decision (tool)", "tool", "Head of Compliance", "high",

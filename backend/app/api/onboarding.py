@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -274,6 +275,11 @@ async def states_overview(db: AsyncSession, firm: Firm) -> dict:
             transfers.setdefault(t.case_id, []).append(t)
     fills = await _first_fills(db, cases)
     now = utcnow()
+    from app.agents.cip_identity_verifier import CIP_DAYS
+    from app.aurea_core import aml_risk, firm_time
+
+    due_reviews = {d["case_id"]: d["due"] for d in await aml_risk.reviews_due(db, firm.id, today=firm_time.today(firm))}
+    _aware = lambda t: t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t  # noqa: E731
     rows = []
     for c in cases:
         gates = await _gates_for(db, firm, c)
@@ -281,6 +287,11 @@ async def states_overview(db: AsyncSession, firm: Firm) -> dict:
         account = next((t for t in tracks["tracks"] if t["key"] == "account"), None)
         kyc = [f"{g['label']}: {g['detail']}" for g in gates["gates"]
                if g["track"] == "financial_crime" and g["state"] == "fail"] if str(c.status) != "approved" else []
+        # Once open, identity has the firm's clock to be verified, and a periodic risk review has its date.
+        if c.activated_at and c.cip_status != "verified" and (now - _aware(c.activated_at)).days > CIP_DAYS:
+            kyc.append(f"Identity not verified {CIP_DAYS} days after opening: restrict or close, a person's decision")
+        if str(c.id) in due_reviews:
+            kyc.append(f"Periodic risk review due {due_reviews[str(c.id)]}")
         rows.append(account_states.account_row(
             c, data_complete=bool(account and account["state"] == "complete"), gates_blocking=bool(gates["blocking"]),
             kyc=kyc, transfers=transfers.get(c.id, []), first_fill=fills.get(c.id), now=now))
@@ -416,20 +427,17 @@ async def set_aml_risk_rating(
     user: User = Depends(require_roles(*STAFF_ROLES)),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    """Manually set or override the AML risk tier on a case (compliance officer action)."""
+    """Rate a case through the risk model; a tier other than the model's is an override, and its note is kept.
+    It used to set the tier as typed and drop the note."""
+    from app.aurea_core import aml_risk
+
+    try:
+        out = await aml_risk.record_rating(db, case_id, firm_id=firm.id, by=user.email, role=user.role, band=body.aml_risk_tier,
+                                           reason=body.notes)
+    except aml_risk.AmlRiskError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     case = await db.get(OnboardingCase, case_id)
-    if not case or case.firm_id != firm.id:
-        raise HTTPException(status_code=404, detail="Case not found")
-    if body.aml_risk_tier not in ("low", "medium", "high"):
-        raise HTTPException(status_code=422, detail="aml_risk_tier must be low, medium, or high")
-    case.aml_risk_tier = body.aml_risk_tier
-    if body.aml_risk_score is not None:
-        case.aml_risk_score = body.aml_risk_score
-    # Set EDD status based on tier.
-    if body.aml_risk_tier in ("medium", "high") and not getattr(case, "edd_status", None):
-        case.edd_status = "edd_pending"
-    await db.flush()
-    return {"aml_risk_tier": case.aml_risk_tier, "edd_status": getattr(case, "edd_status", None)}
+    return {"aml_risk_tier": case.aml_risk_tier, "edd_status": case.edd_status, "rating": out["rating"]}
 
 
 @router.post("/cases/{case_id}/run-cip")
@@ -917,12 +925,19 @@ async def add_party(
             detail=f"Unknown role '{body.role}'. "
                    f"Expected one of: {', '.join(sorted(parties_core.ROLE_LABELS))}.",
         )
-    db.add(OnboardingParty(
+    party = OnboardingParty(
         firm_id=firm.id, case_id=case.id, role=body.role, legal_name=body.legal_name,
         dob=body.dob, address=body.address, id_number=body.id_number, id_type=body.id_type,
         ownership_pct=body.ownership_pct, is_control_person=body.is_control_person,
         notes=body.notes, screening_status="not_screened",
-    ))
+    )
+    # A new party - a signer added after opening as much as one at intake - is screened when it is recorded,
+    # not at the next daily run. Screening is an observation; what a hit means is still a person's.
+    from app.aurea_core import screening as screening_core
+    result = screening_core.screen(body.legal_name, dob=body.dob)
+    party.screening_status, party.screening_hits, party.screened_at = result.status, result.to_dict()["hits"], utcnow()
+    party.disposition_note = "Screened when recorded. Hits await a person's decision."
+    db.add(party)
     await db.flush()
     rows = await _load_parties(db, case.id)
     await db.commit()

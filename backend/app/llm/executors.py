@@ -78,6 +78,7 @@ class ToolExecutors:
             "read_ips_monitoring": self.read_ips_monitoring,
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
+            "rate_aml_risk": self.rate_aml_risk,
             "read_onboarding_queues": self.read_onboarding_queues,
             "record_screening_decision": self.record_screening_decision,
             "sign_off_edd": self.sign_off_edd,
@@ -1429,6 +1430,39 @@ class ToolExecutors:
         result["message"] = (f"{s['accounts']} account(s) in onboarding, {s['overdue']} past their SLA. Exceptions: {stuck}. "
                              f"Median clocks: paperwork {c['paperwork']['p50']}, money {c['money']['p50']}, invested {c['invested']['p50']} day(s).")
         return result
+
+    def _risk_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        facts = {k: inputs.get(k) for k in ("residence_country", "citizenship", "source_of_funds_country", "wealth_source", "channel",
+                                             "wires_per_year", "expected_annual_inflow", "third_party_payments", "layered") if inputs.get(k) not in (None, "")}
+        return {"facts": facts, "band": inputs.get("band"), "reason": inputs.get("reason")}
+
+    async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import aml_risk
+
+        try:
+            result = await aml_risk.record_rating(self.session, _parse_uuid(inputs.get("case_id") or "", "case_id"), firm_id=self.firm_id,
+                                                  by=await self._shelf_user(), role=self.role, **self._risk_args(inputs))
+        except aml_risk.AmlRiskError as exc:
+            raise ExecutorError(str(exc))
+        r = result["rating"]
+        result["message"] = f"Rated {r['band']} (the model said {r['model_band']}, score {result['score']:.0f}). Next review {r['next_review_on']}."
+        return result
+
+    async def _risk_rating_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import aml_risk
+
+        try:
+            r = await aml_risk.prepare_rating(self.session, _parse_uuid(inputs.get("case_id") or "", "case_id"), firm_id=self.firm_id,
+                                              role=self.role, **self._risk_args(inputs))
+        except aml_risk.AmlRiskError as exc:
+            raise ExecutorError(str(exc))
+        c = aml_risk.CONSEQUENCES[r["band"]]
+        return [("Case", r["case"].prospect_name), ("Score", f"{r['score']:.0f} of 100, model {aml_risk.MODEL_VERSION}"),
+                ("Factors", "; ".join(f"{f['why']} {f['points']:.0f}" for f in r["factors"] if f["points"]) or "None scored"),
+                ("Model says", r["model_band"].capitalize()), ("Rating", r["band"].capitalize() + (" (override)" if r["override"] else "")),
+                ("Override reason", r["reason"] if r["override"] else None),
+                ("Paths", "; ".join(f"{p['path'].replace('_', ' ')}: {', '.join(p['requires'])}" for p in r["paths"]) or None),
+                ("Due diligence", c["due_diligence"]), ("Approver", c["approver"]), ("Review", f"Every {aml_risk.REVIEW_MONTHS[r['band']]} months")]
 
     async def read_aml_reviews(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_review
@@ -3285,6 +3319,8 @@ class ToolExecutors:
             return rows(*await self._crm_preview(tool_key, inputs))
         if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):
             return rows(*await self._corporate_preview(tool_key, inputs))
+        if tool_key == "rate_aml_risk":
+            return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):
             return rows(*await self._aml_preview(tool_key, inputs))
         named = {"record_tax_document": self._tax_document_preview, "execute_orders": self._orders_preview, "credit_invoice": self._credit_preview,
