@@ -230,6 +230,10 @@ def optimise(
     # any one instrument may be after a buy. A breach already on the book is reported, not sold down.
     min_cash: float | None = None,
     max_position: float | None = None,
+    # Cash that is spoken for: a payment waiting to go, or money still to be phased in.
+    held_back: float = 0.0,
+    # Instruments the product shelf bars. They stay where they are and are never added to.
+    not_buyable: set[str] | frozenset[str] = frozenset(),
 ) -> RebalanceResult:
     total_value = sum(p.market_value for p in positions) + cash
     if total_value <= 0:
@@ -341,7 +345,7 @@ def optimise(
 
         # Fees are per order, not a blanket percentage of the total, because of the minimum.
         proceeds = sum(_gross(o) - _fee(_gross(o)) for o in orders if o.side == "sell")
-        cash_floor = (min_cash or 0.0) * total_value
+        cash_floor = (min_cash or 0.0) * total_value + held_back
         available = max(0.0, cash + proceeds - cash_floor)
 
         for cls, drift in sorted(drifts.items(), key=lambda kv: kv[1], reverse=True):
@@ -360,7 +364,7 @@ def optimise(
             # Prefer an existing non-excluded holding in the class; else the instrument the
             # model nominates for it. Either way, not one the household sold at a loss inside
             # the window: buying it back would disallow that loss.
-            candidates = [p for p in positions if p.asset_class == cls and not p.excluded]
+            candidates = [p for p in positions if p.asset_class == cls and not p.excluded and p.instrument_id not in not_buyable]
             pick = (model_instruments or {}).get(cls)
             target_pos = next((p for p in candidates if p.instrument_id not in wash.no_buy), None)
             if target_pos is None and pick is not None and pick.instrument_id not in wash.no_buy:
@@ -376,6 +380,10 @@ def optimise(
                     f"loss. {say_money(buy_value)} to allocate from {window['clear_on']}, or into another "
                     f"instrument - adviser to select."
                 ))
+                continue
+            if target_pos is None and any(p.asset_class == cls and p.instrument_id in not_buyable for p in positions):
+                limitations.append(f"'{cls}' is {(-drift):.0%} under target, but what is held in it is barred by the "
+                                   f"product shelf. {say_money(buy_value)} to allocate - adviser to select.")
                 continue
             if target_pos is None:
                 limitations.append(

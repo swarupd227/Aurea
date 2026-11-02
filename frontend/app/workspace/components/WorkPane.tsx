@@ -26,6 +26,8 @@ import { ProtectionView } from "@/components/views/ProtectionView";
 import { RiskProfilesView } from "@/components/views/RiskProfilesView";
 import { ReconciliationView } from "@/components/views/ReconciliationView";
 import { EquityCompView } from "@/components/views/EquityCompView";
+import { CashMovementsView } from "@/components/views/CashMovementsView";
+import { ClientFileView } from "@/components/views/ClientFileView";
 import { ExitsView } from "@/components/views/ExitsView";
 import { FinancialPlanView } from "@/components/views/FinancialPlanView";
 import { ProductsView } from "@/components/views/ProductsView";
@@ -101,6 +103,10 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <EquityCompView household={pane.query.household ?? null} />;
     case "plan":
       return <FinancialPlanView household={pane.query.household ?? null} />;
+    case "client_file":
+      return <ClientFileView household={pane.query.household ?? null} />;
+    case "cash":
+      return <CashMovementsView household={pane.query.household ?? null} />;
     case "products":
       return <ProductsView />;
     case "exits":

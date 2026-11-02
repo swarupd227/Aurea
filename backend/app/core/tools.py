@@ -719,6 +719,203 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
+    "read_client_file": Tool(
+        key="read_client_file",
+        name="Read Client File",
+        speaking_agent="astra",
+        description="What is on file about a client beyond their money: trusted contacts, estate documents and whether they are out of date, life events, and beneficiaries who have died, are a former spouse or do not add up. Give household_id for one client. Not on file does not mean none exists: an attorney may hold the document.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household, or leave out for the firm", required=False)],
+        output=ToolOutput("object", "Contacts, documents, events and designation issues"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_trusted_contact": Tool(
+        key="record_trusted_contact",
+        name="Record Trusted Contact",
+        speaking_agent="astra",
+        description="Record who the firm may call if it is worried about a client. They have no authority to act. Needs a phone number or email, from the client's form or a note.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this trusted contact?",
+        inputs=[
+            ToolInput("person_id", "uuid", "The client (from read_household)", required=True),
+            ToolInput("name", "string", "The contact's name", required=True),
+            ToolInput("relationship", "string", "How they know the client", required=True),
+            ToolInput("source_document", "string", "The form or note", required=True),
+            ToolInput("phone", "string", "Their phone number", required=False),
+            ToolInput("email", "string", "Their email", required=False),
+        ],
+        output=ToolOutput("object", "The client file"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "record_estate_document": Tool(
+        key="record_estate_document",
+        name="Record Estate Document",
+        speaking_agent="astra",
+        description="Record that a will, revocable_trust, power_of_attorney, health_directive or trust_deed exists, when it was signed and who holds it, from seeing it or the attorney's letter. It is a record that it exists, not a copy.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this document?",
+        inputs=[
+            ToolInput("person_id", "uuid", "The client", required=True),
+            ToolInput("kind", "string", "will, revocable_trust, power_of_attorney, health_directive or trust_deed", required=True),
+            ToolInput("signed_on", "string", "YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "How the firm knows: the copy seen or the attorney's letter", required=True),
+            ToolInput("held_by", "string", "Who holds the original", required=False),
+        ],
+        output=ToolOutput("object", "The client file"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "record_life_event": Tool(
+        key="record_life_event",
+        name="Record Life Event",
+        speaking_agent="astra",
+        description="Record a marriage, divorce, birth, death_in_family, inheritance, business_sale, relocation, job_change or retirement, from a note or document. It raises a review task and says what it touches. other_party is the former spouse or the person who died, so a beneficiary can be checked. For the death of a client use record_client_death. It changes no figure.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this event? It raises a review task.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household", required=True),
+            ToolInput("kind", "string", "marriage, divorce, birth, death_in_family, inheritance, business_sale, relocation, job_change, retirement or other", required=True),
+            ToolInput("happened_on", "string", "YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "The document or meeting note", required=True),
+            ToolInput("person_id", "uuid", "Who it concerns, if one person", required=False),
+            ToolInput("other_party", "string", "The former spouse, or the person who died", required=False),
+            ToolInput("note", "string", "A short note", required=False),
+        ],
+        output=ToolOutput("object", "The client file"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "read_cash_movements": Tool(
+        key="read_cash_movements",
+        name="Read Cash Movements",
+        speaking_agent="astra",
+        description="Payments out of client accounts: open requests and whether the cash is there, standing instructions, required minimum distributions and what is left to take this year, and money being phased in. Give household_id for one client.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household, or leave out for the firm", required=False)],
+        output=ToolOutput("object", "Requests, standing instructions, RMDs and phasing"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "request_cash_movement": Tool(
+        key="request_cash_movement",
+        name="Request Cash Movement",
+        speaking_agent="astra",
+        description="Ask for a payment out of an account: a withdrawal, an rmd or a standing payment. It holds the cash back from purchases and moves nothing. Someone else records it as paid, from the custodian's confirmation. If the cash is not there the request stands and says how short it is: what to sell is a person's decision. Set third_party true if the payee is not the account holder.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Raise this request? The cash is held back. Nothing is paid yet.",
+        inputs=[
+            ToolInput("account_id", "uuid", "The account (from read_household)", required=True),
+            ToolInput("kind", "string", "withdrawal, rmd or standing", required=True),
+            ToolInput("amount", "number", "The amount", required=True),
+            ToolInput("payee", "string", "Who it is paid to", required=True),
+            ToolInput("reason", "string", "What it is for", required=True),
+            ToolInput("third_party", "boolean", "True if the payee is not the account holder", required=False),
+        ],
+        output=ToolOutput("object", "Cash movements"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "record_cash_paid": Tool(
+        key="record_cash_paid",
+        name="Record Cash Paid",
+        speaking_agent="astra",
+        description="Record that a custodian paid a request, from its confirmation. This takes the cash off the book. The person who requested it cannot record it. A third-party payment needs callback_number: the number on file, called on a recorded line.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this payment? It takes the cash off the book and cannot be undone.",
+        inputs=[
+            ToolInput("request_id", "uuid", "From read_cash_movements", required=True),
+            ToolInput("paid_on", "string", "The date paid, YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "The custodian's confirmation", required=True),
+            ToolInput("callback_number", "string", "For a third party: the number called", required=False),
+        ],
+        output=ToolOutput("object", "Cash movements"),
+        roles_required={UserRole.OPERATIONS},
+    ),
+
+    "cancel_cash_request": Tool(
+        key="cancel_cash_request",
+        name="Cancel Cash Request",
+        speaking_agent="astra",
+        description="Cancel an open payment request, with the reason. The cash is released.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Cancel this request?",
+        inputs=[
+            ToolInput("request_id", "uuid", "From read_cash_movements", required=True),
+            ToolInput("reason", "string", "Why", required=True),
+        ],
+        output=ToolOutput("object", "Cash movements"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "record_standing_instruction": Tool(
+        key="record_standing_instruction",
+        name="Record Standing Instruction",
+        speaking_agent="astra",
+        description="Record a pre-authorised payment from an account, from the signed form: who it pays, how much, monthly, quarterly or annual, and when it is first due.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this instruction?",
+        inputs=[
+            ToolInput("account_id", "uuid", "The account", required=True),
+            ToolInput("payee", "string", "Who it pays", required=True),
+            ToolInput("amount", "number", "The amount each time", required=True),
+            ToolInput("frequency", "string", "monthly, quarterly or annual", required=True),
+            ToolInput("first_due", "string", "YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "The signed form", required=True),
+            ToolInput("third_party", "boolean", "True if the payee is not the account holder", required=False),
+        ],
+        output=ToolOutput("object", "Cash movements"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "end_standing_instruction": Tool(
+        key="end_standing_instruction",
+        name="End Standing Instruction",
+        speaking_agent="astra",
+        description="End a standing instruction. It stays on record.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="End this instruction?",
+        inputs=[ToolInput("standing_id", "uuid", "From read_cash_movements", required=True)],
+        output=ToolOutput("object", "Cash movements"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "start_phase_in": Tool(
+        key="start_phase_in",
+        name="Start Phasing In",
+        speaking_agent="astra",
+        description="Phase new money into a mandate by stages rather than at once. The stages not yet due are held back from every purchase, so the rebalancer invests one stage at a time. It places no order.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Start this? The money waiting is held back from purchases.",
+        inputs=[
+            ToolInput("mandate_id", "uuid", "The mandate", required=True),
+            ToolInput("amount", "number", "The amount to phase in", required=True),
+            ToolInput("tranches", "number", "How many stages", required=True),
+            ToolInput("every_months", "number", "Months between stages", required=True),
+            ToolInput("reason", "string", "Why", required=True),
+            ToolInput("start_on", "string", "The first stage, YYYY-MM-DD. Defaults to today", required=False),
+        ],
+        output=ToolOutput("object", "Cash movements"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM},
+    ),
+
+    "end_phase_in": Tool(
+        key="end_phase_in",
+        name="End Phasing In",
+        speaking_agent="astra",
+        description="End a phasing plan early. What was held back is released, and the next rebalance may invest it.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="End this? The money held back is released.",
+        inputs=[ToolInput("plan_id", "uuid", "From read_cash_movements", required=True)],
+        output=ToolOutput("object", "Cash movements"),
+        roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM},
+    ),
+
     "read_client_exits": Tool(
         key="read_client_exits",
         name="Read Departures and Estates",
@@ -1129,20 +1326,20 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) or plan (one client's financial plan). ips, reviews, protection, risk_profiles, net_worth and "
-            "exits, equity_comp, plan show every client unless given household_id: when the conversation is about one client, look them up "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) or cash (payments out, RMDs, phasing). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits, equity_comp, plan, client_file, cash show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages, read_balance_sheet, read_protection, "
-            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan); an id from memory or an earlier turn is refused."
+            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan, read_client_file, read_cash_movements); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp or plan", required=True),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp or plan to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file or cash", required=True),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file or cash to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -1705,9 +1902,11 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "products": ("/studio/products", "Product shelf", {_A, _P, _PT, _C, _O, _B, _R}),
     "equity_comp": ("/studio/equity-comp", "Equity compensation", {_A, _P, _PT, _C, _O, _B}),
     "plan": ("/studio/plan", "Financial plan", {_A, _P, _PT, _C, _O, _B}),
+    "client_file": ("/studio/client-file", "Client file", {_A, _P, _PT, _C, _O, _B}),
+    "cash": ("/studio/cash", "Cash movements", {_A, _P, _PT, _C, _O, _B}),
 }
 # The views of every client that can open on one, through `?household=`.
-ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan"}
+ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "cash"}
 
 
 def get_tool(key: str) -> Tool | None:

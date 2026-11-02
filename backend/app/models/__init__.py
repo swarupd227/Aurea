@@ -3,6 +3,8 @@ from app.models import (  # noqa: F401
     ai_governance,
     balance_sheet,
     billing,
+    cash_movement,
+    client_file,
     client_experience,
     compliance,
     compliance_program,

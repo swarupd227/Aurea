@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import consent, firm_time, harvest_guard, ips, knowledge, licences, markets, shelf, tax_india, wash_sale
+from app.aurea_core import cash_movement, consent, firm_time, harvest_guard, ips, knowledge, licences, markets, shelf, tax_india, wash_sale
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX as _CAPACITY_EQUITY_MAX
 from app.aurea_core.rebalancing import Lot, Position, WashSaleGuard, optimise
 from app.aurea_core.valuation import latest_prices
@@ -59,10 +59,9 @@ class DriftRebalancingAgent(BaseAgent):
         exclusions = set(ips.exclusions_of(mandate)) | set(ov.get("exclude") or [])
         if policy:
             exclusions |= set(policy.restricted or [])
-        # What the research team has closed or gated is out, whatever the model nominates.
+        # What the shelf bars may not be bought, whatever the model nominates. It is not an exclusion: an
+        # excluded position is divested, and a closed product is a person's decision to leave.
         off_shelf = await shelf.barred(s, ctx.firm, mandate)
-        if off_shelf:
-            exclusions |= set((await s.execute(select(Instrument.symbol).where(Instrument.id.in_(list(off_shelf))))).scalars().all())
         target_weights: dict[str, float] = {}
         # The instrument the model nominates per class, so a class no account yet holds can
         # still be bought into. TargetAllocation.instrument_id has existed all along and was
@@ -73,7 +72,7 @@ class DriftRebalancingAgent(BaseAgent):
             target_weights[t.asset_class] = target_weights.get(t.asset_class, 0.0) + float(t.target_weight)
             if t.instrument_id and t.asset_class not in model_picks:
                 inst = await s.get(Instrument, t.instrument_id)
-                if inst and not ips.restricted_by(inst, exclusions):
+                if inst and not ips.restricted_by(inst, exclusions) and inst.id not in off_shelf:
                     model_picks[t.asset_class] = {
                         "instrument_id": str(inst.id), "symbol": inst.symbol,
                         "name": inst.name, "asset_class": inst.asset_class,
@@ -159,6 +158,8 @@ class DriftRebalancingAgent(BaseAgent):
             "revision_note": ov.get("note"),
             "capacity_for_loss": capacity_for_loss,
             "wash_sale": await wash_sale.guard(s, ctx.firm, mandate),
+            "held_back": (await cash_movement.held_back(s, ctx.firm, mandate))["total"],
+            "off_shelf": [str(i) for i in off_shelf],
             "licence": licences.describe(licences.track_for(ctx.firm, mandate)),
             "india": {
                 "guard": await harvest_guard.guard(s, ctx.firm, mandate, today=today),
@@ -221,7 +222,8 @@ class DriftRebalancingAgent(BaseAgent):
             model_instruments=model_instruments,
             fee_rate=float(exec_cfg.get("fee_bps", 10)) / 10000.0,
             fee_minimum=float(exec_cfg.get("fee_minimum", 5)),
-            min_cash=policy.get("min_cash"), max_position=policy.get("max_position"),
+            min_cash=policy.get("min_cash"), max_position=policy.get("max_position"), held_back=sensed.get("held_back") or 0.0,
+            not_buyable=set(sensed.get("off_shelf") or []),
         )
         if not result.needs_rebalance:
             return []

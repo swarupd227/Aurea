@@ -74,7 +74,7 @@ def cash_effect(txn: Transaction) -> Decimal | None:
         return -(amount + fees)
     if kind == "sell":
         return amount - fees
-    if kind == "fee":
+    if kind in ("fee", "withdrawal"):
         return -amount
     if kind in ("fee_credit", "dividend", "distribution"):
         return amount

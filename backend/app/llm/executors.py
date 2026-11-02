@@ -77,6 +77,18 @@ class ToolExecutors:
             "book_client_review": self.book_client_review,
             "read_ips_monitoring": self.read_ips_monitoring,
             "read_client_exits": self.read_client_exits,
+            "read_cash_movements": self.read_cash_movements,
+            "request_cash_movement": self.request_cash_movement,
+            "record_cash_paid": self.record_cash_paid,
+            "cancel_cash_request": self.cancel_cash_request,
+            "record_standing_instruction": self.record_standing_instruction,
+            "end_standing_instruction": self.end_standing_instruction,
+            "start_phase_in": self.start_phase_in,
+            "end_phase_in": self.end_phase_in,
+            "read_client_file": self.read_client_file,
+            "record_trusted_contact": self.record_trusted_contact,
+            "record_estate_document": self.record_estate_document,
+            "record_life_event": self.record_life_event,
             "read_financial_plan": self.read_financial_plan,
             "record_income_stream": self.record_income_stream,
             "end_income_stream": self.end_income_stream,
@@ -1156,6 +1168,184 @@ class ToolExecutors:
             r = await financial_plan.prepare_education(self.session, _parse_uuid(inputs.get("household_id") or "", "household_id"), firm_id=self.firm_id, **self._education_args(inputs))
             return [("Client", r["household"].name), ("For", r["student"]), ("Starts", str(r["start_year"])), ("Years", str(r["years"])), ("A year, today", say(r["annual_cost"])), ("Source", r["source"])]
         except financial_plan.PlanError as exc:
+            raise ExecutorError(str(exc))
+
+    async def read_client_file(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import client_file
+
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await client_file.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            result["message"] = f"{result['household']}: {len(result['events'])} life event(s), {len(result['designation_issues'])} designation issue(s). Not on file does not mean none exists."
+            return result
+        result = await client_file.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = f"{s['with_no_trusted_contact']} of {s['households']} household(s) have someone with no trusted contact on file, and {s['documents_out_of_date']} estate document(s) are out of date."
+        return result
+
+    def _contact_file_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {k: inputs.get(k) for k in ("name", "relationship", "source_document", "phone", "email")}
+
+    def _estate_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"kind": inputs.get("kind"), "signed_on": self._exit_day(inputs.get("signed_on"), "signed_on"), "source_document": inputs.get("source_document"), "held_by": inputs.get("held_by")}
+
+    def _event_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"kind": inputs.get("kind"), "happened_on": self._exit_day(inputs.get("happened_on"), "happened_on"), "source_document": inputs.get("source_document"),
+                "person_id": _parse_uuid(inputs["person_id"], "person_id") if inputs.get("person_id") else None, "other_party": inputs.get("other_party"), "note": inputs.get("note")}
+
+    async def _file_write(self, write, household_of) -> dict[str, Any]:
+        from app.aurea_core import client_file
+
+        try:
+            row = await write(client_file, await self._shelf_user())
+        except client_file.ClientFileError as exc:
+            raise ExecutorError(str(exc))
+        return await client_file.for_household(self.session, await household_of(row), firm_id=self.firm_id)
+
+    async def _home_of(self, row) -> uuid.UUID:
+        from app.models.graph import Person
+
+        return (await self.session.get(Person, row.person_id)).household_id
+
+    async def record_trusted_contact(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        person_id = _parse_uuid(inputs.get("person_id") or "", "person_id")
+        args = self._contact_file_args(inputs)
+        result = await self._file_write(lambda e, by: e.record_contact(self.session, person_id, firm_id=self.firm_id, by=by, **args), self._home_of)
+        result["message"] = f"Recorded {args['name']} as a trusted contact. They hold no authority to act."
+        return result
+
+    async def record_estate_document(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        person_id = _parse_uuid(inputs.get("person_id") or "", "person_id")
+        args = self._estate_args(inputs)
+        result = await self._file_write(lambda e, by: e.record_estate_document(self.session, person_id, firm_id=self.firm_id, by=by, **args), self._home_of)
+        result["message"] = f"Recorded that a {str(args['kind']).replace('_', ' ')} exists."
+        return result
+
+    async def record_life_event(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        args = self._event_args(inputs)
+
+        async def same(_row):
+            return household_id
+
+        result = await self._file_write(lambda e, by: e.record_event(self.session, household_id, firm_id=self.firm_id, by=by, by_user=self.user_id, **args), same)
+        result["message"] = f"Recorded, and a review task is open. It touches: {', '.join(result['events'][0]['touches'])}."
+        return result
+
+    async def _file_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import client_file, firm_time
+
+        try:
+            if tool_key == "record_trusted_contact":
+                r = await client_file.prepare_contact(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._contact_file_args(inputs))
+                return [("Client", r["person"].full_name), ("Contact", r["name"]), ("Relationship", r["relationship"]), ("Phone", r["phone"]), ("Email", r["email"]),
+                        ("Replaces", r["was"].name if r["was"] else None), ("Authority", "None: they may be called, not instructed"), ("Document", r["document"])]
+            if tool_key == "record_estate_document":
+                r = await client_file.prepare_estate_document(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._estate_args(inputs))
+                return [("Client", r["person"].full_name), ("Document", r["kind"].replace("_", " ").capitalize()), ("Signed", firm_time.spoken(r["signed_on"])), ("Held by", r["held_by"]), ("Known from", r["document"])]
+            r = await client_file.prepare_event(self.session, _parse_uuid(inputs.get("household_id") or "", "household_id"), firm_id=self.firm_id, **self._event_args(inputs))
+            return [("Client", r["household"].name), ("Event", r["kind"].replace("_", " ").capitalize()), ("Who", r["person"].full_name if r["person"] else None), ("On", firm_time.spoken(r["day"])),
+                    ("Other party", r["other"]), ("Note", r["note"]), ("Touches", ", ".join(t.replace("_", " ") for t in r["touches"])), ("Then", "A review task opens"), ("Document", r["document"])]
+        except client_file.ClientFileError as exc:
+            raise ExecutorError(str(exc))
+
+    async def read_cash_movements(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import cash_movement, markets
+
+        household_id = _parse_uuid(inputs["household_id"], "household_id") if inputs.get("household_id") else None
+        result = await cash_movement.for_firm(self.session, self.firm_id, household_id=household_id)
+        s = result["summary"]
+        say = markets.money_for(await self._firm())
+        result["message"] = f"{s['open']} open request(s) for {say(s['value_open'])}, {s['short']} short of cash, {s['standing']} standing instruction(s), {say(s['rmd_left'])} of RMDs left this year."
+        return result
+
+    async def _cash_write(self, write, message: str) -> dict[str, Any]:
+        from app.aurea_core import cash_movement
+
+        try:
+            await write(cash_movement, await self._shelf_user())
+        except cash_movement.CashMovementError as exc:
+            raise ExecutorError(str(exc))
+        result = await cash_movement.for_firm(self.session, self.firm_id)
+        result["message"] = message
+        return result
+
+    def _request_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"kind": inputs.get("kind"), "amount": inputs.get("amount"), "payee": inputs.get("payee"), "reason": inputs.get("reason"), "third_party": str(inputs.get("third_party")).lower() == "true"}
+
+    def _paid_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"paid_on": self._exit_day(inputs.get("paid_on"), "paid_on"), "source_document": inputs.get("source_document"), "callback_number": inputs.get("callback_number")}
+
+    def _standing_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"payee": inputs.get("payee"), "amount": inputs.get("amount"), "frequency": inputs.get("frequency"), "first_due": self._exit_day(inputs.get("first_due"), "first_due"),
+                "source_document": inputs.get("source_document"), "third_party": str(inputs.get("third_party")).lower() == "true"}
+
+    def _phase_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"amount": inputs.get("amount"), "tranches": inputs.get("tranches"), "every_months": inputs.get("every_months"), "reason": inputs.get("reason"), "start_on": self._exit_day(inputs.get("start_on"), "start_on")}
+
+    async def request_cash_movement(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
+        args = self._request_args(inputs)
+        return await self._cash_write(lambda e, by: e.request(self.session, account_id, firm_id=self.firm_id, by=by, **args), "Requested. The cash is held back, and nothing has been paid.")
+
+    async def record_cash_paid(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        request_id = _parse_uuid(inputs.get("request_id") or "", "request_id")
+        args = self._paid_args(inputs)
+        return await self._cash_write(lambda e, by: e.record_paid(self.session, request_id, firm_id=self.firm_id, by=by, **args), "Recorded as paid. The cash has come off the book.")
+
+    async def cancel_cash_request(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        request_id = _parse_uuid(inputs.get("request_id") or "", "request_id")
+        return await self._cash_write(lambda e, by: e.cancel(self.session, request_id, firm_id=self.firm_id, by=by, reason=inputs.get("reason")), "Cancelled. The cash is released.")
+
+    async def record_standing_instruction(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
+        args = self._standing_args(inputs)
+        return await self._cash_write(lambda e, by: e.record_standing(self.session, account_id, firm_id=self.firm_id, by=by, **args), "Recorded.")
+
+    async def end_standing_instruction(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        standing_id = _parse_uuid(inputs.get("standing_id") or "", "standing_id")
+        return await self._cash_write(lambda e, by: e.end_standing(self.session, standing_id, firm_id=self.firm_id, by=by), "Ended.")
+
+    async def start_phase_in(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        mandate_id = _parse_uuid(inputs.get("mandate_id") or "", "mandate_id")
+        args = self._phase_args(inputs)
+        return await self._cash_write(lambda e, by: e.start_phase_in(self.session, mandate_id, firm_id=self.firm_id, by=by, **args), "Started. The stages not yet due are held back from purchases.")
+
+    async def end_phase_in(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        plan_id = _parse_uuid(inputs.get("plan_id") or "", "plan_id")
+        return await self._cash_write(lambda e, by: e.end_phase_in(self.session, plan_id, firm_id=self.firm_id, by=by), "Ended. What was held back is released.")
+
+    async def _cash_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import cash_movement as e, firm_time, markets
+
+        say = markets.money_for(await self._firm())
+        try:
+            if tool_key == "request_cash_movement":
+                r = await e.prepare_request(self.session, _parse_uuid(inputs.get("account_id") or "", "account_id"), firm_id=self.firm_id, **self._request_args(inputs))
+                return [("Account", r["account"].name), ("Kind", r["kind"].upper() if r["kind"] == "rmd" else r["kind"].capitalize()), ("Amount", say(r["amount"])), ("To", r["payee"]), ("Third party", "Yes, a callback is needed" if r["third_party"] else None),
+                        ("For", r["reason"]), ("Cash there", say(r["cash"])), ("Already asked for", say(r["already_open"]) if r["already_open"] else None), ("Short by", say(r["short_by"]) if r["short_by"] else None), ("Then", "Held back from purchases, nothing paid")]
+            if tool_key == "record_cash_paid":
+                who = await self._shelf_user()
+                r = await e.prepare_paid(self.session, _parse_uuid(inputs.get("request_id") or "", "request_id"), firm_id=self.firm_id, by=who, **self._paid_args(inputs))
+                q = r["request"]
+                return [("Account", r["account"].name), ("Amount", say(float(q.amount))), ("To", q.payee), ("Paid", firm_time.spoken(r["day"])), ("Callback", r["callback"]), ("Cash then", say(float(r["account"].cash_balance or 0) - float(q.amount))), ("Document", r["document"])]
+            if tool_key == "cancel_cash_request":
+                r = await e.prepare_cancel(self.session, _parse_uuid(inputs.get("request_id") or "", "request_id"), firm_id=self.firm_id, reason=inputs.get("reason"))
+                return [("Account", r["account"].name), ("Amount", say(float(r["request"].amount))), ("To", r["request"].payee), ("Reason", r["reason"]), ("Then", "The cash is released")]
+            if tool_key == "record_standing_instruction":
+                r = await e.prepare_standing(self.session, _parse_uuid(inputs.get("account_id") or "", "account_id"), firm_id=self.firm_id, **self._standing_args(inputs))
+                return [("Account", r["account"].name), ("To", r["payee"]), ("Amount", f"{say(r['amount'])} {r['frequency']}"), ("First due", firm_time.spoken(r["first_due"])), ("Third party", "Yes" if r["third_party"] else None), ("Document", r["document"])]
+            if tool_key == "end_standing_instruction":
+                r = await e.prepare_end_standing(self.session, _parse_uuid(inputs.get("standing_id") or "", "standing_id"), firm_id=self.firm_id)
+                return [("Account", r["account"].name if r["account"] else None), ("To", r["standing"].payee), ("Amount", f"{say(float(r['standing'].amount))} {r['standing'].frequency}")]
+            if tool_key == "start_phase_in":
+                r = await e.prepare_phase_in(self.session, _parse_uuid(inputs.get("mandate_id") or "", "mandate_id"), firm_id=self.firm_id, **self._phase_args(inputs))
+                return [("Mandate", r["mandate"].name), ("Amount", say(r["amount"])), ("Stages", f"{r['tranches']} of {say(r['each'])}, every {r['every']} month(s)"), ("First", firm_time.spoken(r["day"])), ("Last", firm_time.spoken(r["last_on"])), ("Why", r["reason"]), ("Orders", "None placed")]
+            r = await e.prepare_end_phase_in(self.session, _parse_uuid(inputs.get("plan_id") or "", "plan_id"), firm_id=self.firm_id)
+            return [("Mandate", r["mandate"].name if r["mandate"] else None), ("Released", say(r["released"]))]
+        except e.CashMovementError as exc:
             raise ExecutorError(str(exc))
 
     async def read_client_exits(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2834,6 +3024,10 @@ class ToolExecutors:
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):
             return rows(*await self._balance_preview(tool_key, inputs))
+        if tool_key in ("request_cash_movement", "record_cash_paid", "cancel_cash_request", "record_standing_instruction", "end_standing_instruction", "start_phase_in", "end_phase_in"):
+            return rows(*await self._cash_preview(tool_key, inputs))
+        if tool_key in ("record_trusted_contact", "record_estate_document", "record_life_event"):
+            return rows(*await self._file_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
             return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):

@@ -19,6 +19,8 @@ import { ReviewsCard } from "./ReviewsCard";
 import { IpsCard } from "./IpsCard";
 import { BalanceSheetCard } from "./BalanceSheetCard";
 import { EquityCompCard } from "./EquityCompCard";
+import { CashCard } from "./CashCard";
+import { ClientFileCard } from "./ClientFileCard";
 import { ExitsCard } from "./ExitsCard";
 import { PlanCard } from "./PlanCard";
 import { ShelfCard } from "./ShelfCard";
@@ -131,6 +133,22 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_cash_movements":
+      case "request_cash_movement":
+      case "record_cash_paid":
+      case "cancel_cash_request":
+      case "record_standing_instruction":
+      case "end_standing_instruction":
+      case "start_phase_in":
+      case "end_phase_in":
+        if (!Array.isArray(artifact.result?.requests)) return null;
+        return <CashCard result={artifact.result as any} />;
+      case "read_client_file":
+      case "record_trusted_contact":
+      case "record_estate_document":
+      case "record_life_event":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.people)) return null;
+        return <ClientFileCard result={artifact.result as any} />;
       case "read_financial_plan":
       case "record_income_stream":
       case "end_income_stream":

@@ -16,7 +16,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import exits, firm_time, harvest_guard, ips, shelf, wash_sale
+from app.aurea_core import cash_movement, exits, firm_time, harvest_guard, ips, shelf, wash_sale
 from app.aurea_core import orders as order_engine
 from app.conduit.execution import lot_method_for_firm
 from app.models.graph import Account, Household, Mandate
@@ -48,12 +48,12 @@ async def _estimate_sales(session: AsyncSession, firm: Firm, account: Account, s
     return refused
 
 
-def _cash_short(account: Account, filling: list[dict]) -> list[str]:
+def _cash_short(account: Account, filling: list[dict], held_back: float) -> list[str]:
     """In the order given, because that is the order they fill in and a later sale cannot pay for an earlier buy."""
-    cash = float(account.cash_balance or 0)
+    cash = float(account.cash_balance or 0) - held_back
     for o in filling:
         cash += o["est_value"] if o["side"] == "sell" else -o["est_value"]
-        if cash < 0:
+        if o["side"] == "buy" and cash < 0:
             return [f"{account.name} does not hold the cash for {o['symbol']}: it would be short by {-cash:,.2f}. "
                     "List a sale that funds it first."]
     return []
@@ -94,7 +94,7 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
 
     filling = [o for o in orders if o["symbol"] not in unpriced]
     refused = await _estimate_sales(session, firm, account, [o for o in filling if o["side"] == "sell"])
-    refused += _cash_short(account, filling)
+    refused += _cash_short(account, filling, (await cash_movement.held_back(session, firm, mandate))["total"])
 
     policy, breaches = await ips.orders_against(session, mandate, firm=firm, orders=[
         {**o, "instrument": instruments[o["symbol"]]} for o in filling])

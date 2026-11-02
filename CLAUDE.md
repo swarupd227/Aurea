@@ -93,6 +93,8 @@ pages are artifact views the agents open. Full guideline, including what is buil
   household's tax window, before its card and again at Confirm, the set as a whole. The rules stay in their own
   modules. A breach an order leaves no worse is the monitor's, so a sale that helps is not stopped by it, and an
   Indian rebuy after a loss stays a flag.
+- **Money leaves on a custodian's paper, from a second person.** `aurea_core/cash_movement.py` holds an open request's cash back from every purchase and moves nothing. Someone other than the requester records it paid, from the confirmation, and a third-party payee needs a callback first. A shortfall is shown and not solved: what to sell is a person's decision. Phased money uses the same hold, so the rebalancer invests one stage at a time.
+- **The client file is what a person recorded.** `aurea_core/client_file.py` holds trusted contacts, estate documents and life events, from a document or a note. Not on file does not mean none exists. It names what no longer agrees with a family's life: a paper signed before a marriage or a death, a beneficiary who has died or is a former spouse. A life event raises a task and changes no figure.
 - **The plan works from what is on file.** `aurea_core/financial_plan.py` leaves a household with nothing recorded exactly where the retirement engine puts it. Spending on file becomes the income to plan for, debts that outlast work add to it, and income that has started by retirement is not drawn twice. An income stream comes from a statement and an education cost from a named source. Social Security's claiming table is the law's, and is worked out for a US household alone. Choices that cannot be undone are laid out, not advised on. All of it is an estimate and says so.
 - **Equity compensation is read from the plan statement.** `aurea_core/equity_comp.py` takes a grant as a person
   recorded it, works out what has vested from its schedule, and values it only on a real price. Grants sit beside net
@@ -101,7 +103,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
 - **The shelf says what may be bought, and a person says what is on it.** `aurea_core/shelf.py` holds the research
   team's decisions, added and never edited. Closed stops every purchase at once, and a gated product needs a
   certification from a document, never worked out from wealth. "Approved products only" is a separate switch a person
-  throws, because a shelf is built one product at a time. The rebalancer and a direct order read the same `barred`.
+  throws, because a shelf is built one product at a time. The rebalancer and a direct order read the same `barred`, and it stops purchases only: it is not an exclusion, because the rebalancer divests what is excluded.
   Sales are never stopped. No decision on file does not mean never reviewed.
 - **A person says a client left or died, and the custodian's paper moves the money.** `aurea_core/exits.py` keeps the
   book as it stood on the date, at that day's real prices; what has none is listed with no value, never estimated. The
@@ -141,7 +143,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

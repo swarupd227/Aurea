@@ -20,6 +20,7 @@ import app.models  # noqa: F401  - registers every table on Base.metadata
 from app.agents.drift_rebalancing import DriftRebalancingAgent
 from app.atlas.base import AgentContext, Subject
 from app.aurea_core import firm_time, shelf
+from app.aurea_core.rebalancing import Lot, Position, optimise
 from app.core.db import Base, utcnow
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.models.enums import AutonomyTier, MarketType, UserRole
@@ -189,6 +190,21 @@ async def main() -> int:
             await research.record_product_decision({"symbol": "BBB", "status": "approved", "rationale": "Reviewed core holding", "document": "Research note 60"})
             sensed = await DriftRebalancingAgent().sense(ctx)
             check("once approved it is", [p["symbol"] for p in sensed.get("model_picks", [])], ["BBB"])
+            await research.record_product_decision({"symbol": "AAA", "status": "closed", "rationale": "Closed after review", "document": "Research note 61"})
+            sensed = await DriftRebalancingAgent().sense(ctx)
+            aaa_row = next(p for p in sensed["positions"] if p["symbol"] == "AAA")
+            unreviewed = next(p for p in sensed["positions"] if p["symbol"] == "FUNDA")
+            check("a closed holding is not marked to divest", aaa_row["excluded"], False)
+            check("nor is one with no decision", unreviewed["excluded"], False)
+            check("but neither may be bought", (str(aaa.id) in sensed["off_shelf"], str(fund_a.id) in sensed["off_shelf"]), (True, True))
+            place = lambda iid, sym, value, cost: Position(holding_id=sym, instrument_id=iid, symbol=sym, name=sym, asset_class="equity", market_value=value, price=10, cost_basis=cost,  # noqa: E731
+                                                           account_id="a", custodian="c", lots=[Lot(quantity=value / 10, cost_per_unit=cost * 10 / value)])
+            under = optimise(positions=[place("closed", "C", 1000, 800)], target_weights={"equity": 1.0}, cash=9000, drift_band=0.05, not_buyable={"closed"})
+            check("the rebalancer adds nothing to it", [o.symbol for o in under.orders], [])
+            check("and says so", "barred by the product shelf" in " ".join(under.limitations), True)
+            on_target = optimise(positions=[place("closed", "C", 9000, 800), place("ok", "D", 1000, 800)], target_weights={"equity": 1.0}, cash=0, drift_band=0.05, not_buyable={"closed"})
+            check("and proposes no sale of it", [o.symbol for o in on_target.orders if o.side == "sell"], [])
+            await research.record_product_decision({"symbol": "AAA", "status": "watch", "rationale": "Back under watch", "document": "Research note 62"})
 
             print("\n=== Share classes ===")
             await research.record_product_decision({"symbol": "FUNDI", "status": "approved", "rationale": "Institutional class", "document": "Research note 70", "family": "Global Fund", "share_class": "I", "expense_ratio_pct": 0.4})
