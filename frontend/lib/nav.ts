@@ -11,7 +11,7 @@ import {
   PlugZap, UserPlus, GitMerge, CalendarClock, FileText, CheckSquare, MessageSquare, Gauge, Activity,
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
   Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2, ArrowLeftRight, Umbrella,
-  SlidersHorizontal, BadgeCheck, CalendarCheck, ScrollText, Wallet,
+  SlidersHorizontal, BadgeCheck, CalendarCheck, ScrollText, Wallet, DoorOpen,
 } from "lucide-react";
 
 export type ViewIntent = "decide" | "clients" | "operate" | "govern" | "configure" | "platform";
@@ -64,6 +64,7 @@ export const VIEWS: View[] = [
   { href: "/studio/reviews", label: "Client reviews", icon: CalendarCheck, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["annual review", "cadence", "next review", "overdue", "reverse churning", "ongoing service"] },
   { href: "/studio/ips", label: "IPS monitoring", icon: ScrollText, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["investment policy", "statement", "breach", "drift", "exception", "limits", "restricted"] },
   { href: "/studio/net-worth", label: "Net worth", icon: Wallet, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["balance sheet", "liabilities", "debts", "mortgage", "held away", "expenses", "cash flow", "assets"] },
+  { href: "/studio/exits", label: "Departures and estates", icon: DoorOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["offboarding", "leaving", "acat", "transfer out", "death", "estate settlement", "executor", "step-up", "inherited"] },
   { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT], intent: "clients", keywords: ["bias", "nudge"] },
   { href: "/studio/beneficiary-audit", label: "Beneficiary audit", icon: UserCheck, roles: [A, P, PT, C], intent: "clients", keywords: ["registration", "beneficiaries"] },
   { href: "/studio/pipeline", label: "Growth pipeline", icon: TrendingUp, roles: [A, P, PT], intent: "clients", keywords: ["crm", "prospects", "opportunities"] },

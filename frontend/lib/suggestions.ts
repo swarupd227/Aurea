@@ -130,6 +130,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
       { label: "Billing", prompt: withRef("Why was this household billed what it was?", "household", household) },
       { label: "Next review", prompt: withRef("When was this household last reviewed, and when is the next review due?", "household", household) },
       { label: "Against its IPS", prompt: withRef("How does this household's portfolio sit against its IPS?", "household", household) },
+      { label: "Leaving or estate", prompt: withRef("Is a departure or an estate open for this household, and what is left to do?", "household", household) },
       { label: "Net worth", prompt: withRef("What is this household's net worth, and what is on file for it?", "household", household) },
     ];
   }
@@ -184,6 +185,12 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Overdue reviews", prompt: "Which client reviews are overdue, and what have those clients paid since?" },
         { label: "No record", prompt: "Which households have no review on record?" },
         h1 ? { label: `${short(h1)}'s review`, prompt: `When was ${the(h1)} last reviewed, and what did it cover?` } : { label: "Due soon", prompt: "Which client reviews fall due in the next month?" },
+      ];
+    case "/studio/exits":
+      return [
+        { label: "What is open", prompt: "Which clients are leaving, which estates are open, and what is still to do on each?" },
+        { label: "What stayed", prompt: "How much has stayed at the firm and how much has left through departures and estates?" },
+        { label: "Blocked", prompt: "Which estates have no executor on file, and which accounts have no beneficiary?" },
       ];
     case "/studio/net-worth":
       return [

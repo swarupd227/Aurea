@@ -219,7 +219,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         return None
     firm = await session.get(Firm, firm_id)
     rules, care = assumptions(firm), care_basis(firm)
-    persons = (await session.execute(select(Person).where(Person.household_id == household_id))).scalars().all()
+    persons = (await session.execute(select(Person).where(Person.household_id == household_id, Person.deceased_on.is_(None)))).scalars().all()
     policies = (await session.execute(
         select(ProtectionPolicy).where(ProtectionPolicy.household_id == household_id, ProtectionPolicy.firm_id == firm_id)
     )).scalars().all()

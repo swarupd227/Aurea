@@ -93,6 +93,13 @@ pages are artifact views the agents open. Full guideline, including what is buil
   household's tax window, before its card and again at Confirm, the set as a whole. The rules stay in their own
   modules. A breach an order leaves no worse is the monitor's, so a sale that helps is not stopped by it, and an
   Indian rebuy after a loss stays a flag.
+- **A person says a client left or died, and the custodian's paper moves the money.** `aurea_core/exits.py` keeps the
+  book as it stood on the date, at that day's real prices; what has none is listed with no value, never estimated. The
+  hold sits on the mandate: a departing client may sell and not buy, and nothing trades on a dead client's accounts
+  until an executor is on file. Nothing moves until operations records what a custodian moved, from its confirmation,
+  and only then do holdings, lots and cash change. A named beneficiary is paid outside the estate, with no executor;
+  an account with none goes through it. Basis steps up only where `markets.basis_on_death` says and never in a
+  retirement account. Closing is refused while anything is held, and a household that has left leaves every scan.
 - **A market is resolved in one place, and a country with no rules is refused.** `aurea_core/markets.py` says
   what a jurisdiction fixes; `compliance/ontology.framework_for` matches a regulator as a word. A country with
   no market gets `NO_REGIME`, no tax report and a held activation, never New Zealand's rules. Money in a
@@ -124,7 +131,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

@@ -120,6 +120,7 @@ async def household_brain(
                 "segment": p.segment, "is_next_gen": p.is_next_gen, "kyc": p.kyc,
                 "profile": p.profile,
                 "date_of_birth": p.date_of_birth.isoformat() if p.date_of_birth else None,
+                "deceased_on": p.deceased_on.isoformat() if p.deceased_on else None,
             }
             for p in persons
         ],
@@ -156,7 +157,7 @@ async def household_brain(
 
 async def list_households(session: AsyncSession, firm_id: uuid.UUID) -> list[dict]:
     households = (
-        await session.execute(select(Household).where(Household.firm_id == firm_id))
+        await session.execute(select(Household).where(Household.firm_id == firm_id, Household.left_on.is_(None)))
     ).scalars().all()
     out = []
     for h in households:

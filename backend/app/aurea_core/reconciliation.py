@@ -78,6 +78,11 @@ def cash_effect(txn: Transaction) -> Decimal | None:
         return -amount
     if kind in ("fee_credit", "dividend", "distribution"):
         return amount
+    # A transfer of a position moves no cash, so only the cash line counts.
+    if kind == "transfer_out":
+        return Decimal(0) if txn.instrument_id else -amount
+    if kind == "transfer_in":
+        return Decimal(0) if txn.instrument_id else amount
     return None
 
 
@@ -94,9 +99,9 @@ async def book_as_of(session: AsyncSession, account: Account, as_of: date) -> di
     )).scalars().all()
     for t in after:
         kind = str(t.txn_type)
-        if kind == "buy" and t.instrument_id:
+        if kind in ("buy", "transfer_in") and t.instrument_id:
             positions[t.instrument_id] = positions.get(t.instrument_id, Decimal(0)) - _d(t.quantity)
-        elif kind == "sell" and t.instrument_id:
+        elif kind in ("sell", "transfer_out") and t.instrument_id:
             positions[t.instrument_id] = positions.get(t.instrument_id, Decimal(0)) + _d(t.quantity)
         effect = cash_effect(t)
         if effect is None:

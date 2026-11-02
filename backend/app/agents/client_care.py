@@ -59,13 +59,14 @@ class ClientCareAgent(BaseAgent):
             drafts.append(await self._volatility(ctx, hh, scenario, stress))
 
             # 2. Next-gen heir engagement gap.
-            for p in brain.get("persons", []):
+            living = [p for p in brain.get("persons", []) if not p.get("deceased_on")]
+            for p in living:
                 if p.get("is_next_gen"):
                     drafts.append(self._heir(ctx, hh, p))
                     break
 
             # 3. Pre-retirement milestone.
-            for p in brain.get("persons", []):
+            for p in living:
                 age = _age(p.get("date_of_birth"))
                 stage = (p.get("profile") or {}).get("life_stage")
                 if (age is not None and 60 <= age <= 67) or stage == "pre-retirement":

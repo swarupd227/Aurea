@@ -36,6 +36,8 @@ class DriftRebalancingAgent(BaseAgent):
         mandate = await s.get(Mandate, ctx.subject.id) if ctx.subject.id else None
         if mandate is None or mandate.model_portfolio_id is None:
             return {"applicable": False, "reason": "No mandate or target model."}
+        if mandate.exit_hold:
+            return {"applicable": False, "reason": "This mandate is on hold while its client leaves or an estate settles."}
         # Orders already approved and waiting for the client: a second set would race the first.
         if await consent.waiting_on_mandate(s, mandate.id):
             return {"applicable": False, "reason": "An approved proposal is waiting for the client's consent."}
@@ -423,6 +425,8 @@ class DriftRebalancingAgent(BaseAgent):
         # placed rather than part of it; a fresh run re-sizes around whatever changed.
         mandate = await ctx.session.get(Mandate, ctx.subject.id) if ctx.subject.type == "mandate" else None
         if mandate is not None:
+            if mandate.exit_hold:
+                return {"executed": False, "note": "Nothing was placed: this mandate has gone on hold since this was proposed."}
             refused = await consent.blocked(ctx.session, firm=ctx.firm, rec=recommendation)
             if refused:
                 return {"executed": False, "note": refused}

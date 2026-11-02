@@ -76,6 +76,13 @@ class ToolExecutors:
             "set_review_cadence": self.set_review_cadence,
             "book_client_review": self.book_client_review,
             "read_ips_monitoring": self.read_ips_monitoring,
+            "read_client_exits": self.read_client_exits,
+            "start_client_departure": self.start_client_departure,
+            "record_client_death": self.record_client_death,
+            "record_executor": self.record_executor,
+            "record_account_transfer": self.record_account_transfer,
+            "close_client_exit": self.close_client_exit,
+            "withdraw_client_exit": self.withdraw_client_exit,
             "record_ips": self.record_ips,
             "read_balance_sheet": self.read_balance_sheet,
             "record_balance_item": self.record_balance_item,
@@ -883,6 +890,163 @@ class ToolExecutors:
                     ("Net worth", None if r["side"] == "expense" or r["not_converted"]
                      else f"{say(now['net_worth'])} becomes {say(now['net_worth'] + change)}")]
         except balance_sheet.BalanceSheetError as exc:
+            raise ExecutorError(str(exc))
+
+    async def read_client_exits(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import exits, markets
+
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await exits.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+        else:
+            result = await exits.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        say = markets.money_for(await self._firm())
+        result["message"] = (f"{s['departures']} client(s) leaving and {s['estates']} estate(s) open, {say(s['value_open'])} between them. "
+                             f"{say(s['stayed_at_firm'])} has stayed at the firm and {say(s['left_firm'])} has left. "
+                             "None on file means none has been recorded here.")
+        return result
+
+    @staticmethod
+    def _exit_day(value: Any, name: str):
+        from datetime import date as _date
+
+        if value in (None, ""):
+            return None
+        try:
+            return _date.fromisoformat(str(value)[:10])
+        except ValueError:
+            raise ExecutorError(f"{name} must be a date, YYYY-MM-DD.")
+
+    def _departure_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"notice_date": self._exit_day(inputs.get("notice_date"), "notice_date"), "reason": inputs.get("reason"),
+                "source_document": inputs.get("source_document"), "receiving_institution": inputs.get("receiving_institution"),
+                "mandate_id": _parse_uuid(inputs["mandate_id"], "mandate_id") if inputs.get("mandate_id") else None}
+
+    def _death_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"date_of_death": self._exit_day(inputs.get("date_of_death"), "date_of_death"),
+                "source_document": inputs.get("source_document"), "executor": inputs.get("executor")}
+
+    def _transfer_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        share = inputs.get("share_pct")
+        try:
+            share = float(share) / 100 if share not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ExecutorError("share_pct must be a number.")
+        return {"to_party": inputs.get("to_party"), "transfer_date": self._exit_day(inputs.get("transfer_date"), "transfer_date"),
+                "source_document": inputs.get("source_document"), "share": share,
+                "to_account_id": _parse_uuid(inputs["to_account_id"], "to_account_id") if inputs.get("to_account_id") else None}
+
+    async def _exit_write(self, write) -> dict[str, Any]:
+        """Run a write under the person's name, and answer with the record as it now stands."""
+        from app.aurea_core import exits
+        from app.models.identity import User
+
+        user = await self.session.get(User, self.user_id)
+        try:
+            row = await write(exits, user.email if user else "unknown")
+        except exits.ExitError as exc:
+            raise ExecutorError(str(exc))
+        return await exits.view_of(self.session, row.exit_id if hasattr(row, "exit_id") else row.id, firm_id=self.firm_id)
+
+    async def start_client_departure(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        args = self._departure_args(inputs)
+        result = await self._exit_write(lambda e, by: e.start_departure(self.session, household_id, firm_id=self.firm_id, by=by, **args))
+        result["message"] = f"{result['household']} is recorded as leaving. Their mandates are on hold, and nothing has moved."
+        return result
+
+    async def record_client_death(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        person_id = _parse_uuid(inputs.get("person_id") or "", "person_id")
+        args = self._death_args(inputs)
+        result = await self._exit_write(lambda e, by: e.record_death(self.session, person_id, firm_id=self.firm_id, by=by, **args))
+        result["message"] = f"An estate is open for {result['person']}, and trading has stopped on their mandates."
+        return result
+
+    async def record_executor(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        exit_id = _parse_uuid(inputs.get("exit_id") or "", "exit_id")
+        result = await self._exit_write(lambda e, by: e.record_executor(
+            self.session, exit_id, firm_id=self.firm_id, by=by, executor=inputs.get("executor"), source_document=inputs.get("source_document")))
+        result["message"] = f"{result['executor']} is on file for the estate of {result['person']}."
+        return result
+
+    async def record_account_transfer(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        exit_id = _parse_uuid(inputs.get("exit_id") or "", "exit_id")
+        account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
+        args = self._transfer_args(inputs)
+        result = await self._exit_write(lambda e, by: e.record_transfer(self.session, exit_id, account_id, firm_id=self.firm_id, by=by, **args))
+        c = result["checks"]
+        result["message"] = f"Recorded. {c['accounts_open']} of {c['accounts']} account(s) still open."
+        return result
+
+    async def close_client_exit(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        exit_id = _parse_uuid(inputs.get("exit_id") or "", "exit_id")
+        result = await self._exit_write(lambda e, by: e.close(self.session, exit_id, firm_id=self.firm_id, by=by))
+        result["message"] = f"Closed. {result['household']}'s accounts and mandates on this have ended."
+        return result
+
+    async def withdraw_client_exit(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        exit_id = _parse_uuid(inputs.get("exit_id") or "", "exit_id")
+        result = await self._exit_write(lambda e, by: e.cancel(self.session, exit_id, firm_id=self.firm_id, by=by, reason=inputs.get("reason")))
+        result["message"] = f"Withdrawn. The hold is off {result['household']}'s mandates."
+        return result
+
+    async def _exit_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What each exit card names, refused for the reasons doing it would be refused."""
+        from app.aurea_core import exits, firm_time, markets
+
+        firm = await self._firm()
+        say = markets.money_for(firm)
+
+        def book_rows(book: dict) -> list[tuple[str, Any]]:
+            gaps = [p["symbol"] for a in book["accounts"] for p in a["positions"] if p["value"] is None]
+            return [("Accounts", ", ".join(a["name"] for a in book["accounts"]) or "None"),
+                    ("Value then", say(book["total"])), ("No real price", ", ".join(gaps) or None)]
+
+        try:
+            if tool_key == "start_client_departure":
+                r = await exits.prepare_departure(self.session, _parse_uuid(inputs.get("household_id") or "", "household_id"),
+                                                  firm_id=self.firm_id, **self._departure_args(inputs))
+                return [("Client", r["household"].name), ("Scope", "Whole household" if r["whole"] else r["mandates"][0].name),
+                        ("Notice", firm_time.spoken(r["day"])), *book_rows(r["book"]), ("Reason", r["reason"]),
+                        ("Going to", r["receiving"]), ("Document", r["document"]), ("Hold", "May sell, may not buy. The rebalancer stops")]
+            if tool_key == "record_client_death":
+                r = await exits.prepare_death(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"),
+                                              firm_id=self.firm_id, **self._death_args(inputs))
+                return [("Person", r["person"].full_name), ("Date of death", firm_time.spoken(r["day"])), *book_rows(r["book"]),
+                        ("Document", r["document"]), ("Executor", r["executor"] or "None on file"),
+                        ("Hold", "May sell, may not buy" if r["executor"] else "No trading until an executor is on file")]
+            if tool_key == "record_executor":
+                r = await exits.prepare_executor(self.session, _parse_uuid(inputs.get("exit_id") or "", "exit_id"), firm_id=self.firm_id,
+                                                 executor=inputs.get("executor"), source_document=inputs.get("source_document"))
+                return [("Estate of", r["person"].full_name if r["person"] else None), ("Executor", r["executor"]), ("Document", r["document"]),
+                        ("Hold", "May then sell, may not buy")]
+            if tool_key == "record_account_transfer":
+                r = await exits.prepare_transfer(self.session, _parse_uuid(inputs.get("exit_id") or "", "exit_id"),
+                                                 _parse_uuid(inputs.get("account_id") or "", "account_id"), firm_id=self.firm_id,
+                                                 **self._transfer_args(inputs))
+                lines = [f"{float(m['quantity']):g} {m['instrument'].symbol}" for m in r["moves"]]
+                footing = {"designation": "Beneficiary designation", "estate": "Through the estate", "survivor": "Joint survivor", "departure": None}
+                return [("Account", r["account"].name), ("To", r["to_party"]), ("Stays at the firm", r["to_account"].name if r["to_account"] else None),
+                        ("Footing", footing[r["footing"]]), ("Share", f"{r['share']:.1%}"), ("Date", firm_time.spoken(r["day"])),
+                        ("Positions", "; ".join(lines) or None), ("Cash", say(float(r["cash"])) if r["cash"] > 0 else None), ("Value", say(float(r["value"]))),
+                        ("No real price", ", ".join(r["unpriced"]) or None),
+                        ("Basis", {"stepped_up": "Steps up to the value at death", "carried": "Carried over", "left_firm": None}[r["basis"]]),
+                        ("Account then", "Closes" if r["last"] else None), ("Document", r["document"])]
+            if tool_key == "close_client_exit":
+                r = await exits.prepare_close(self.session, _parse_uuid(inputs.get("exit_id") or "", "exit_id"), firm_id=self.firm_id)
+                row = r["exit"]
+                return [("Client", r["household"].name if r["household"] else None), ("Kind", "Estate" if row.kind == "death" else "Departure"),
+                        ("Accounts closing", ", ".join(a.name for a in r["accounts"]) or "None"), ("Mandates ending", str(len(row.mandates or []))),
+                        ("Household", "Leaves the client list" if row.whole_household else None)]
+            r = await exits.prepare_cancel(self.session, _parse_uuid(inputs.get("exit_id") or "", "exit_id"), firm_id=self.firm_id, reason=inputs.get("reason"))
+            row = r["exit"]
+            return [("Client", r["household"].name if r["household"] else None), ("Kind", "Estate" if row.kind == "death" else "Departure"),
+                    ("Date of death cleared", r["person"].full_name if r["person"] else None), ("Reason", r["reason"]),
+                    ("Hold", "Comes off these mandates")]
+        except exits.ExitError as exc:
             raise ExecutorError(str(exc))
 
     async def read_ips_monitoring(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2404,6 +2568,8 @@ class ToolExecutors:
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):
             return rows(*await self._balance_preview(tool_key, inputs))
+        if tool_key in ("start_client_departure", "record_client_death", "record_executor", "record_account_transfer", "close_client_exit", "withdraw_client_exit"):
+            return rows(*await self._exit_preview(tool_key, inputs))
         if tool_key in ("create_crm_contact", "create_crm_opportunity", "log_crm_activity", "update_crm_opportunity_stage"):
             return rows(*await self._crm_preview(tool_key, inputs))
         if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):

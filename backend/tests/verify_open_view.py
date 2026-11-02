@@ -182,8 +182,8 @@ async def behaviour() -> None:
             check("the model is told how", all(v in next(i.description for i in TOOLS["open_view"].inputs if i.name == "household_id") for v in ONE_CLIENT_VIEWS), True)
             panes = (FRONTEND / "lib" / "paneViews.ts").read_text(encoding="utf-8")
             pane = (FRONTEND / "app" / "workspace" / "components" / "WorkPane.tsx").read_text(encoding="utf-8")
-            check("a card about one client keeps it", panes.count('onClient("/studio/'), 5)
-            check("the pane passes it to each view", pane.count("household={pane.query.household ?? null}"), 5)
+            check("a card about one client keeps it", panes.count('onClient("/studio/'), len(ONE_CLIENT_VIEWS))
+            check("the pane passes it to each view", pane.count("household={pane.query.household ?? null}"), len(ONE_CLIENT_VIEWS))
 
             billed = [{"tool_key": "explain_invoice", "inputs": {}, "result": {"id": str(bill.id), "number": None}}]
             b = await ex(R.OPERATIONS).open_view({"view": "billing", "invoice_id": str(bill.id)}, turn=billed)

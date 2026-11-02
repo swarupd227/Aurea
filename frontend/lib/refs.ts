@@ -6,7 +6,7 @@
 
 const MARKER = /\s*\[(?:ref|Open view):[^\]]*\]\s*/g;
 
-export function withRef(sentence: string, kind: "household" | "mandate" | "person" | "policy" | "account" | "break" | "balance_item" | "recommendation" | "invoice" | "onboarding_case" | "meeting" | "task" | "report", id: string): string {
+export function withRef(sentence: string, kind: "household" | "mandate" | "person" | "policy" | "account" | "break" | "balance_item" | "recommendation" | "invoice" | "onboarding_case" | "meeting" | "task" | "report" | "exit", id: string): string {
   return `${sentence} [ref: ${kind} ${id}]`;
 }
 

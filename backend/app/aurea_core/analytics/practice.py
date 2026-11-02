@@ -80,8 +80,8 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
 
     # ── Net New Assets (NNA) & ROA bps ──
     txns = (await session.execute(select(Transaction).where(Transaction.firm_id == firm_id))).scalars().all()
-    _INFLOWS = {"buy", "capital_call"}
-    _OUTFLOWS = {"sell", "distribution"}
+    _INFLOWS = {"buy", "capital_call", "transfer_in"}
+    _OUTFLOWS = {"sell", "distribution", "transfer_out"}
     nna = (
         sum(float(t.amount or 0) for t in txns if t.txn_type in _INFLOWS)
         - sum(float(t.amount or 0) for t in txns if t.txn_type in _OUTFLOWS)

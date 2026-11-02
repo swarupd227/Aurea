@@ -14,15 +14,29 @@ Status last checked against the code: **2026-10-31**, by keyword search and read
 
 ## In progress
 
-Nothing is being built right now.
+The rest of L100, built and verified locally for one cloud build, the user's choice on 2 Nov because deploying
+each feature was costing them too much time. Scope: every open §5 and §6.1 gap below. Parked stays parked, and
+"Waiting on a decision" needs a figure or a yes from the user.
+
+**The one cloud build must:** deploy both sides, which runs `app.db_bootstrap` for the new columns, then run
+`seed.ai_governance_backfill` for the new tools. Add to this line as each item lands.
 
 ## Next, in order
 
+From an audit of the guide against the code on 2 Nov. The guide is `Wealth_Management_L100_Foundation_Guide.docx`,
+with L200-1 and L200-2 beside it, in the user's Downloads.
+
 | ID | Item | L100 | Where it stands | Size |
 |---|---|---|---|---|
-| B-07 | Offboarding | §5.11 | No account closure or transfer-out flow | Medium |
-| B-08 | Approved product list | §5.7 | No manager due diligence or approved list | Medium |
-| B-09 | Equity compensation and concentrated stock | §5.2, §5.4 | Not built | Large |
+| B-08 | Approved product list | §5.7, §7 | No manager due diligence or approved list, no accredited-investor gate on private funds, no share classes | Medium |
+| B-09 | Equity compensation and concentrated stock | §5.2, §5.4 | Not built. Concentration is flagged, but nothing records grants or a plan to reduce a position | Large |
+| B-83 | Retirement income: withdrawal rate and pension elections | §5.4 | Monte Carlo exists. No sustainable withdrawal rate and no pension election | Medium |
+| B-84 | Cash flow: reserves, debt and a projection | §5.4 | Net worth shows today. No emergency reserve measure, debt strategy or balance-sheet projection. Goes with B-68 | Medium |
+| B-85 | Client money movement | §5.3, §5.8 | No withdrawal request, no raising cash for one or an RMD, no standing instruction | Medium |
+| B-86 | Life-event changes | §5.8 | No record of a marriage, divorce, inheritance or sale of a business, so nothing triggers a plan or portfolio revision | Small |
+| B-87 | The trade lifecycle | §6.1 | No trade confirmation, settlement date or block allocation. An order settles at once. Goes with B-81 | Medium |
+| B-88 | Estate coordination | §5.4 | The Estate page and agent exist. To be checked against: documents on file and current, titling and beneficiaries matching them, gifting | Medium |
+| B-89 | Phasing cash in | §5.7 | No dollar-cost averaging | Small |
 
 ## Smaller items
 
@@ -103,7 +117,8 @@ B-26 waits for a real custodian statement.
 | B-62 | A real IPS on a live mandate | Nothing yet. No IPS is on file for any seeded mandate and none should be invented, so every mandate reads "No IPS on file" until an adviser records one from a document. Until then the monitor has nothing to raise and the rebalancer is unchanged. An accepted breach is local and tests only |
 | B-90 | A name that matches nothing gets an offer | Found in testing on 2 Nov: "Hurtley" came back not found. Astra now says so, offers the closest names on file as one-press choices and waits, because a similar name can be a different client. A search also finds a household by a person or entity in it. The Clients list and the search box offer the closest names too. Tests, and on the real model twice on throwaway data: not found, offered, then the right client once chosen. Not deployed |
 | B-70 | A real debt, policy or statement through Confirm on the live site | Live on 1 Nov: the cards for a debt, a policy and a statement named every term, and Not now wrote nothing. A confirmed write is tests, and for a debt a confirmed one on a throwaway database with the real model. Every live household reads "assets only" until a person records one from a document, and none should be invented. The risk decision's card has not been seen live, because no questionnaire is on file |
-| B-82 | Astra not drawing a rule from a mandate's type | Live on 1 Nov, after a refusal, Astra added that an advisory mandate would route through a proposal for client consent, which no tool returned and which is not so at a firm with no licences. Locally the same request drew it in 3 of 6 replies. The prompt now says a rule is a fact and a mandate's type is a label: 0 of 8 on the real model on throwaway data. Not deployed |
+| B-82 | Astra not drawing a rule from a mandate's type | Live on 1 Nov, after a refusal, Astra added that an advisory mandate would route through a proposal for client consent, which no tool returned and which is not so at a firm with no licences. Locally the same request drew it in 3 of 6 replies. The prompt now says a rule is a fact and a mandate's type is a label: 0 of 8 on the real model on throwaway data. Live on 2 Nov the same request drew a clean refusal, once, so it rests mainly on the eight |
+| B-07 | Offboarding and wealth transfer: a departure or a death recorded from a document, the book kept as it stood that day, the mandate held, what a custodian moved booked to holdings, lots and cash, beneficiaries paid by designation, basis stepped up where the law does, and accounts, mandates and the household closing (`aurea_core/exits.py`, Departures and estates) | Tests, 86 checks. On the real model on throwaway data: a departure and a death from a plain sentence, Astra opening the view on one client, a payout from the form in the pane through its Confirm card, the view updating itself. Three things fell out of that run: Astra wrongly required an executor and a share for a named beneficiary (tool wording), a form dated by the browser's day where the firm's is the one checked, and an estate card that read as blocked. A final part-period fee shows as days unbilled and is raised by hand. Estate tax and a spouse's half step-up are not modelled. Not deployed |
 | B-75 | The remaining Confirm cards on the live site | From B-67: client consent, registration, conflict, WSP evidence, the pipeline and corporate actions have been seen in tests only |
 
 ## Done

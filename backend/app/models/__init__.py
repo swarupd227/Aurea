@@ -12,6 +12,7 @@ from app.models import (  # noqa: F401
     corporate_actions,
     crm,
     engagement,
+    exits,
     governance,
     graph,
     identity,

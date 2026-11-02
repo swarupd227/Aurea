@@ -18,6 +18,7 @@ import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
 import { IpsCard } from "./IpsCard";
 import { BalanceSheetCard } from "./BalanceSheetCard";
+import { ExitsCard } from "./ExitsCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
 import { BeneficiaryAuditCard } from "./BeneficiaryAuditCard";
@@ -127,6 +128,15 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_client_exits":
+      case "start_client_departure":
+      case "record_client_death":
+      case "record_executor":
+      case "record_account_transfer":
+      case "close_client_exit":
+      case "withdraw_client_exit":
+        if (!Array.isArray(artifact.result?.exits) && typeof artifact.result?.status !== "string") return null;
+        return <ExitsCard result={artifact.result as any} />;
       case "read_tax_position":
         if (!Array.isArray(artifact.result?.taxpayers)) return null;
         return <TaxPositionCard result={artifact.result as any} />;

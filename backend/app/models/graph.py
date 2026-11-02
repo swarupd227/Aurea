@@ -27,6 +27,8 @@ class Household(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     # Set by an adviser; none means the firm's default (aurea_core.reviews).
     review_cadence_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Set when a departure closes (aurea_core/exits.py). A household that has gone leaves every scan.
+    left_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     persons: Mapped[list["Person"]] = relationship(back_populates="household")
 
@@ -51,6 +53,8 @@ class Person(Base):
     # Stated preferences, values, life-stage signals.
     profile: Mapped[dict] = mapped_column(JSON, default=dict)
     is_next_gen: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Recorded by a person from a document (aurea_core/exits.py). Nothing infers it.
+    deceased_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     household: Mapped["Household | None"] = relationship(back_populates="persons")
 
@@ -105,6 +109,8 @@ class Mandate(Base):
         ForeignKey("fee_schedule.id", ondelete="SET NULL"), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Set while a departure or estate is open: leaving | deceased | executor (aurea_core/exits.py).
+    exit_hold: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     accounts: Mapped[list["Account"]] = relationship(back_populates="mandate")
 
@@ -134,6 +140,8 @@ class Account(Base):
     # not of registration_type alone (a spouse-inheritor and a non-spouse EDB differ).
     original_owner_death_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     rmd_election_method: Mapped[str | None] = mapped_column(String(24), nullable=True)  # 10_year_rule | life_expectancy
+    status: Mapped[str] = mapped_column(String(16), default="active")     # active | closed
+    closed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     mandate: Mapped["Mandate | None"] = relationship(back_populates="accounts")
     holdings: Mapped[list["Holding"]] = relationship(back_populates="account")

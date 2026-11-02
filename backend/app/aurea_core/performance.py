@@ -123,10 +123,10 @@ async def performance_for_accounts(
         if t.instrument_id is None:
             continue
         kind = str(t.txn_type).lower()
-        if kind == "buy":
+        if kind in ("buy", "transfer_in"):
             events[t.instrument_id].append((t.trade_date, _f(t.quantity), _f(t.amount)))
             buy_qty[(t.account_id, t.instrument_id, t.trade_date)] += _f(t.quantity)
-        elif kind == "sell":
+        elif kind in ("sell", "transfer_out"):
             events[t.instrument_id].append((t.trade_date, -_f(t.quantity), -_f(t.amount)))
         elif kind in _INCOME_TYPES:
             income[t.instrument_id].append((t.trade_date, _f(t.amount)))

@@ -168,6 +168,12 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE account ADD COLUMN IF NOT EXISTS registration_type VARCHAR(32)"))
         await conn.execute(text("ALTER TABLE account ADD COLUMN IF NOT EXISTS original_owner_death_date DATE"))
         await conn.execute(text("ALTER TABLE account ADD COLUMN IF NOT EXISTS rmd_election_method VARCHAR(24)"))
+        # L100 §5.11: a client leaving, or dying, and the accounts closing behind them.
+        await conn.execute(text("ALTER TABLE account ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'active'"))
+        await conn.execute(text("ALTER TABLE account ADD COLUMN IF NOT EXISTS closed_on DATE"))
+        await conn.execute(text("ALTER TABLE mandate ADD COLUMN IF NOT EXISTS exit_hold VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE person ADD COLUMN IF NOT EXISTS deceased_on DATE"))
+        await conn.execute(text("ALTER TABLE household ADD COLUMN IF NOT EXISTS left_on DATE"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS transfer_request (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

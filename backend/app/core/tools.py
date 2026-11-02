@@ -513,6 +513,118 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
+    "read_client_exits": Tool(
+        key="read_client_exits",
+        name="Read Departures and Estates",
+        speaking_agent="astra",
+        description="Clients leaving the firm and estates being settled: the book as it stood on the date, what each account has moved and what is left, beneficiaries, what stayed at the firm and what left, and what is still open (orders, proposals, RMD, days unbilled). no_executor says none is on file: that stops trading and paying an account with no beneficiary, and does not stop paying a named beneficiary. Give household_id for one client. No exit on file means none has been recorded here.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household, or leave out for the firm", required=False)],
+        output=ToolOutput("object", "Each open and recent departure or estate, with its accounts and checks"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "start_client_departure": Tool(
+        key="start_client_departure",
+        name="Record Client Departure",
+        speaking_agent="astra",
+        description="Record that a client has given notice, from their letter or the transfer request. It keeps the book as it stands and puts the mandates on hold: they may sell, may not buy, and the rebalancer stops. Nothing moves until the custodian moves it. Leave out mandate_id when the whole household is leaving.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this departure? The mandates go on hold and nothing more is bought for this client.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household (from search_households)", required=True),
+            ToolInput("reason", "string", "Why they are leaving", required=True),
+            ToolInput("source_document", "string", "The letter, email or transfer request this comes from", required=True),
+            ToolInput("notice_date", "string", "When notice was given, YYYY-MM-DD. Defaults to today", required=False),
+            ToolInput("receiving_institution", "string", "Where the assets are going", required=False),
+            ToolInput("mandate_id", "uuid", "One mandate, when only part of the household is leaving", required=False),
+        ],
+        output=ToolOutput("object", "The departure, with its book and checks"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "record_client_death": Tool(
+        key="record_client_death",
+        name="Record a Client's Death",
+        speaking_agent="astra",
+        description="Record a client's death from the death certificate or the executor's letter. It opens the estate, keeps each account's value on the date of death at that day's real prices, and stops all trading on their mandates until an executor is on file. Only ever from what a person says a document shows.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this death? Trading stops on this person's mandates and an estate is opened.",
+        inputs=[
+            ToolInput("person_id", "uuid", "The person (from read_household)", required=True),
+            ToolInput("date_of_death", "string", "YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "The certificate or letter this comes from", required=True),
+            ToolInput("executor", "string", "The executor, if the document names one", required=False),
+        ],
+        output=ToolOutput("object", "The estate, with date-of-death values and checks"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "record_executor": Tool(
+        key="record_executor",
+        name="Record Executor",
+        speaking_agent="astra",
+        description="Record who holds authority over an estate, from the grant or letters of administration. Their mandates may then sell, though not buy, and an account with no beneficiary may be paid out through the estate.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this executor? They can then act on the estate's accounts.",
+        inputs=[
+            ToolInput("exit_id", "uuid", "The estate, from read_client_exits", required=True),
+            ToolInput("executor", "string", "The executor's name", required=True),
+            ToolInput("source_document", "string", "The grant or letter this comes from", required=True),
+        ],
+        output=ToolOutput("object", "The estate"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "record_account_transfer": Tool(
+        key="record_account_transfer",
+        name="Record Account Transfer",
+        speaking_agent="astra",
+        description="Record what a custodian moved out of an account, from its confirmation: an ACAT or transfer out when a client leaves, or a payment to a beneficiary or the estate. This writes the holdings, lots and cash, so only ever from a real document. A beneficiary on the account's designation is paid outside the estate, so needs no executor, and their share defaults to the designation, so do not ask for it. An executor is needed only for an account with no beneficiary, which passes through the estate. This tool checks all of that itself, so call it rather than working out the answer first. Give to_account_id when the money stays at the firm: the lots move with it, stepped up where the market's law says so. A retirement account stays in an inherited wrapper.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this transfer? It takes these assets off the book and cannot be undone.",
+        inputs=[
+            ToolInput("exit_id", "uuid", "The departure or estate, from read_client_exits", required=True),
+            ToolInput("account_id", "uuid", "The account, from read_client_exits", required=True),
+            ToolInput("transfer_date", "string", "The date the custodian moved it, YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "The custodian's confirmation", required=True),
+            ToolInput("to_party", "string", "Who received it. Defaults to the receiving institution on a departure", required=False),
+            ToolInput("share_pct", "number", "Percent of the account as it stood on the date. Defaults to the designation, or all of it", required=False),
+            ToolInput("to_account_id", "uuid", "The account it arrived in, if it stayed at the firm", required=False),
+        ],
+        output=ToolOutput("object", "What moved, and the departure or estate"),
+        roles_required={UserRole.OPERATIONS},
+    ),
+
+    "close_client_exit": Tool(
+        key="close_client_exit",
+        name="Close Departure or Estate",
+        speaking_agent="astra",
+        description="Close a departure or estate once every account is empty and no order is open. It ends the mandates, and a household that has wholly left stops appearing in the client list and every agent's scan. Refused while anything is still held.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Close this? The accounts and mandates end, and billing stops.",
+        inputs=[ToolInput("exit_id", "uuid", "From read_client_exits", required=True)],
+        output=ToolOutput("object", "The closed departure or estate"),
+        roles_required={UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "withdraw_client_exit": Tool(
+        key="withdraw_client_exit",
+        name="Withdraw Departure or Estate",
+        speaking_agent="astra",
+        description="Withdraw a departure when the client stayed, or a record made in error, with the reason. The hold comes off and it stays on record as withdrawn. Refused once any money has moved.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Withdraw this? The hold comes off these mandates.",
+        inputs=[
+            ToolInput("exit_id", "uuid", "From read_client_exits", required=True),
+            ToolInput("reason", "string", "Why it is being withdrawn", required=True),
+        ],
+        output=ToolOutput("object", "The withdrawn record"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
     "read_ips_monitoring": Tool(
         key="read_ips_monitoring",
         name="Read IPS Monitoring",
@@ -810,20 +922,21 @@ TOOLS: dict[str, Tool] = {
             "messages; give household_id), ips (each mandate against its accepted IPS), reviews (when each client was last "
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
-            "its breaks) or net_worth (what each household owns, owes and spends). ips, reviews, protection, risk_profiles and "
-            "net_worth show every client unless given household_id: when the conversation is about one client, look them up "
+            "its breaks), net_worth (what each household owns, owes and spends) or exits (clients leaving and estates being "
+            "settled). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages, read_balance_sheet, read_protection, "
-            "read_client_reviews, read_risk_profiles, read_ips_monitoring); an id from memory or an earlier turn is refused."
+            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation or net_worth", required=True),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles or net_worth to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth or exits", required=True),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth or exits to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -1382,9 +1495,10 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "risk_profiles": ("/studio/risk-profiles", "Risk profiles", {_A, _P, _PT, _C, _O, _B}),
     "reconciliation": ("/studio/reconciliation", "Reconciliation", {_PT, _C, _O, _B}),
     "net_worth": ("/studio/net-worth", "Net worth", {_A, _P, _PT, _C, _O, _B}),
+    "exits": ("/studio/exits", "Departures and estates", {_A, _P, _PT, _C, _O, _B}),
 }
 # The views of every client that can open on one, through `?household=`.
-ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth"}
+ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits"}
 
 
 def get_tool(key: str) -> Tool | None:

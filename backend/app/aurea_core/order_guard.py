@@ -2,7 +2,7 @@
 
 A proposal is measured by its agent and again at approval. An adviser's direct order from the conversation
 has no proposal, so it answers here, before its Confirm card and again when it is confirmed: what the
-account can do, what the mandate excludes, the client's IPS, and the household's tax window. The rules stay
+account can do, whether the client is leaving, what the mandate excludes, the client's IPS, and the household's tax window. The rules stay
 in their own modules, so a direct order and the rebalancer cannot come to read them differently.
 
 A refusal covers the whole set, as it does at approval: a set is read as a whole, and a sale may be funding
@@ -16,7 +16,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, harvest_guard, ips, wash_sale
+from app.aurea_core import exits, firm_time, harvest_guard, ips, wash_sale
 from app.aurea_core import orders as order_engine
 from app.conduit.execution import lot_method_for_firm
 from app.models.graph import Account, Household, Mandate
@@ -84,6 +84,9 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
     """Everything standing against a set of orders: {"refused": sentences, "flags", "policy"}. Stamps each
     sale's estimated gain on its order and writes nothing else. An order with no real price will not fill,
     so it moves nothing and is measured against nothing."""
+    held = exits.order_refusal(mandate, orders)
+    if held:
+        return {"refused": [held], "flags": [], "policy": None}
     symbols = [o["symbol"] for o in orders]
     twice = sorted({s for s in symbols if symbols.count(s) > 1})
     if twice:
