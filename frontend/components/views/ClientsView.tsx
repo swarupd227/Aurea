@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, ChevronUp, Search } from "lucide-react";
 import { Segment, SkeletonList, Empty, ErrorState } from "@/components/ui";
+import { closestNames } from "@/lib/closestNames";
 import { useApi } from "@/lib/hooks";
 import { money } from "@/lib/format";
 import { ViewLink } from "./ViewNav";
@@ -42,6 +43,7 @@ export function ClientsView() {
   }, [data, search, sortKey, sortDir]);
 
   const total = (data || []).reduce((s, h) => s + (h.total_value || 0), 0);
+  const near = !rows.length && search.trim() ? closestNames(search, data || []) : [];
 
   return (
     <div className="view-container">
@@ -100,6 +102,14 @@ export function ClientsView() {
       ) : !rows.length ? (
         <div className="rounded-lg border border-border bg-surface p-8">
           <Empty>{search ? `No clients matching "${search}"` : "No clients"}</Empty>
+          {near.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5" data-testid="client-near">
+              <span className="tile-label">Closest</span>
+              {near.map((h) => (
+                <ViewLink key={h.id} href={`/studio/clients/${h.id}`} className={`${chip} hover:text-ink`}>{h.name}</ViewLink>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <ul className="divide-y divide-border-soft overflow-hidden rounded-lg border border-border bg-surface">

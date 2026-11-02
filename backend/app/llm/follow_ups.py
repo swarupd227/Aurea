@@ -86,10 +86,17 @@ def _from_onboarding(inputs: dict, result: dict) -> list[Candidate]:
     return [BENEFICIARIES, WAITING]
 
 
+def _from_search(inputs: dict, result: dict) -> list[Candidate]:
+    near = result.get("did_you_mean") or []
+    if near:
+        return [("search_households", f"I meant {h['name']}.") for h in near]
+    return _household(_name_of(result)) if _name_of(result) else []
+
+
 # What each tool's result leads to. A tool not listed here leads to the role's general next steps.
 FOLLOWS: dict[str, Callable[[dict, dict], list[Candidate]]] = {
     "read_household": lambda i, r: _household(_name_of(r)) if _name_of(r) else [],
-    "search_households": lambda i, r: _household(_name_of(r)) if _name_of(r) else [],
+    "search_households": _from_search,
     # A suggestion names the household as people do; with no name in the result it is not offered
     # rather than offered with an id nobody can read.
     "read_performance": lambda i, r: ([_household(_name_of(r))[1]] if _name_of(r) else []) + [COMPOSITES],

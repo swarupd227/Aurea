@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CornerDownLeft, MessageSquarePlus, Search } from "lucide-react";
 import { api, getUser } from "@/lib/api";
+import { closestNames } from "@/lib/closestNames";
 import { viewsForRole } from "@/lib/nav";
 import { matchPaneView } from "@/lib/paneViews";
 import { useWorkspaceOptional } from "@/app/workspace/context";
@@ -110,6 +111,12 @@ export function CommandPalette() {
           .map<Item>((h) => ({ key: `hh-${h.id}`, section: "Clients", label: h.name, action: go(`/studio/clients/${h.id}`) }))
       : [];
 
+    // Only offered, so it never takes the place of asking Astra as what Enter does.
+    const near = q && !clients.length && !isSentence
+      ? closestNames(q, households)
+          .map<Item>((h) => ({ key: `near-${h.id}`, section: "Clients", label: h.name, detail: "Closest", action: go(`/studio/clients/${h.id}`) }))
+      : [];
+
     const convs = threads
       .filter((t) => !q || (t.title || "").toLowerCase().includes(q))
       .slice(0, q ? 5 : 4)
@@ -121,7 +128,7 @@ export function CommandPalette() {
     const nav = [...views, ...clients];
     // A word or two that names somewhere to go: go there first, Astra second.
     const navFirst = !!q && !isSentence && nav.length > 0;
-    return navFirst ? [...nav, ...askItems, ...convs] : [...askItems, ...nav, ...convs];
+    return navFirst ? [...nav, ...askItems, ...near, ...convs] : [...askItems, ...nav, ...near, ...convs];
   }, [q, query, role, ctx, households, threads, isSentence, router, ws]);
 
   if (!open) return null;

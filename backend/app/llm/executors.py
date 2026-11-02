@@ -170,10 +170,15 @@ class ToolExecutors:
             raise ExecutorError("query is required")
         limit = int(inputs.get("limit") or 10)
 
+        # A client is searched for by their own name as often as by the household's.
+        named = f"%{query}%"
         households = (
             await self.session.execute(
                 select(Household)
-                .where(Household.firm_id == self.firm_id, Household.name.ilike(f"%{query}%"))
+                .where(Household.firm_id == self.firm_id, or_(
+                    Household.name.ilike(named),
+                    Household.id.in_(select(Person.household_id).where(Person.firm_id == self.firm_id, Person.full_name.ilike(named))),
+                    Household.id.in_(select(LegalEntity.household_id).where(LegalEntity.firm_id == self.firm_id, LegalEntity.name.ilike(named)))))
                 .limit(limit)
             )
         ).scalars().all()
@@ -210,10 +215,33 @@ class ToolExecutors:
                 } for a in accounts],
             })
 
+        if not results:
+            near = await self._near_households(str(query))
+            names = ", ".join(n["name"] for n in near)
+            return {
+                "results": [], "did_you_mean": near,
+                "message": (f"No household matches '{query}'. Closest on file: {names}. None of them has been looked up: "
+                            "ask which was meant before using one." if near
+                            else f"No household matches '{query}', and no name on file is close to it."),
+            }
         return {
             "results": results,
             "message": f"Found {len(results)} household(s) matching '{query}'",
         }
+
+    async def _near_households(self, query: str) -> list[dict[str, Any]]:
+        """This firm's households nearest a name that matched nothing, by their own name, their people's
+        or their entities'."""
+        from app.aurea_core import client_names
+
+        names = {h: n for h, n in (await self.session.execute(
+            select(Household.id, Household.name).where(Household.firm_id == self.firm_id))).all()}
+        people = (await self.session.execute(
+            select(Person.household_id, Person.full_name).where(Person.firm_id == self.firm_id))).all()
+        entities = (await self.session.execute(
+            select(LegalEntity.household_id, LegalEntity.name).where(LegalEntity.firm_id == self.firm_id))).all()
+        found = client_names.closest(query, [*names.items(), *[(h, n) for h, n in [*people, *entities] if h in names]])
+        return [{"household_id": str(h), "name": names[h], **({"matched": said} if said != names[h] else {})} for h, said in found]
 
     async def check_household_wash_sale(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import tax_intelligence
