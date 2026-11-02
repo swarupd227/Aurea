@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import consent, firm_time, harvest_guard, ips, knowledge, licences, markets, tax_india, wash_sale
+from app.aurea_core import consent, firm_time, harvest_guard, ips, knowledge, licences, markets, shelf, tax_india, wash_sale
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX as _CAPACITY_EQUITY_MAX
 from app.aurea_core.rebalancing import Lot, Position, WashSaleGuard, optimise
 from app.aurea_core.valuation import latest_prices
@@ -59,6 +59,10 @@ class DriftRebalancingAgent(BaseAgent):
         exclusions = set(ips.exclusions_of(mandate)) | set(ov.get("exclude") or [])
         if policy:
             exclusions |= set(policy.restricted or [])
+        # What the research team has closed or gated is out, whatever the model nominates.
+        off_shelf = await shelf.barred(s, ctx.firm, mandate)
+        if off_shelf:
+            exclusions |= set((await s.execute(select(Instrument.symbol).where(Instrument.id.in_(list(off_shelf))))).scalars().all())
         target_weights: dict[str, float] = {}
         # The instrument the model nominates per class, so a class no account yet holds can
         # still be bought into. TargetAllocation.instrument_id has existed all along and was
@@ -430,6 +434,9 @@ class DriftRebalancingAgent(BaseAgent):
             refused = await consent.blocked(ctx.session, firm=ctx.firm, rec=recommendation)
             if refused:
                 return {"executed": False, "note": refused}
+            off_shelf, _ = await shelf.order_refusals(ctx.session, ctx.firm, mandate, order_set)
+            if off_shelf:
+                return {"executed": False, "note": f"Nothing was placed: {' '.join(off_shelf)} Run the agent again for a fresh set."}
             # Sized to the terms in force when it was proposed. The stamp comes from the agent's own
             # payload, so a modification cannot lose it.
             newer = await ips.moved_on(ctx.session, mandate, (recommendation.payload or {}).get("ips"))

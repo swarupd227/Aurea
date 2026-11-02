@@ -186,6 +186,12 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "No record", prompt: "Which households have no review on record?" },
         h1 ? { label: `${short(h1)}'s review`, prompt: `When was ${the(h1)} last reviewed, and what did it cover?` } : { label: "Due soon", prompt: "Which client reviews fall due in the next month?" },
       ];
+    case "/studio/products":
+      return [
+        { label: "Closed but held", prompt: "Which closed products do clients still hold, and how much?" },
+        { label: "Reviews due", prompt: "Which product reviews are overdue?" },
+        { label: "Dearer classes", prompt: "Where are clients in a dearer share class than the shelf offers?" },
+      ];
     case "/studio/exits":
       return [
         { label: "What is open", prompt: "Which clients are leaving, which estates are open, and what is still to do on each?" },

@@ -513,6 +513,71 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
+    "read_product_shelf": Tool(
+        key="read_product_shelf",
+        name="Read Product Shelf",
+        speaking_agent="astra",
+        description="The firm's product shelf: each product held or decided on, whether it is approved, under watch or closed, its review dates, who may buy it, its share class and cost, what the book holds of it, and whether 'approved products only' is on. No decision on file does not mean a product was never reviewed.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Products, their status and what is held"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER, UserRole.RESEARCH_CIO},
+    ),
+
+    "record_product_decision": Tool(
+        key="record_product_decision",
+        name="Record Product Decision",
+        speaking_agent="astra",
+        description="Record the research team's due-diligence decision on a product: approved, watch or closed, with their reason and paper. Closed stops every purchase at once, for the rebalancer and direct orders alike. minimum_class limits it to certified investors. Family, share_class and expense_ratio_pct let dearer share classes of one fund be found.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this decision? It takes effect on purchases at once.",
+        inputs=[
+            ToolInput("symbol", "string", "The product's symbol", required=True),
+            ToolInput("status", "string", "approved, watch or closed", required=True),
+            ToolInput("rationale", "string", "The research team's reason", required=True),
+            ToolInput("document", "string", "The due-diligence paper", required=True),
+            ToolInput("next_review_on", "string", "The next review, YYYY-MM-DD", required=False),
+            ToolInput("minimum_class", "string", "accredited or qualified_purchaser, if gated", required=False),
+            ToolInput("family", "string", "The fund family, for comparing share classes", required=False),
+            ToolInput("share_class", "string", "The share class", required=False),
+            ToolInput("expense_ratio_pct", "number", "The expense ratio, in percent", required=False),
+        ],
+        output=ToolOutput("object", "The shelf"),
+        roles_required={UserRole.RESEARCH_CIO, UserRole.PORTFOLIO_TEAM},
+    ),
+
+    "record_investor_status": Tool(
+        key="record_investor_status",
+        name="Record Investor Status",
+        speaking_agent="astra",
+        description="Record a person's standing to buy gated products, from the letter or form that shows it: retail, accredited or qualified_purchaser. Never worked out from their wealth.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this status? It decides which gated products may be bought for this person.",
+        inputs=[
+            ToolInput("person_id", "uuid", "The person (from read_household)", required=True),
+            ToolInput("investor_class", "string", "retail, accredited or qualified_purchaser", required=True),
+            ToolInput("document", "string", "The letter or form", required=True),
+            ToolInput("as_of", "string", "Its date, YYYY-MM-DD. Defaults to today", required=False),
+            ToolInput("expires_on", "string", "When it runs out, YYYY-MM-DD", required=False),
+        ],
+        output=ToolOutput("object", "The certification"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "set_approved_products_only": Tool(
+        key="set_approved_products_only",
+        name="Set Approved Products Only",
+        speaking_agent="astra",
+        description="Turn 'approved products only' on or off for the firm. When on, a product with no decision cannot be bought, by the rebalancer or a direct order. Held positions stay and may be sold.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Change this for the whole firm? It decides what can be bought for every client.",
+        inputs=[ToolInput("on", "boolean", "true to turn it on, false to turn it off", required=True)],
+        output=ToolOutput("object", "The shelf"),
+        roles_required={UserRole.RESEARCH_CIO, UserRole.BRANCH_LEADER},
+    ),
+
     "read_client_exits": Tool(
         key="read_client_exits",
         name="Read Departures and Estates",
@@ -922,8 +987,8 @@ TOOLS: dict[str, Tool] = {
             "messages; give household_id), ips (each mandate against its accepted IPS), reviews (when each client was last "
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
-            "its breaks), net_worth (what each household owns, owes and spends) or exits (clients leaving and estates being "
-            "settled). ips, reviews, protection, risk_profiles, net_worth and "
+            "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
+            "settled) or products (the approved product list). ips, reviews, protection, risk_profiles, net_worth and "
             "exits show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
@@ -935,7 +1000,7 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth or exits", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits or products", required=True),
             ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth or exits to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
@@ -1496,6 +1561,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "reconciliation": ("/studio/reconciliation", "Reconciliation", {_PT, _C, _O, _B}),
     "net_worth": ("/studio/net-worth", "Net worth", {_A, _P, _PT, _C, _O, _B}),
     "exits": ("/studio/exits", "Departures and estates", {_A, _P, _PT, _C, _O, _B}),
+    "products": ("/studio/products", "Product shelf", {_A, _P, _PT, _C, _O, _B, _R}),
 }
 # The views of every client that can open on one, through `?household=`.
 ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits"}

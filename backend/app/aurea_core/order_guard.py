@@ -16,7 +16,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import exits, firm_time, harvest_guard, ips, wash_sale
+from app.aurea_core import exits, firm_time, harvest_guard, ips, shelf, wash_sale
 from app.aurea_core import orders as order_engine
 from app.conduit.execution import lot_method_for_firm
 from app.models.graph import Account, Household, Mandate
@@ -86,11 +86,11 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
     so it moves nothing and is measured against nothing."""
     held = exits.order_refusal(mandate, orders)
     if held:
-        return {"refused": [held], "flags": [], "policy": None}
+        return {"refused": [held], "flags": [], "policy": None, "watched": []}
     symbols = [o["symbol"] for o in orders]
     twice = sorted({s for s in symbols if symbols.count(s) > 1})
     if twice:
-        return {"refused": [f"{', '.join(twice)} is in this set twice. Give each instrument one order."], "flags": [], "policy": None}
+        return {"refused": [f"{', '.join(twice)} is in this set twice. Give each instrument one order."], "flags": [], "policy": None, "watched": []}
 
     filling = [o for o in orders if o["symbol"] not in unpriced]
     refused = await _estimate_sales(session, firm, account, [o for o in filling if o["side"] == "sell"])
@@ -104,6 +104,8 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
                 and ips.restricted_by(instruments[o["symbol"]], excluded)
                 and not ips.restricted_by(instruments[o["symbol"]], in_ips)]
     refused += [_said(found, policy) for found in breaches]
+    off_shelf, watched = await shelf.order_refusals(session, firm, mandate, filling)
+    refused += off_shelf
 
     today = firm_time.today(firm)
     household_id = await wash_sale.household_of(session, mandate)
@@ -114,4 +116,4 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
         refused += [c["say"] for c in harvest_guard.conflicts(filling, rules)]
         flags = harvest_guard.flags(filling, rules)
     refused += [_wash_said(c) for c in wash_sale.conflicts(filling, await wash_sale.guard(session, firm, mandate, today=today))]
-    return {"refused": refused, "flags": flags, "policy": policy}
+    return {"refused": refused, "flags": flags, "policy": policy, "watched": watched}

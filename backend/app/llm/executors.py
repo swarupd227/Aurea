@@ -77,6 +77,10 @@ class ToolExecutors:
             "book_client_review": self.book_client_review,
             "read_ips_monitoring": self.read_ips_monitoring,
             "read_client_exits": self.read_client_exits,
+            "read_product_shelf": self.read_product_shelf,
+            "record_product_decision": self.record_product_decision,
+            "record_investor_status": self.record_investor_status,
+            "set_approved_products_only": self.set_approved_products_only,
             "start_client_departure": self.start_client_departure,
             "record_client_death": self.record_client_death,
             "record_executor": self.record_executor,
@@ -890,6 +894,99 @@ class ToolExecutors:
                     ("Net worth", None if r["side"] == "expense" or r["not_converted"]
                      else f"{say(now['net_worth'])} becomes {say(now['net_worth'] + change)}")]
         except balance_sheet.BalanceSheetError as exc:
+            raise ExecutorError(str(exc))
+
+    async def read_product_shelf(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import shelf
+
+        result = await shelf.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = (f"{s['approved']} approved, {s['watch']} under watch, {s['closed']} closed and {s['not_reviewed']} with no decision here. "
+                             f"Approved products only is {'on' if result['approved_products_only'] else 'off'}.")
+        return result
+
+    def _decision_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        expense = inputs.get("expense_ratio_pct")
+        try:
+            expense = float(expense) / 100 if expense not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ExecutorError("expense_ratio_pct must be a number.")
+        return {"symbol": inputs.get("symbol"), "status": inputs.get("status"), "rationale": inputs.get("rationale"), "document": inputs.get("document"),
+                "next_review_on": self._exit_day(inputs.get("next_review_on"), "next_review_on"), "minimum_class": inputs.get("minimum_class") or None,
+                "family": inputs.get("family"), "share_class": inputs.get("share_class"), "expense_ratio": expense}
+
+    def _investor_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"investor_class": inputs.get("investor_class"), "as_of": self._exit_day(inputs.get("as_of"), "as_of"), "document": inputs.get("document"),
+                "expires_on": self._exit_day(inputs.get("expires_on"), "expires_on")}
+
+    @staticmethod
+    def _switch(inputs: dict[str, Any]) -> bool:
+        return str(inputs.get("on")).strip().lower() in ("true", "1", "yes", "on")
+
+    async def _shelf_user(self) -> str:
+        from app.models.identity import User
+
+        user = await self.session.get(User, self.user_id)
+        return user.email if user else "unknown"
+
+    async def record_product_decision(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import shelf
+
+        try:
+            row = await shelf.record_decision(self.session, self.firm_id, by=await self._shelf_user(), role=str(self.role), **self._decision_args(inputs))
+            result = await shelf.for_firm(self.session, self.firm_id)
+        except shelf.ShelfError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = f"Recorded {inputs.get('symbol')} as {row.status}."
+        return result
+
+    async def record_investor_status(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import shelf
+
+        person_id = _parse_uuid(inputs.get("person_id") or "", "person_id")
+        try:
+            row = await shelf.record_certification(self.session, person_id, firm_id=self.firm_id, by=await self._shelf_user(), **self._investor_args(inputs))
+        except shelf.ShelfError as exc:
+            raise ExecutorError(str(exc))
+        return {"person_id": str(person_id), "investor_class": row.investor_class, "as_of": row.as_of.isoformat(),
+                "expires_on": row.expires_on.isoformat() if row.expires_on else None, "message": f"Recorded as {row.investor_class.replace('_', ' ')}."}
+
+    async def set_approved_products_only(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import shelf
+
+        try:
+            result = await shelf.set_enforcement(self.session, self.firm_id, on=self._switch(inputs), by=await self._shelf_user())
+        except shelf.ShelfError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = f"Approved products only is {'on' if result['approved_products_only'] else 'off'}."
+        return result
+
+    async def _shelf_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, markets, shelf
+
+        say = markets.money_for(await self._firm())
+        try:
+            if tool_key == "record_product_decision":
+                r = await shelf.prepare_decision(self.session, self.firm_id, **self._decision_args(inputs))
+                inst, was = r["instrument"], r["was"]
+                effect = {"closed": "No new purchases, for anyone", "watch": "Purchases go ahead, and are named", "approved": "May be bought"}[r["status"]]
+                return [("Product", f"{inst.symbol} · {inst.name}"), ("Status", f"{was.status.capitalize()} becomes {r['status'].capitalize()}" if was else r["status"].capitalize()),
+                        ("Effect", effect), ("Held", f"{r['holdings']} holding(s), {say(r['value_held'])}" if r["holdings"] else None),
+                        ("Investors", r["minimum"].replace("_", " ").capitalize() + " only" if r["minimum"] else None),
+                        ("Share class", " · ".join(x for x in (r["family"], r["share_class"]) if x) or None),
+                        ("Expense ratio", f"{r['expense']:.2%}" if r["expense"] is not None else None), ("Reason", r["rationale"]), ("Document", r["document"]),
+                        ("Next review", firm_time.spoken(r["next"]) if r["next"] else None)]
+            if tool_key == "record_investor_status":
+                r = await shelf.prepare_certification(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._investor_args(inputs))
+                return [("Person", r["person"].full_name), ("Class", r["investor_class"].replace("_", " ").capitalize()),
+                        ("Replaces", r["was"].investor_class.replace("_", " ") if r["was"] else "Nothing on file"), ("As at", firm_time.spoken(r["day"])),
+                        ("Runs out", firm_time.spoken(r["expires"]) if r["expires"] else None), ("Document", r["document"])]
+            r = await shelf.prepare_enforcement(self.session, self.firm_id, on=self._switch(inputs))
+            return [("Approved products only", "Off becomes on" if r["on"] else "On becomes off"), ("On the shelf", str(r["approved"])),
+                    ("Held with no decision", ", ".join(r["unreviewed_held"][:12]) or "None"),
+                    ("Their value", say(r["value_unreviewed"]) if r["unreviewed_held"] else None),
+                    ("Effect", "Those stay and may be sold, and cannot be added to" if r["on"] else "A product with no decision may be bought")]
+        except shelf.ShelfError as exc:
             raise ExecutorError(str(exc))
 
     async def read_client_exits(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2568,6 +2665,8 @@ class ToolExecutors:
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):
             return rows(*await self._balance_preview(tool_key, inputs))
+        if tool_key in ("record_product_decision", "record_investor_status", "set_approved_products_only"):
+            return rows(*await self._shelf_preview(tool_key, inputs))
         if tool_key in ("start_client_departure", "record_client_death", "record_executor", "record_account_transfer", "close_client_exit", "withdraw_client_exit"):
             return rows(*await self._exit_preview(tool_key, inputs))
         if tool_key in ("create_crm_contact", "create_crm_opportunity", "log_crm_activity", "update_crm_opportunity_stage"):
@@ -2865,6 +2964,8 @@ class ToolExecutors:
         policy = a["review"]["policy"]
         if policy:
             rows.append(("IPS", f"Version {policy.version}: breaches no term and widens no breach"))
+        if a["review"]["watched"]:
+            rows.append(("Under watch", ", ".join(a["review"]["watched"])))
         for flag in a["review"]["flags"]:
             rows.append((f"Review {flag['symbol']}", f"Sold at a loss in {flag['account']} on {flag['on']}"))
         venue = venue_for_firm(firm)

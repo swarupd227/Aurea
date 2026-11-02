@@ -22,6 +22,7 @@ from app.models import (  # noqa: F401
     protection,
     reconciliation,
     risk_assessment,
+    shelf,
     skill,
     sleeves,
     telemetry,
