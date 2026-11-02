@@ -22,6 +22,14 @@ Parked stays parked, and "Waiting on a decision" needs a figure or a yes from th
 `seed.schedule_backfill`, `seed.ai_governance_backfill` and `seed.retirement_dates_backfill`. After it, one live pass over the batch, Not now on every
 card, moves these rows to Done.
 
+**Deployed 3 Nov.** Live, as the adviser, the same day: the blotter, tax documents on the NZ year (2025-26, one overdue
+fund statement for the Chens), risk profiles with `model_fit`, wealth against needs, the client net worth and IPS
+reads, and the US estate view all answer. Astra listed the 12 households with no review and left out the two with one
+(B-52), and said it could not call the Chens' profile unsupported (B-44). A direct order's card carried the client's
+reason, the paper venue and a concentration row, and Not now placed nothing. Not yet run: `seed.retirement_dates_backfill`
+(Hartley and Morrison still read 2036 and 2034). The AI inventory could not be read, because compliance and admin
+need an authenticator set up to sign in, so `seed.ai_governance_backfill` is to be run again; it is safe to repeat.
+
 ## Next, in order
 
 Nothing from the 2 Nov audit of the guide against the code is left to build, apart from B-91, which is a decision to
@@ -38,6 +46,35 @@ classes, which no longer exist and render unstyled. "Direct" counts writes that 
 | B-95 | Client Canvas | §5.3 | Canvas, Goals, Retirement, Questionnaire, Next-gen and a report: 80 retired classes. The client assistant is its own box, not the conversation, so Ask and Canvas are not merged | Medium |
 | B-96 | Admin and Superadmin | - | Admin (2,466 lines, 86 retired, 37 direct writes), Connectors, Foundation, Regulatory and Superadmin. Configuration that changes the platform with no tool and no Confirm card | Large |
 | B-97 | Ask-your-book and the old Agents page | - | `studio/ask` still puts a book snapshot into a prompt instead of calling tools, and `studio/agents` is a 12-line stub. Retire both in favour of the conversation | Small |
+
+### L200-1, client onboarding, KYC and AML
+
+From an audit on 3 Nov of `L200-1_Client_Onboarding_KYC_AML_Operations_2.docx` (the user's OneDrive, Domain Material)
+against the code: of its 28 requirements, 4 are built, 17 partial and 7 missing. The vendors stay mocks (identity,
+screening lists, custodian opening, e-signature, ACATS), as they are today and labelled so; the rows build what a firm
+does with what those vendors return. The three bugs come first, because each makes a gate or a figure say something
+untrue. Section numbers are the guide's.
+
+| ID | Item | L200-1 | Where it stands | Size |
+|---|---|---|---|---|
+| B-102 | EDD can never finish | §5.4 | Nothing sets `edd_status` to `edd_complete`, so the `edd_resolved` gate blocks activation for good once a case enters EDD. The file needs a reviewer, date, sources and conclusion, signed off by compliance through a Confirm card, with a corroboration checklist by wealth type (business sale, equity compensation, inheritance, crypto) | Medium |
+| B-103 | A screening hit counts as screened | §5.2, §10 | `parties._SCREENED_OK` treats `review` and `blocked` as screened, so a party with an open hit passes "every party screened". No disposition (true match, false positive, needs info) with rationale, no four-eyes on a true match, no QA sample, so the false-positive rate can only read nothing. Matching ignores date of birth and country | Medium |
+| B-104 | Two onboarding cycle times disagree | §9 | `api/analytics.py` measures to `updated_at`, `aurea_core/onboarding_metrics.py` to `activated_at` | Small |
+| B-105 | A state for each account, and the three clocks | §1, §2 | Status is one per case (intake to approved). The guide's ten states per account, each with an owner, an SLA and its own exception queue (NIGO, KYC, custodian reject, transfer reject, funding fail), a household status worked from its accounts, and the paperwork, money and invested clocks reported apart: there is no invested clock. A transfer can be started before the account exists | Large |
+| B-106 | Consent registry and disclosure upkeep | §3 | No single record of consents (e-delivery, householding, data aggregation, trusted contact, discretion). Annual redelivery is a docstring. Engagement type is per case, not per account, and does not drive which disclosures are due. No fee debit authorisation in the agreement | Medium |
+| B-107 | A risk rating model | §5.3, §5.6 | Risk is typed in by hand and the note is thrown away. Weighted factors (geography, client type, wealth source, activity, channel) to a band, the band to EDD depth, approver and review frequency, overrides logged with a reason, and designed paths for PEPs, non-resident aliens, layered trusts, crypto wealth and cash businesses, with the expected-activity baseline monitoring needs | Large |
+| B-108 | Screening the book, and identity for every party | §5.1, §5.2 | Daily rescreening covers open cases only, and a change of address or signer triggers nothing. Identity is checked for the prospect only, with no clock and no restriction on failure | Medium |
+| B-109 | Transaction monitoring, cases and SARs | §5.5 | Not built. Scenarios against the expected-activity baseline, alerts into cases, the SAR clock (30 days, 60 with no subject, continuing review at 90 to 120), never told to the subject, and exit decisions through a forum. Clients hold no part of it | Large |
+| B-110 | The transfer and rollover file | §6.1, §6.2 | Four statuses and no reason codes. Asset memo, partial and non-transferable asset lists, debit balances, the residual sweep, cost basis arriving as its own state, annuities by 1035. Rollovers compare fees only: no direct vs indirect, NUA, plan loans or RMD-first | Large |
+| B-111 | Money in | §6.3 | ACH verification, return codes, availability holds on large deposits, and revalidating standing instructions. Third-party wire callbacks are built | Medium |
+| B-112 | The document matrix and registration detail | §4, §7 | The matrix is registration only, defined twice. Add state and custodian, and the fields each needs. Missing registration detail: tenancy by the entirety and community property, TOD, contribution vs rollover vs conversion, SEP/SIMPLE tax year, trust certification and EIN, UTMA age of termination, 529/HSA/DAF successors, year-of-death RMD. NIGO checks before submission: signatures, dates, tenancy against state, beneficiaries summing to 100 | Large |
+| B-113 | Account features and senior holds | §4 | Margin, option levels with approval, checkwriting. Temporary holds on suspected exploitation (FINRA 2165), beside the trusted contact that is built | Medium |
+| B-114 | Onboarding scoreboard | §8, §9 | Days-to-invest, abandonment by step, screening alert rate, onboarding NPS, ACATS rejects by code; RACI by activity and accounts per FTE | Medium |
+| B-115 | Private funds and restricted stock in a transfer | §6.4 | Re-registration by assignment, capital calls across the transfer date, Rule 144 legend review. Held-away assets are built | Medium |
+| B-116 | Bulk repapering | §2 | Advisor recruitment and program or custodian conversions in bulk, with negative vs affirmative consent by change type | Large |
+
+Parked from L200-1: identity-fraud signals (device, phone and email age, velocity), which need a vendor, and the real
+vendors themselves.
 
 ## Smaller items
 
