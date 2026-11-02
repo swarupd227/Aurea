@@ -1133,6 +1133,52 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
+    "read_transaction_monitoring": Tool(
+        key="read_transaction_monitoring",
+        name="Read Transaction Monitoring",
+        speaking_agent="astra",
+        description="The firm's transaction monitoring queue across the whole book, in one call: alerts worked out from each household's money movements against what it declared at onboarding (deposits kept under the reporting threshold, money in and straight back out, payments above the declared baseline, an undeclared third-party payment), each with its key, figures and any decision; scenarios not run for a household and why; investigations with their steps and the report clock for the firm's market (US SAR 30 days from detection or 60 with no subject, continuing review at 90 and again by 120; NZ SAR 3 working days after suspicion; India STR 7 working days after). Called with no input it covers every household; give household_id for one. Never tell a client any of it.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household", required=False)],
+        output=ToolOutput("object", "Alerts, investigations and clocks"),
+        roles_required={UserRole.COMPLIANCE, UserRole.OPERATIONS},
+    ),
+
+    "decide_monitoring_alert": Tool(
+        key="decide_monitoring_alert",
+        name="Decide Monitoring Alert",
+        speaking_agent="astra",
+        description="Decides one transaction monitoring alert, by its key from read_transaction_monitoring: closed, with what explains it, or escalated to an investigation (opening one, or joining the household's open one), with what does not add up. subject_known is false only when the person behind the activity is not identified, which gives a US report 60 days instead of 30. The reason is the person's own; ask for it.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Decide this alert?",
+        inputs=[ToolInput("alert_key", "string", "The alert's key", required=True),
+                ToolInput("decision", "string", "closed or escalated", required=True),
+                ToolInput("reason", "string", "Why, as you would tell an examiner", required=True),
+                ToolInput("subject_known", "boolean", "For an escalation: is the subject identified. Defaults to yes", required=False)],
+        output=ToolOutput("object", "The monitoring queue"),
+        roles_required={UserRole.COMPLIANCE, UserRole.OPERATIONS},
+    ),
+
+    "record_investigation_step": Tool(
+        key="record_investigation_step",
+        name="Record Investigation Step",
+        speaking_agent="astra",
+        description="Records a step on an investigation, from what was decided: suspicion_formed (starts the NZ and India clocks), reported (with the filing's own reference), no_report (closes it, with why), continuing_review (after a report), exit_decision (a forum of at least two named people, its outcome exit or retain, and where its minutes are filed), or closed. Compliance decides; the note is the person's own words.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this step on the investigation?",
+        inputs=[ToolInput("investigation_id", "uuid", "The investigation, from read_transaction_monitoring", required=True),
+                ToolInput("step", "string", "Which step", required=True),
+                ToolInput("note", "string", "What was weighed", required=True),
+                ToolInput("on", "string", "The day, YYYY-MM-DD. Defaults to today", required=False),
+                ToolInput("reference", "string", "For a report: the filing's reference", required=False),
+                ToolInput("attendees", "string", "For an exit decision: who took part, comma separated", required=False),
+                ToolInput("outcome", "string", "For an exit decision: exit or retain", required=False),
+                ToolInput("minutes", "string", "For an exit decision: where the minutes are filed", required=False)],
+        output=ToolOutput("object", "The monitoring queue"),
+        roles_required={UserRole.COMPLIANCE},
+    ),
+
     "rate_aml_risk": Tool(
         key="rate_aml_risk",
         name="Rate AML Risk",
@@ -1813,7 +1859,7 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
             "exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural and regulatory_countdown show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
@@ -1825,7 +1871,7 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, document_matrix, transfers, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
             ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural or regulatory_countdown to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
@@ -2445,6 +2491,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "consents": ("/studio/consents", "Consents", {_A, _P, _C, _O, _B}),
     "document_matrix": ("/studio/document-matrix", "Document matrix", {_A, _P, _C, _O, _B}),
     "transfers": ("/studio/transfers", "Transfers in", {_A, _P, _C, _O, _B}),
+    "monitoring": ("/studio/monitoring", "Transaction monitoring", {_C, _O}),
     "onboarding_queues": ("/studio/onboarding-queues", "Onboarding queues", {_A, _P, _C, _O, _B}),
     "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
     "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),

@@ -79,6 +79,9 @@ class ToolExecutors:
             "read_client_exits": self.read_client_exits,
             "read_aml_reviews": self.read_aml_reviews,
             "rate_aml_risk": self.rate_aml_risk,
+            "read_transaction_monitoring": self.read_transaction_monitoring,
+            "decide_monitoring_alert": self.decide_monitoring_alert,
+            "record_investigation_step": self.record_investigation_step,
             "read_transfer_files": self.read_transfer_files,
             "record_transfer_event": self.record_transfer_event,
             "record_rollover_facts": self.record_rollover_facts,
@@ -1673,6 +1676,83 @@ class ToolExecutors:
         shown = [(transfer_file.ROLLOVER_FACTS[k], show(k, v)) for k, v in r["facts"].items()]
         return [("Case", r["case"].prospect_name), *shown, ("Source", r["source"]),
                 ("Still not assessed", ", ".join(r["after"]["missing"]) or "None")]
+
+    def _alert_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        known = inputs.get("subject_known")
+        if isinstance(known, str):
+            known = known.strip().lower() not in ("false", "no", "0", "n")
+        return {"alert_key": inputs.get("alert_key"), "decision": inputs.get("decision"), "reason": inputs.get("reason"), "subject_known": known}
+
+    def _step_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"investigation_id": _parse_uuid(inputs.get("investigation_id") or "", "investigation_id"), "step": inputs.get("step"),
+                "on": self._exit_day(inputs.get("on"), "on"), "note": inputs.get("note"), "reference": inputs.get("reference"),
+                "attendees": [a for a in (inputs.get("attendees") or "").split(",") if a.strip()], "outcome": inputs.get("outcome"),
+                "minutes": inputs.get("minutes")}
+
+    async def read_transaction_monitoring(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import txn_monitoring
+
+        result = await txn_monitoring.for_firm(self.session, self.firm_id,
+                                               household_id=_parse_uuid(inputs["household_id"], "household_id") if inputs.get("household_id") else None)
+        s = result["summary"]
+        result["message"] = f"{s['open_alerts']} open alert(s); {s['open_investigations']} open investigation(s); {s['reports_due_7_days']} report(s) due within 7 days."
+        return result
+
+    async def decide_monitoring_alert(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import txn_monitoring
+
+        try:
+            result = await txn_monitoring.decide_alert(self.session, self.firm_id, by=await self._shelf_user(), **self._alert_args(inputs))
+        except txn_monitoring.MonitoringError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Decided."
+        return result
+
+    async def _alert_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, txn_monitoring
+
+        try:
+            r = await txn_monitoring.prepare_alert(self.session, self.firm_id, **self._alert_args(inputs))
+        except txn_monitoring.MonitoringError as exc:
+            raise ExecutorError(str(exc))
+        from app.aurea_core import markets
+        from app.models.tenant import Firm
+
+        money = markets.money_for(await self.session.get(Firm, self.firm_id))
+        a = r["alert"]
+        figures = "; ".join(f"{k.replace('_', ' ')} {money(v) if k in ('in', 'out', 'total', 'amount', 'threshold') else v}"
+                            for k, v in a["figures"].items() if v is not None)
+        effect = ("Closes the alert" if r["decision"] == "closed" else
+                  f"Joins the open investigation from {firm_time.spoken(r['joins'].detected_on)}" if r["joins"] else
+                  "Opens an investigation; the report clock starts" + ("" if r["subject_known"] else ", subject not identified"))
+        return [("Household", a["household"]), ("Alert", a["label"]), ("Figures", figures),
+                ("Movements", f"{len(a['moves'])}, {a['first_on']} to {a['last_on']}"), ("Decision", r["decision"].capitalize()),
+                ("Reason", r["reason"]), ("Effect", effect)]
+
+    async def record_investigation_step(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import txn_monitoring
+
+        try:
+            result = await txn_monitoring.record_step(self.session, self.firm_id, by=await self._shelf_user(), **self._step_args(inputs))
+        except txn_monitoring.MonitoringError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _step_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, txn_monitoring
+        from app.models.graph import Household
+
+        try:
+            r = await txn_monitoring.prepare_step(self.session, self.firm_id, **self._step_args(inputs))
+        except txn_monitoring.MonitoringError as exc:
+            raise ExecutorError(str(exc))
+        inv, e = r["investigation"], r["entry"]
+        household = await self.session.get(Household, inv.household_id)
+        return [("Household", household.name if household else None), ("Opened", firm_time.spoken(inv.detected_on)),
+                ("Step", e["step"].replace("_", " ").capitalize()), ("On", firm_time.spoken(r["day"])), ("Reference", e.get("reference")),
+                ("Forum", ", ".join(e["attendees"]) if e.get("attendees") else None), ("Outcome", e.get("outcome")), ("Minutes", e.get("minutes")),
+                ("Note", e["note"])]
 
     async def rate_aml_risk(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import aml_risk
@@ -3399,9 +3479,16 @@ class ToolExecutors:
 
         household = await self._own_household(inputs.get("household_id") or "")
         try:
-            return household, messages.clean(inputs.get("body"))
+            body = messages.clean(inputs.get("body"))
         except messages.MessageError as exc:
             raise ExecutorError(str(exc))
+        from app.aurea_core import txn_monitoring
+
+        try:
+            await txn_monitoring.tipping_off(self.session, self.firm_id, household.id, body)
+        except txn_monitoring.MonitoringError as exc:
+            raise ExecutorError(str(exc))
+        return household, body
 
     async def send_client_message(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import messages
@@ -3594,6 +3681,10 @@ class ToolExecutors:
             return rows(*await self._transfer_event_preview(inputs))
         if tool_key == "record_rollover_facts":
             return rows(*await self._rollover_preview(inputs))
+        if tool_key == "decide_monitoring_alert":
+            return rows(*await self._alert_preview(inputs))
+        if tool_key == "record_investigation_step":
+            return rows(*await self._step_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

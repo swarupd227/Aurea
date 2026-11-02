@@ -317,6 +317,11 @@ async def post_message(
                         author_name=user.full_name, body=message_core.clean(body.body),
                         read_by_client=True, read_by_adviser=False)
         else:
+            from app.aurea_core import txn_monitoring
+            try:
+                await txn_monitoring.tipping_off(db, firm.id, hid, body.body)
+            except txn_monitoring.MonitoringError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
             m = message_core.from_firm(firm.id, hid, body.body, author=user.full_name)
     except message_core.MessageError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

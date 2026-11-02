@@ -29,6 +29,7 @@ import { AmlCard } from "./AmlCard";
 import { ConsentsCard } from "./ConsentsCard";
 import { DocumentMatrixCard } from "./DocumentMatrixCard";
 import { TransfersCard } from "./TransfersCard";
+import { MonitoringCard } from "./MonitoringCard";
 import { OnboardingQueuesCard } from "./OnboardingQueuesCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
@@ -147,6 +148,11 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      case "read_transaction_monitoring":
+      case "decide_monitoring_alert":
+      case "record_investigation_step":
+        if (!Array.isArray(artifact.result?.alerts)) return null;
+        return <MonitoringCard result={artifact.result as any} />;
       case "read_transfer_files":
       case "record_transfer_event":
       case "record_rollover_facts":

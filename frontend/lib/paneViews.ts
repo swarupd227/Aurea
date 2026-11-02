@@ -11,7 +11,7 @@ import { viewsForRole } from "./nav";
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
-  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "document_matrix" | "transfers" | "onboarding_queues"
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "document_matrix" | "transfers" | "monitoring" | "onboarding_queues"
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
   | "corporate_actions" | "pipeline" | "tax" | "estate" | "family" | "behavioural" | "regulatory_countdown" | "workforce"
   | "skills" | "book_integration" | "book_batch";
@@ -60,6 +60,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "consents", pattern: /^\/studio\/consents\/?$/, base: "/studio/consents", label: "Consents" },
   { key: "document_matrix", pattern: /^\/studio\/document-matrix\/?$/, base: "/studio/document-matrix", label: "Document matrix" },
   { key: "transfers", pattern: /^\/studio\/transfers\/?$/, base: "/studio/transfers", label: "Transfers in" },
+  { key: "monitoring", pattern: /^\/studio\/monitoring\/?$/, base: "/studio/monitoring", label: "Transaction monitoring" },
   { key: "onboarding_queues", pattern: /^\/studio\/onboarding-queues\/?$/, base: "/studio/onboarding-queues", label: "Onboarding queues" },
   { key: "analytics", pattern: /^\/studio\/analytics\/?$/, base: "/studio/analytics", label: "Analytics" },
   { key: "capacity", pattern: /^\/studio\/capacity\/?$/, base: "/studio/capacity", label: "Capacity & outcomes" },
@@ -225,6 +226,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_balance_item":
     case "end_balance_item":
       return onClient("/studio/net-worth");
+    case "read_transaction_monitoring":
+    case "decide_monitoring_alert":
+    case "record_investigation_step":
+      return "/studio/monitoring";
     case "read_transfer_files":
     case "record_transfer_event":
     case "record_rollover_facts":
