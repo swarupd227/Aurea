@@ -26,7 +26,7 @@ function Mark({ letter, working }: { letter: string; working: boolean }) {
  * one, as its page otherwise (the docked conversation on a classic page). */
 function OpenView({ route, onOpenView }: { route: string; onOpenView?: (route: string) => void }) {
   const router = useRouter();
-  const label = matchPaneView(route)?.label ?? "view";
+  const label = matchPaneView(route, typeof window !== "undefined" ? getUser()?.role : null)?.label ?? "view";
   return (
     <button
       type="button"

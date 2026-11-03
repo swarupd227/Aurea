@@ -182,7 +182,9 @@ async def behaviour() -> None:
             check("the model is told how", all(v in next(i.description for i in TOOLS["open_view"].inputs if i.name == "household_id") for v in ONE_CLIENT_VIEWS), True)
             panes = (FRONTEND / "lib" / "paneViews.ts").read_text(encoding="utf-8")
             pane = (FRONTEND / "app" / "workspace" / "components" / "WorkPane.tsx").read_text(encoding="utf-8")
-            check("a card about one client keeps it", panes.count('onClient("/studio/'), len(ONE_CLIENT_VIEWS))
+            # The client's own sub-pages have no staff card of their own: open_view alone opens them on one client.
+            check("a card about one client keeps it",
+                  [v for v in ONE_CLIENT_VIEWS if f'onClient("{OPEN_VIEWS[v][0]}")' not in panes and not v.startswith("canvas_")], [])
             check("the pane passes it to each view", pane.count("household={pane.query.household ?? null}"), len(ONE_CLIENT_VIEWS))
 
             billed = [{"tool_key": "explain_invoice", "inputs": {}, "result": {"id": str(bill.id), "number": None}}]

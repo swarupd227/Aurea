@@ -204,10 +204,19 @@ async def main() -> int:
                 check("another firm's staff are refused", False, True)
             except HTTPException as exc:
                 check("another firm's staff are refused", exc.status_code, 404)
-            said = await canvas._plan_on_file(s, firm, h.id, lambda v: f"${v:,.0f}")
-            check("the assistant is told the record", ("$70,000" in said, "IPS version 1" in said), (True, True))
-            said = await canvas._plan_on_file(s, firm, h2.id, lambda v: f"${v:,.0f}")
-            check("and what it does not mean", ("assets only" in said, "does not mean none exists" in said), (True, True))
+            # The client's conversation reads the same record through their own tools (B-95).
+            from app.llm.executors import ToolExecutors
+            from app.models.identity import User
+            signed_in = [User(id=uuid.uuid4(), firm_id=firm.id, email=c.email, full_name=c.full_name, hashed_password="x",
+                              role=UserRole.CLIENT, person_id=c.person_id) for c in (client, client2)]
+            s.add_all(signed_in)
+            await s.flush()
+            mine = ToolExecutors(s, signed_in[0].id, UserRole.CLIENT, firm.id)
+            worth, terms = await mine.execute("read_my_net_worth", {}), await mine.execute("read_my_ips", {})
+            check("the client's assistant reads the record", (worth["net_worth"], terms["policies"][0]["version"]), (70000.0, 1))
+            theirs = ToolExecutors(s, signed_in[1].id, UserRole.CLIENT, firm.id)
+            worth, terms = await theirs.execute("read_my_net_worth", {}), await theirs.execute("read_my_ips", {})
+            check("and what it does not mean", ("Assets only" in worth["message"], "does not mean there is none" in terms["message"]), (True, True))
             done = await canvas.submit_client_request(canvas.ClientRequestIn(request_type="correction", notes="The home loan is paid off"), user=client, firm=firm, db=s)
             row = await s.get(Task, uuid.UUID(done["task_id"]))
             check("a correction reaches the adviser, and changes nothing", (row.title, (await canvas.canvas_net_worth(household_id=None, user=client, firm=firm, db=s))["net_worth"]),

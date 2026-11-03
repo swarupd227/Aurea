@@ -12,24 +12,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pydantic import BaseModel
 
-from app.agents import _signals
 from app.api.deps import current_firm
-from app.aurea_core import balance_sheet, goal_tradeoff, ips, markets, messages as message_core, planning, retirement
+from app.aurea_core import balance_sheet, client_view, goal_tradeoff, ips, markets, messages as message_core, retirement
 from app.aurea_core.graph import household_brain
 from app.core.db import get_db, utcnow
 from app.core.security import get_current_user
-from app.llm import usage as llm_usage
-from app.llm.service import firm_llm_creds, llm_service
 from app.models.client_experience import HeirJourney, Message, default_heir_steps
-from app.models.engagement import ClientReport, Task
-from app.models.enums import HeirJourneyStatus, MessageAuthor, ReportStatus, UserRole
+from app.models.engagement import Task
+from app.models.enums import HeirJourneyStatus, MessageAuthor, UserRole
 from app.models.graph import Household, Person
 from app.models.identity import User
 from app.models.tenant import Firm
-from sqlalchemy import func
 
 
 router = APIRouter(prefix="/api/canvas", tags=["canvas"])
+
+# Staff who record a client's questionnaire answers for them, from the evidence: the people who advise them.
+QUESTIONNAIRE_RECORDERS = {UserRole.ADVISER, UserRole.PARAPLANNER}
 
 
 async def _resolve_household(
@@ -50,71 +49,18 @@ async def _resolve_household(
     return household_id
 
 
-async def _adviser_for(db: AsyncSession, firm: Firm, brain: dict) -> dict | None:
-    """The household's named adviser (aurea_core/advisers.py), or None when nobody is on file."""
-    from app.aurea_core.advisers import adviser_of
-
-    u = await adviser_of(db, firm.id, uuid.UUID(brain["household"]["id"]))
-    return {"name": u.full_name, "title": u.title, "email": u.email} if u else None
-
-
 @router.get("/me")
 async def canvas_view(
     household_id: uuid.UUID | None = None,
     user: User = Depends(get_current_user), firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
 ):
+    """The client's home page (aurea_core.client_view.home), the same read their conversation makes."""
     hid = await _resolve_household(db, user, household_id)
-    brain = await household_brain(db, hid, firm_id=firm.id)
-    if not brain:
+    view = await client_view.home(db, hid, firm=firm)
+    if view is None:
         raise HTTPException(status_code=404, detail="Household not found")
-
-    total = brain["totals"]["total_value"]
-    allocation = brain["totals"]["by_asset_class"]
-    # Goal projections — the 'am I on track?' answer.
-    goals = _signals.goal_projections(brain)
-
-    adviser = await _adviser_for(db, firm, brain)
-    on_track_count = sum(1 for g in goals if g["on_track"])
-
-    # Client-ready reports for this household (surfaced to the client).
-    reports = (
-        await db.execute(
-            select(ClientReport).where(ClientReport.household_id == hid,
-                                       ClientReport.status == ReportStatus.CLIENT_READY)
-            .order_by(ClientReport.created_at.desc()).limit(5)
-        )
-    ).scalars().all()
-    # Unread message count + next-gen members.
-    unread = (
-        await db.execute(
-            select(func.count(Message.id)).where(Message.household_id == hid,
-                                                 Message.read_by_client.is_(False),
-                                                 Message.author_role != MessageAuthor.CLIENT)
-        )
-    ).scalar_one()
-    nextgen = [p for p in brain["persons"] if p.get("is_next_gen")]
-
-    return {
-        "firm": {"name": firm.name, "branding": firm.branding},
-        "adviser": adviser,
-        "household": brain["household"],
-        "members": brain["persons"],
-        "total_wealth": total,
-        "allocation": allocation,
-        "data_confidence": brain["totals"]["data_confidence"],
-        "goals": goals,
-        "headline": (
-            "You're on track." if goals and on_track_count == len(goals)
-            else f"{on_track_count} of {len(goals)} goals on track." if goals
-            else "Your plan is being set up."
-        ),
-        "values": brain["household"].get("values", {}),
-        "reports": [{"id": str(r.id), "title": r.title, "period": r.period,
-                     "published_at": r.published_at.isoformat() if r.published_at else None} for r in reports],
-        "unread_messages": unread,
-        "next_gen": [{"id": p["id"], "name": p.get("preferred_name") or p["full_name"]} for p in nextgen],
-    }
+    return view
 
 
 def _client_item(i: dict) -> dict:
@@ -152,78 +98,8 @@ async def canvas_ips(
         for m in view["mandates"] if (t := m["ips"])], "without": [m["mandate"] for m in view["mandates"] if not m["ips"]]}
 
 
-async def _plan_on_file(db: AsyncSession, firm: Firm, hid: uuid.UUID, say) -> str:
-    """Net worth and the IPS as the assistant may state them, from the record."""
-    sheet = await balance_sheet.for_household(db, hid, firm_id=firm.id)
-    held = await ips.for_household(db, hid, firm_id=firm.id)
-    worth = (f"net worth on file {say(sheet['net_worth'])}" + ("" if sheet["basis"] != "assets_only" else ", assets only because no debt is on file")) if sheet else "no net worth on file"
-    terms = "; ".join(f"{m['mandate']}: IPS version {m['ips']['version']} accepted {m['ips']['accepted_on']}, targets "
-                      + ", ".join(f"{k.replace('_', ' ')} {v:.0%}" for k, v in m["ips"]["targets"].items())
-                      for m in (held or {}).get("mandates", []) if m["ips"]) or "no IPS on file, which does not mean none exists"
-    return f"{worth}; {terms}"
-
-
-@router.post("/assistant")
-async def canvas_assistant(
-    body: dict, household_id: uuid.UUID | None = None,
-    user: User = Depends(get_current_user), firm: Firm = Depends(current_firm),
-    db: AsyncSession = Depends(get_db),
-):
-    """The adviser-branded 'am I okay?' assistant, grounded in the client's own plan."""
-    question = (body.get("question") or "").strip()
-    if not question:
-        raise HTTPException(status_code=400, detail="Empty question")
-    hid = await _resolve_household(db, user, household_id or (
-        uuid.UUID(body["household_id"]) if body.get("household_id") else None))
-    brain = await household_brain(db, hid, firm_id=firm.id)
-    if not brain:
-        raise HTTPException(status_code=404, detail="Household not found")
-
-    total = brain["totals"]["total_value"]
-    allocation = brain["totals"]["by_asset_class"]
-    stress = planning.stress_test(allocation, ["covid_2020"])
-    adviser = await _adviser_for(db, firm, brain)
-    adviser_name = adviser["name"] if adviser else "your adviser"
-
-    # Money as it is written: a raw 5984000.5 reads as an account number and is masked from the model.
-    say = markets.money_for(firm)
-    invested = ", ".join(f"{k.replace('_', ' ')} {say(v)} ({v / (total or 1):.0%})" for k, v in allocation.items())
-    goals = "; ".join(
-        f"{g['name']}: target {say(g['target_amount'])}, {g['probability']:.0%} likelihood, "
-        f"{'on track' if g['on_track'] else 'one to talk through with the adviser'}"
-        for g in _signals.goal_projections(brain)
-    ) or "none on file"
-    context = (
-        f"Total wealth {say(total)}; allocation: {invested}; goals: {goals}; in a COVID-style shock the "
-        f"portfolio would move {stress['covid_2020']['impact_pct']:.0%}; {await _plan_on_file(db, firm, hid, say)}."
-    )
-
-    def fallback() -> str:
-        return (
-            f"Here's the short version: your total wealth is about {markets.money_for(firm)(total)}, diversified across "
-            f"{len(allocation)} asset classes. Your plan is built to withstand market dips, and "
-            f"{adviser_name} is watching it closely. If anything needs a decision, {adviser_name} "
-            "will be in touch — you're not on your own here."
-        )
-
-    gp = await llm_usage.gateway_params(db, firm, base_max_tokens=900)
-    result = await llm_service.generate(
-        task="narrative",
-        system=(f"You are the client-facing assistant for {firm.name}, speaking warmly in the firm's "
-                f"voice on behalf of the client's named adviser, {adviser_name}. Reassure honestly, "
-                "never guarantee returns, and hand off to the adviser for advice. Use only the "
-                "provided figures. A likelihood is an estimate, not a promise."),
-        prompt=f"Client question: {question}\n\nClient's plan snapshot: {context}",
-        firm_model_config=firm.model_config_json or {},
-        creds=firm_llm_creds(firm), fallback=fallback, max_tokens=gp["max_tokens"],
-        pii_terms=gp["pii_terms"], pii_categories=gp["pii_categories"], redact=gp["redact"],
-        allow_fallback=gp["allow_fallback"], force_fallback=gp["force_fallback"],
-    )
-    try:
-        await llm_usage.record(db, firm.id, agent="assistant", task="narrative", result=result)
-    except Exception:
-        pass
-    return {"answer": result.text, "adviser": adviser, "is_fallback": result.is_fallback}
+# The client's questions go to the conversation (POST /api/threads), with the client's own tools in
+# app.core.tools (CLIENT_TOOLS): the one-shot assistant that answered from a snapshot in its prompt is retired.
 
 
 # ── Secure messaging (client ↔ adviser) ───────────────────────────────────────
@@ -323,16 +199,12 @@ async def post_message(
 @router.get("/reports/{report_id}")
 async def canvas_report(report_id: uuid.UUID, user: User = Depends(get_current_user),
                         firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    r = await db.get(ClientReport, report_id)
-    if not r or r.firm_id != firm.id or r.status != ReportStatus.CLIENT_READY:
+    # A client reads only their own household's report; another's reads as not there.
+    hid = await _resolve_household(db, user, None) if user.role == UserRole.CLIENT else None
+    r = await client_view.report(db, report_id, hid, firm_id=firm.id)
+    if r is None:
         raise HTTPException(status_code=404, detail="Report not available")
-    # A client may only read their own household's report.
-    if user.role == UserRole.CLIENT:
-        person = await db.get(Person, user.person_id) if user.person_id else None
-        if not person or person.household_id != r.household_id:
-            raise HTTPException(status_code=403, detail="Not your report")
-    return {"id": str(r.id), "title": r.title, "period": r.period, "sections": r.sections,
-            "data": r.data, "status": r.status}
+    return r
 
 
 # ── Next-gen / heir journey ───────────────────────────────────────────────────
@@ -343,14 +215,19 @@ class StepIn(BaseModel):
 
 
 async def _resolve_heir_person(db, user, person_id, firm) -> Person:
-    if user.role == UserRole.CLIENT and user.person_id:
-        p = await db.get(Person, user.person_id)
-        if p:
-            return p
+    if user.role == UserRole.CLIENT:
+        # A client's own journey, whatever they ask for. One tied to no person gets none, not the staff path.
+        # A client who is not a next-gen member has no journey, and reading the page does not start one.
+        p = await db.get(Person, user.person_id) if user.person_id else None
+        if p is None or p.firm_id != firm.id or not p.is_next_gen:
+            raise HTTPException(status_code=404, detail="No next-gen journey for this sign-in.")
+        return p
     if person_id:
+        # A named person is that person or nobody: it never falls back to someone else's journey.
         p = await db.get(Person, person_id)
-        if p and p.firm_id == firm.id:
-            return p
+        if p is None or p.firm_id != firm.id or not p.is_next_gen:
+            raise HTTPException(status_code=404, detail="No next-gen member by that id.")
+        return p
     # Staff with no id: first next-gen person in the firm.
     p = (
         await db.execute(select(Person).where(Person.firm_id == firm.id, Person.is_next_gen.is_(True)))
@@ -384,7 +261,7 @@ async def heir_journey(person_id: uuid.UUID | None = None, user: User = Depends(
     if person.household_id:
         brain = await household_brain(db, person.household_id, firm_id=firm.id)
         if brain:
-            adviser = await _adviser_for(db, firm, brain)
+            adviser = await client_view.adviser_for(db, firm, brain)
     done = sum(1 for s in j.steps if s.get("done"))
     return {"person": {"id": str(person.id), "name": person.preferred_name or person.full_name},
             "firm": {"name": firm.name, "branding": firm.branding}, "adviser": adviser,
@@ -397,6 +274,9 @@ async def heir_step(body: StepIn, user: User = Depends(get_current_user),
                     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     from sqlalchemy.orm.attributes import flag_modified
 
+    # The journey is the next-gen member's own: staff see where they are and do not take its steps for them.
+    if user.role != UserRole.CLIENT:
+        raise HTTPException(status_code=403, detail="A next-gen member completes their own journey.")
     person = await _resolve_heir_person(db, user, body.person_id, firm)
     j = await _get_or_create_journey(db, firm, person)
     # Fresh dict copies so we don't mutate the loaded value in place (which would defeat
@@ -487,16 +367,24 @@ async def download_summary_pdf(
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a branded PDF snapshot of the household's wealth picture."""
+    """A branded PDF of the client's home page, from the same read (client_view.home). It read keys the
+    household brain does not have, so every summary printed a total of 0 and no goals or allocation."""
     from fastapi.responses import Response
     from fpdf import FPDF
 
+    from app.aurea_core import firm_time
+
     hid = await _resolve_household(db, user, household_id)
-    brain = await household_brain(db, hid, firm_id=firm.id)
-    if not brain:
-        # Unguarded before: a household the caller may not see now returns None, which the
-        # PDF builder would dereference into a 500 instead of an honest 404.
+    view = await client_view.home(db, hid, firm=firm)
+    if view is None:
         raise HTTPException(status_code=404, detail="Household not found")
+    ccy = view["currency"]
+
+    def say(amount: float) -> str:
+        # The PDF's core font is Latin-1, so a symbol it cannot draw is written as its code.
+        text = markets.money(amount, ccy)
+        return text if text.isascii() else f"{ccy} {text.translate({ord(c): None for c in '₹€£'})}"
+
     branding = firm.branding or {}
     accent = branding.get("accent", "#c8a35e")
 
@@ -517,51 +405,42 @@ async def download_summary_pdf(
     pdf.set_y(24)
 
     # Household name
-    hh_name = brain.get("household", {}).get("name", "Your Household")
+    hh_name = view["household"].get("name") or "Your household"
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(0, 9, hh_name, ln=True)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 6, f"Generated {utcnow().strftime('%d %B %Y')}", ln=True)
+    pdf.cell(0, 6, f"Generated {firm_time.today(firm).strftime('%d %B %Y')}", ln=True)
     pdf.ln(4)
 
-    # Total wealth
-    total = brain.get("total_wealth", 0)
-    currency = firm.base_currency or "NZD"
+    total = view["total_wealth"]
     pdf.set_text_color(30, 30, 30)
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, f"Total Wealth:  {currency} {total:,.0f}", ln=True)
+    pdf.cell(0, 8, f"Managed wealth:  {say(total)}", ln=True)
     pdf.ln(2)
 
-    # Goals
-    goals = brain.get("goals") or []
-    if goals:
+    if view["goals"]:
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 8, "Goals", ln=True)
+        pdf.cell(0, 8, "Goals (likelihoods are estimates)", ln=True)
         pdf.set_font("Helvetica", "", 10)
-        for g in goals:
-            status = "On track" if g.get("on_track") else "Needs review"
-            prob = g.get("probability", 0)
-            pdf.cell(0, 6, f"  {g['name']}  -  {status}  ({int(prob*100)}% probability)", ln=True)
+        for g in view["goals"]:
+            status = "On track" if g["on_track"] else "To discuss"
+            pdf.cell(0, 6, f"  {g['name']}  -  {status}  ({g['probability']:.0%} likelihood, target {say(g['target_amount'])})", ln=True)
         pdf.ln(3)
 
-    # Allocation
-    alloc = brain.get("allocation") or []
-    if alloc:
+    if view["allocation"]:
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 8, "Asset Allocation", ln=True)
+        pdf.cell(0, 8, "Asset allocation", ln=True)
         pdf.set_font("Helvetica", "", 10)
-        for a in alloc[:8]:
-            pct = a.get("pct", 0)
-            pdf.cell(0, 6, f"  {a.get('label',''):<20} {pct:.1f}%", ln=True)
+        for cls, value in sorted(view["allocation"].items(), key=lambda kv: -kv[1])[:8]:
+            pdf.cell(0, 6, f"  {cls.replace('_', ' ').title():<20} {say(value)}  ({value / (total or 1):.0%})", ln=True)
         pdf.ln(3)
 
-    # Adviser
-    adv = brain.get("adviser")
+    adv = view["adviser"]
     if adv:
         pdf.set_font("Helvetica", "I", 9)
         pdf.set_text_color(100, 100, 100)
-        pdf.cell(0, 6, f"Your adviser: {adv.get('name','')} - {adv.get('title','')}", ln=True)
+        pdf.cell(0, 6, f"Your adviser: {adv['name']}" + (f" - {adv['title']}" if adv.get("title") else ""), ln=True)
 
     # Footer
     pdf.set_y(-20)
@@ -613,6 +492,8 @@ async def submit_questionnaire(
     to their adviser, who decides, and no mandate changes until they do."""
     from app.aurea_core import risk_profile
     hid = await _resolve_household(db, user, body.household_id)
+    if user.role != UserRole.CLIENT and user.role not in QUESTIONNAIRE_RECORDERS:
+        raise HTTPException(status_code=403, detail="Only the client, their adviser or a paraplanner records their answers.")
     try:
         row = await risk_profile.submit(db, hid, body.answers, firm_id=firm.id, by=user.email, role=user.role, subject_id=body.subject_id)
     except risk_profile.RiskProfileError as exc:
@@ -621,27 +502,6 @@ async def submit_questionnaire(
 
 
 # ── I3: Fee Transparency Dashboard ────────────────────────────────────────────
-
-async def _client_billing(db: AsyncSession, firm: Firm, hid: uuid.UUID) -> dict:
-    """What this household has actually been billed - issued bills and credit notes only,
-    without the internal checks. A client never sees a draft or a held bill."""
-    from app.models.billing import Invoice
-
-    rows = (await db.execute(
-        select(Invoice).where(Invoice.firm_id == firm.id, Invoice.household_id == hid,
-                              Invoice.status.in_(("issued", "debited", "credited")))
-        .order_by(Invoice.issued_at.desc()))).scalars().all()
-    year = utcnow().year
-    billed_ytd = sum(float(i.amount) for i in rows if i.issued_at and i.issued_at.year == year)
-    return {
-        "invoices": [{
-            "id": str(i.id), "number": i.invoice_number, "kind": i.kind, "status": i.status,
-            "period_start": i.period_start.isoformat(), "period_end": i.period_end.isoformat(),
-            "amount": float(i.amount), "currency": i.currency, "paid": i.debit_status == "posted",
-        } for i in rows],
-        "billed_ytd": round(billed_ytd, 2) if rows else None,
-    }
-
 
 @router.get("/invoices/{invoice_id}/pdf")
 async def download_invoice_pdf(
@@ -677,119 +537,6 @@ async def get_fees(
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
 ):
-    terms = await _fee_terms(household_id, user, firm, db)
+    """The fee this household is charged and what it has been billed (client_view.fees)."""
     hid = await _resolve_household(db, user, household_id)
-    return {**terms, **(await _client_billing(db, firm, hid))}
-
-
-async def _fee_terms(
-    household_id: uuid.UUID | None,
-    user: User,
-    firm: Firm,
-    db: AsyncSession,
-):
-    """Return the fee for this household — the maker/checker-confirmed schedule from
-    onboarding when the household's mandate carries one, a segment-based estimate
-    otherwise. These used to be two permanently disagreeing sources: onboarding confirmed
-    a `FeeSchedule` that nothing ever read again, while this panel priced purely off
-    `FirmSegment.fee_tier_bps`, so a client could be shown a rate the firm never agreed
-    with them. `Mandate.fee_schedule_id` (propagated at onboarding materialisation) closes
-    that loop."""
-    from app.aurea_core import fees as fees_core
-    from app.models.graph import Mandate, Person, Account
-    from app.models.onboarding import FeeSchedule
-    from app.models.portfolio import Holding
-    from app.models.tenant import FirmSegment
-
-    hid = await _resolve_household(db, user, household_id)
-
-    # The household's balance is every account under every person AND entity in it, cash
-    # included - the same balance billing charges on. This used to follow persons only, so a
-    # household whose money sits under a trust was shown a fee on a fraction of it, disagreeing
-    # with what it was actually billed.
-    from app.aurea_core.performance import household_account_ids
-
-    account_ids = await household_account_ids(db, hid, firm_id=firm.id) or []
-    total_aum = 0.0
-    mandates: list[Mandate] = []
-    if account_ids:
-        mandate_ids = {a.mandate_id for a in (await db.execute(
-            select(Account).where(Account.id.in_(account_ids)))).scalars().all() if a.mandate_id}
-        mandates = (await db.execute(
-            select(Mandate).where(Mandate.firm_id == firm.id, Mandate.id.in_(mandate_ids))
-        )).scalars().all() if mandate_ids else []
-        held = (await db.execute(
-            select(func.coalesce(func.sum(Holding.market_value), 0)).where(Holding.account_id.in_(account_ids))
-        )).scalar_one()
-        cash = (await db.execute(
-            select(func.coalesce(func.sum(Account.cash_balance), 0)).where(Account.id.in_(account_ids))
-        )).scalar_one()
-        total_aum = float(held) + float(cash)
-
-    # A mandate carrying a confirmed fee schedule from onboarding is authoritative — bill
-    # against what the firm actually agreed with this client, not a segment estimate.
-    confirmed_schedule = None
-    for m in mandates:
-        if m.fee_schedule_id:
-            confirmed_schedule = await db.get(FeeSchedule, m.fee_schedule_id)
-            if confirmed_schedule:
-                break
-
-    if confirmed_schedule:
-        computed = fees_core.compute_annual_fee(confirmed_schedule, total_aum)
-        annual_fee = computed["annual_fee"] or 0.0
-        fee_bps = computed["effective_bps"] or 0.0
-        monthly_fee = annual_fee / 12
-        ytd_fee = monthly_fee * utcnow().month
-        return {
-            "aum": total_aum,
-            "currency": confirmed_schedule.currency or firm.base_currency or "NZD",
-            "fee_bps": fee_bps,
-            "fee_pct": round(fee_bps / 100, 4),
-            "annual_fee": round(annual_fee, 2),
-            "monthly_fee": round(monthly_fee, 2),
-            "ytd_fee": round(ytd_fee, 2),
-            "source": "confirmed_fee_schedule",
-            "fee_schedule_name": confirmed_schedule.name,
-            "breakdown": computed["breakdown"],
-            "applicable_segment": None,
-            "fee_schedule": [],
-        }
-
-    # No confirmed schedule on file — fall back to the segment-based estimate, clearly
-    # labelled as such rather than presented with the same confidence as an agreed fee.
-    segments = (await db.execute(
-        select(FirmSegment).where(FirmSegment.firm_id == firm.id, FirmSegment.is_active.is_(True))
-        .order_by(FirmSegment.min_aum_usd)
-    )).scalars().all()
-
-    applicable = None
-    for seg in segments:
-        if seg.min_aum_usd is None or total_aum >= (seg.min_aum_usd or 0):
-            applicable = seg
-
-    fee_bps = (applicable.fee_tier_bps if applicable and applicable.fee_tier_bps else 75)
-    annual_fee = total_aum * fee_bps / 10000
-    monthly_fee = annual_fee / 12
-    ytd_months = utcnow().month
-    ytd_fee = monthly_fee * ytd_months
-
-    return {
-        "aum": total_aum,
-        "currency": firm.base_currency or "NZD",
-        "fee_bps": fee_bps,
-        "fee_pct": round(fee_bps / 100, 4),
-        "annual_fee": round(annual_fee, 2),
-        "monthly_fee": round(monthly_fee, 2),
-        "ytd_fee": round(ytd_fee, 2),
-        "source": "segment_estimate",
-        "applicable_segment": {
-            "slug": applicable.slug, "label": applicable.label, "fee_bps": applicable.fee_tier_bps,
-            "min_aum": applicable.min_aum_usd,
-        } if applicable else None,
-        "fee_schedule": [
-            {"slug": s.slug, "label": s.label, "fee_bps": s.fee_tier_bps,
-             "fee_pct": round((s.fee_tier_bps or 0) / 100, 4), "min_aum": s.min_aum_usd}
-            for s in segments if s.fee_tier_bps
-        ],
-    }
+    return await client_view.fees(db, firm, hid)

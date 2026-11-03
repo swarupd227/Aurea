@@ -55,6 +55,11 @@ import { BeneficiaryAuditView } from "@/components/views/BeneficiaryAuditView";
 import { LicencesView } from "@/components/views/LicencesView";
 import { TaxView } from "@/components/views/TaxView";
 import { EstateView } from "@/components/views/EstateView";
+import { CanvasView } from "@/components/views/CanvasView";
+import { CanvasRetirementView } from "@/components/views/CanvasRetirementView";
+import { CanvasGoalsView } from "@/components/views/CanvasGoalsView";
+import { CanvasNextGenView } from "@/components/views/CanvasNextGenView";
+import { CanvasQuestionnaireView } from "@/components/views/CanvasQuestionnaireView";
 import { FamilyView } from "@/components/views/FamilyView";
 import { BehaviouralView } from "@/components/views/BehaviouralView";
 import { RegulatoryCountdownView } from "@/components/views/RegulatoryCountdownView";
@@ -191,6 +196,16 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <BookIntegrationView />;
     case "book_batch":
       return pane.id ? <BookBatchView key={pane.id} id={pane.id} /> : null;
+    case "canvas":
+      return <CanvasView household={pane.query.household ?? null} />;
+    case "canvas_retirement":
+      return <CanvasRetirementView household={pane.query.household ?? null} />;
+    case "canvas_goals":
+      return <CanvasGoalsView household={pane.query.household ?? null} />;
+    case "canvas_next_gen":
+      return <CanvasNextGenView household={pane.query.household ?? null} />;
+    case "canvas_questionnaire":
+      return <CanvasQuestionnaireView household={pane.query.household ?? null} />;
     case "corporate_actions":
       return <CorporateActionsView />;
     case "provenance":

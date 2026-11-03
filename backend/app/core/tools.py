@@ -2102,20 +2102,20 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books) or book_batch (one acquired book; give batch_id). ips, reviews, protection, risk_profiles, net_worth and "
-            "exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural and regulatory_countdown show every client unless given household_id: when the conversation is about one client, look them up "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), book_integration (acquired books), book_batch (one acquired book; give batch_id), canvas (a client's home page as they see it), canvas_retirement (their retirement page), canvas_goals (their goals page), canvas_next_gen (a next-gen member's journey) or canvas_questionnaire (their risk questionnaire, to record answers). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural, regulatory_countdown and the canvas views show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages, read_balance_sheet, read_protection, "
-            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan, read_client_file, read_cash_movements, read_tax_position, read_estate, read_family, read_behavioural, read_regulatory_countdown, screen_book, read_book_batches); an id from memory or an earlier turn is refused."
+            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan, read_client_file, read_cash_movements, read_tax_position, read_estate, read_family, read_behavioural, read_regulatory_countdown, read_client_canvas, screen_book, read_book_batches); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, account_features, onboarding_scoreboard, repapering, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration or book_batch", required=True),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural or regulatory_countdown to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, account_features, onboarding_scoreboard, repapering, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, book_integration, book_batch, canvas, canvas_retirement, canvas_goals, canvas_next_gen or canvas_questionnaire", required=True),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural, regulatory_countdown, canvas, canvas_retirement, canvas_goals, canvas_next_gen or canvas_questionnaire to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -2691,7 +2691,131 @@ TOOLS: dict[str, Tool] = {
         output=ToolOutput("object", "Net orders per (account, instrument) with sleeve allocations"),
         roles_required={UserRole.ADVISER, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
     ),
+
+    # ─── The client's Canvas (B-95). Staff see what a client sees and record a questionnaire for them.
+
+    "read_client_canvas": Tool(
+        key="read_client_canvas",
+        name="Read Client Canvas",
+        speaking_agent="astra",
+        description="What a client sees on their own home page: managed wealth, allocation, each goal's likelihood (an estimate), their adviser, published reports, unread messages and next-gen members. Use it for 'what do the Chens see?'.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "The household", required=True)],
+        output=ToolOutput("object", "The client's home page"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "record_questionnaire": Tool(
+        key="record_questionnaire",
+        name="Record Risk Questionnaire",
+        speaking_agent="astra",
+        description="Record a client's completed risk questionnaire for them, from what they answered. Every question needs one of its options. It indicates a profile for the adviser to decide on and changes no mandate.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record these answers as the client's questionnaire?",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household", required=True),
+            ToolInput("answers", "list[object]", "One {question, answer} per question: the question's key and the option the client chose", required=True),
+            ToolInput("subject_id", "uuid", "A person or entity in the household answering for itself", required=False),
+        ],
+        output=ToolOutput("object", "The recorded questionnaire"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    # ─── A client's own tools. Each reads the signed-in client's household and takes no household id,
+    # so no id a model is given can reach another family. None changes anything (CLIENT_TOOLS).
+
+    "read_my_wealth": Tool(
+        key="read_my_wealth",
+        name="Read My Wealth",
+        speaking_agent="astra",
+        description="The client's own home page: managed wealth, how it is invested, each goal's likelihood (an estimate, with what was assumed), a market-shock scenario, their adviser, published reports and next-gen members.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The client's home page"),
+        roles_required={UserRole.CLIENT},
+    ),
+
+    "read_my_net_worth": Tool(
+        key="read_my_net_worth",
+        name="Read My Net Worth",
+        speaking_agent="astra",
+        description="What the client owns and owes, as it is on file. A figure they say is wrong is corrected by a person from a document.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The client's balance sheet"),
+        roles_required={UserRole.CLIENT},
+    ),
+
+    "read_my_ips": Tool(
+        key="read_my_ips",
+        name="Read My Investment Policy",
+        speaking_agent="astra",
+        description="The investment policy terms the client accepted, mandate by mandate. Only the terms.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The accepted IPS terms"),
+        roles_required={UserRole.CLIENT},
+    ),
+
+    "read_my_retirement": Tool(
+        key="read_my_retirement",
+        name="Read My Retirement",
+        speaking_agent="astra",
+        description="Whether the client's savings support the retirement income they want: the projection their retirement page shows. A different age or income is a what-if, saved nowhere.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("retirement_age", "number", "A retirement age to try instead of the one on file", required=False),
+            ToolInput("annual_income", "number", "A yearly retirement income to try instead of the one on file", required=False),
+        ],
+        output=ToolOutput("object", "The retirement projection"),
+        roles_required={UserRole.CLIENT},
+    ),
+
+    "read_my_goals": Tool(
+        key="read_my_goals",
+        name="Read My Goals",
+        speaking_agent="astra",
+        description="The client's goals side by side: how likely each is and what funding one ahead of another would do. Estimates.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The goals trade-off"),
+        roles_required={UserRole.CLIENT},
+    ),
+
+    "read_my_fees": Tool(
+        key="read_my_fees",
+        name="Read My Fees",
+        speaking_agent="astra",
+        description="The fee the client is charged, where it comes from, and what they have been billed this year.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Fees and invoices"),
+        roles_required={UserRole.CLIENT},
+    ),
+
+    "read_my_report": Tool(
+        key="read_my_report",
+        name="Read My Report",
+        speaking_agent="astra",
+        description="One report published to the client, by its id from read_my_wealth.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("report_id", "uuid", "The report, from read_my_wealth", required=True)],
+        output=ToolOutput("object", "The report"),
+        roles_required={UserRole.CLIENT},
+    ),
 }
+
+# Every tool a client holds. Each reads their own household only and none changes anything:
+# tests/verify_client_canvas.py fails if a tool here pauses for a change or takes a household id.
+CLIENT_TOOLS = frozenset(k for k, t in TOOLS.items() if UserRole.CLIENT in t.roles_required)
 
 
 # The views open_view may open: the page each stands for in frontend/lib/nav.ts (PANE_VIEWS in
@@ -2759,10 +2883,17 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "skills": ("/studio/skills", "Skills", {_A, _P, _PT}),
     "book_integration": ("/studio/book-integration", "Book integration", {_O}),
     "book_batch": ("/studio/book-integration", "Acquired book", {_O}),
+    # What a client sees, as they see it (B-95).
+    "canvas": ("/canvas", "Client portal", {_A, _P, _B}),
+    "canvas_retirement": ("/canvas/retirement", "Client view — Retirement", {_A, _P, _B}),
+    "canvas_goals": ("/canvas/goals", "Client view — Goals", {_A, _P, _B}),
+    "canvas_next_gen": ("/canvas/next-gen", "Client view — Next-gen", {_A, _P, _B}),
+    "canvas_questionnaire": ("/canvas/questionnaire", "Client view — Questionnaire", {_A, _P}),
 }
 # The views of every client that can open on one, through `?household=`.
 ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "cash", "trades", "tax_documents",
-                    "tax", "estate", "family", "behavioural", "regulatory_countdown", "consents"}
+                    "tax", "estate", "family", "behavioural", "regulatory_countdown", "consents",
+                    "canvas", "canvas_retirement", "canvas_goals", "canvas_next_gen", "canvas_questionnaire"}
 
 
 def get_tool(key: str) -> Tool | None:

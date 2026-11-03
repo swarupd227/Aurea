@@ -233,6 +233,9 @@ async def create_thread(
         kind_enum = ThreadKind(kind)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid kind: {kind}")
+    # A client's conversation is about their own household, which their tools fix; it names no other subject.
+    if user.role == UserRole.CLIENT and (kind_enum != ThreadKind.ASK_ASTRA or subject_id):
+        raise HTTPException(status_code=400, detail="A client's conversation is an Ask Astra thread with no subject.")
 
     thread = Thread(
         firm_id=user.firm_id,

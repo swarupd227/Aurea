@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from types import SimpleNamespace
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -22,16 +21,15 @@ import app.models  # noqa: F401  - registers every table on Base.metadata
 from app.agents import _signals
 from app.agents import drift_rebalancing as drift
 from app.agents import tax_intelligence as tax_agent
-from app.api import canvas
 from app.atlas import runtime, tax_refresh
 from app.atlas.base import Subject
-from app.aurea_core import disclosures, licences, markets, protection, tax_intelligence
+from app.aurea_core import disclosures, licences, protection, tax_intelligence
 from app.aurea_core.graph import household_brain
 from app.compliance import ontology
 from app.core.db import Base
 from app.core.personas import INDIA_PERSONAS
-from app.llm import redaction
-from app.models.enums import AgentKey, AutonomyTier, HumanAction, RecommendationStatus
+from app.llm.executors import ToolExecutors
+from app.models.enums import AgentKey, AutonomyTier, HumanAction, RecommendationStatus, UserRole
 from app.models.governance import Recommendation
 from app.models.governance import AgentRun
 from app.models.graph import Goal, Household, LegalEntity, Mandate, Person
@@ -127,26 +125,16 @@ async def main() -> int:
             check("the client we sign in as has one of each", [v for k, v in sorted(on_track.items()) if "Sharma" in k],
                   [False, True])
 
-            print("\n=== The client's assistant ===")
-            heard = {}
-
-            async def _hear(**k):
-                heard.update(k)
-                return SimpleNamespace(text="A reply.", is_fallback=False)
-
-            canvas.llm_service = SimpleNamespace(generate=_hear)
+            print("\n=== The client's own tools ===")
+            # The client asks in the conversation (B-95); their tools read the Sharma household and no other.
             client = (await s.execute(select(User).where(User.email == "client@astra-india.demo"))).scalar_one()
-            await canvas.canvas_assistant({"question": "Am I on track?"}, user=client, firm=firm, db=s)
-            seen, _ = redaction.redact(heard["prompt"])
-            say = markets.money_for(firm)
+            mine = await ToolExecutors(s, client.id, UserRole.CLIENT, firm.id).execute("read_my_wealth", {})
             brain = await household_brain(s, sharma.id, firm_id=firm.id)
-            equity = brain["totals"]["by_asset_class"]["equity"]
-            check("the client's equity is one a raw number would lose", "[ID_" in redaction.redact(str(equity))[0], True)
-            check("written as money it reaches the model", say(equity) in seen, True)
-            check("each goal comes with its target and likelihood",
-                  all(f"target {say(g['target_amount'])}, {g['probability']:.0%} likelihood" in seen
-                      for g in _signals.goal_projections(brain)), True)
-            check("and nothing is left masked", "[ID_" in seen, False)
+            check("the client reads the Sharma household", mine["household_id"], str(sharma.id))
+            check("in rupees", mine["currency"], "INR")
+            check("each goal with its target and likelihood, as an estimate",
+                  [(g["target_amount"], g["probability"], g["estimate"]) for g in mine["goals"]],
+                  [(g["target_amount"], g["probability"], True) for g in _signals.goal_projections(brain)])
 
             print("\n=== Protection works from what is on file ===")
             view = await protection.for_household(s, sharma.id, firm_id=firm.id)

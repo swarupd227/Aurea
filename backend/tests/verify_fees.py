@@ -95,7 +95,7 @@ async def _run(db) -> int:
             await s.flush()
             return hh.id
 
-        user = SimpleNamespace(role=UserRole.ADVISER, person_id=None)
+        user = SimpleNamespace(role=UserRole.ADVISER, person_id=None, firm_id=firm.id)
 
         async def fees(hid):
             return await get_fees(household_id=hid, user=user, firm=firm, db=s)

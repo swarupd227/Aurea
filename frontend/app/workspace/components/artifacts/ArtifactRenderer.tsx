@@ -50,6 +50,14 @@ import { AgentRunCard, isAgentRunData } from "./AgentRunCard";
 import { BookScreenCard } from "./BookScreenCard";
 import { TaxBookCard, isTaxBook } from "./TaxBookCard";
 import { EstateCard, isEstate } from "./EstateCard";
+import { ClientCanvasCard, isClientCanvas } from "./ClientCanvasCard";
+import { MyNetWorthCard, isMyNetWorth } from "./MyNetWorthCard";
+import { MyIpsCard, isMyIps } from "./MyIpsCard";
+import { MyRetirementCard, isMyRetirement } from "./MyRetirementCard";
+import { MyGoalsCard, isMyGoals } from "./MyGoalsCard";
+import { MyFeesCard, isMyFees } from "./MyFeesCard";
+import { MyReportCard, isMyReport } from "./MyReportCard";
+import { QuestionnaireRecordedCard, isQuestionnaireRecorded } from "./QuestionnaireRecordedCard";
 import { FamilyCard, isFamily } from "./FamilyCard";
 import { BehaviouralCard, isBehavioural } from "./BehaviouralCard";
 import { RegulatoryCountdownCard, isRegulatoryCountdown } from "./RegulatoryCountdownCard";
@@ -340,6 +348,23 @@ export function artifactCard(artifact: Artifact) {
         return <AgentsCard result={artifact.result as any} />;
       case "read_tax_book":
         return isTaxBook(artifact.result) ? <TaxBookCard result={artifact.result as any} /> : null;
+      case "read_client_canvas":
+      case "read_my_wealth":
+        return isClientCanvas(artifact.result) ? <ClientCanvasCard result={artifact.result as any} /> : null;
+      case "read_my_net_worth":
+        return isMyNetWorth(artifact.result) ? <MyNetWorthCard result={artifact.result as any} /> : null;
+      case "read_my_ips":
+        return isMyIps(artifact.result) ? <MyIpsCard result={artifact.result as any} /> : null;
+      case "read_my_retirement":
+        return isMyRetirement(artifact.result) ? <MyRetirementCard result={artifact.result as any} /> : null;
+      case "read_my_goals":
+        return isMyGoals(artifact.result) ? <MyGoalsCard result={artifact.result as any} /> : null;
+      case "read_my_fees":
+        return isMyFees(artifact.result) ? <MyFeesCard result={artifact.result as any} /> : null;
+      case "read_my_report":
+        return isMyReport(artifact.result) ? <MyReportCard result={artifact.result as any} /> : null;
+      case "record_questionnaire":
+        return isQuestionnaireRecorded(artifact.result) ? <QuestionnaireRecordedCard result={artifact.result as any} /> : null;
       case "read_estate":
         return isEstate(artifact.result) ? <EstateCard result={artifact.result as any} /> : null;
       case "read_family":

@@ -27,6 +27,12 @@ COMPOSITES: Candidate = ("read_composites", "How are the composites performing?"
 GOVERNANCE: Candidate = ("read_ai_governance_summary", "Summarise AI governance: what is overdue for review?")
 BENEFICIARIES: Candidate = ("read_beneficiary_audit", "Which accounts are missing beneficiaries?")
 SCAN: Candidate = ("run_agent", "Have the next-best-action agent scan the book for opportunities.")
+MY_WEALTH: Candidate = ("read_my_wealth", "Am I on track?")
+MY_RETIREMENT: Candidate = ("read_my_retirement", "Will I be okay in retirement?")
+MY_GOALS: Candidate = ("read_my_goals", "How do my goals look side by side?")
+MY_WORTH: Candidate = ("read_my_net_worth", "What do I own and owe?")
+MY_IPS: Candidate = ("read_my_ips", "What does my investment policy say?")
+MY_FEES: Candidate = ("read_my_fees", "What am I paying in fees?")
 
 
 def _the(name: str) -> str:
@@ -164,6 +170,14 @@ FOLLOWS: dict[str, Callable[[dict, dict], list[Candidate]]] = {
     "read_beneficiary_audit": lambda i, r: [WAITING],
     "read_tax_position": lambda i, r: [("read_licences", "Which proposals are waiting for a client's consent?"), WAITING],
     "read_licences": lambda i, r: [WAITING],
+    # A client's own questions, one leading to the next.
+    "read_my_wealth": lambda i, r: [MY_RETIREMENT, MY_WORTH, MY_IPS],
+    "read_my_retirement": lambda i, r: [MY_GOALS, MY_WEALTH],
+    "read_my_goals": lambda i, r: [MY_RETIREMENT, MY_WEALTH],
+    "read_my_net_worth": lambda i, r: [MY_IPS, MY_FEES],
+    "read_my_ips": lambda i, r: [MY_WORTH, MY_FEES],
+    "read_my_fees": lambda i, r: [MY_WEALTH],
+    "read_my_report": lambda i, r: [MY_WEALTH, MY_GOALS],
 }
 
 

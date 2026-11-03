@@ -4,7 +4,7 @@
 // back to a general one.
 "use client";
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { api, getUser } from "./api";
 import { firmMarket } from "./format";
 import { withRef } from "./refs";
 
@@ -27,6 +27,8 @@ export function useSuggestionContext(): SuggestionContext {
   const [households, setHouseholds] = useState<string[]>(cached ?? []);
   useEffect(() => {
     if (cached) return;
+    // A client reads no list of households; their chips name nobody.
+    if (getUser()?.role === "client") return;
     let live = true;
     api<any[]>("/api/core/households")
       .then((rows) => {
@@ -120,8 +122,24 @@ export function roleStarters(role: string, ctx: SuggestionContext): Suggestion[]
   }
 }
 
+// A client's own questions, each one their read-only tools answer (CLIENT_TOOLS). No client facts in them.
+const MY_TRACK: Suggestion = { label: "Am I on track?", prompt: "Am I on track?" };
+const MY_RETIREMENT: Suggestion = { label: "Will I be okay in retirement?", prompt: "Will I be okay in retirement?" };
+const MY_WORTH: Suggestion = { label: "What do I own and owe?", prompt: "What do I own and owe?" };
+const MY_IPS: Suggestion = { label: "What does my investment policy say?", prompt: "What does my investment policy say?" };
+const MY_FEES: Suggestion = { label: "What am I paying in fees?", prompt: "What am I paying in fees?" };
+const MY_GOALS: Suggestion = { label: "How do my goals look side by side?", prompt: "How do my goals look side by side?" };
+
+function clientSuggestions(pathname: string): Suggestion[] {
+  const route = pathname.replace(/\/$/, "");
+  if (route.startsWith("/canvas/retirement")) return [MY_RETIREMENT, MY_TRACK, MY_WORTH];
+  if (route.startsWith("/canvas/goals")) return [MY_GOALS, MY_TRACK, MY_RETIREMENT];
+  return [MY_TRACK, MY_WORTH, MY_IPS, MY_FEES];
+}
+
 /** Chips for the conversation docked on a page, by route. Empty means "ask anything" with no chips. */
 export function pageSuggestions(pathname: string, role: string, ctx: SuggestionContext): Suggestion[] {
+  if (role === "client") return clientSuggestions(pathname);
   const [h1, h2] = ctx.households;
   const household = pathname.match(/^\/studio\/clients\/([0-9a-f-]{36})/i)?.[1];
   if (household) {

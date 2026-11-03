@@ -24,6 +24,8 @@ export default function PageAsk() {
   const pathname = usePathname();
   const ctx = useSuggestionContext();
   const role: string = typeof window !== "undefined" ? getUser()?.role ?? "" : "";
+  // A client converses about their own household only: no workspace to open, nobody to mention.
+  const isClient = role === "client";
   const chips = pageSuggestions(pathname, role, ctx);
 
   const [mentionables, setMentionables] = useState<Mentionable[]>([]);
@@ -35,8 +37,9 @@ export default function PageAsk() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (isClient) return;
     fetchMentionables().then((d) => setMentionables(d.mentionables)).catch(() => {});
-  }, []);
+  }, [isClient]);
 
   // A page change starts a fresh conversation about the new page; the old one stays in Astra. A reply still
   // being written for the old page finishes on the server and lands in that thread, not on this page.
@@ -60,6 +63,7 @@ export default function PageAsk() {
       setLive({ text: "", steps: [] });
       const startedOn = pathRef.current;
       try {
+        // Always "ask_astra" with no subject: for a client the server refuses anything else.
         const id = thread?.id ?? (await createThread({ kind: "ask_astra", title: readable(text).slice(0, 60) })).id;
         await sendMessageStream(id, text, (event) => {
           if (event.type === "error") setError(event.message);
@@ -133,9 +137,9 @@ export default function PageAsk() {
             className="mb-2 overflow-hidden rounded-lg border border-border bg-surface"
           >
             <header className="flex items-center gap-2 border-b border-border-soft px-3 py-1.5">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-ink-muted">Astra</span>
+              <span className="font-mono text-[11px] uppercase tracking-wider text-ink-muted">{isClient ? "Your wealth" : "Astra"}</span>
               <span className="flex-1" />
-              {thread && (
+              {thread && !isClient && (
                 <Link
                   href={`/workspace/${thread.id}`}
                   data-testid="page-ask-open"
@@ -232,7 +236,7 @@ export default function PageAsk() {
           onSend={(t) => void send(t)}
           mentionables={mentionables}
           testId="page-ask-input"
-          placeholder={waiting ? "Confirm or choose Not now above to continue" : "Ask Astra about this page, or tell an agent what to do"}
+          placeholder={waiting ? "Confirm or choose Not now above to continue" : isClient ? "Ask about your wealth" : "Ask Astra about this page, or tell an agent what to do"}
         />
       </div>
     </div>

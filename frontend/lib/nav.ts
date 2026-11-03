@@ -12,6 +12,7 @@ import {
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
   Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2, ArrowLeftRight, Umbrella,
   SlidersHorizontal, BadgeCheck, CalendarCheck, ScrollText, Wallet, DoorOpen, PackageCheck, Gem, Compass, FolderOpen,
+  Sprout, ClipboardList,
 } from "lucide-react";
 
 export type ViewIntent = "decide" | "clients" | "operate" | "govern" | "configure" | "platform";
@@ -87,6 +88,8 @@ export const VIEWS: View[] = [
   { href: "/canvas", label: "Client portal", icon: Sparkles, roles: [A, P, B], intent: "clients", keywords: ["client experience", "wealth"] },
   { href: "/canvas/retirement", label: "Client view — Retirement", icon: PiggyBank, roles: [A, P, B], intent: "clients", keywords: ["planner"] },
   { href: "/canvas/goals", label: "Client view — Goals", icon: Target, roles: [A, P, B], intent: "clients" },
+  { href: "/canvas/next-gen", label: "Client view — Next-gen", icon: Sprout, roles: [A, P, B], intent: "clients", keywords: ["heir", "next generation", "journey"] },
+  { href: "/canvas/questionnaire", label: "Client view — Questionnaire", icon: ClipboardList, roles: [A, P], intent: "clients", keywords: ["risk questionnaire", "answers", "tolerance"] },
 
   // Run the business
   { href: "/studio/onboarding", label: "Onboarding", icon: UserPlus, roles: [O, C, A], intent: "operate", keywords: ["kyc", "aml", "cases", "new client"] },

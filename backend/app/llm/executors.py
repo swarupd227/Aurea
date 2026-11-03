@@ -182,6 +182,15 @@ class ToolExecutors:
             "run_skill": self.run_skill,
             "read_book_batches": self.read_book_batches,
             "start_book_batch": self.start_book_batch,
+            "read_client_canvas": self.read_client_canvas,
+            "record_questionnaire": self.record_questionnaire,
+            "read_my_wealth": self.read_my_wealth,
+            "read_my_net_worth": self.read_my_net_worth,
+            "read_my_ips": self.read_my_ips,
+            "read_my_retirement": self.read_my_retirement,
+            "read_my_goals": self.read_my_goals,
+            "read_my_fees": self.read_my_fees,
+            "read_my_report": self.read_my_report,
             "read_recommendations": self.read_recommendations,
             "read_agents": self.read_agents,
             "open_view": self.open_view,  # outside the gateway's turn no id is grounded, so only id-free views open
@@ -4060,6 +4069,8 @@ class ToolExecutors:
             return rows(*await self._skill_preview(tool_key, inputs))
         if tool_key == "start_book_batch":
             return rows(*await self._batch_preview(inputs))
+        if tool_key == "record_questionnaire":
+            return rows(*await self._questionnaire_preview(inputs))
         if tool_key == "run_skill":
             return rows(*await self._run_skill_preview(inputs))
         if tool_key == "withdraw_report":
@@ -4529,6 +4540,175 @@ class ToolExecutors:
         return [("From", name), ("Feed", "Sample book - generated, not a real file"),
                 ("Clients", len(feed.get("clients") or [])), ("Holdings", len(feed.get("holdings") or [])),
                 ("Changes records", "Nothing until its proposal is approved")]
+
+    # ─── The client's Canvas (B-95). Staff read what a client sees; a client's tools read only their own.
+    async def read_client_canvas(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import client_view
+
+        household = await self._owned_household(inputs)
+        view = await client_view.home(self.session, household.id, firm=await self._firm())
+        if view is None:
+            raise ExecutorError(f"Household {household.id} not found or access denied")
+        return {**view, "message": f"What {household.name} see: {len(view['goals'])} goal(s), "
+                                   f"{view['goals_on_track']} on track by the planning estimate."}
+
+    async def _questionnaire(self, inputs: dict[str, Any]) -> tuple[Household, dict[str, str], Any]:
+        """The household, the answers matched to the form's own options, and who answers. Raises what
+        recording them would: a question left out, an answer the form does not offer, a subject elsewhere."""
+        from app.aurea_core import risk_profile
+
+        if self.role not in (UserRole.ADVISER, UserRole.PARAPLANNER):
+            raise ExecutorError("Recording a client's questionnaire is for their adviser or a paraplanner.")
+        household = await self._owned_household(inputs)
+        given = inputs.get("answers") or []
+        if isinstance(given, dict):
+            given = [{"question": k, "answer": v} for k, v in given.items()]
+        form = {q["key"]: q for q in risk_profile.questions()}
+        answers: dict[str, str] = {}
+        for item in given:
+            key, said = str((item or {}).get("question") or "").strip(), str((item or {}).get("answer") or "").strip()
+            if key not in form:
+                raise ExecutorError(f"There is no question '{key}'. Questions: {', '.join(form)}.")
+            exact = [o for o in form[key]["options"] if o.casefold() == said.casefold()]
+            word = [o for o in form[key]["options"] if said and o.split()[0].casefold() == said.split()[0].casefold()]
+            match = exact or (word if len(word) == 1 else [])
+            if not match:
+                raise ExecutorError(f"'{said}' is not an answer to {key}. Its answers: {'; '.join(form[key]['options'])}.")
+            answers[key] = match[0]
+        missing = [k for k in form if k not in answers]
+        if missing:
+            raise ExecutorError(f"Every question needs an answer. Missing: {', '.join(missing)}.")
+        subject = None
+        if inputs.get("subject_id"):
+            sid = _parse_uuid(inputs["subject_id"], "subject_id")
+            subject = await self.session.get(Person, sid) or await self.session.get(LegalEntity, sid)
+            if subject is None or subject.household_id != household.id:
+                raise ExecutorError("That person or entity is not in this household.")
+        return household, answers, subject
+
+    async def _questionnaire_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import risk_profile
+
+        household, answers, subject = await self._questionnaire(inputs)
+        asked = {q["key"]: q["question"] for q in risk_profile.questions()}
+        who = getattr(subject, "full_name", None) or getattr(subject, "name", None)
+        return [("Client", household.name), ("Answering", who or "The household"),
+                *[(asked[k], v) for k, v in answers.items()],
+                ("Changes", "Nothing on a mandate: the adviser decides on what it indicates")]
+
+    async def record_questionnaire(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import risk_profile
+
+        household, answers, subject = await self._questionnaire(inputs)
+        me = await self._me()
+        try:
+            row = await risk_profile.submit(self.session, household.id, answers, firm_id=self.firm_id, by=me.email,
+                                            role=self.role, subject_id=subject.id if subject else None)
+        except risk_profile.RiskProfileError as exc:
+            raise ExecutorError(str(exc))
+        return {"assessment_id": str(row.id), "household_id": str(household.id), "indicated": row.indicated,
+                "message": f"Recorded {household.name}'s questionnaire. It indicates {row.indicated}; "
+                           "nothing on a mandate changes until the adviser decides."}
+
+    async def _my_household(self) -> uuid.UUID:
+        """The signed-in client's own household. A client's tools take no household id, so this is the only
+        way one is chosen: the gateway gives the client these tools alone, and this re-checks the role."""
+        from app.aurea_core import client_view
+
+        if self.role != UserRole.CLIENT:
+            raise ExecutorError("These are a client's own tools.")
+        try:
+            return await client_view.household_of(self.session, await self._me())
+        except client_view.ClientViewError as exc:
+            raise ExecutorError(str(exc))
+
+    async def read_my_wealth(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import client_view
+
+        view = await client_view.home(self.session, await self._my_household(), firm=await self._firm())
+        if view is None:
+            raise ExecutorError("Your household could not be read.")
+        view.pop("members", None)
+        adviser = (view.get("adviser") or {}).get("name")
+        return {**view, "message": f"{view['goals_on_track']} of {len(view['goals'])} goal(s) on track by the planning "
+                                   f"estimate.{f' Looked after by {adviser}.' if adviser else ''}"}
+
+    async def read_my_net_worth(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import balance_sheet
+
+        hid = await self._my_household()
+        sheet = await balance_sheet.for_household(self.session, hid, firm_id=self.firm_id)
+        if sheet is None:
+            raise ExecutorError("Your household could not be read.")
+        keep = ("id", "side", "kind", "name", "amount", "currency", "person", "as_of")
+        basis = " Assets only: no debt is on file, which does not mean there is none." if sheet["basis"] == "assets_only" else ""
+        return {"household_id": str(hid), "currency": sheet["currency"], "net_worth": sheet["net_worth"], "basis": sheet["basis"],
+                "assets": sheet["assets"], "liabilities": sheet["liabilities"],
+                "items": [{k: i[k] for k in keep} for i in sheet["items"]],
+                "not_converted": [{k: i[k] for k in keep} for i in sheet["not_converted"]],
+                "message": f"Net worth on file.{basis} A figure that is wrong is corrected by a person, from a document."}
+
+    async def read_my_ips(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import ips
+
+        hid = await self._my_household()
+        view = await ips.for_household(self.session, hid, firm_id=self.firm_id)
+        if view is None:
+            raise ExecutorError("Your household could not be read.")
+        policies = [{"mandate": m["mandate"], "version": t["version"], "accepted_on": t["accepted_on"], "targets": t["targets"],
+                     "drift_band": t["drift_band"], "max_position": t["max_position"], "min_cash": t["min_cash"],
+                     "restricted": t["restricted"]} for m in view["mandates"] if (t := m["ips"])]
+        without = [m["mandate"] for m in view["mandates"] if not m["ips"]]
+        return {"household_id": str(hid), "policies": policies, "without": without,
+                "message": f"{len(policies)} accepted investment policy statement(s) on file."
+                           + (f" None on file here for {len(without)} mandate(s), which does not mean there is none." if without else "")}
+
+    async def read_my_retirement(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import retirement
+
+        hid = await self._my_household()
+        overrides = {}
+        for key in ("retirement_age", "annual_income"):
+            if inputs.get(key) not in (None, ""):
+                try:
+                    overrides[key] = int(inputs[key]) if key == "retirement_age" else float(inputs[key])
+                except (TypeError, ValueError):
+                    raise ExecutorError(f"{key} must be a number.")
+        plan = await retirement.for_household(self.session, hid, firm_id=self.firm_id, overrides=overrides)
+        if not plan:
+            raise ExecutorError("No retirement plan is on file for you yet.")
+        what_if = " A what-if: nothing on file changed." if overrides else ""
+        return {**plan, "household_id": str(hid), "what_if": overrides or None,
+                "message": f"The retirement projection, an estimate.{what_if}"}
+
+    async def read_my_goals(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import goal_tradeoff
+
+        hid = await self._my_household()
+        plan = await goal_tradeoff.for_household(self.session, hid, firm_id=self.firm_id)
+        if not plan:
+            raise ExecutorError("No goals are on file for you yet.")
+        return {**plan, "household_id": str(hid), "message": "Your goals side by side. Every likelihood is an estimate."}
+
+    async def read_my_fees(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import client_view
+
+        hid = await self._my_household()
+        fees = await client_view.fees(self.session, await self._firm(), hid)
+        basis = {"confirmed_fee_schedule": "The fee schedule agreed with you.",
+                 "segment_estimate": "An estimate from the firm's fee bands: no schedule agreed with you is on file.",
+                 "not_on_file": "No fee rate is on file for you."}[fees["source"]]
+        return {**fees, "household_id": str(hid), "message": basis}
+
+    async def read_my_report(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import client_view
+
+        hid = await self._my_household()
+        report = await client_view.report(self.session, _parse_uuid(inputs.get("report_id") or "", "report_id"), hid,
+                                          firm_id=self.firm_id)
+        if report is None:
+            raise ExecutorError("That report is not one published to you.")
+        return {**report, "message": f"{report['title']}, {report['period']}."}
 
     async def screen_book(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """The whole book, a row per household, filtered (aurea_core/book_screen.py)."""

@@ -188,7 +188,8 @@ export default function Shell({ children }: { children: ReactNode }) {
   const isStaff = !isClient && user.role !== "superadmin";
   const showAstra = hasWorkspace(user.role);
   // Admin pages are configuration forms, not decisions; the dock stays off them.
-  const showDock = isStaff && showAstra && user.role !== "admin";
+  // A client converses on their own Canvas pages, with their own read-only tools: no workspace, no rail.
+  const showDock = (isStaff && showAstra && user.role !== "admin") || (isClient && pathname.startsWith("/canvas"));
   const pinned = isStaff ? pinnedViews(user.role) : isClient ? clientViews : viewsForRole(user.role);
   const more = isStaff ? moreViews(user.role) : [];
   const moreActive = more.some((g) => g.items.some((i) => isViewActive(pathname, i.href)));

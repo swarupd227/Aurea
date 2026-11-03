@@ -14,7 +14,8 @@ export type PaneViewKey =
   | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "document_matrix" | "transfers" | "monitoring" | "money_in" | "account_features" | "onboarding_scoreboard" | "repapering" | "onboarding_queues"
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
   | "corporate_actions" | "pipeline" | "tax" | "estate" | "family" | "behavioural" | "regulatory_countdown" | "workforce"
-  | "skills" | "book_integration" | "book_batch";
+  | "skills" | "book_integration" | "book_batch"
+  | "canvas" | "canvas_retirement" | "canvas_goals" | "canvas_next_gen" | "canvas_questionnaire";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -85,7 +86,20 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "skills", pattern: /^\/studio\/skills\/?$/, base: "/studio/skills", label: "Skills" },
   { key: "book_integration", pattern: /^\/studio\/book-integration\/?$/, base: "/studio/book-integration", label: "Book integration" },
   { key: "book_batch", pattern: /^\/studio\/book-integration\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/book-integration", label: "Acquired book" },
+  // What a client sees, as they see it: their pages, which staff open beside the conversation.
+  { key: "canvas", pattern: /^\/canvas\/?$/, base: "/canvas", label: "Client portal" },
+  { key: "canvas_retirement", pattern: /^\/canvas\/retirement\/?$/, base: "/canvas/retirement", label: "Client view — Retirement" },
+  { key: "canvas_goals", pattern: /^\/canvas\/goals\/?$/, base: "/canvas/goals", label: "Client view — Goals" },
+  { key: "canvas_next_gen", pattern: /^\/canvas\/next-gen\/?$/, base: "/canvas/next-gen", label: "Client view — Next-gen" },
+  { key: "canvas_questionnaire", pattern: /^\/canvas\/questionnaire\/?$/, base: "/canvas/questionnaire", label: "Client view — Questionnaire" },
 ];
+
+/** A client has no sidebar of staff views; their own pages are these, named as their sidebar names them,
+ * and a card about them opens one. */
+const CLIENT_PAGES: Record<string, string> = {
+  "/canvas": "My wealth", "/canvas/retirement": "My retirement", "/canvas/goals": "My goals",
+  "/canvas/next-gen": "My journey", "/canvas/questionnaire": "My questionnaire",
+};
 
 /** The list a single-item view sits under, so one opened straight from the conversation still has
  * its list behind it in the pane's breadcrumbs. */
@@ -119,12 +133,13 @@ export function matchPaneView(route: string | null | undefined, role?: string | 
   for (const def of PANE_VIEWS) {
     const m = def.pattern.exec(path);
     if (!m) continue;
-    if (role && !viewsForRole(role).some((v) => v.href === def.base)) return null;
+    if (role && !(role === "client" ? def.base in CLIENT_PAGES : viewsForRole(role).some((v) => v.href === def.base))) return null;
     const query: Record<string, string> = {};
     new URLSearchParams(search).forEach((v, k) => {
       query[k] = v;
     });
-    return { key: def.key, route, base: def.base, label: def.label, id: m[1], query };
+    const label = (role === "client" && CLIENT_PAGES[def.base]) || def.label;
+    return { key: def.key, route, base: def.base, label, id: m[1], query };
   }
   return null;
 }
@@ -175,6 +190,21 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
       return "/studio/skills";
     case "run_skill":
       return "/studio/review";
+    case "read_client_canvas":
+      return onClient("/canvas");
+    case "record_questionnaire":
+      return onClient("/studio/risk-profiles");
+    // A client's own results open their own pages, which read their household whatever the link says.
+    case "read_my_wealth":
+    case "read_my_net_worth":
+    case "read_my_ips":
+    case "read_my_fees":
+    case "read_my_report":
+      return "/canvas";
+    case "read_my_retirement":
+      return "/canvas/retirement";
+    case "read_my_goals":
+      return "/canvas/goals";
     case "read_book_batches":
     case "start_book_batch":
       return r.batch && typeof r.batch.id === "string" ? `/studio/book-integration/${r.batch.id}` : "/studio/book-integration";
