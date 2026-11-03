@@ -2300,6 +2300,24 @@ TOOLS: dict[str, Tool] = {
                        UserRole.BRANCH_LEADER, UserRole.ADMIN},
     ),
 
+    "start_onboarding": Tool(
+        key="start_onboarding",
+        name="Start Onboarding",
+        speaking_agent="astra",
+        description="Opens an onboarding case for a new client: the one way a client starts. It is a draft: nothing is screened, signed or invested until each gate is met, and the case's agents, documents and Confirm cards take it from there. Give prospect_name (the person, couple, trust or company) and registration_type (individual, joint_jtwros, joint_tic, trust, entity_llc, entity_corp, entity_partnership, estate_inherited, and in the US the IRAs, employer_rollover, custodial_utma and the rest; in India huf). Give segment, risk_preference (conservative, balanced, growth or aggressive), mandate_preference (advisory or discretionary), source_of_wealth and email only if the person said them: leave out what was not said, and never fill one in. The same name with a case still open is refused, so search first with read_onboarding_cases when unsure. An adviser who opens a case is recorded as its adviser.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Open this onboarding case?",
+        inputs=[ToolInput("prospect_name", "string", "Who is being onboarded", required=True),
+                ToolInput("registration_type", "string", "The account type", required=True),
+                ToolInput("segment", "string", "mass_affluent, private_wealth, for_purpose, institutional or next_gen", required=False),
+                ToolInput("risk_preference", "string", "As the client stated it", required=False),
+                ToolInput("mandate_preference", "string", "advisory or discretionary", required=False),
+                ToolInput("source_of_wealth", "string", "As the client described it", required=False),
+                ToolInput("email", "string", "The client's email", required=False)],
+        output=ToolOutput("object", "The new case on the onboarding board"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
     "read_onboarding_cases": Tool(
         key="read_onboarding_cases",
         name="Read Onboarding Cases",

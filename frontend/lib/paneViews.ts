@@ -216,7 +216,8 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_private_valuations":
     case "record_valuation":
       return "/studio/valuations";
-    case "read_onboarding_cases": {
+    case "read_onboarding_cases":
+    case "start_onboarding": {
       const cases = Array.isArray(r.cases) ? r.cases : [];
       return cases.length === 1 && cases[0]?.id ? `/studio/onboarding/${cases[0].id}` : "/studio/onboarding";
     }

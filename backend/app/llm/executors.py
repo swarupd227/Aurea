@@ -90,6 +90,7 @@ class ToolExecutors:
             "read_my_day": self.read_my_day,
             "read_autonomy_policies": self.read_autonomy_policies,
             "read_compliance_rules": self.read_compliance_rules,
+            "start_onboarding": self.start_onboarding,
             "set_compliance_rule": self.set_compliance_rule,
             "set_agent_control": self.set_agent_control,
             "set_autonomy_policy": self.set_autonomy_policy,
@@ -3850,6 +3851,41 @@ class ToolExecutors:
         return {"headline": h, "bases": bases, "currency": firm.base_currency,
                 "message": "Headline figures: " + "; ".join(bits) + "."}
 
+    def _start_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {k: inputs.get(k) for k in ("prospect_name", "registration_type", "segment", "risk_preference",
+                                           "mandate_preference", "source_of_wealth", "email")}
+
+    async def start_onboarding(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import onboarding_start
+        from app.models.identity import User
+
+        try:
+            case = await onboarding_start.start(self.session, await self._firm(), actor=await self.session.get(User, self.user_id),
+                                                **self._start_args(inputs))
+        except onboarding_start.StartError as exc:
+            raise ExecutorError(str(exc))
+        board = await self.read_onboarding_cases({"status": "all", "limit": 50})
+        board["cases"] = [c for c in board["cases"] if c["id"] == str(case.id)]
+        board["shown"] = len(board["cases"])
+        board["message"] = f"Opened {case.prospect_name}'s case as a draft; nothing is screened, signed or invested yet."
+        return board
+
+    async def _start_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import onboarding_start
+        from app.models.identity import User
+
+        try:
+            p = await onboarding_start.prepare(self.session, await self._firm(), **self._start_args(inputs))
+        except onboarding_start.StartError as exc:
+            raise ExecutorError(str(exc))
+        me = await self.session.get(User, self.user_id)
+        return [("Prospect", p["name"]), ("Account type", p["label"]), ("Segment", p["segment"].replace("_", " ").capitalize()),
+                ("Stated risk", p["risk"].capitalize() if p["risk"] else "Not stated: the questionnaire will indicate one"),
+                ("Mandate", p["mandate"].capitalize() if p["mandate"] else "Not stated"),
+                ("Source of wealth", p["source_of_wealth"] or "Not stated: the onboarding agent raises it as an exception"),
+                ("Adviser", me.full_name if me and str(me.role) == "adviser" else None),
+                ("Opens as", "A draft: nothing is screened, signed or invested until each gate is met")]
+
     async def read_onboarding_cases(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """The onboarding board - cases with their four derived tracks (api.onboarding.cases_overview)."""
         from collections import Counter
@@ -4410,6 +4446,8 @@ class ToolExecutors:
             return rows(*await self._autonomy_preview(inputs))
         if tool_key == "set_compliance_rule":
             return rows(*await self._rule_preview(inputs))
+        if tool_key == "start_onboarding":
+            return rows(*await self._start_preview(inputs))
         if tool_key == "set_agent_control":
             return rows(*await self._control_preview(inputs))
         if tool_key == "rate_aml_risk":

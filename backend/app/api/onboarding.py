@@ -326,19 +326,18 @@ async def create_case(
     body: CaseCreate, user: User = Depends(require_roles(*STAFF_ROLES)),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    # Infer is_entity from registration_type when provided.
-    is_entity = body.is_entity
-    entity_type = body.entity_type
-    if body.registration_type in ("trust", "entity_llc", "entity_corp", "entity_partnership", "huf"):
-        is_entity = True
-        entity_type = entity_type or body.registration_type.replace("entity_", "")
-    case = OnboardingCase(
-        firm_id=firm.id, prospect_name=body.prospect_name, is_entity=is_entity,
-        entity_type=entity_type, registration_type=body.registration_type,
-        segment=body.segment, intake=body.intake,
-    )
-    db.add(case)
-    await db.flush()
+    """Open a case as the conversation's start_onboarding does (aurea_core/onboarding_start.py): the same checks,
+    the same record, and the adviser who opened it."""
+    from app.aurea_core import onboarding_start
+
+    intake = dict(body.intake or {})
+    try:
+        case = await onboarding_start.start(
+            db, firm, actor=user, prospect_name=body.prospect_name, registration_type=body.registration_type or "individual",
+            segment=body.segment, risk_preference=intake.pop("risk_profile", None), mandate_preference=intake.pop("mandate_preference", None),
+            source_of_wealth=intake.pop("source_of_wealth", None), email=intake.pop("email", None), extra_intake=intake)
+    except onboarding_start.StartError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return _case_dict(case, [], [])
 
 

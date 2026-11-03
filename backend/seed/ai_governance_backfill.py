@@ -243,6 +243,8 @@ _TOOLS = [
      "Reads the cockpit's four figures over an adviser's own households, or the firm's for other roles."),
     ("read_advisers", "Read Advisers (tool)", "tool", "Head of Operations", "low",
      "Reads each adviser's households and the households with no adviser on file."),
+    ("start_onboarding", "Start Onboarding (tool)", "tool", "Head of Operations", "medium",
+     "Opens an onboarding case as a draft, recording only what the person gave. Confirm-gated."),
     ("read_compliance_rules", "Read Compliance Rules (tool)", "tool", "Head of Compliance", "low",
      "Reads the regime's rules as the firm runs them, how often each failed, and the agent controls."),
     ("set_compliance_rule", "Set Compliance Rule (tool)", "tool", "Head of Compliance", "high",

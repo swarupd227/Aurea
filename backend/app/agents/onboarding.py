@@ -281,7 +281,8 @@ class OnboardingAgent(BaseAgent):
             parties = (case.intake or {}).get("associated_parties", [])
             entity = LegalEntity(
                 firm_id=ctx.firm.id, household_id=household.id, name=case.prospect_name,
-                entity_type=EntityType(case.entity_type or "trust"),
+                # Cases opened before onboarding_start stored "llc" and "corp", which EntityType does not have (B-141).
+                entity_type=EntityType({"llc": "company", "corp": "company"}.get(case.entity_type, case.entity_type) or "trust"),
                 # An HUF is run by its karta for its members; a trust by its trustees.
                 governance=({"karta": (case.intake or {}).get("karta"), "members": parties}
                             if case.entity_type == "huf" else {"trustees": parties}),
@@ -348,10 +349,11 @@ class OnboardingAgent(BaseAgent):
         await s.flush()
         created["account_id"] = str(account.id)
 
-        # Link the firm's adviser to the new relationship.
-        adviser = (
-            await s.execute(select(User).where(User.firm_id == ctx.firm.id, User.role == "adviser"))
-        ).scalars().first()
+        # Link the adviser who opened the case, or the firm's only one; with several and none named, a person
+        # assigns one (aurea_core/onboarding_start.adviser_for), rather than the first the database returns.
+        from app.aurea_core.onboarding_start import adviser_for
+
+        adviser = await adviser_for(s, ctx.firm, case)
         if adviser:
             s.add(RelationshipEdge(
                 firm_id=ctx.firm.id, kind="adviser", from_type="user", from_id=adviser.id,

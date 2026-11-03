@@ -341,6 +341,7 @@ export function artifactCard(artifact: Artifact) {
         if (!artifact.result?.headline || typeof artifact.result.headline !== "object") return null;
         return <AnalyticsCard result={{ bases: {}, currency: "", ...artifact.result } as any} />;
       case "read_onboarding_cases":
+      case "start_onboarding":
         if (!Array.isArray(artifact.result?.cases) || !artifact.result?.summary || !artifact.result.cases.every((c: any) => Array.isArray(c?.tracks))) return null;
         return <OnboardingCasesCard result={artifact.result as any} />;
       case "read_tasks":

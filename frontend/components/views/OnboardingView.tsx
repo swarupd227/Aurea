@@ -5,7 +5,7 @@ import { Card, Spinner, Segment, ErrorState } from "@/components/ui";
 import { ViewLink } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 import { useApi } from "@/lib/hooks";
-import { api } from "@/lib/api";
+import { api, getUser } from "@/lib/api";
 import { titleCase } from "@/lib/format";
 
 const REGISTRATION_LABELS: Record<string, string> = {
@@ -254,35 +254,41 @@ function CaseCard({ c }: { c: any }) {
   );
 }
 
-const REGISTRATION_OPTIONS = [
+// `only`: an account type that exists in one market's law (backend aurea_core/onboarding_start.ONLY_IN).
+const REGISTRATION_OPTIONS: { value: string; label: string; only?: string }[] = [
   { value: "individual", label: "Individual" },
   { value: "joint_jtwros", label: "Joint — JTWROS" },
   { value: "joint_tic", label: "Joint — Tenants in Common" },
-  { value: "traditional_ira", label: "Traditional IRA" },
-  { value: "roth_ira", label: "Roth IRA" },
-  { value: "employer_rollover", label: "Employer Rollover (401k/403b)" },
+  { value: "traditional_ira", label: "Traditional IRA", only: "US" },
+  { value: "roth_ira", label: "Roth IRA", only: "US" },
+  { value: "employer_rollover", label: "Employer Rollover (401k/403b)", only: "US" },
   { value: "trust", label: "Trust" },
   { value: "entity_llc", label: "Entity — LLC" },
   { value: "entity_corp", label: "Entity — Corporation" },
   { value: "entity_partnership", label: "Entity — Partnership" },
-  { value: "custodial_utma", label: "Custodial — UTMA" },
-  { value: "custodial_ugma", label: "Custodial — UGMA" },
+  { value: "custodial_utma", label: "Custodial — UTMA", only: "US" },
+  { value: "custodial_ugma", label: "Custodial — UGMA", only: "US" },
   { value: "estate_inherited", label: "Estate / Inherited" },
-  { value: "huf", label: "HUF (India)" },
+  { value: "huf", label: "HUF", only: "IN" },
 ];
 
 function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  // Only what the person states is sent: a blank risk or mandate is left for the questionnaire and the adviser.
   const [form, setForm] = useState({
     prospect_name: "", registration_type: "individual", segment: "private_wealth",
-    risk_profile: "balanced", mandate_preference: "advisory", source_of_wealth: "",
+    risk_profile: "", mandate_preference: "", source_of_wealth: "",
   });
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const market = (getUser()?.firm?.jurisdiction || "").toUpperCase();
+  const options = REGISTRATION_OPTIONS.filter((o) => !o.only || o.only === market);
 
   const isRollover = ["employer_rollover", "traditional_ira", "roth_ira"].includes(form.registration_type);
 
   async function create() {
     if (!form.prospect_name) return;
     setBusy(true);
+    setFailed(null);
     try {
       await api("/api/onboarding/cases", {
         body: {
@@ -290,13 +296,14 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
           registration_type: form.registration_type,
           segment: form.segment,
           intake: {
-            risk_profile: form.risk_profile, mandate_preference: form.mandate_preference,
-            source_of_wealth: form.source_of_wealth, objectives: ["growth"],
-            time_horizon_years: 15, associated_parties: [],
+            risk_profile: form.risk_profile || null, mandate_preference: form.mandate_preference || null,
+            source_of_wealth: form.source_of_wealth || null,
           },
         },
       });
       onCreated();
+    } catch (e: any) {
+      setFailed(e?.message || "The case was not opened.");
     } finally {
       setBusy(false);
     }
@@ -313,7 +320,7 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Registration type</label>
               <select className="input" value={form.registration_type} onChange={(e) => setForm({ ...form, registration_type: e.target.value })}>
-                {REGISTRATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div><label className="label">Segment</label>
@@ -327,13 +334,16 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Risk profile</label>
               <select className="input" value={form.risk_profile} onChange={(e) => setForm({ ...form, risk_profile: e.target.value })}>
+                <option value="">Not stated</option>
                 <option value="conservative">Conservative</option>
                 <option value="balanced">Balanced</option>
                 <option value="growth">Growth</option>
+                <option value="aggressive">Aggressive</option>
               </select>
             </div>
             <div><label className="label">Mandate</label>
               <select className="input" value={form.mandate_preference} onChange={(e) => setForm({ ...form, mandate_preference: e.target.value })}>
+                <option value="">Not stated</option>
                 <option value="advisory">Advisory</option>
                 <option value="discretionary">Discretionary</option>
               </select>
@@ -348,6 +358,7 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
             </div>
           )}
           <div className="text-xs text-ink-muted flex items-center gap-1"><FileText size={12} /> Add identity documents on the next screen, then run the agent.</div>
+          {failed && <p className="rounded-lg bg-crit-bg px-3 py-2 text-sm text-crit" role="alert">{failed}</p>}
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
