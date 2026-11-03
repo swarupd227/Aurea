@@ -10,6 +10,7 @@ the actual source of truth per CLAUDE.md.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 
@@ -34,6 +35,10 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID:
         return uuid.UUID(str(value))
     except (ValueError, TypeError):
         raise ExecutorError(f"Invalid {field}: {value}")
+
+
+# Words a person says about a proposal that no proposal's title carries.
+_PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "proposals", "recommendation", "recommendations"}
 
 
 class ToolExecutors:
@@ -3051,10 +3056,13 @@ class ToolExecutors:
         if subject:
             # A person names a proposal by its title as often as by its client, and a firm-wide one's
             # client is the firm, so the words are looked for in the title, the client and the agent.
+            # Each word on its own, so "Hartley rebalance" finds "Rebalance The Hartley Family".
             from sqlalchemy import or_
 
-            stmt = stmt.where(or_(Recommendation.subject_label.ilike(f"%{subject}%"), Recommendation.title.ilike(f"%{subject}%"),
-                                  Recommendation.agent_key.ilike(f"%{subject.replace(' ', '_')}%")))
+            words = [w for w in re.findall(r"[\w'&.-]+", subject.lower()) if w not in _PROPOSAL_NOISE] or [subject]
+            for w in words:
+                stmt = stmt.where(or_(Recommendation.subject_label.ilike(f"%{w}%"), Recommendation.title.ilike(f"%{w}%"),
+                                      Recommendation.agent_key.ilike(f"%{w}%")))
         total = (await self.session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
         # What can still be decided comes first, so history never buries it.
         recs = (await self.session.execute(
@@ -3920,7 +3928,8 @@ class ToolExecutors:
         decision = {"dismiss": "Dismiss: nothing is placed and the proposal closes",
                     "modify": "Approve as modified",
                     "approve": ("Approve: the orders wait for the client's consent" if waits
-                                else f"Approve: {len(orders)} order(s) are placed now" if orders else "Approve")}[action]
+                                else "Approve: the order is placed now" if len(orders) == 1
+                                else f"Approve: {len(orders)} orders are placed now" if orders else "Approve")}[action]
         rows: list[tuple[str, Any]] = [("Decision", decision), ("Proposal", rec.title), ("Client", rec.subject_label)]
         if not orders:
             return [*rows, ("Agent", str(rec.agent_key).replace("_", " ")), ("Note", (note or "").strip() or None)]

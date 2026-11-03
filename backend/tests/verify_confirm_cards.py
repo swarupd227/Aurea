@@ -544,7 +544,7 @@ async def main() -> int:
             approve = {"recommendation_id": str(rebalance.id), "action": "approve"}
             shown = await card(ex, "decide_recommendation", approve)
             check("names the proposal and the client", (shown["Proposal"], shown["Client"]), (rebalance.title, "Ann mandate"))
-            check("says what approving does", shown["Decision"], "Approve: 2 order(s) are placed now")
+            check("says what approving does", shown["Decision"], "Approve: 2 orders are placed now")
             check("each order, by name and size", (shown["Order 1"].startswith("Sell 9.6 AAA"), shown["Order 2"].startswith("Buy 60 CCC")), (True, True))
             check("what it leaves in cash", f"{cash + 120 - 300:,.0f}" in shown["Cash, before fees"], True)
             check("the gain against its budget", ("40" in shown["Realised gain"], "500" in shown["Realised gain"]), (True, True))
@@ -559,6 +559,10 @@ async def main() -> int:
             mine = next(r for r in listed if r["id"] == str(rebalance.id))
             check("the model reads the exact orders", [(o["side"], o["symbol"], o["quantity"]) for o in mine["orders"]], [("sell", "AAA", 9.6), ("buy", "CCC", 60)])
             check("  with the gain and the budget", (mine["estimated_realised_gain"], mine["cgt_budget"]), (40.0, 500.0))
+            for said in ("Ann rebalance", "the rebalance proposal for Ann", "drift rebalancing Ann"):
+                found = (await ex.read_recommendations({"subject": said}))["recommendations"]
+                check(f"\"{said}\" finds that one proposal, words in any order", [r["id"] for r in found], [str(rebalance.id)])
+            check("a word no proposal carries finds none", (await ex.read_recommendations({"subject": "Ann harvest"}))["recommendations"], [])
             rebalance.status = RecommendationStatus.DISMISSED
             await s.flush()
             await refused("a decided proposal", ex.preview_change("decide_recommendation", approve), "Already")

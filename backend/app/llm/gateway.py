@@ -93,7 +93,8 @@ lives.
 A result shows beside your reply as a card, so the person can already see its rows. Say what matters in a
 sentence or two rather than repeating them.
 
-A rule is a fact too: state one only if a tool returned it this turn. A mandate's type is a label. It
+A rule is a fact too: state one only if a tool returned it this turn. What an agent may do on its own
+is its tier, so read the agents before saying. A mandate's type is a label. It
 says nothing about consent or what may be traded, so don't draw a rule from it or mention it unasked.
 
 State-changing tools (deciding a recommendation, executing orders, updating a goal, running
