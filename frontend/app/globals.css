@@ -129,18 +129,28 @@ html, body {
     @apply btn border border-border bg-surface text-ink-soft hover:bg-border-soft;
   }
 
-  /* Status variant buttons */
+  /* Status variant buttons. The status colours are CSS variables, which Tailwind cannot give an opacity
+     (bg-warn/15 does not exist and fails the build once a page uses the class), so the tints are mixed here. */
   .btn-ok {
-    @apply btn bg-ok/15 text-ok hover:bg-ok/25 border border-ok/30;
+    @apply btn text-ok border;
+    background-color: color-mix(in srgb, var(--color-ok) 15%, transparent);
+    border-color: color-mix(in srgb, var(--color-ok) 30%, transparent);
   }
+  .btn-ok:hover { background-color: color-mix(in srgb, var(--color-ok) 25%, transparent); }
 
   .btn-warn {
-    @apply btn bg-warn/15 text-warn hover:bg-warn/25 border border-warn/30;
+    @apply btn text-warn border;
+    background-color: color-mix(in srgb, var(--color-warn) 15%, transparent);
+    border-color: color-mix(in srgb, var(--color-warn) 30%, transparent);
   }
+  .btn-warn:hover { background-color: color-mix(in srgb, var(--color-warn) 25%, transparent); }
 
   .btn-crit {
-    @apply btn bg-crit/15 text-crit hover:bg-crit/25 border border-crit/30;
+    @apply btn text-crit border;
+    background-color: color-mix(in srgb, var(--color-crit) 15%, transparent);
+    border-color: color-mix(in srgb, var(--color-crit) 30%, transparent);
   }
+  .btn-crit:hover { background-color: color-mix(in srgb, var(--color-crit) 25%, transparent); }
 
   .input {
     @apply w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-ink
