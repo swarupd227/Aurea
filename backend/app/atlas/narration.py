@@ -80,6 +80,51 @@ def settle(card: dict[str, Any], *, status: str, proposals: list[dict[str, Any]]
     return card
 
 
+def rebalance_figures(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """What a rebalancing proposal would do, as the card shows it: each class's weight now, its target and after the
+    orders, the orders, the gain against the budget and the cash before and after. Worked out from the proposal's own
+    payload; a class's weight after is its value now plus what is bought less what is sold, over the same total."""
+    current, target = payload.get("current_weights") or {}, payload.get("target_weights") or {}
+    orders = payload.get("order_set") or []
+    total = float((payload.get("summary") or {}).get("total_value") or 0)
+    if not total or not (current or target):
+        return None
+    flow: dict[str, float] = {}
+    for o in orders:
+        value = float(o.get("est_value") or 0) * (1 if o.get("side") == "buy" else -1)
+        cls = o.get("asset_class") or "other"
+        flow[cls] = flow.get(cls, 0.0) + value
+        flow["cash"] = flow.get("cash", 0.0) - value
+    classes = sorted(set(current) | set(target) | set(flow), key=lambda c: (c == "cash", -float(target.get(c, 0))))
+    rows = [{"class": c, "now": round(float(current.get(c, 0)), 4), "target": round(float(target.get(c, 0)), 4) if c in target else None,
+             "after": round((float(current.get(c, 0)) * total + flow.get(c, 0.0)) / total, 4)} for c in classes]
+    cash_now = float(current.get("cash", 0)) * total
+    s = payload.get("summary") or {}
+    return {
+        "currency": payload.get("currency"), "total_value": round(total, 2),
+        "max_drift": s.get("max_drift"), "band": s.get("drift_band"), "turnover": s.get("turnover"),
+        "classes": rows,
+        "orders": [{"side": o.get("side"), "symbol": o.get("symbol"), "quantity": o.get("quantity"),
+                    "value": round(float(o.get("est_value") or 0), 2), "gain": o.get("est_realised_gain")} for o in orders],
+        "gain": payload.get("estimated_realised_gain"), "budget": payload.get("cgt_budget"),
+        "harvested": payload.get("harvested_losses") or 0,
+        "cash": {"now": round(cash_now, 2), "after": round(cash_now + flow.get("cash", 0.0), 2)},
+        "measured_against": "IPS" if payload.get("ips") else "model",
+    }
+
+
+def proposal_row(rec) -> dict[str, Any]:
+    """A proposal as the run card lists it, with what the card needs to show what it would do."""
+    row: dict[str, Any] = {"id": str(rec.id), "title": rec.title, "priority": rec.priority, "confidence": rec.confidence,
+                           "status": str(rec.status), "agent_key": str(rec.agent_key)}
+    payload = rec.modified_payload or rec.payload or {}
+    if str(rec.agent_key) == "drift_rebalancing":
+        row["rebalance"] = rebalance_figures(payload)
+    if payload.get("brief"):
+        row["brief"] = payload["brief"]
+    return row
+
+
 def as_served(card: dict[str, Any] | None) -> dict[str, Any] | None:
     """The card as the browser should see it: a run that began long ago and never settled is
     reported as interrupted, not as still running."""

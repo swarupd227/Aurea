@@ -266,6 +266,9 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
       return "/studio/repapering";
     case "read_my_day":
       return "/studio";
+    case "read_autonomy_policies":
+    case "set_autonomy_policy":
+      return "/studio/workforce";
     case "read_advisers":
     case "assign_adviser":
       return "/studio/clients";

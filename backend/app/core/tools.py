@@ -1422,6 +1422,35 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.BRANCH_LEADER, UserRole.ADMIN, UserRole.OPERATIONS},
     ),
 
+    "read_autonomy_policies": Tool(
+        key="read_autonomy_policies",
+        name="Read Autonomy Policies",
+        speaking_agent="astra",
+        description="The firm's autonomy policies: for an agent, and optionally one mandate type, the tier it runs at (tier_1 drafts, tier_2 a person approves each, tier_3 acts inside its guardrails and is reviewed after), the guardrails and whether each is enforced, the reason, and the licence's ceiling. An agent with no policy runs at its configured default tier. Client consent is the licence's, not a policy. Reading opens nothing.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Policies"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.RESEARCH_CIO, UserRole.COMPLIANCE,
+                        UserRole.OPERATIONS, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "set_autonomy_policy": Tool(
+        key="set_autonomy_policy",
+        name="Set Autonomy Policy",
+        speaking_agent="astra",
+        description="Sets the tier an agent runs at, for one mandate type or (mandate_type left out) all, with its guardrails: max_trade_value (an order set worth more waits for a person) and requires_compliance (every proposal waits for a person). Pass guardrails as a JSON object, or leave them out to keep what is set. tier default removes the policy so the agent falls back to its configured tier. reason is the person's own words; add no currency or figure they did not give. A licence may refuse a tier. This changes what agents may do on their own across the firm.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Change this autonomy policy?",
+        inputs=[ToolInput("agent_key", "string", "The agent, e.g. drift_rebalancing", required=True),
+                ToolInput("tier", "string", "tier_1, tier_2, tier_3, or default to remove", required=True),
+                ToolInput("reason", "string", "Why", required=True),
+                ToolInput("mandate_type", "string", "One mandate type, or leave out for all", required=False),
+                ToolInput("guardrails", "string", "JSON object, e.g. {\"max_trade_value\": 250000}", required=False)],
+        output=ToolOutput("object", "Policies"),
+        roles_required={UserRole.ADMIN, UserRole.COMPLIANCE},
+    ),
+
     "rate_aml_risk": Tool(
         key="rate_aml_risk",
         name="Rate AML Risk",
@@ -2415,7 +2444,11 @@ TOOLS: dict[str, Tool] = {
             "its case_id (from read_onboarding_cases); the meeting companion works on one meeting's transcript, and "
             "meeting prep can prepare a particular meeting, so give its meeting_id (from read_meetings); book integration "
             "maps one acquired book, so give its batch_id (from read_book_batches) - never guess an "
-            "id. Agents you can start: "
+            "id. Asked to rebalance a client, find their mandate and call this with drift_rebalancing: the run card is "
+            "where the person says yes, so do not first analyse the drift yourself or ask whether to run it. Asked to "
+            "prepare for a meeting, find it with read_meetings and call this with meeting_prep and its meeting_id: the "
+            "agent assembles the brief from the record and saves it on the meeting, so do not assemble one yourself "
+            "from separate reads. Agents you can start: "
             + ", ".join(agent_runs.conversation_agent_keys()) + "."
         ),
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,

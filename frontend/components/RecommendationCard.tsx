@@ -9,6 +9,7 @@ import { ConfidenceBar, StatusBadge, TierBadge } from "./ui";
 import { DriftBars } from "./Charts";
 import { ViewLink } from "./views/ViewNav";
 import { ConsentPanel, ConsentChips } from "./ConsentPanel";
+import { MeetingBrief } from "./MeetingBrief";
 import { BUCKET_TEXT } from "@/app/workspace/components/artifacts/TaxPositionCard";
 import { findingText, type IpsFinding } from "@/app/workspace/components/artifacts/IpsCard";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
@@ -745,32 +746,7 @@ function Row({ k, v }: { k: string; v: any }) {
 }
 
 function MeetingBriefView({ brief }: { brief: any }) {
-  const goals = brief.goals || [];
-  const onTrack = goals.filter((g: any) => g.on_track).length;
-  return (
-    <div className={`${panel} space-y-3`}>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg bg-border-soft/60 p-2.5"><div className="tile-label">Portfolio</div><div className="font-semibold text-ink tabular-nums">{money(brief.portfolio?.total_value || 0)}</div></div>
-        <div className="rounded-lg bg-border-soft/60 p-2.5"><div className="tile-label">Goals on track</div><div className="font-semibold text-ink tabular-nums">{onTrack}/{goals.length}</div></div>
-      </div>
-      {brief.agenda?.length > 0 && (
-        <div><div className="tile-label mb-1">Agenda</div>
-          <ul className="space-y-1 text-sm list-disc pl-4 marker:text-ink-faint">{brief.agenda.map((a: string, i: number) => <li key={i} className="text-ink-soft">{a}</li>)}</ul></div>
-      )}
-      {brief.watch_items?.length > 0 && (
-        <div><div className="tile-label mb-1">Watch items</div>
-          <ul className="space-y-1">{brief.watch_items.map((w: any, i: number) => <li key={i} className="text-ink-soft text-xs flex gap-1.5"><ShieldAlert size={12} className="mt-0.5 shrink-0 text-warn" /> {w.title}</li>)}</ul></div>
-      )}
-      {brief.life_events?.length > 0 && (
-        <div><div className="tile-label mb-1">Life events</div>
-          <div className="flex flex-wrap gap-1.5">{brief.life_events.map((e: string, i: number) => <span key={i} className={chipMuted}>{e}</span>)}</div></div>
-      )}
-      {brief.house_views?.length > 0 && (
-        <div><div className="tile-label mb-1 flex items-center gap-1"><FileText size={12} /> House views</div>
-          {brief.house_views.map((h: any, i: number) => <div key={i} className="text-xs text-ink-soft"><span className="font-medium text-ink">{h.title}</span></div>)}</div>
-      )}
-    </div>
-  );
+  return <div className={panel}><MeetingBrief brief={brief} /></div>;
 }
 
 // "refreshed" is bookkeeping (how often a scheduled run re-found this, and the run's id), shown as a

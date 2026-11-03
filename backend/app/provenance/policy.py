@@ -67,3 +67,25 @@ async def agent_paused(session: AsyncSession, firm_id: uuid.UUID, agent_key: Age
 def requires_human_checkpoint(tier: AutonomyTier) -> bool:
     """Tiers 1 & 2 always route to a human before effect; Tier 3 is bounded post-hoc review."""
     return tier in (AutonomyTier.TIER_1, AutonomyTier.TIER_2)
+
+
+# The guardrails a policy may carry, and what each does. A Tier 3 agent acts on its own only inside them: a proposal
+# outside one waits for a person, whatever the tier. Client consent is the licence's (aurea_core/licences.py), not a
+# guardrail, because it binds every tier.
+GUARDRAILS = {
+    "max_trade_value": "an order set worth more than this waits for a person",
+    "requires_compliance": "every proposal waits for a person, so compliance can see it first",
+}
+
+
+def held_by_guardrails(guardrails: dict, payload: dict | None) -> str | None:
+    """Why a proposal must wait for a person despite its tier, or None when its guardrails let it act."""
+    g = guardrails or {}
+    if g.get("requires_compliance"):
+        return "the policy asks for compliance to see every proposal first"
+    limit = g.get("max_trade_value")
+    if limit is not None:
+        total = sum(abs(float(o.get("est_value") or 0)) for o in ((payload or {}).get("order_set") or []))
+        if total > float(limit):
+            return f"its orders total {total:,.0f}, above the policy's limit of {float(limit):,.0f}"
+    return None

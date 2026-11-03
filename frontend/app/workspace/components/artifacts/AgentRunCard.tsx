@@ -1,4 +1,6 @@
 import { Check, CircleAlert, Loader2 } from "lucide-react";
+import { MeetingBrief } from "@/components/MeetingBrief";
+import { money } from "@/lib/format";
 
 // A run narrated into the thread: published when it starts, settled when it finishes. Figures,
 // chips and the beats of the run - the sentence ("what it found, who decides") is the agent's
@@ -10,12 +12,77 @@ interface Beat {
   detail: string | null;
 }
 
+interface Rebalance {
+  currency: string | null;
+  max_drift: number | null;
+  band: number | null;
+  classes: { class: string; now: number; target: number | null; after: number }[];
+  orders: { side: string; symbol: string; quantity: number; value: number; gain: number | null }[];
+  gain: number | null;
+  budget: number | null;
+  harvested: number;
+  cash: { now: number; after: number };
+  measured_against: string;
+}
+
 interface Proposal {
   id: string;
   title: string;
   priority: number;
   confidence: number;
   status: string;
+  rebalance?: Rebalance | null;
+  brief?: any;
+}
+
+const pct = (v: number | null | undefined) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
+const label = (c: string) => c.charAt(0).toUpperCase() + c.slice(1).replace(/_/g, " ");
+
+/** What a rebalance would do: each class now, its target and after the orders; the orders; gain, budget and cash. */
+function RebalanceFigures({ r }: { r: Rebalance }) {
+  const say = (v: number | null | undefined) => (v == null ? "—" : money(v, r.currency ?? undefined));
+  const over = r.budget != null && r.gain != null && r.gain > r.budget;
+  // The optimiser stops selling where the tax budget runs out, which is why a class can stay outside its band.
+  const atBudget = !over && r.budget != null && r.budget > 0 && r.gain != null && r.gain >= r.budget * 0.995;
+  return (
+    <div className="space-y-2 border-t border-border-soft px-3 py-2" data-testid="rebalance-figures">
+      <table className="w-full text-xs">
+        <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
+          <th className="py-1 font-medium">Class</th><th className="py-1 text-right font-medium">Now</th>
+          <th className="py-1 text-right font-medium">Target</th><th className="py-1 text-right font-medium">After</th>
+        </tr></thead>
+        <tbody className="divide-y divide-border-soft font-mono tabular-nums">
+          {r.classes.map((c) => {
+            const off = c.target != null && r.band != null && Math.abs(c.after - c.target) > r.band;
+            return (
+              <tr key={c.class}>
+                <td className="py-1 font-sans text-ink">{label(c.class)}</td>
+                <td className="py-1 text-right text-ink-muted">{pct(c.now)}</td>
+                <td className="py-1 text-right text-ink-muted">{pct(c.target)}</td>
+                <td className={`py-1 text-right ${off ? "text-warn" : "text-ink"}`}>{pct(c.after)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {r.orders.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {r.orders.map((o, i) => (
+            <span key={i} className={`chip font-mono ${o.side === "sell" ? "text-crit" : "text-ok"}`}>
+              {o.side === "sell" ? "Sell" : "Buy"} {Number(o.quantity).toLocaleString(undefined, { maximumFractionDigits: 2 })} {o.symbol} · {say(o.value)}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1">
+        <span className="chip">drift {pct(r.max_drift)} / band {pct(r.band)} · {r.measured_against}</span>
+        <span className={`chip ${over ? "text-crit" : ""}`}>gain {say(r.gain)}{r.budget != null ? ` / budget ${say(r.budget)}` : " · no budget"}</span>
+        {atBudget && <span className="chip text-warn">at the tax budget</span>}
+        {r.harvested > 0 && <span className="chip text-ok">harvested {say(r.harvested)}</span>}
+        <span className="chip">cash {say(r.cash.now)} → {say(r.cash.after)}</span>
+      </div>
+    </div>
+  );
 }
 
 export interface AgentRunData {
@@ -101,6 +168,10 @@ export function AgentRunCard({ data }: { data: AgentRunData }) {
             ))}
           </tbody>
         </table>
+      )}
+      {data.proposals.length === 1 && data.proposals[0].rebalance && <RebalanceFigures r={data.proposals[0].rebalance} />}
+      {data.proposals.length === 1 && data.proposals[0].brief && (
+        <div className="border-t border-border-soft px-3 py-2"><MeetingBrief brief={data.proposals[0].brief} /></div>
       )}
 
       {data.flags > 0 && (

@@ -87,7 +87,11 @@ export function MessageView({
   const loose = Array.from(new Set(cards.filter((c) => c.route && !c.node).map((c) => c.route as string))).filter(
     (r) => !offered.has(r)
   );
-  const runRoute = message.card?.kind === "agent_run" ? viewable("/studio") : null;
+  // A run opens what it proposed: the one proposal itself, several on the Recommendations view, none the Cockpit.
+  const runProposals: { id: string }[] = message.card?.kind === "agent_run" ? message.card.data?.proposals ?? [] : [];
+  const runRoute = message.card?.kind === "agent_run"
+    ? viewable(runProposals.length === 1 ? `/studio/review?rec=${runProposals[0].id}` : runProposals.length ? "/studio/review" : "/studio")
+    : null;
 
   return (
     <div className="flex gap-3" data-testid={isAgent ? "agent-message" : undefined}>

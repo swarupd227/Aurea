@@ -157,6 +157,7 @@ async def main() -> int:
                   sorted(i["title"] for i in d["waiting"]["items"]), ["Call Brook", "Rebalance Ames"])
             check("due: Ames's overdue review, Brook's in three days, and her task this week", (d["due"]["count"], d["due"]["overdue"], d["due"]["reviews"], d["due"]["tasks"]),
                   (3, 1, 2, 1))
+            check("no record is shown beside the count, not counted as due", (d["due"]["no_review_on_record"], d["due"]["unrecorded_meetings"]), (0, 0))
             check("money: Ames's payment and Brook's held deposit, not Cole's", (d["money"]["payments"], d["money"]["deposits_held"], d["money"]["value"]), (1, 1, 42000.0))
             check("meetings this week, one briefed", (d["meetings"]["count"], d["meetings"]["briefed"]), (2, 1))
 

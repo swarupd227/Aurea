@@ -88,6 +88,8 @@ class ToolExecutors:
             "start_repapering": self.start_repapering,
             "record_repapering": self.record_repapering,
             "read_my_day": self.read_my_day,
+            "read_autonomy_policies": self.read_autonomy_policies,
+            "set_autonomy_policy": self.set_autonomy_policy,
             "read_advisers": self.read_advisers,
             "assign_adviser": self.assign_adviser,
             "record_private_transfer_item": self.record_private_transfer_item,
@@ -2093,6 +2095,59 @@ class ToolExecutors:
             return f"A task for {p.get('owner', 'the owner')}: {p.get('next_step', 'move the account on')}, due today"
         return None
 
+    async def read_autonomy_policies(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import autonomy
+
+        result = await autonomy.for_firm(self.session, await self._firm())
+        result["message"] = ("; ".join(f"{p['agent']} ({p['mandate_type'] or 'all mandates'}): {p['tier']}"
+                                       + (f", capped to {p['effective_tier']} by the licence" if p["effective_tier"] != p["tier"] else "")
+                                       for p in result["policies"]) or "No policies: every agent runs at its configured tier.")
+        return result
+
+    def _autonomy_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        import json
+
+        raw = inputs.get("guardrails")
+        if isinstance(raw, str) and raw.strip():
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                raise ExecutorError("guardrails must be a JSON object, e.g. {\"max_trade_value\": 250000}.")
+        return {"agent_key": inputs.get("agent_key"), "mandate_type": inputs.get("mandate_type"), "tier": inputs.get("tier"),
+                "guardrails": raw if isinstance(raw, dict) else None, "reason": inputs.get("reason")}
+
+    async def set_autonomy_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import autonomy
+        from app.models.identity import User
+
+        try:
+            result = await autonomy.set_policy(self.session, await self._firm(), actor=await self.session.get(User, self.user_id),
+                                               **self._autonomy_args(inputs))
+        except autonomy.AutonomyError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Policy changed."
+        return result
+
+    async def _autonomy_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import autonomy, markets
+        from app.core import decision_rights
+
+        try:
+            p = await autonomy.prepare_set(self.session, await self._firm(), **self._autonomy_args(inputs))
+        except autonomy.AutonomyError as exc:
+            raise ExecutorError(str(exc))
+        was = autonomy.TIER_WORDS.get(str(p["existing"].tier)) if p["existing"] else f"No policy: its default, {p['fallback'].replace('_', ' ')}"
+        to = (f"No policy: back to its default, {p['fallback'].replace('_', ' ')}" if p["tier"] == "default" else autonomy.TIER_WORDS[p["tier"]])
+        say = markets.money_for(await self._firm())
+        words = {"max_trade_value": lambda v: f"Orders over {say(v)} wait for a person",
+                 "requires_compliance": lambda v: "Every proposal waits for a person"}
+        rails = "; ".join(words[k](v) for k, v in p["guardrails"].items() if v and k in words) or "None"
+        moves = decision_rights.moves_the_book(p["agent_key"]) or decision_rights.moves_client_cash(p["agent_key"])
+        return [("Agent", p["agent"]), ("Mandates", p["mandate_type"] or "All mandate types"), ("Now", was), ("Becomes", to),
+                ("Guardrails", rails if p["tier"] != "default" else None),
+                ("Runs a person starts", "Still stop at a proposal: this agent moves a client's book or cash" if moves and p["tier"] == "tier_3" else None),
+                ("Reason", p["reason"])]
+
     async def read_my_day(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import advisers
         from app.models.identity import User
@@ -2105,7 +2160,10 @@ class ToolExecutors:
             d["message"] = (f"{d['waiting']['count']} waiting on you, {d['due']['count']} due this week ({d['due']['overdue']} overdue), "
                             f"{d['money']['count']} money item(s) waiting, {d['meetings']['count']} meeting(s) with "
                             f"{d['meetings']['briefed']} briefed; across {d['households']} household(s)"
-                            + (" assigned to you." if d["scope"] == "yours" else " at the firm."))
+                            + (" assigned to you." if d["scope"] == "yours" else " at the firm.")
+                            + (f" Not counted as due: {d['due']['unrecorded_meetings']} meeting(s) held and not recorded as a review or not, "
+                               f"and {d['due']['no_review_on_record']} household(s) with no review on record, which does not mean none was held."
+                               if d["due"]["unrecorded_meetings"] or d["due"]["no_review_on_record"] else ""))
         return d
 
     async def read_advisers(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -3452,8 +3510,7 @@ class ToolExecutors:
                     Recommendation.id.in_([uuid.UUID(x) for x in rec_ids]))
                 .order_by(Recommendation.priority.asc(), Recommendation.created_at.asc())
             )).scalars().all()
-            proposals = [{"id": str(p.id), "title": p.title, "priority": p.priority,
-                          "confidence": p.confidence, "status": str(p.status)} for p in rows]
+            proposals = [narration.proposal_row(p) for p in rows]
         if not proposals:
             status = "nothing"
         elif any(p["status"] == str(RecommendationStatus.PROPOSED) for p in proposals):
@@ -4172,6 +4229,8 @@ class ToolExecutors:
             return rows(*await self._repapering_step_preview(inputs))
         if tool_key == "assign_adviser":
             return rows(*await self._adviser_preview(inputs))
+        if tool_key == "set_autonomy_policy":
+            return rows(*await self._autonomy_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

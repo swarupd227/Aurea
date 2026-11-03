@@ -174,7 +174,8 @@ async def run_agent(
             if pools is None and agent.refreshes_open_proposals and trigger != "revise":
                 await proposals.supersede_earlier(session, rec, run_id=run.id)
 
-            if policy.requires_human_checkpoint(tier) or require_all or require_human:
+            if (policy.requires_human_checkpoint(tier) or require_all or require_human
+                    or policy.held_by_guardrails(guardrails, rec.payload)):
                 pending = True
                 await activity.emit(
                     session, firm_id=firm.id, agent_key=agent_key, kind=ActivityKind.PROPOSED,

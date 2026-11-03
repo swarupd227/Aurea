@@ -9,6 +9,7 @@ import { useApi } from "@/lib/hooks";
 import { formatDateFull, timeAgo } from "@/lib/format";
 import { useViewNav, ViewLink } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
+import { PoliciesTable, type PoliciesData } from "./Policies";
 
 const STATUS: Record<string, { dot: string; label: string }> = {
   working: { dot: "bg-accent animate-pulse", label: "Working" },
@@ -22,6 +23,7 @@ const TIERS = ["tier_1", "tier_2", "tier_3"];
 export function WorkforceView() {
   const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any[]>("/api/atlas/workforce");
+  const { data: policies } = useApi<PoliciesData>("/api/autonomy/policies");
   const [open, setOpen] = useState<string | null>(null);
   const runner = useAgentRunner();
 
@@ -54,6 +56,16 @@ export function WorkforceView() {
           </>
         ) : undefined}
       />
+
+      {policies && (
+        <Card className="mb-5 overflow-hidden p-0" data-testid="workforce-policies">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3 py-2">
+            <span className="text-sm font-medium text-ink">Autonomy policies</span>
+            {policies.licence_ceiling && <span className={chip}>licence ceiling {policies.licence_ceiling.replace("_", " ")}</span>}
+          </div>
+          <PoliciesTable data={policies} />
+        </Card>
+      )}
 
       <div className="grid gap-5 cq-lg:grid-cols-3">
         <div className="space-y-3 cq-lg:col-span-2">

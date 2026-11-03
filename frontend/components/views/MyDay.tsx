@@ -8,7 +8,10 @@ export interface MyDay {
   households: number;
   unassigned: number;
   waiting: { count: number; oldest_days: number | null; items: { id: string; title: string; agent_key: string }[] };
-  due: { count: number; overdue: number; reviews: number; tasks: number; items: { kind: string; what: string; on: string; overdue: boolean }[] };
+  due: {
+    count: number; overdue: number; reviews: number; tasks: number; items: { kind: string; what: string; on: string; overdue: boolean }[];
+    unrecorded_meetings?: number; no_review_on_record?: number;
+  };
   money: { count: number; payments: number; deposits_held: number; value: number; items: { kind: string; what: string; amount: number }[] };
   meetings: { count: number; briefed: number; items: { id: string; title: string; household: string | null; on: string; briefed: boolean }[] };
 }
@@ -30,9 +33,14 @@ export function MyDayTiles({ day }: { day: MyDay | null | undefined }) {
       <StatTile label="Waiting on you" value={d ? d.waiting.count : "—"} accent={d?.waiting.count ? "warn" : undefined}
         hint={d?.waiting.oldest_days != null ? `oldest ${d.waiting.oldest_days}d` : undefined} />
       <StatTile label="Due this week" value={d ? d.due.count : "—"} accent={d?.due.overdue ? "crit" : d?.due.count ? "warn" : undefined}
-        hint={d ? `${d.due.overdue} overdue · ${plural(d.due.reviews, "review")} · ${plural(d.due.tasks, "task")}` : undefined} />
+        hint={d ? [
+          `${d.due.overdue} overdue · ${plural(d.due.reviews, "review")} · ${plural(d.due.tasks, "task")}`,
+          d.due.unrecorded_meetings ? `${plural(d.due.unrecorded_meetings, "meeting")} held, not recorded` : null,
+          d.due.no_review_on_record ? `${d.due.no_review_on_record} with no review on record` : null,
+        ].filter(Boolean).join(" · ") : undefined} />
       <StatTile label="Money waiting" value={d ? d.money.count : "—"} accent={d?.money.count ? "info" : undefined}
-        hint={d && d.money.count ? `${money(d.money.value, d.currency)} · ${plural(d.money.payments, "payment")} · ${d.money.deposits_held} held` : undefined} />
+        hint={d ? (d.money.count ? `${money(d.money.value, d.currency)} · ${plural(d.money.payments, "payment")} · ${d.money.deposits_held} held`
+          : "no payment asked for, no deposit on hold") : undefined} />
       <StatTile label="Meetings this week" value={d ? d.meetings.count : "—"}
         accent={d && d.meetings.count > d.meetings.briefed ? "warn" : undefined}
         hint={d && d.meetings.count ? `${d.meetings.briefed} of ${d.meetings.count} briefed` : undefined} />

@@ -241,7 +241,11 @@ async def day(session: AsyncSession, firm: Firm, user: User) -> dict:
         "waiting": {"count": len(asked), "oldest_days": (now - _aware(oldest.created_at)).days if oldest and oldest.created_at else None,
                     "items": [{"id": str(r.id), "title": r.title, "agent_key": str(r.agent_key)} for r in asked[:SHOWN]]},
         "due": {"count": len(due_items), "overdue": sum(1 for i in due_items if i["overdue"]),
-                "reviews": len(overdue_reviews) + len(due_reviews), "tasks": len(due_tasks), "items": due_items[:SHOWN]},
+                "reviews": len(overdue_reviews) + len(due_reviews), "tasks": len(due_tasks), "items": due_items[:SHOWN],
+                # Not counted as due: a meeting held that nobody recorded, and a household with no review on record,
+                # which does not mean no review. Shown beside the count so the adviser can put the record right.
+                "unrecorded_meetings": sum(1 for r in review_rows if r["unrecorded_meeting"]),
+                "no_review_on_record": sum(1 for r in review_rows if r["status"] == "no_record")},
         "money": {"count": len(money_items), "payments": len(requests), "deposits_held": len(held),
                   "value": round(sum(i["amount"] for i in money_items), 2), "items": money_items[:SHOWN]},
         "meetings": {"count": len(meetings), "briefed": sum(1 for m in meetings if m.brief),
