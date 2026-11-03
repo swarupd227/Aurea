@@ -1,3 +1,4 @@
+import { RETIREMENT_ASSUMED } from "@/components/RetirementPlanner";
 import { money, pct } from "@/lib/format";
 import { CardHead, CardShell, Chip, LikelihoodBar, Tile, obj } from "./CanvasCardParts";
 
@@ -14,6 +15,8 @@ export interface MyRetirementPayload {
   income_target: number;
   income_need?: number;
   income_basis?: "stated" | "recorded_spending" | "assumed_draw";
+  assumed?: string[];
+  funding_share?: number;
   guaranteed_income?: number;
   income_at_retirement: number;
   projected_at_retirement: number;
@@ -53,6 +56,7 @@ export function MyRetirementCard({ result }: { result: MyRetirementPayload }) {
       <CardHead title="Retirement">
         <Chip tone={r.on_track ? "text-ok" : "text-warn"}>{r.on_track ? "on track" : "below target"}</Chip>
         <Chip testid="my-retirement-estimate">estimate</Chip>
+        <Chip>whether the income lasts</Chip>
         {r.what_if && <Chip testid="my-retirement-what-if">what-if, nothing saved</Chip>}
       </CardHead>
       <div className="grid grid-cols-3 divide-x divide-border-soft border-b border-border-soft">
@@ -63,6 +67,9 @@ export function MyRetirementCard({ result }: { result: MyRetirementPayload }) {
       </div>
       <div className="px-3 py-2"><LikelihoodBar value={r.success_probability} onTrack={r.on_track} /></div>
       <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-1.5">
+        {(r.assumed || []).filter((k: string) => RETIREMENT_ASSUMED[k]).map((k: string) => (
+          <Chip key={k} tone="text-warn">{RETIREMENT_ASSUMED[k](r)}</Chip>
+        ))}
         <Chip>retire at {r.retirement_age}</Chip>
         <Chip>plan to {r.longevity_age}</Chip>
         <Chip>income {money(r.income_target)}/yr from the portfolio</Chip>

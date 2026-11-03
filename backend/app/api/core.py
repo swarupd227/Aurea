@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
-from app.aurea_core import behavioural, goal_tradeoff, planning, regulatory_countdown, retirement, tax_intelligence
+from app.aurea_core import behavioural, firm_time, goal_tradeoff, planning, regulatory_countdown, retirement, tax_intelligence
 from app.aurea_core.graph import household_brain, list_households
 from app.core.db import get_db
 from app.core.security import get_current_user, staff_user
@@ -49,18 +49,14 @@ async def household_planning(
     risk = planning.portfolio_risk(allocation, total)
     stress = planning.stress_test(allocation)
 
-    goal_projections = []
-    for g in brain["goals"]:
-        assumptions = g.get("assumptions") or {}
-        proj = planning.project_goal(
-            current_value=total * assumptions.get("funding_share", 1.0 / max(len(brain["goals"]), 1)),
-            allocation=allocation,
-            annual_contribution=assumptions.get("annual_contribution", 0),
-            annual_withdrawal=assumptions.get("annual_withdrawal", 0),
-            years=assumptions.get("years", 15),
-            target_amount=g["target_amount"],
-        )
-        goal_projections.append({"goal": g["name"], "kind": g["kind"], **proj.__dict__})
+    # The goals as every other screen sees them (goal_tradeoff.likelihoods), not a copy of the engine.
+    planned = goal_tradeoff.likelihoods(brain, firm_time.today(firm))
+    goal_projections = [
+        {"goal": g["name"], "kind": g["kind"], "on_track": g["on_track"], "probability_of_success": g["success_probability"],
+         "projected_median": g["projected_median"], "projected_p10": g["projected_p10"], "projected_p90": g["projected_p90"],
+         "target_amount": g["target_amount"], "years": g["years"], "shortfall": g["shortfall"],
+         "horizon": g["horizon"], "assumed": g["assumed"], "estimate": True}
+        for g in planned["goals"]]
 
     return {
         "household_id": str(household_id),
@@ -69,6 +65,8 @@ async def household_planning(
         "risk": risk,
         "stress_test": stress,
         "goals": goal_projections,
+        "goals_assumed": planned["assumed"],
+        "earnings": planned["earnings"]["basis"],
     }
 
 
@@ -219,13 +217,17 @@ async def portfolio_whatif(
 async def ad_hoc_projection(
     body: dict, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    """What-if projection from an explicit allocation + assumptions (used by Studio/Canvas)."""
+    """A what-if projection from inputs the caller states in full. Nothing is filled in: a household's goals
+    are read through goal_tradeoff.likelihoods, and this is for a figure someone is trying out."""
+    missing = [k for k in ("current_value", "allocation", "years", "target_amount") if body.get(k) in (None, "", {})]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"State every input of a what-if. Missing: {', '.join(missing)}.")
     proj = planning.project_goal(
-        current_value=float(body.get("current_value", 0)),
-        allocation=body.get("allocation", {"equity": 0.6, "fixed_income": 0.3, "cash": 0.1}),
+        current_value=float(body["current_value"]),
+        allocation=body["allocation"],
         annual_contribution=float(body.get("annual_contribution", 0)),
         annual_withdrawal=float(body.get("annual_withdrawal", 0)),
-        years=int(body.get("years", 15)),
-        target_amount=float(body.get("target_amount", 0)),
+        years=int(body["years"]),
+        target_amount=float(body["target_amount"]),
     )
     return proj.__dict__

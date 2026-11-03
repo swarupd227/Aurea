@@ -9,6 +9,14 @@ import { money, pct } from "@/lib/format";
 type Plan = any;
 type Levers = { retirement_age: number; longevity_age: number; annual_income: number };
 
+/** What the retirement engine stood in for, by the key it names in `assumed` (aurea_core/retirement.py). */
+export const RETIREMENT_ASSUMED: Record<string, (p: any) => string> = {
+  current_age: () => "assumed age 54",
+  retirement_age: (p) => `assumed retirement at ${p.retirement_age}`,
+  longevity_age: (p) => `assumed to age ${p.longevity_age}`,
+  funding_share: (p) => `assumed ${Math.round((p.funding_share ?? 0) * 100)}% set aside`,
+};
+
 const INCOME_BASIS: Record<string, [string, string]> = {
   stated: ["income stated on the goal", "text-ink-muted"],
   recorded_spending: ["income from spending on file", "text-ink-muted"],
@@ -109,6 +117,7 @@ export default function RetirementPlanner({
                 {ok ? "on track" : "below target"}
               </span>
               <span className="chip bg-border-soft text-ink-soft" data-testid="retirement-estimate">estimate</span>
+              <span className="chip bg-border-soft text-ink-soft" data-testid="retirement-measures">whether the income lasts</span>
               {whatIf && <span className="chip bg-border-soft text-ink-soft" data-testid="retirement-what-if">what-if · nothing saved</span>}
               {busy && <span className="chip bg-border-soft text-ink-muted">updating</span>}
             </div>
@@ -122,9 +131,12 @@ export default function RetirementPlanner({
               {plan.guaranteed_income > 0 && (
                 <span className="chip bg-border-soft text-ink-soft tabular-nums">guaranteed income {money(plan.guaranteed_income)}/yr</span>
               )}
-              {plan.funding_share != null && (
+              {plan.funding_share != null && !(plan.assumed || []).includes("funding_share") && (
                 <span className="chip bg-border-soft text-ink-muted tabular-nums">funding share {pct(plan.funding_share, 0)}</span>
               )}
+              {(plan.assumed || []).filter((k: string) => RETIREMENT_ASSUMED[k]).map((k: string) => (
+                <span key={k} className="chip bg-warn-bg text-warn tabular-nums" data-testid="retirement-assumed">{RETIREMENT_ASSUMED[k](plan)}</span>
+              ))}
             </div>
             {/* likelihood bar with the target marker */}
             <div className="relative mt-3 h-2.5 overflow-hidden rounded-full bg-border-soft">

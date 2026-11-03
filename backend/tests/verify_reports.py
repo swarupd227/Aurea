@@ -165,7 +165,7 @@ async def behaviour() -> None:
             await s.flush()
             ctx = AgentContext(session=s, firm=mine, run=run, tier="tier_1", guardrails={}, config={},
                                subject=Subject("household", chen.id, chen.name))
-            rr.goal_projections = lambda _b: []
+            rr.goal_projections = lambda _b, _today=None: []
             rr.positions_of = lambda _b: []
             agent = rr.ResearchReportingAgent()
 

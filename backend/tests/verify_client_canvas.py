@@ -189,7 +189,7 @@ async def behaviour() -> None:
             mine = await ex("mia").execute("read_my_wealth", {"household_id": str(kim.id)})
             check("Mia's wealth is the Lee household's", (mine["household_id"], mine["total_wealth"]), (str(lee.id), 400000.0))
             check("every goal's likelihood is marked an estimate", all(g["estimate"] for g in mine["goals"]), True)
-            check("and says the horizon was assumed", mine["goals"][0]["assumed"], ["years", "funding_share"])
+            check("and says the horizon was assumed", mine["goals"][0]["assumed"], ["years"])
             check("another family's members are not in it", "members" in mine, False)
             worth = await ex("mia").execute("read_my_net_worth", {"household_id": str(kim.id)})
             check("her net worth is hers", worth["household_id"], str(lee.id))

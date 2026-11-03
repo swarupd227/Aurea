@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.agents._common import firm_voice, narrate
 from app.agents._signals import book_signals, goal_projections, life_events
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import knowledge, markets
+from app.aurea_core import firm_time, knowledge, markets
 from app.aurea_core.graph import household_brain
 from app.models.engagement import Meeting
 from app.models.enums import AgentKey, AutonomyTier, MeetingStatus
@@ -47,7 +47,7 @@ class MeetingPrepAgent(BaseAgent):
         brain = sensed["brain"]
         hh = brain["household"]
         totals = brain["totals"]
-        goals = goal_projections(brain)
+        goals = goal_projections(brain, firm_time.today(ctx.firm))
         signals = book_signals(brain)
         events = life_events(brain)
         cites = sensed["citations"]

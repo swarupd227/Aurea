@@ -5,7 +5,9 @@ Client Care so each agent draws on one consistent view (spec 'agents are consume
 client brain, never owners of their own siloed copy')."""
 from __future__ import annotations
 
-from app.aurea_core import markets, planning
+from datetime import date
+
+from app.aurea_core import goal_tradeoff, markets
 
 
 def positions_of(brain: dict) -> list[dict]:
@@ -64,24 +66,14 @@ def book_signals(brain: dict) -> list[dict]:
     return out
 
 
-def goal_projections(brain: dict) -> list[dict]:
-    """Monte-Carlo goal projections for a household's goals."""
-    total = brain["totals"]["total_value"]
-    allocation = brain["totals"]["by_asset_class"]
-    goals = brain.get("goals", [])
-    out = []
-    for g in goals:
-        a = g.get("assumptions") or {}
-        proj = planning.project_goal(
-            current_value=total * a.get("funding_share", 1.0 / max(len(goals), 1)),
-            allocation=allocation, annual_contribution=a.get("annual_contribution", 0),
-            annual_withdrawal=a.get("annual_withdrawal", 0), years=a.get("years", 15),
-            target_amount=g["target_amount"],
-        )
-        out.append({"name": g["name"], "kind": g["kind"], "target_amount": g["target_amount"],
-                    "on_track": proj.on_track, "probability": proj.probability_of_success,
-                    "projected_median": proj.projected_median})
-    return out
+def goal_projections(brain: dict, today: date | None = None) -> list[dict]:
+    """Each goal's likelihood, from the one engine every screen reads (goal_tradeoff.likelihoods), so an
+    agent says what the client's page says. `today` is the firm's day where the caller has the firm."""
+    result = goal_tradeoff.likelihoods(brain, today or date.today())
+    return [{"name": g["name"], "kind": g["kind"], "target_amount": g["target_amount"], "on_track": g["on_track"],
+             "probability": g["success_probability"], "projected_median": g["projected_median"],
+             "years": g["years"], "horizon": g["horizon"], "assumed": g["assumed"], "estimate": True}
+            for g in result["goals"]]
 
 
 def life_events(brain: dict) -> list[str]:

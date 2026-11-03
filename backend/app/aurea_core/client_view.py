@@ -10,8 +10,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents import _signals
-from app.aurea_core import firm_time, planning
+from app.aurea_core import firm_time, goal_tradeoff, planning
 from app.aurea_core.graph import household_brain
 from app.models.client_experience import Message
 from app.models.engagement import ClientReport
@@ -20,8 +19,6 @@ from app.models.graph import Person
 from app.models.identity import User
 from app.models.tenant import Firm
 
-# The planning engine's own fallback when a goal records no horizon (_signals.goal_projections).
-ASSUMED_YEARS = 15
 STRESS_SCENARIO = "covid_2020"
 
 
@@ -45,15 +42,16 @@ async def adviser_for(session: AsyncSession, firm: Firm, brain: dict) -> dict | 
     return {"name": u.full_name, "title": u.title, "email": u.email} if u else None
 
 
-def goals(brain: dict) -> list[dict]:
-    """Each goal's likelihood, with what the engine assumed where the goal records nothing."""
-    recorded = {g["name"]: (g.get("assumptions") or {}) for g in brain.get("goals", [])}
-    out = []
-    for g in _signals.goal_projections(brain):
-        a = recorded.get(g["name"], {})
-        assumed = [k for k in ("years", "funding_share") if k not in a]
-        out.append({**g, "horizon_years": a.get("years", ASSUMED_YEARS), "assumed": assumed, "estimate": True})
-    return out
+def goals(brain: dict, today) -> dict:
+    """Each goal's likelihood from the one engine every screen reads (goal_tradeoff.likelihoods), with what
+    it assumed: a goal's horizon where neither a date nor one is on file, and for the household whether
+    career earnings were counted from an income on file."""
+    result = goal_tradeoff.likelihoods(brain, today)
+    return {"goals": [{"name": g["name"], "kind": g["kind"], "target_amount": g["target_amount"], "on_track": g["on_track"],
+                       "probability": g["success_probability"], "projected_median": g["projected_median"],
+                       "horizon_years": g["years"], "horizon": g["horizon"], "assumed": g["assumed"], "estimate": True}
+                      for g in result["goals"]],
+            "assumed": result["assumed"], "earnings": result["earnings"]["basis"]}
 
 
 async def reports(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, limit: int = 5) -> list[dict]:
@@ -84,7 +82,8 @@ async def home(session: AsyncSession, household_id: uuid.UUID, *, firm: Firm) ->
         return None
     total = brain["totals"]["total_value"]
     allocation = brain["totals"]["by_asset_class"]
-    projected = goals(brain)
+    planned = goals(brain, firm_time.today(firm))
+    projected = planned["goals"]
     unread = (await session.execute(
         select(func.count(Message.id)).where(Message.firm_id == firm.id, Message.household_id == household_id,
                                              Message.read_by_client.is_(False),
@@ -102,6 +101,8 @@ async def home(session: AsyncSession, household_id: uuid.UUID, *, firm: Firm) ->
         "data_confidence": brain["totals"]["data_confidence"],
         "goals": projected,
         "goals_on_track": sum(1 for g in projected if g["on_track"]),
+        "goals_assumed": planned["assumed"],
+        "earnings": planned["earnings"],
         "stress": {"scenario": STRESS_SCENARIO, "impact_pct": stress["impact_pct"], "estimate": True} if stress else None,
         "values": brain["household"].get("values", {}),
         "reports": await reports(session, household_id, firm_id=firm.id),

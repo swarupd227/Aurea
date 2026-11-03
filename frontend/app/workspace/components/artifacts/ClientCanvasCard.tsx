@@ -85,7 +85,6 @@ export function ClientCanvasCard({ result }: { result: ClientCanvasPayload }) {
                 <Chip>target {money(g.target_amount, ccy)}</Chip>
                 <Chip testid="client-canvas-goal-estimate">estimate</Chip>
                 {g.assumed?.includes("years") && <Chip tone="text-warn">assumed {g.horizon_years}-year horizon</Chip>}
-                {g.assumed?.includes("funding_share") && <Chip tone="text-warn">assumed share of wealth</Chip>}
               </div>
             </li>
           ))}

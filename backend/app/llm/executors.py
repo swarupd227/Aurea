@@ -4566,6 +4566,26 @@ class ToolExecutors:
                 ("Changes records", "Nothing until its proposal is approved")]
 
     # ─── The client's Canvas (B-95). Staff read what a client sees; a client's tools read only their own.
+    @staticmethod
+    def _goals_basis(assumed: list[str]) -> str:
+        """What a goal likelihood rests on, for the model to say: the one engine every screen reads, and
+        what it had to assume (B-131)."""
+        said = ["a horizon for a goal with no date"] if "years" in assumed else []
+        return ("The same figures as the goals page: each goal is funded from the share of wealth recorded for it, "
+                "and goals with none share the rest in priority order. Career earnings are not counted as savings."
+                + (f" Assumed, not on file: {', '.join(said)}." if said else ""))
+
+    @staticmethod
+    def _retirement_basis(plan: dict) -> str:
+        words = {"current_age": "an age of 54", "retirement_age": f"retiring at {plan.get('retirement_age')}",
+                 "longevity_age": f"living to {plan.get('longevity_age')}",
+                 "funding_share": f"{plan.get('funding_share', 0):.0%} of wealth set aside for it",
+                 "annual_income": "an income of 5% a year of what is set aside"}
+        said = [words[a] for a in plan.get("assumed", []) if a in words]
+        return ("Whether the savings set aside for retirement pay the income wanted until the longevity age: a "
+                "different question from whether the retirement goal's target sum is reached, which the goals answer."
+                + (f" Assumed, not on file: {', '.join(said)}." if said else ""))
+
     async def read_client_canvas(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import client_view
 
@@ -4574,7 +4594,8 @@ class ToolExecutors:
         if view is None:
             raise ExecutorError(f"Household {household.id} not found or access denied")
         return {**view, "message": f"What {household.name} see: {len(view['goals'])} goal(s), "
-                                   f"{view['goals_on_track']} on track by the planning estimate."}
+                                   f"{view['goals_on_track']} on track by the planning estimate. "
+                                   + self._goals_basis(view["goals_assumed"])}
 
     async def _questionnaire(self, inputs: dict[str, Any]) -> tuple[Household, dict[str, str], Any]:
         """The household, the answers matched to the form's own options, and who answers. Raises what
@@ -4655,7 +4676,8 @@ class ToolExecutors:
         view.pop("members", None)
         adviser = (view.get("adviser") or {}).get("name")
         return {**view, "message": f"{view['goals_on_track']} of {len(view['goals'])} goal(s) on track by the planning "
-                                   f"estimate.{f' Looked after by {adviser}.' if adviser else ''}"}
+                                   f"estimate.{f' Looked after by {adviser}.' if adviser else ''} "
+                                   + self._goals_basis(view["goals_assumed"])}
 
     async def read_my_net_worth(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import balance_sheet
@@ -4703,7 +4725,7 @@ class ToolExecutors:
             raise ExecutorError("No retirement plan is on file for you yet.")
         what_if = " A what-if: nothing on file changed." if overrides else ""
         return {**plan, "household_id": str(hid), "what_if": overrides or None,
-                "message": f"The retirement projection, an estimate.{what_if}"}
+                "message": f"The retirement projection, an estimate.{what_if} " + self._retirement_basis(plan)}
 
     async def read_my_goals(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import goal_tradeoff
@@ -4712,7 +4734,9 @@ class ToolExecutors:
         plan = await goal_tradeoff.for_household(self.session, hid, firm_id=self.firm_id)
         if not plan:
             raise ExecutorError("No goals are on file for you yet.")
-        return {**plan, "household_id": str(hid), "message": "Your goals side by side. Every likelihood is an estimate."}
+        return {**plan, "household_id": str(hid),
+                "message": "Your goals side by side. Every likelihood is an estimate. "
+                           + self._goals_basis(plan["assumed"])}
 
     async def read_my_fees(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import client_view

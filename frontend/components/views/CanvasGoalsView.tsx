@@ -97,6 +97,10 @@ function GoalCard({ goal, rank, total, onMoveUp, onMoveDown, onOverride, overrid
               <div className="mt-1 flex flex-wrap gap-1.5">
                 <span className="chip bg-border-soft text-ink-soft tabular-nums">target {money(goal.target_amount)}</span>
                 <span className="chip bg-border-soft text-ink-soft tabular-nums">{goal.years}y</span>
+                {goal.share != null
+                  ? <span className="chip bg-border-soft text-ink-soft tabular-nums" data-testid="canvas-goal-share">{pct(goal.share, 0)} of wealth set aside</span>
+                  : <span className="chip bg-border-soft text-ink-muted" data-testid="canvas-goal-share">shares the pool</span>}
+                {goal.assumed?.includes("years") && <span className="chip bg-warn-bg text-warn">assumed horizon</span>}
                 {!goal.on_track && goal.shortfall > 0 && (
                   <span className="chip bg-warn-bg text-warn tabular-nums">shortfall {money(goal.shortfall)}</span>
                 )}
@@ -272,7 +276,7 @@ function Goals({ householdId, staff }: { householdId: string | null; staff: bool
   const whatIf = Object.values(overrides).some((v) => Object.keys(v || {}).length > 0);
   const reordered = order.length > 0 && JSON.stringify(order) !== filedOrder;
   const hc = plan.human_capital ?? 0;
-  const total = plan.total_effective_capital ?? 0;
+  const earnings = plan.earnings || {};
   const a = plan.assumptions || {};
 
   return (
@@ -301,9 +305,9 @@ function Goals({ householdId, staff }: { householdId: string | null; staff: bool
 
       <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="canvas-goals-summary">
         {[
-          ["Invested capital", money(plan.shared_capital), "portfolio today"],
-          ["Human capital", money(hc), "career earnings · PV · estimate"],
-          ["Effective capital", money(total), "portfolio + career · estimate"],
+          ["Invested", money(plan.invested ?? plan.shared_capital), "portfolio today"],
+          ["Shared pool", money(plan.shared_capital), "not set aside for a goal"],
+          ["Career earnings", earnings.basis === "not_on_file" ? "not on file" : money(hc), "PV · not counted toward goals"],
           ["Goals on track", `${onTrack} / ${goals.length}`, "estimate"],
         ].map(([label, v, sub]) => (
           <Card key={label} className="p-4">
@@ -319,7 +323,8 @@ function Goals({ householdId, staff }: { householdId: string | null; staff: bool
           {goals.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="tile-label">Priority order</span>
-              <span className="chip bg-border-soft text-ink-muted">1 draws first</span>
+              <span className="chip bg-border-soft text-ink-muted">1 draws first from the pool</span>
+              <span className="chip bg-border-soft text-ink-muted">a set-aside goal keeps its share</span>
             </div>
           )}
           {inOrder.map((goal: any, i: number) => (
@@ -333,11 +338,14 @@ function Goals({ householdId, staff }: { householdId: string | null; staff: bool
         <div className="space-y-4 cq-md:col-span-2">
           <Card className="p-4" data-testid="canvas-goals-human-capital">
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
-              <span className="tile-label flex items-center gap-1.5"><Briefcase size={13} aria-hidden="true" /> Career as an asset</span>
-              <span className="chip bg-border-soft text-ink-muted">estimate</span>
+              <span className="tile-label flex items-center gap-1.5"><Briefcase size={13} aria-hidden="true" /> Career earnings</span>
+              <span className="chip bg-border-soft text-ink-muted">not counted toward goals</span>
+              {earnings.basis === "what_if" && <span className="chip bg-border-soft text-ink-soft">what-if</span>}
+              {(earnings.assumed || []).includes("retirement_age") && <span className="chip bg-warn-bg text-warn">assumed retirement at 65</span>}
+              {(earnings.assumed || []).includes("age") && <span className="chip bg-warn-bg text-warn">an income with no date of birth</span>}
             </div>
             <div className="space-y-1.5">
-              <Row label="Human capital · PV" value={money(hc)} />
+              <Row label="Present value" value={earnings.basis === "not_on_file" ? "not on file" : money(hc)} />
               <Row label="Current age" value={plan.current_age ?? "not on file"} />
               <Row label="Retirement age" value={plan.retirement_age ?? "not on file"} />
               <Row label="Annual income" value={plan.annual_income != null ? money(plan.annual_income) : "not on file"} />
@@ -345,19 +353,6 @@ function Goals({ householdId, staff }: { householdId: string | null; staff: bool
                 <Row label="Working years left" value={Math.max(0, plan.retirement_age - plan.current_age)} />
               )}
             </div>
-            {total > 0 && (
-              <div className="mt-3 border-t border-border-soft pt-3">
-                <div className="mb-1 flex justify-between text-xs text-ink-muted">
-                  <span>Career earnings</span><span className="font-mono tabular-nums">{pct(hc / total, 0)}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-border-soft">
-                  <div className="h-full rounded-full bg-ink-muted" style={{ width: `${Math.round((hc / total) * 100)}%` }} />
-                </div>
-                <div className="mt-1 flex justify-between text-xs text-ink-muted">
-                  <span>Portfolio</span><span className="font-mono tabular-nums">{pct((plan.shared_capital ?? 0) / total, 0)}</span>
-                </div>
-              </div>
-            )}
           </Card>
 
           <Card className="p-4" data-testid="canvas-goals-assumptions">

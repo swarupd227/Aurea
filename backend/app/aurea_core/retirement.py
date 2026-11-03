@@ -13,6 +13,11 @@ import numpy as np
 
 from app.aurea_core.planning import STRESS_SCENARIOS, _blended_assumptions
 
+# What the projection stands in for when nothing is on file; each is named in the plan's `assumed`.
+ASSUMED_AGE = 54
+ASSUMED_LONGEVITY = 95
+ASSUMED_FUNDING_SHARE = 0.7
+
 
 def _simulate(
     current_value: float, mu: float, sigma: float, *, acc_years: int, dec_years: int,
@@ -181,27 +186,39 @@ async def for_household(
     rgoal = next((g for g in goals if g.get("kind") == "retirement"), None)
     a = (rgoal or {}).get("assumptions") or {}
 
-    # Primary person's age (oldest adult with a DOB), else default.
-    from app.core.db import utcnow
-    this_year = utcnow().year
-    birth_years = []
-    for p in brain.get("persons", []):
-        dob = p.get("date_of_birth")
-        if dob:
-            try:
-                birth_years.append(int(str(dob)[:4]))
-            except ValueError:
-                pass
-    derived_age = (this_year - min(birth_years)) if birth_years else a.get("current_age", 54)
+    # Every input is what is on file, else a stated default, and each default is named in `assumed`, so a
+    # projection never reads as more than it is. The goal's own horizon is goal_tradeoff.horizon's, the one
+    # the goals page reads.
+    from app.aurea_core import firm_time, goal_tradeoff
+    from app.models.tenant import Firm
+
+    today = firm_time.today(await session.get(Firm, firm_id))
+    assumed: list[str] = []
+    ages = [age for p in brain.get("persons", []) if not p.get("deceased_on") and not p.get("is_next_gen")
+            if (age := goal_tradeoff.age_of(p.get("date_of_birth"), today)) is not None]
+    if ages:
+        derived_age = max(ages)          # the eldest adult with a date of birth on file
+    elif a.get("current_age"):
+        derived_age = int(a["current_age"])
+    else:
+        derived_age = ASSUMED_AGE
+        assumed.append("current_age")
     current_age = int(overrides.get("current_age") or derived_age)
 
-    # Retirement age: explicit, else current age + the goal's horizon, else a sensible default.
+    # Retirement age: stated, else the age reached on the goal's date or recorded horizon, else a default.
     default_ret_age = a.get("retirement_age")
+    if default_ret_age is None and rgoal and (rgoal.get("target_date") or a.get("years")):
+        default_ret_age = current_age + goal_tradeoff.horizon(rgoal, today)[0]
     if default_ret_age is None:
-        default_ret_age = current_age + int(a["years"]) if a.get("years") else max(65, current_age + 5)
+        default_ret_age = max(65, current_age + 5)
+        assumed.append("retirement_age")
     retirement_age = int(overrides.get("retirement_age") or default_ret_age)
-    longevity_age = int(overrides.get("longevity_age") or a.get("longevity_age", 95))
-    funding_share = float(a.get("funding_share", 0.7))
+    if not overrides.get("longevity_age") and not a.get("longevity_age"):
+        assumed.append("longevity_age")
+    longevity_age = int(overrides.get("longevity_age") or a.get("longevity_age", ASSUMED_LONGEVITY))
+    if a.get("funding_share") is None:
+        assumed.append("funding_share")
+    funding_share = float(a.get("funding_share", ASSUMED_FUNDING_SHARE))
     current_value = float(overrides.get("current_value") or total * funding_share)
 
     # Income target (today's $): explicit, else a ~5% draw on the funded retirement pot. Anchoring to
@@ -224,11 +241,19 @@ async def for_household(
         annual_income=annual_income, annual_contribution=annual_contribution,
     )
     plan["household"] = {"id": str(household_id), "name": brain["household"]["name"]}
+    plan["currency"] = brain.get("currency")   # without it a reader guesses, and a model guessed pounds
     plan["income_need"] = round(income_need)
     plan["income_basis"] = "stated" if overrides.get("annual_income") or a.get("annual_income") else "recorded_spending" if recorded else "assumed_draw"
     plan["guaranteed_income"] = on_file["guaranteed"]
     plan["starts_later"] = on_file["starts_later"]
     plan["goal"] = rgoal["name"] if rgoal else "Retirement"
     plan["funding_share"] = funding_share
+    if plan["income_basis"] == "assumed_draw":
+        assumed.append("annual_income")
+    plan["assumed"] = assumed
+    # What this answers, which is not what the goals page answers: whether the savings set aside for
+    # retirement pay the income wanted until the longevity age, not whether the goal's target sum is reached.
+    plan["measures"] = "retirement_income"
+    plan["estimate"] = True
     plan["inputs_editable"] = ["retirement_age", "longevity_age", "annual_income", "annual_contribution"]
     return plan

@@ -209,8 +209,7 @@ function Page({ householdId }: { householdId: string | null }) {
                     <span className="chip text-ink-muted">target {money(g.target_amount, ccy)}</span>
                     {g.projected_median != null && <span className="chip text-ink-muted">median {money(g.projected_median, ccy)}</span>}
                     {g.assumed?.includes("years") && <span className="chip text-warn">assumed {g.horizon_years}-year horizon</span>}
-                    {g.assumed?.includes("funding_share") && <span className="chip text-warn">assumed funding share</span>}
-                  </div>
+                        </div>
                 </div>
               ))}
             </div>

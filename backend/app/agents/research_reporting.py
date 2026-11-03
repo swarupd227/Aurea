@@ -42,7 +42,7 @@ class ResearchReportingAgent(BaseAgent):
         cites = sensed["citations"]
         values = hh.get("values") or {}
 
-        goals = goal_projections(brain)
+        goals = goal_projections(brain, firm_time.today(ctx.firm))
         risk = planning.portfolio_risk(allocation, totals["total_value"])
         stress = planning.stress_test(allocation)
         positions = positions_of(brain)
