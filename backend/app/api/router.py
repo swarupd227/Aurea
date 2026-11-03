@@ -2,7 +2,7 @@
 from fastapi import APIRouter
 
 from app.api import (
-    account_features, account_registration, admin, advisers, autonomy, aml, aml_monitoring, consents, document_matrix, money_in, onboarding_scoreboard, repapering, transfer_files, agents, ai_governance, analytics, atlas, auth, balance_sheet, billing, canvas, cash_movement, client_file, equity_comp, exits, financial_plan, shelf, trades, valuations,
+    account_features, account_registration, admin, advisers, autonomy, rulebook, aml, aml_monitoring, consents, document_matrix, money_in, onboarding_scoreboard, repapering, transfer_files, agents, ai_governance, analytics, atlas, auth, balance_sheet, billing, canvas, cash_movement, client_file, equity_comp, exits, financial_plan, shelf, trades, valuations,
     compliance_program, composites, conduit, core, corporate_actions, crm, engage, ips, licences, onboarding,
     portfolios, prices, protection, provenance, reconciliation, reviews, risk_profile, skills, sleeves, studio,
     superadmin, threads, vault,
@@ -49,6 +49,7 @@ api_router.include_router(onboarding_scoreboard.router)
 api_router.include_router(repapering.router)
 api_router.include_router(advisers.router)
 api_router.include_router(autonomy.router)
+api_router.include_router(rulebook.router)
 api_router.include_router(cash_movement.router)
 api_router.include_router(client_file.router)
 api_router.include_router(financial_plan.router)

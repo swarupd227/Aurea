@@ -65,6 +65,7 @@ import { BehaviouralView } from "@/components/views/BehaviouralView";
 import { RegulatoryCountdownView } from "@/components/views/RegulatoryCountdownView";
 import { WorkforceView } from "@/components/views/WorkforceView";
 import { SkillsView } from "@/components/views/SkillsView";
+import { RulebookView } from "@/components/views/RulebookView";
 import { BookIntegrationView } from "@/components/views/BookIntegrationView";
 import { BookBatchView } from "@/components/views/BookBatchView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
@@ -192,6 +193,8 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <WorkforceView />;
     case "skills":
       return <SkillsView />;
+    case "rulebook":
+      return <RulebookView />;
     case "book_integration":
       return <BookIntegrationView />;
     case "book_batch":

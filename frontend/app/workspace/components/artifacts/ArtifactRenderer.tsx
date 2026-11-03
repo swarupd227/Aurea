@@ -38,6 +38,7 @@ import { RepaperingCard } from "./RepaperingCard";
 import { MyDayCard } from "./MyDayCard";
 import { AdvisersCard } from "./AdvisersCard";
 import { PoliciesCard } from "./PoliciesCard";
+import { RulebookCard } from "./RulebookCard";
 import { OnboardingQueuesCard } from "./OnboardingQueuesCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
@@ -172,6 +173,11 @@ export function artifactCard(artifact: Artifact) {
       case "read_my_day":
         if (!artifact.result?.waiting) return null;
         return <MyDayCard result={artifact.result as any} />;
+      case "read_compliance_rules":
+      case "set_compliance_rule":
+      case "set_agent_control":
+        if (!Array.isArray(artifact.result?.rules)) return null;
+        return <RulebookCard result={artifact.result as any} />;
       case "read_autonomy_policies":
       case "set_autonomy_policy":
         if (!Array.isArray(artifact.result?.policies)) return null;

@@ -1509,6 +1509,44 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADMIN, UserRole.COMPLIANCE},
     ),
 
+    "read_compliance_rules": Tool(
+        key="read_compliance_rules",
+        name="Read Compliance Rules",
+        speaking_agent="astra",
+        description="The firm's rulebook: the regime and its version, every rule with its citation, whether it is checked, its severity (high blocks the proposal and pauses the agent that raised it, medium flags it, low notes it), the agents it applies to and how often it failed in the last 90 days; and the agent controls (approval everywhere, minimum confidence, turnover cap, default tax budget, research required, PII masking, and the platform settings) with their values and who sets each. Rules are the regime's own law: a new rule cannot be added here. Reading opens nothing.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The rulebook and agent controls"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "set_compliance_rule": Tool(
+        key="set_compliance_rule",
+        name="Set Compliance Rule",
+        speaking_agent="astra",
+        description="Turns a rule on or off (enabled true or false) or changes its severity (high, medium or low) for this firm, by its rule_id or code from read_compliance_rules. reason is compliance's own words: when they have already said why in their request, that is the reason, so use it and raise the card rather than asking again. It changes how every later proposal is assessed; nothing already assessed changes.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Change this rule?",
+        inputs=[ToolInput("rule_id", "string", "The rule's id or code", required=True), ToolInput("reason", "string", "Why", required=True),
+                ToolInput("enabled", "string", "true or false", required=False), ToolInput("severity", "string", "high, medium or low", required=False)],
+        output=ToolOutput("object", "The rulebook"),
+        roles_required={UserRole.COMPLIANCE},
+    ),
+
+    "set_agent_control": Tool(
+        key="set_agent_control",
+        name="Set Agent Control",
+        speaking_agent="astra",
+        description="Changes one agent control, by its key from read_compliance_rules: require_approval_everywhere, min_confidence, max_turnover_pct, default_cgt_budget, require_grounding, pii_redaction and pii_categories are compliance's; fallback_enabled, monthly_cost_cap_usd, max_tokens_default, enforce_eval_gate and rag_top_k an administrator's. A share may be given as a percentage. reason is the person's own words: when they have already said why, use it and raise the card rather than asking again; add no figure they did not give. A control that is another role's is refused: say whose it is and offer no way around it.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Change this agent control?",
+        inputs=[ToolInput("key", "string", "The control", required=True), ToolInput("value", "string", "The new value", required=True),
+                ToolInput("reason", "string", "Why", required=True)],
+        output=ToolOutput("object", "The rulebook and agent controls"),
+        roles_required={UserRole.COMPLIANCE, UserRole.ADMIN},
+    ),
+
     "rate_aml_risk": Tool(
         key="rate_aml_risk",
         name="Rate AML Risk",

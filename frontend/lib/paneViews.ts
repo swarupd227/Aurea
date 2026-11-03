@@ -14,7 +14,7 @@ export type PaneViewKey =
   | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "document_matrix" | "transfers" | "monitoring" | "money_in" | "account_features" | "onboarding_scoreboard" | "repapering" | "onboarding_queues"
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
   | "corporate_actions" | "pipeline" | "tax" | "estate" | "family" | "behavioural" | "regulatory_countdown" | "workforce"
-  | "skills" | "book_integration" | "book_batch"
+  | "skills" | "book_integration" | "book_batch" | "rulebook"
   | "canvas" | "canvas_retirement" | "canvas_goals" | "canvas_next_gen" | "canvas_questionnaire";
 
 interface PaneViewDef {
@@ -84,6 +84,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "regulatory_countdown", pattern: /^\/studio\/regulatory-countdown\/?$/, base: "/studio/regulatory-countdown", label: "Regulatory countdown" },
   { key: "workforce", pattern: /^\/studio\/workforce\/?$/, base: "/studio/workforce", label: "Workforce" },
   { key: "skills", pattern: /^\/studio\/skills\/?$/, base: "/studio/skills", label: "Skills" },
+  { key: "rulebook", pattern: /^\/admin\/regulatory\/?$/, base: "/admin/regulatory", label: "Rulebook" },
   { key: "book_integration", pattern: /^\/studio\/book-integration\/?$/, base: "/studio/book-integration", label: "Book integration" },
   { key: "book_batch", pattern: /^\/studio\/book-integration\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/book-integration", label: "Acquired book" },
   // What a client sees, as they see it: their pages, which staff open beside the conversation.
@@ -269,6 +270,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_autonomy_policies":
     case "set_autonomy_policy":
       return "/studio/workforce";
+    case "read_compliance_rules":
+    case "set_compliance_rule":
+    case "set_agent_control":
+      return "/admin/regulatory";
     case "read_advisers":
     case "assign_adviser":
       return "/studio/clients";

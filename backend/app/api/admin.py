@@ -105,41 +105,45 @@ async def set_llm(
     return _llm_status(firm)
 
 
-def _save_foundation(firm: Firm, patch: dict) -> dict:
-    from app.core.foundation import DEFAULTS, policy as foundation_policy
-    s = dict(firm.settings or {})
-    f = dict(s.get("foundation") or {})
-    for k, v in (patch or {}).items():
-        if k in DEFAULTS:
-            f[k] = v
-    s["foundation"] = f
-    firm.settings = s
-    return foundation_policy(firm)
-
-
 class PiiIn(BaseModel):
     enabled: bool
+    reason: str | None = None
 
 
 @router.put("/security/pii")
-async def set_pii(body: PiiIn, user: User = Depends(require_roles(UserRole.ADMIN)),
+async def set_pii(body: PiiIn, user: User = Depends(require_roles(UserRole.COMPLIANCE)),
                   firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    pol = _save_foundation(firm, {"pii_redaction": body.enabled})
-    await db.flush()
-    return {"pii_redaction": pol["pii_redaction"]}
+    """PII redaction is compliance's to set (aurea_core/rulebook.py), with a reason on the audit log."""
+    from app.aurea_core import rulebook
+
+    try:
+        await rulebook.set_setting(db, firm, actor=user, key="pii_redaction", value=body.enabled, reason=body.reason)
+    except rulebook.RulebookError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    from app.core.foundation import policy as foundation_policy
+    return {"pii_redaction": foundation_policy(firm)["pii_redaction"]}
 
 
 class FoundationIn(BaseModel):
     policy: dict
+    reason: str | None = None
 
 
 @router.put("/foundation")
-async def set_foundation(body: FoundationIn, user: User = Depends(require_roles(UserRole.ADMIN)),
+async def set_foundation(body: FoundationIn, user: User = Depends(require_roles(UserRole.ADMIN, UserRole.COMPLIANCE)),
                          firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    """Save the configurable foundation policy (model gateway, security, governance, eval, grounding)."""
-    pol = _save_foundation(firm, body.policy)
-    await db.flush()
-    return pol
+    """Save the agent controls the form changed. Each is its owner's (aurea_core/rulebook.py): governance settings are
+    compliance's and platform settings an administrator's, and each change goes on the audit log with the reason."""
+    from app.aurea_core import rulebook
+    from app.core.foundation import policy as foundation_policy
+
+    changes = rulebook.changed_settings(firm, body.policy)
+    for key, value in changes.items():
+        try:
+            await rulebook.set_setting(db, firm, actor=user, key=key, value=value, reason=body.reason)
+        except rulebook.RulebookError as exc:
+            raise HTTPException(status_code=403 if "'s to set" in str(exc) else 422, detail=str(exc))
+    return foundation_policy(firm)
 
 
 class CmaIn(BaseModel):
@@ -198,23 +202,20 @@ class RuleConfigIn(BaseModel):
     rule_id: str
     enabled: bool | None = None
     severity: str | None = None
+    reason: str | None = None
 
 
 @router.put("/compliance/rule")
-async def set_rule(body: RuleConfigIn, user: User = Depends(require_roles(UserRole.ADMIN)),
+async def set_rule(body: RuleConfigIn, user: User = Depends(require_roles(UserRole.COMPLIANCE)),
                    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    s = dict(firm.settings or {})
-    c = dict(s.get("compliance") or {})
-    disabled = set(c.get("disabled") or [])
-    sev = dict(c.get("severity") or {})
-    if body.enabled is not None:
-        disabled.discard(body.rule_id) if body.enabled else disabled.add(body.rule_id)
-    if body.severity in ("high", "medium", "low"):
-        sev[body.rule_id] = body.severity
-    c["disabled"], c["severity"] = sorted(disabled), sev
-    s["compliance"] = c
-    firm.settings = s
-    await db.flush()
+    """Whether a rule is checked, and how severe a breach is, is compliance's, with a reason (aurea_core/rulebook.py)."""
+    from app.aurea_core import rulebook
+
+    try:
+        await rulebook.set_rule(db, firm, actor=user, rule_id=body.rule_id, enabled=body.enabled, severity=body.severity,
+                                reason=body.reason)
+    except rulebook.RulebookError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return {"ok": True}
 
 

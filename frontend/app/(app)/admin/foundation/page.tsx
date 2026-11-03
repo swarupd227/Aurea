@@ -4,7 +4,7 @@ import { ShieldCheck, BookOpen, CheckCircle2, Network, Lock, BarChart3, AlertTri
 import PageHeader from "@/components/PageHeader";
 import { Card, Spinner } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
-import { api } from "@/lib/api";
+import { api, getUser } from "@/lib/api";
 
 const ICONS: Record<string, any> = {
   governance: ShieldCheck, grounding: BookOpen, eval: CheckCircle2,
@@ -14,9 +14,22 @@ const CATS = ["names", "accounts", "emails", "ids"];
 
 export default function Foundation() {
   const { data, loading, refetch } = useApi<any>("/api/admin/foundation");
+  const { data: book } = useApi<any>("/api/rulebook");
   const [cfg, setCfg] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [reason, setReason] = useState("");
+  const [failed, setFailed] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
+  useEffect(() => setRole(getUser()?.role ?? null), []);
+  // Each control is its owner's: compliance sets governance, an administrator the platform (backend rulebook.SETTINGS).
+  const ownerOf: Record<string, string> = Object.fromEntries((book?.settings || []).map((s: any) => [s.key, s.owner]));
+  const lock = (k: string) => {
+    const who = ownerOf[k];
+    if (!who || !role) return undefined;
+    const mine = (who === "compliance" && role === "compliance") || (who === "an administrator" && role === "admin");
+    return mine ? undefined : who === "compliance" ? "Compliance" : "An administrator";
+  };
 
   useEffect(() => { if (data?.policy && !cfg) setCfg({ ...data.policy }); }, [data, cfg]);
   if (loading || !data || !cfg) return <Spinner />;
@@ -31,9 +44,12 @@ export default function Foundation() {
 
   async function save() {
     setSaving(true);
+    setFailed(null);
     try {
-      await api("/api/admin/foundation", { method: "PUT", body: { policy: cfg } });
-      setSaved(true); setTimeout(() => setSaved(false), 1500); refetch();
+      await api("/api/admin/foundation", { method: "PUT", body: { policy: cfg, reason } });
+      setSaved(true); setReason(""); setTimeout(() => setSaved(false), 1500); refetch();
+    } catch (e: any) {
+      setFailed(e?.message || "Not saved.");
     } finally { setSaving(false); }
   }
 
@@ -41,7 +57,14 @@ export default function Foundation() {
     <div>
       <PageHeader title="Agent controls"
         sub="Settings every agent reads on every run."
-        actions={<button className="btn-primary" onClick={save} disabled={saving}><Save size={16} /> {saving ? "Saving…" : saved ? "Saved" : "Save configuration"}</button>} />
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <input className="input w-64" placeholder="Reason for the change (on the audit log)" aria-label="Reason for the change"
+              value={reason} onChange={(e) => setReason(e.target.value)} data-testid="foundation-reason" />
+            <button className="btn-primary" onClick={save} disabled={saving || !reason.trim()}><Save size={16} /> {saving ? "Saving…" : saved ? "Saved" : "Save configuration"}</button>
+          </div>
+        } />
+      {failed && <p className="mb-4 rounded-lg bg-crit-bg px-3 py-2 text-sm text-crit" role="alert">{failed}</p>}
 
       {/* Six pillars */}
       <div className="grid md:grid-cols-2 gap-4 mb-6">
@@ -75,40 +98,40 @@ export default function Foundation() {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-5">
 
           <Group title="Model gateway" icon={Network}>
-            <Toggle label="Fallback to secondary provider" v={cfg.fallback_enabled} on={(b) => set("fallback_enabled", b)} />
-            <Num label="Monthly cost cap (USD, 0 = none)" v={cfg.monthly_cost_cap_usd} on={(n) => set("monthly_cost_cap_usd", n)} step={5} />
-            <Num label="Max tokens per call" v={cfg.max_tokens_default} on={(n) => set("max_tokens_default", n)} step={100} />
+            <Toggle label="Fallback to secondary provider" v={cfg.fallback_enabled} on={(b) => set("fallback_enabled", b)} locked={lock("fallback_enabled")} />
+            <Num label="Monthly cost cap (USD, 0 = none)" v={cfg.monthly_cost_cap_usd} on={(n) => set("monthly_cost_cap_usd", n)} step={5} locked={lock("monthly_cost_cap_usd")} />
+            <Num label="Max tokens per call" v={cfg.max_tokens_default} on={(n) => set("max_tokens_default", n)} step={100} locked={lock("max_tokens_default")} />
             <div className="text-[11px] text-ink-muted">Per-task model selection is in the Models tab.</div>
           </Group>
 
           <Group title="Security & compliance" icon={Lock}>
-            <Toggle label="PII redaction before model calls" v={cfg.pii_redaction} on={(b) => set("pii_redaction", b)} />
+            <Toggle label="PII redaction before model calls" v={cfg.pii_redaction} on={(b) => set("pii_redaction", b)} locked={lock("pii_redaction")} />
             <div>
-              <div className="label">Mask categories</div>
+              <div className="label">Mask categories <Owner who={lock("pii_categories")} /></div>
               <div className="flex flex-wrap gap-2 mt-1">
                 {CATS.map((c) => (
-                  <button key={c} onClick={() => toggleCat(c)}
+                  <button key={c} onClick={() => toggleCat(c)} disabled={!!lock("pii_categories")}
                     className={`chip ${(cfg.pii_categories || []).includes(c) ? "bg-navy-800 text-white" : "bg-navy-50 text-ink-muted"}`}>{c}</button>
                 ))}
               </div>
             </div>
-            <Num label="Block actions below confidence (%)" v={Math.round((cfg.min_confidence || 0) * 100)} on={(n) => set("min_confidence", n / 100)} step={5} />
+            <Num label="Block actions below confidence (%)" v={Math.round((cfg.min_confidence || 0) * 100)} on={(n) => set("min_confidence", n / 100)} step={5} locked={lock("min_confidence")} />
           </Group>
 
           <Group title="Governance & guardrails" icon={ShieldCheck}>
-            <Toggle label="Require human approval everywhere" v={cfg.require_approval_everywhere} on={(b) => set("require_approval_everywhere", b)} />
-            <Num label="Default CGT budget (USD)" v={cfg.default_cgt_budget} on={(n) => set("default_cgt_budget", n)} step={1000} />
-            <Num label="Max turnover (%, 0 = none)" v={Math.round((cfg.max_turnover_pct || 0) * 100)} on={(n) => set("max_turnover_pct", n / 100)} step={5} />
+            <Toggle label="Require human approval everywhere" v={cfg.require_approval_everywhere} on={(b) => set("require_approval_everywhere", b)} locked={lock("require_approval_everywhere")} />
+            <Num label="Default CGT budget (USD)" v={cfg.default_cgt_budget} on={(n) => set("default_cgt_budget", n)} step={1000} locked={lock("default_cgt_budget")} />
+            <Num label="Max turnover (%, 0 = none)" v={Math.round((cfg.max_turnover_pct || 0) * 100)} on={(n) => set("max_turnover_pct", n / 100)} step={5} locked={lock("max_turnover_pct")} />
           </Group>
 
           <Group title="Eval & quality gates" icon={CheckCircle2}>
-            <Toggle label="Block model/config change unless gates green" v={cfg.enforce_eval_gate} on={(b) => set("enforce_eval_gate", b)} />
+            <Toggle label="Block model/config change unless gates green" v={cfg.enforce_eval_gate} on={(b) => set("enforce_eval_gate", b)} locked={lock("enforce_eval_gate")} />
             <div className="text-xs text-ink-muted">Gates now: <b className={ev.all_green ? "text-positive" : "text-caution"}>{ev.passed}/{ev.total} green</b></div>
           </Group>
 
           <Group title="Grounding & context" icon={BookOpen}>
-            <Toggle label="Require firm-research citations" v={cfg.require_grounding} on={(b) => set("require_grounding", b)} />
-            <Num label="RAG retrieval depth (top-k)" v={cfg.rag_top_k} on={(n) => set("rag_top_k", n)} step={1} />
+            <Toggle label="Require firm-research citations" v={cfg.require_grounding} on={(b) => set("require_grounding", b)} locked={lock("require_grounding")} />
+            <Num label="RAG retrieval depth (top-k)" v={cfg.rag_top_k} on={(n) => set("rag_top_k", n)} step={1} locked={lock("rag_top_k")} />
           </Group>
 
         </div>
@@ -407,21 +430,25 @@ function Group({ title, icon: Icon, children }: any) {
     </div>
   );
 }
-function Toggle({ label, v, on }: { label: string; v: boolean; on: (b: boolean) => void }) {
+/** A control another role sets: shown, not editable, with whose it is (aurea_core/rulebook.py). */
+function Owner({ who }: { who?: string }) {
+  return who ? <span className="chip bg-border-soft text-ink-muted text-[10px]">{who} sets this</span> : null;
+}
+function Toggle({ label, v, on, locked }: { label: string; v: boolean; on: (b: boolean) => void; locked?: string }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-sm text-ink-soft">{label}</span>
-      <button onClick={() => on(!v)} className={`h-6 w-11 rounded-full transition-colors relative shrink-0 ${v ? "bg-positive" : "bg-navy-200"}`}>
+      <span className="text-sm text-ink-soft">{label} <Owner who={locked} /></span>
+      <button onClick={() => on(!v)} disabled={!!locked} className={`h-6 w-11 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${v ? "bg-positive" : "bg-navy-200"}`}>
         <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-all ${v ? "left-6" : "left-1"}`} />
       </button>
     </div>
   );
 }
-function Num({ label, v, on, step = 1 }: { label: string; v: number; on: (n: number) => void; step?: number }) {
+function Num({ label, v, on, step = 1, locked }: { label: string; v: number; on: (n: number) => void; step?: number; locked?: string }) {
   return (
     <div>
-      <label className="label">{label}</label>
-      <input type="number" className="input" step={step} value={v ?? 0} onChange={(e) => on(Number(e.target.value))} />
+      <label className="label">{label} <Owner who={locked} /></label>
+      <input type="number" className="input disabled:opacity-50" step={step} value={v ?? 0} disabled={!!locked} onChange={(e) => on(Number(e.target.value))} />
     </div>
   );
 }

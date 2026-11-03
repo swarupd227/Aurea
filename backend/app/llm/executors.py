@@ -89,6 +89,9 @@ class ToolExecutors:
             "record_repapering": self.record_repapering,
             "read_my_day": self.read_my_day,
             "read_autonomy_policies": self.read_autonomy_policies,
+            "read_compliance_rules": self.read_compliance_rules,
+            "set_compliance_rule": self.set_compliance_rule,
+            "set_agent_control": self.set_agent_control,
             "set_autonomy_policy": self.set_autonomy_policy,
             "read_advisers": self.read_advisers,
             "assign_adviser": self.assign_adviser,
@@ -2181,6 +2184,84 @@ class ToolExecutors:
             p = rec.modified_payload or rec.payload or {}
             return f"A task for {p.get('owner', 'the owner')}: {p.get('next_step', 'move the account on')}, due today"
         return None
+
+    async def read_compliance_rules(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import rulebook
+
+        r = await rulebook.for_firm(self.session, await self._firm())
+        off = [x["code"] for x in r["rules"] if not x["enabled"]]
+        changed = [x["code"] for x in r["rules"] if x["severity"] != x["default_severity"]]
+        r["message"] = (f"{r['name']} v{r['version']}: {len(r['rules'])} rule(s), {len(off)} switched off"
+                        + (f" ({', '.join(off)})" if off else "") + f", {len(changed)} at a severity the firm set"
+                        + (f" ({', '.join(changed)})" if changed else "") + ".")
+        return r
+
+    def _rule_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        enabled = inputs.get("enabled")
+        if enabled is not None and not isinstance(enabled, bool):
+            enabled = str(enabled).strip().lower() in ("true", "1", "yes", "on") if str(enabled).strip() else None
+        return {"rule_id": inputs.get("rule_id"), "enabled": enabled, "severity": inputs.get("severity") or None, "reason": inputs.get("reason")}
+
+    async def set_compliance_rule(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import rulebook
+        from app.models.identity import User
+
+        try:
+            result = await rulebook.set_rule(self.session, await self._firm(), actor=await self.session.get(User, self.user_id), **self._rule_args(inputs))
+        except rulebook.RulebookError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Rule changed."
+        return result
+
+    async def _rule_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import rulebook
+
+        try:
+            p = await rulebook.prepare_rule(self.session, await self._firm(), **self._rule_args(inputs))
+        except rulebook.RulebookError as exc:
+            raise ExecutorError(str(exc))
+
+        def state(s: dict) -> str:
+            return f"{'Checked' if s['enabled'] else 'Not checked'} · {s['severity']}: {rulebook.SEVERITY_EFFECT[s['severity']]}" if s["enabled"] else "Not checked"
+        r = p["rule"]
+        return [("Rule", f"{r.code} · {r.title}"), ("Law", r.citation), ("Framework", f"{p['framework'].name} v{p['framework'].version}"),
+                ("Now", state(p["now"])), ("Becomes", state(p["after"])), ("Applies to", ", ".join(r.applies_to).replace("*", "every agent")),
+                ("Failed in the last 90 days", str(p["fired"])), ("Reason", p["reason"])]
+
+    async def set_agent_control(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import rulebook
+        from app.models.identity import User
+
+        try:
+            result = await rulebook.set_setting(self.session, await self._firm(), actor=await self.session.get(User, self.user_id),
+                                                key=inputs.get("key"), value=inputs.get("value"), reason=inputs.get("reason"))
+        except rulebook.RulebookError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Control changed."
+        return result
+
+    async def _control_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import markets, rulebook
+
+        firm = await self._firm()
+        try:
+            p = rulebook.prepare_setting(firm, role=self.role, key=inputs.get("key"), value=inputs.get("value"), reason=inputs.get("reason"))
+        except rulebook.RulebookError as exc:
+            raise ExecutorError(str(exc))
+        kind = rulebook.SETTINGS[p["key"]][1]
+        say = markets.money_for(firm)
+
+        def shown(v) -> str:
+            if kind == "bool":
+                return "On" if v else "Off"
+            if kind == "share":
+                return f"{float(v or 0):.0%}"
+            if kind == "money":
+                return say(float(v or 0))
+            if kind == "list":
+                return ", ".join(v or []) or "Nothing"
+            return f"{v:,}" if isinstance(v, (int, float)) else str(v)
+        return [("Control", p["label"]), ("Now", shown(p["now"])), ("Becomes", shown(p["after"])), ("Reason", p["reason"])]
 
     async def read_autonomy_policies(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import autonomy
@@ -4322,6 +4403,10 @@ class ToolExecutors:
             return rows(*await self._adviser_preview(inputs))
         if tool_key == "set_autonomy_policy":
             return rows(*await self._autonomy_preview(inputs))
+        if tool_key == "set_compliance_rule":
+            return rows(*await self._rule_preview(inputs))
+        if tool_key == "set_agent_control":
+            return rows(*await self._control_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):
