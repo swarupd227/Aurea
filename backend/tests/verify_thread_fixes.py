@@ -134,6 +134,18 @@ def suggestions() -> None:
     out = follow_ups.derive(R.ADVISER, [{"tool_key": "read_balance_sheet", "inputs": {}, "result": {"household": "The Hartley Family"}}])
     check("a net worth leads to protection and reviews", out[:2], ["What happens to the Hartley Family if an earner dies or can't work?",
                                                                   "When was the Hartley Family last reviewed, and when is the next review due?"])
+    protection_read = [{"tool_key": "read_protection", "inputs": {}, "result": {"household": "The Hartley Family"}}]
+    out = follow_ups.derive(R.ADVISER, protection_read)
+    check("protection leads on through the same family's picture", out[:3], [
+        "When was the Hartley Family last reviewed, and when is the next review due?",
+        "How is the Hartley Family tracking for retirement?", "What proposals are open for the Hartley Family?"])
+    check("  and never back to itself", any("dies or can't work" in s for s in out), False)
+    out = follow_ups.derive(R.ADVISER, protection_read, asked=[
+        "When was the Hartley Family last reviewed, and when is the next review due?",
+        "[ref: household 1] how is the hartley family tracking for retirement"])
+    check("what the person already asked here is not offered back, however it was typed",
+          [s for s in out if "reviewed" in s or "retirement" in s], [])
+    check("  and the rest still are", out[0], "What proposals are open for the Hartley Family?")
     out = follow_ups.derive(R.ADVISER, [{"tool_key": "read_agent_history", "inputs": {}, "result": {"by_status": {"failed": 2}}}])
     check("a failed run leads to the failed runs", out[0], "Show me the agent runs that failed.")
     out = follow_ups.derive(R.ADVISER, [{"tool_key": "read_agent_history", "inputs": {}, "result": {"by_status": {"completed": 2}}}])
@@ -269,7 +281,14 @@ async def navigating_away(Session) -> None:
         await s.commit()
         thread_id = thread.id
 
+        # The answer follows a read, as one with figures must, so it streams as it is written.
+        slow_rounds = iter(["read", "answer"])
+
         async def slow(**_kw):
+            if next(slow_rounds) == "read":
+                use = {"id": "r1", "name": "read_tasks", "input": {}}
+                yield {"type": "done", "tool_uses": [use], "content_blocks": [{"type": "tool_use", **use}]}
+                return
             yield {"type": "text", "text": "The Chen Family is "}
             await asyncio.sleep(0.4)
             yield {"type": "text", "text": "on track."}
@@ -284,7 +303,9 @@ async def navigating_away(Session) -> None:
         print("\n=== (c) the reply survives the browser leaving ===")
         gw_mod.llm_service.stream = slow
         response = await T.send_message(thread_id, {"text": "How is the Chen Family?"}, user=adviser, session=s)
-        first = await response.body_iterator.__anext__()           # the first token reaches the browser...
+        first = ""
+        while '"type": "token"' not in first:                        # the first token reaches the browser...
+            first = await response.body_iterator.__anext__()
         check("a token was streamed", "The Chen Family is" in first, True)
         await response.body_iterator.aclose()                      # ...and then the browser navigates away
         check("the turn is marked as running on the server", turns.is_active(thread_id), True)

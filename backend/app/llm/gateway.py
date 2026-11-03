@@ -44,13 +44,22 @@ from app.llm.service import llm_service
 # A tool round-trip (Claude's tool_use -> our result -> Claude again) this many times
 # in one turn before the gateway stops chaining and just answers with what it has —
 # a guardrail against a confused model looping, not a limit anyone should normally hit.
-MAX_TOOL_ROUNDS = 4
+MAX_TOOL_ROUNDS = 6
 
 # A reply whose last sentence says what Astra is about to do. The history it reads holds its words and
 # not its tool calls, so it can copy an earlier such line and stop there, with nothing done. Asked once.
 _PROMISED = re.compile(r"(?:^|[.!?:]\s+|\n)\s*(?:I'll|I’ll|I will|I'm going to|I’m going to|Let me(?! know))\b[^.?!\n]*[.:]?$", re.I)
 _ACT_NOW = ("[You said what you would do and called no tool, so nothing has happened. Call the tool now, "
             "or say in one sentence why you cannot.]")
+
+# A figure: a percentage, an amount of money, or a grouped number. Live on 3 Nov a plan read that came to
+# nothing was answered "91% probability of success" when the plan said 73% and not on track. Until a
+# tool has read something this turn, a round's words wait for it to end; one that gives figures from no
+# read is not shown, and is asked once to read first. Asked again, it says it has no figure to give.
+_FIGURE = re.compile(r"\d[\d,]*(?:\.\d+)?\s?%|[$£€₹]\s?\d|\b\d{1,3}(?:,\d{3})+\b")
+_READ_FIRST = ("[You gave figures and read nothing this turn, so they are not from the record and were not shown. "
+               "Call the tool for them now, or say in one sentence that you could not get them.]")
+_NO_FIGURES = "I couldn't read that from the record just now, so I won't give a figure. Ask me again and I'll look it up."
 
 
 class GatewayError(Exception):
@@ -81,8 +90,9 @@ owns, then answer), just do them in sequence rather than stopping to ask the use
 continue. Once you have what you need, answer in prose; don't narrate empty tool calls.
 
 Earlier turns here show your words and not the tools you called. Saying you will do something does
-not do it: to act, call the tool in that same reply. An id from an earlier turn is not available to
-you, so look the client or proposal up again first, without comment. Never speak of ids, tools,
+not do it: to act, call the tool in that same reply. "[Records that reply used: ...]" after an earlier
+reply gives the ids it read; use them. Anything else from an earlier turn, look up again first,
+without comment. Never speak of ids, tools,
 looking something up, or a failed lookup. Before a tool, say at most a few words about what you are
 checking, in the person's terms, never why you need it.
 
@@ -183,23 +193,38 @@ class Gateway:
         astra_msg: ThreadMessage | None = None
         used_tools: list[dict[str, Any]] = []     # what this turn found, for the follow-up suggestions
         reminded = False
+        asked_to_read = False
 
         try:
             for _round in range(MAX_TOOL_ROUNDS):
                 round_text = ""
                 tool_uses: list[dict[str, Any]] = []
                 content_blocks: list[dict[str, Any]] = []
+                hold = not used_tools       # nothing read yet this turn: the words wait for the round to end
 
                 async for event in self._stream_tokens(messages):
                     if event["type"] == "token":
                         # A round after a tool call is a new paragraph, as it is once stored.
-                        if not round_text and accumulated_text:
-                            yield {"type": "token", "text": "\n\n"}
+                        if not hold:
+                            if not round_text and accumulated_text:
+                                yield {"type": "token", "text": "\n\n"}
+                            yield event
                         round_text += event["text"]
-                        yield event
                     elif event["type"] == "_final":
                         tool_uses = event["tool_uses"]
                         content_blocks = event["content_blocks"]
+
+                if hold and not tool_uses and _FIGURE.search(round_text):
+                    if not asked_to_read:
+                        asked_to_read = True
+                        messages.append({"role": "assistant", "content": round_text})
+                        messages.append({"role": "user", "content": _READ_FIRST})
+                        continue
+                    round_text = _NO_FIGURES
+                if hold and round_text:
+                    if accumulated_text:
+                        yield {"type": "token", "text": "\n\n"}
+                    yield {"type": "token", "text": round_text}
 
                 if round_text:
                     accumulated_text.append(round_text)
@@ -359,8 +384,11 @@ class Gateway:
         final_text = "\n\n".join(t for t in accumulated_text if t.strip())
         firm = await self.session.get(Firm, self.firm_id)
         market = markets.for_firm(firm)
+        asked = (await self.session.execute(select(ThreadMessage.text).where(
+            ThreadMessage.thread_id == thread_id, ThreadMessage.role == MessageRole.USER))).scalars().all()
         suggestions = follow_ups.derive(self.role, used_tools, india=bool(market and market.code == "IN"),
-                                        firm_jurisdiction=firm.jurisdiction if firm else None) if final_text else []
+                                        firm_jurisdiction=firm.jurisdiction if firm else None,
+                                        asked=[t for t in asked if t]) if final_text else []
         if astra_msg is None:
             astra_msg = ThreadMessage(
                 thread_id=thread_id, role=MessageRole.ASTRA, text=final_text, suggestions=suggestions,
@@ -390,6 +418,7 @@ class Gateway:
         recent_result = await self.session.execute(recent_stmt)
         recent_messages = list(reversed(recent_result.scalars().all()))
         not_done = await self._not_done(recent_messages)
+        used = await self._records_used(recent_messages)
 
         messages: list[dict[str, Any]] = []
 
@@ -402,9 +431,35 @@ class Gateway:
         for msg in recent_messages:
             if (msg.text or "").strip():    # a run's card while it is still running has no words yet
                 add("user" if msg.role == MessageRole.USER else "assistant", msg.text)
+            if msg.id in used:
+                add("user", used[msg.id])
             for marker in not_done.get(msg.id, []):
                 add("user", marker)
         return messages
+
+    async def _records_used(self, recent: list[ThreadMessage]) -> dict[uuid.UUID, str]:
+        """The records each earlier reply read, as a marker for the model. History is words only, so
+        without this the next turn has lost the family it just found and looks it up again, out loud."""
+        rows = (await self.session.execute(
+            select(ToolCall.message_id, ToolCall.inputs, ToolCall.result)
+            .where(ToolCall.message_id.in_([m.id for m in recent if m.role != MessageRole.USER]),
+                   ToolCall.status == ToolCallStatus.DONE)
+            .order_by(ToolCall.started_at)
+        )).all()
+        found: dict[uuid.UUID, dict[str, str]] = {}
+        for message_id, inputs, result in rows:
+            for key, value in (inputs or {}).items():
+                if not key.endswith("_id") or not isinstance(value, str):
+                    continue
+                try:
+                    uuid.UUID(value)
+                except ValueError:
+                    continue
+                kind = key[:-3]
+                name = (result or {}).get("household") if kind == "household" and isinstance(result, dict) else None
+                found.setdefault(message_id, {}).setdefault(
+                    f"{kind} {value}", f"{kind} {value} ({name})" if isinstance(name, str) else f"{kind} {value}")
+        return {m: f"[Records that reply used: {'; '.join(refs.values())}]" for m, refs in found.items()}
 
     async def _not_done(self, recent: list[ThreadMessage]) -> dict[uuid.UUID, list[str]]:
         """What became of a change that paused, as a marker for the model. A pause ends the turn with no

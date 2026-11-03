@@ -8,6 +8,7 @@ the tool results of this turn, never from memory (CLAUDE.md rule 2).
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 from app.aurea_core import wash_sale
@@ -108,13 +109,24 @@ def _from_onboarding(inputs: dict, result: dict) -> list[Candidate]:
     return [BENEFICIARIES, WAITING]
 
 
-def _from_balance_sheet(inputs: dict, result: dict) -> list[Candidate]:
-    name = result.get("household")
-    if not name:
-        return []
-    return [("read_protection", f"What happens to {_the(name)} if an earner dies or can't work?"),
-            ("read_client_reviews", f"When was {_the(name)} last reviewed, and when is the next review due?"),
-            ("read_recommendations", f"What proposals are open for {_the(name)}?")]
+def _client_picture(tool_key: str) -> Callable[[dict, dict], list[Candidate]]:
+    """One family's picture, a piece at a time: each piece leads to the pieces it is not."""
+    def follow(inputs: dict, result: dict) -> list[Candidate]:
+        name = result.get("household")
+        if not name:
+            return []
+        pieces = [("read_protection", f"What happens to {_the(name)} if an earner dies or can't work?"),
+                  ("read_client_reviews", f"When was {_the(name)} last reviewed, and when is the next review due?"),
+                  ("read_financial_plan", f"How is {_the(name)} tracking for retirement?"),
+                  ("read_recommendations", f"What proposals are open for {_the(name)}?"),
+                  ("read_balance_sheet", f"What is {_the(name)}'s net worth, and what is it made of?")]
+        return [p for p in pieces if p[0] != tool_key]
+    return follow
+
+
+def _plain(sentence: str) -> str:
+    """A question as typed and as offered compare equal: case, markers and end punctuation aside."""
+    return re.sub(r"\[[^\]]*\]", "", sentence).strip().rstrip("?.!").strip().lower()
 
 
 def _from_search(inputs: dict, result: dict) -> list[Candidate]:
@@ -135,7 +147,10 @@ FOLLOWS: dict[str, Callable[[dict, dict], list[Candidate]]] = {
     "explain_invoice": lambda i, r: _household(_name_of(r))[:2] if _name_of(r) else [],
     "read_billing": lambda i, r: [("read_billing", "Which bills are held, and why?")] if not i.get("household_id") else [],
     "run_billing": lambda i, r: [("read_billing", "Which bills are held, and why?")],
-    "read_balance_sheet": _from_balance_sheet,
+    "read_balance_sheet": _client_picture("read_balance_sheet"),
+    "read_protection": _client_picture("read_protection"),
+    "read_client_reviews": _client_picture("read_client_reviews"),
+    "read_financial_plan": _client_picture("read_financial_plan"),
     "read_recommendations": _from_recommendations,
     "read_agents": _from_agents,
     "read_agent_history": _from_history,
@@ -152,9 +167,11 @@ FOLLOWS: dict[str, Callable[[dict, dict], list[Candidate]]] = {
 }
 
 
-def derive(role: UserRole | str, used: list[dict[str, Any]], *, india: bool = False, firm_jurisdiction: str | None = None) -> list[str]:
+def derive(role: UserRole | str, used: list[dict[str, Any]], *, india: bool = False, firm_jurisdiction: str | None = None,
+           asked: list[str] | None = None) -> list[str]:
     """Up to four sentences, each answerable by a tool `role` holds, shaped by the tools this turn
-    used (most recent first) and finished with the role's general next steps."""
+    used (most recent first) and finished with the role's general next steps. `asked` is what the
+    person has already asked in this conversation, which is never offered back to them."""
     held = tools_for_role(UserRole(role))
     if not held:
         return []
@@ -180,9 +197,10 @@ def derive(role: UserRole | str, used: list[dict[str, Any]], *, india: bool = Fa
         seen.add(AGENTS[1])
     if any(c["tool_key"] == "read_recommendations" for c in used):
         seen.add(WAITING[1])
+    said = {_plain(s) for s in asked or []}
     out: list[str] = []
     for tool_key, sentence in candidates:
-        if tool_key in held and sentence not in seen:
+        if tool_key in held and sentence not in seen and _plain(sentence) not in said:
             seen.add(sentence)
             out.append(sentence)
         if len(out) == MAX_SUGGESTIONS:

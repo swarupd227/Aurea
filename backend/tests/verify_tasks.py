@@ -295,6 +295,19 @@ async def behaviour() -> None:
             check("a confirmed change is not called undone", "Not done" in said_to_model(), False)
             check("  it reads as done", "[Done: create_task" in said_to_model() and "Confirmed one" in said_to_model(), True)
 
+            print("\n=== the next turn knows what the last one read ===")
+            t11 = await thread()
+            gw_mod.llm_service.stream = script(tool_round("read_tasks", {"household_id": str(chen.id)}), say("Two tasks."))
+            async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t11.id, "What is open for the Chens?"):
+                pass
+            gw_mod.llm_service.stream = hearing
+            async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t11.id, "And their review?"):
+                pass
+            check("the model hears which family the last reply read", f"[Records that reply used: household {chen.id}]" in said_to_model(), True)
+            check("  after that reply and before the new question",
+                  said_to_model().index("Two tasks.") < said_to_model().index("Records that reply used") < said_to_model().index("And their review?"), True)
+            check("turns still alternate", all(a["role"] != b["role"] for a, b in zip(heard["messages"], heard["messages"][1:])), True)
+
             print("\n=== saying it is not doing it ===")
             async def turn(*rounds):
                 t = await thread()
@@ -319,9 +332,25 @@ async def behaviour() -> None:
             check("  its reason reaches the person", "".join(e.get("text", "") for e in events if e["type"] == "token"), "Let me do that.\n\nThat needs a title from you first.")
             t11, events, reply = await turn(say("I'll do it."), say("I'll do it now."))
             check("asked once, then the turn ends", reply.text, "I'll do it.\n\nI'll do it now.")
-            for words in ("The fee is 1.2%.", "Let me know if you want more.", "Shall I go ahead?", "Would you like me to, and I'll check?"):
+            for words in ("The fee schedule is the firm's.", "Let me know if you want more.", "Shall I go ahead?", "Would you like me to, and I'll check?"):
                 _, events, reply = await turn(say(words))
                 check(f"not a promise: {words}", reply.text, words)
+
+            print("\n=== no figure from nothing read ===")
+            def shown(events):
+                return "".join(e.get("text", "") for e in events if e["type"] == "token")
+            _, events, reply = await turn(say("They are at 91% probability of success."), tool_round("read_tasks", {}), say("Two tasks are open."))
+            check("figures with nothing read are not shown", "91%" in shown(events), False)
+            check("  nor stored", "91%" in reply.text, False)
+            check("  the model is sent to read, and the read answer is", reply.text, "Two tasks are open.")
+            _, events, reply = await turn(say("About $218,000 a year."), say("Still $218,000 a year."))
+            check("asked again, it gives no figure", reply.text, gw_mod._NO_FIGURES)
+            check("  and none reaches the screen", "218" in shown(events), False)
+            _, events, reply = await turn(tool_round("read_tasks", {}), say("You have 2 tasks, one for $5,000."))
+            check("once something is read, its figures stream as they come", ("$5,000" in shown(events), reply.text), (True, "You have 2 tasks, one for $5,000."))
+            _, events, reply = await turn(say("I'll check their plan."), tool_round("read_tasks", {}), say("Done: 1,250 rows."))
+            check("words before a tool are shown once it is called", reply.text, "I'll check their plan.\n\nDone: 1,250 rows.")
+            check("  in the same order on screen", shown(events), "I'll check their plan.\n\nDone: 1,250 rows.")
 
             print("\n=== today is the firm's ===")
             # 8pm UTC on a Friday is already Saturday morning in Auckland.
