@@ -57,6 +57,8 @@ DOC_LABELS = {
     "drivers_licence": "Driver's Licence",
     "proof_of_address": "Proof of Address",
     "trust_deed": "Trust Deed",
+    "huf_declaration": "HUF Declaration",
+    "pan_card": "PAN Card",
     "overseas_pension": "Overseas Pension Statement",
     "capital_call_notice": "Capital-Call Notice",
 }

@@ -44,6 +44,7 @@ function Taxpayer({ t, full }: { t: any; full: boolean }) {
         <span className="chip text-ink-muted">{REGIME_TEXT[t.regime] ?? t.regime}</span>
         {t.slab_rate != null && <span className="chip text-ink-muted">{Math.round(t.slab_rate * 100)}% slab</span>}
         {t.surcharge_rate > 0 && <span className="chip text-ink-muted">{Math.round(t.surcharge_rate * 100)}% surcharge</span>}
+        <span className="chip text-ink-muted" data-testid="tax-pan">{t.pan ? `PAN ${t.pan}` : "PAN not on file"}</span>
         {(t.incomplete as string[]).map((m) => <span key={m} className="chip text-warn">{m.replace(/_/g, " ")} not on file</span>)}
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 px-3 py-2 sm:grid-cols-4">

@@ -53,5 +53,5 @@ class CustodianAdapter(ABC):
             "individual", "joint_jtwros", "joint_tic",
             "traditional_ira", "roth_ira", "employer_rollover",
             "trust", "entity_llc", "entity_corp", "entity_partnership",
-            "custodial_utma", "custodial_ugma", "estate_inherited",
+            "custodial_utma", "custodial_ugma", "estate_inherited", "huf",
         ]

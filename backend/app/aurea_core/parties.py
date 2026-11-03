@@ -116,6 +116,9 @@ _REQUIRED: dict[str, list[tuple[str, int, str]]] = {
         (PartyRole.EXECUTOR, 1, "The executor or personal representative."),
         (PartyRole.BENEFICIARY, 1, "At least one estate beneficiary."),
     ],
+    "huf": [
+        (PartyRole.KARTA, 1, "The karta manages the HUF and acts and signs for it."),
+    ],
 }
 
 _ENTITY_TYPES = {"entity_llc", "entity_corp", "entity_partnership"}

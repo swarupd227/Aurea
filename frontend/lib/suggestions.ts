@@ -87,7 +87,8 @@ export function roleStarters(role: string, ctx: SuggestionContext): Suggestion[]
   const [h1, h2] = ctx.households;
   switch (role) {
     case "adviser":
-      if (firmMarket() === "IN") return [WAITING, { label: "Waiting on clients", prompt: "Which proposals are waiting for a client's consent?" }, washSale(h1), perf(h1)];
+      if (firmMarket() === "IN") return [WAITING, { label: "Waiting on clients", prompt: "Which proposals are waiting for a client's consent?" }, washSale(h1),
+        { label: "SIPs", prompt: "Which SIPs are running, and was any instalment missed?" }];
       return [WAITING, REPLIES, MEETINGS, perf(h1)];
     case "paraplanner":
       return [view(h1), { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }, MEETINGS, WAITING];

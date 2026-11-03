@@ -108,6 +108,25 @@ async def _refresh_tax_after_trades() -> None:
                 log.warning("tax_refresh_sweep_failed", firm=firm.slug, error=str(exc))
 
 
+async def _run_sips() -> None:
+    """Place the SIP instalments that are due today, firm by firm, on each firm's own calendar (aurea_core/sip.py)."""
+    from app.aurea_core import sip
+    from app.models.sip import Sip
+
+    async with SessionLocal() as s:
+        firm_ids = set((await s.execute(select(Sip.firm_id).where(Sip.ended_on.is_(None)))).scalars().all())
+        for firm_id in firm_ids:
+            firm = await s.get(Firm, firm_id)
+            try:
+                done = await sip.run_due(s, firm)
+                await s.commit()
+                if done["bought"] or done["missed"]:
+                    log.info("sip_instalments", firm=firm.slug, **done)
+            except Exception as exc:  # pragma: no cover
+                await s.rollback()
+                log.warning("sip_run_failed", firm=str(firm_id), error=str(exc))
+
+
 async def _run_evaluation() -> None:
     from app.provenance.evaluation import evaluate_firm
 
@@ -387,6 +406,8 @@ async def main() -> None:
     scheduler.add_job(_check_holding_alerts, "interval", hours=1, id="holding_alerts")
     # A fill makes its household's open tax memo stale; the agent itself runs only monthly.
     scheduler.add_job(_refresh_tax_after_trades, "interval", minutes=2, id="tax_after_trades")
+    # SIP instalments, hourly: each SIP is tried once a month, on or after its day on its firm's calendar.
+    scheduler.add_job(_run_sips, "interval", hours=1, id="sip_instalments")
     # Pick up cadence changes made in Admin without needing a worker restart.
     scheduler.add_job(_sync_agent_schedules, "interval", minutes=15, id="schedule_sync",
                       args=[scheduler])

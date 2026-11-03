@@ -178,6 +178,12 @@ pages are artifact views the agents open. Full guideline, including what is buil
   port the 30-day block, and never say a rebuy is safe. Figures are estimates and carry `NOT_MODELLED`. The
   Indian firm is `seed/india_demo.py`, marked as a demonstration; its clients are invented and Yahoo's prices
   are for demonstrating with, not licensed for client use.
+- **A SIP is the client's standing instruction, and the licence picks the plan.** `aurea_core/sip.py` records a SIP from
+  the client's signed registration (simulated only on a demonstration firm), and the worker buys each instalment once a
+  month at the real NAV if the cash left after holds covers it; a missed one is recorded, not retried. A fund's NAV is
+  AMFI's, by scheme code, and is never invented. `shelf.plan_bars` bars a regular plan under an adviser or a portfolio
+  manager. A PAN is recorded by a person from a document and shown masked everywhere (`aurea_core/pan.py`); it is not
+  encrypted, and one typed into the conversation reaches the model.
 - **Whose client a household is, is what a person recorded.** `aurea_core/advisers.py` is the one reading of the
   "adviser" edges, the household's own outranking one to a member; nothing works out an adviser from activity, and
   unassigned says so. `assign_adviser` changes it with a reason, replacing every earlier edge, on the audit log. An

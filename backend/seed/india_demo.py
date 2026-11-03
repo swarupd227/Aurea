@@ -61,6 +61,28 @@ INSTRUMENTS = {
     "GILT5YBEES.NS": ("Nippon India 5 Year Gilt ETF", AssetClass.FIXED_INCOME, "specified_fund", 65.0, {}),
     "GOLDBEES.NS": ("Nippon India Gold ETF", AssetClass.COMMODITY, "other_listed", 116.0, {}),
     "EMBASSY.NS": ("Embassy Office Parks REIT", AssetClass.PROPERTY, "reit_invit", 415.0, {}),
+    # Mutual funds, each scheme in its direct and its regular plan, growth option. Codes, ISINs and names are
+    # AMFI's (NAVAll.txt, 2 Nov 2026), and the NAV comes only from AMFI by scheme code: a fund gets no invented
+    # price, which would sit above the real one as the latest. The figure here is for reference, never stored.
+    # The licence decides which plan is bought (shelf.plan_bars).
+    "PPFAS-FLEXI-DIRECT": ("Parag Parikh Flexi Cap Fund - Direct Plan - Growth", AssetClass.EQUITY, "equity_fund", 89.74,
+                           {"amfi_code": "122639", "isin": "INF879O01027", "fund_plan": "direct",
+                            "scheme": "Parag Parikh Flexi Cap Fund", "amc": "PPFAS Mutual Fund"}),
+    "PPFAS-FLEXI-REGULAR": ("Parag Parikh Flexi Cap Fund - Regular Plan - Growth", AssetClass.EQUITY, "equity_fund", 81.68,
+                            {"amfi_code": "122640", "isin": "INF879O01019", "fund_plan": "regular",
+                             "scheme": "Parag Parikh Flexi Cap Fund", "amc": "PPFAS Mutual Fund"}),
+    "UTI-NIFTY50-DIRECT": ("UTI Nifty 50 Index Fund - Direct Plan - Growth", AssetClass.EQUITY, "equity_fund", 165.10,
+                           {"amfi_code": "120716", "isin": "INF789F01XA0", "fund_plan": "direct",
+                            "scheme": "UTI Nifty 50 Index Fund", "amc": "UTI Mutual Fund"}),
+    "UTI-NIFTY50-REGULAR": ("UTI Nifty 50 Index Fund - Regular Plan - Growth", AssetClass.EQUITY, "equity_fund", 162.57,
+                            {"amfi_code": "100822", "isin": "INF789F01JN2", "fund_plan": "regular",
+                             "scheme": "UTI Nifty 50 Index Fund", "amc": "UTI Mutual Fund"}),
+    "HDFC-CORPBOND-DIRECT": ("HDFC Corporate Bond Fund - Direct Plan - Growth", AssetClass.FIXED_INCOME, "specified_fund", 35.01,
+                             {"amfi_code": "118987", "isin": "INF179K01XD8", "fund_plan": "direct",
+                              "scheme": "HDFC Corporate Bond Fund", "amc": "HDFC Mutual Fund"}),
+    "HDFC-CORPBOND-REGULAR": ("HDFC Corporate Bond Fund - Regular Plan - Growth", AssetClass.FIXED_INCOME, "specified_fund", 34.14,
+                              {"amfi_code": "113070", "isin": "INF179K01DC2", "fund_plan": "regular",
+                               "scheme": "HDFC Corporate Bond Fund", "amc": "HDFC Mutual Fund"}),
 }
 
 MODELS = {
@@ -201,11 +223,30 @@ def _closes_or_fallback(quotes: dict | None) -> dict[str, tuple[float, bool, dat
 async def _live_closes() -> dict | None:
     from app.conduit.marketdata import fetch_series
     try:
-        feed = await fetch_series({sym: "5d" for sym in INSTRUMENTS}, interval="1d")
+        # Funds are priced from AMFI by scheme code, in the sync that follows the build.
+        feed = await fetch_series({sym: "5d" for sym, spec in INSTRUMENTS.items() if not spec[4].get("amfi_code")},
+                                  interval="1d")
     except Exception as exc:
         log.warning("india_quotes_failed", error=str(exc))
         return None
     return {sym: rows[-1] for sym, rows in feed.series.items() if rows}
+
+
+async def add_instrument(s, firm: Firm, sym: str, price: tuple[float, bool, date]) -> Instrument:
+    """One instrument from INSTRUMENTS, with its first price: real if a feed gave it, else marked invented.
+    A fund gets none here; its NAV is AMFI's, written by the price sync."""
+    name, cls, tax_class, _fallback, tags = INSTRUMENTS[sym]
+    inst = Instrument(firm_id=firm.id, symbol=sym, name=name, asset_class=cls, market_type=MarketType.PUBLIC,
+                      currency="INR", market_symbol=None if tags.get("amfi_code") else sym,
+                      values_tags={"tax_class": tax_class, **tags})
+    s.add(inst)
+    await s.flush()
+    if tags.get("amfi_code"):
+        return inst
+    close, real, as_of = price
+    s.add(Price(firm_id=firm.id, instrument_id=inst.id, as_of=as_of, close=close, currency="INR",
+                source="yahoo" if real else "synthetic", is_real=real))
+    return inst
 
 
 async def build(s, *, quotes: dict | None = None) -> Firm:
@@ -251,15 +292,8 @@ async def build(s, *, quotes: dict | None = None) -> Firm:
 
     closes = _closes_or_fallback(quotes)
     instruments: dict[str, Instrument] = {}
-    for sym, (name, cls, tax_class, _fallback, tags) in INSTRUMENTS.items():
-        inst = Instrument(firm_id=firm.id, symbol=sym, name=name, asset_class=cls, market_type=MarketType.PUBLIC,
-                          currency="INR", market_symbol=sym, values_tags={"tax_class": tax_class, **tags})
-        s.add(inst)
-        await s.flush()
-        instruments[sym] = inst
-        close, real, as_of = closes[sym]
-        s.add(Price(firm_id=firm.id, instrument_id=inst.id, as_of=as_of, close=close, currency="INR",
-                    source="yahoo" if real else "synthetic", is_real=real))
+    for sym in INSTRUMENTS:
+        instruments[sym] = await add_instrument(s, firm, sym, closes[sym])
 
     models: dict[str, ModelPortfolio] = {}
     for key, (name, description, targets) in MODELS.items():

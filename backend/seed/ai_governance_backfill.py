@@ -211,6 +211,16 @@ _TOOLS = [
      "Records a pre-authorised payment from a signed form. Confirm-gated."),
     ("end_standing_instruction", "End Standing Instruction (tool)", "tool", "Head of Operations", "low",
      "Ends a standing instruction; it stays on record. Confirm-gated."),
+    ("read_sips", "Read SIPs (tool)", "tool", "Portfolio team lead", "low",
+     "Reads each SIP: the fund and its plan, the monthly amount and day, what it bought and any missed instalment."),
+    ("record_sip", "Record SIP (tool)", "tool", "Portfolio team lead", "high",
+     "Records a client's SIP from the signed registration, or simulated on a demonstration firm. Only a plan the licence buys. "
+     "The worker then buys each instalment at the real NAV if the cash is there. Confirm-gated."),
+    ("end_sip", "End SIP (tool)", "tool", "Portfolio team lead", "low",
+     "Ends a SIP with a reason; what it bought stays. Confirm-gated."),
+    ("record_pan", "Record PAN (tool)", "tool", "Head of Operations", "high",
+     "Records a person's or an entity's PAN from a document, checked for form, holder and uniqueness. Shown masked. "
+     "Stored unencrypted, and a PAN typed into the conversation reaches the model. Confirm-gated."),
     ("start_phase_in", "Start Phasing In (tool)", "tool", "Portfolio team lead", "medium",
      "Phases new money in by stages, holding back what is not yet due. It places no order. Confirm-gated."),
     ("end_phase_in", "End Phasing In (tool)", "tool", "Portfolio team lead", "low",

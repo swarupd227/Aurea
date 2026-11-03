@@ -126,6 +126,10 @@ class ToolExecutors:
             "cancel_cash_request": self.cancel_cash_request,
             "record_standing_instruction": self.record_standing_instruction,
             "end_standing_instruction": self.end_standing_instruction,
+            "read_sips": self.read_sips,
+            "record_pan": self.record_pan,
+            "record_sip": self.record_sip,
+            "end_sip": self.end_sip,
             "start_phase_in": self.start_phase_in,
             "end_phase_in": self.end_phase_in,
             "read_client_file": self.read_client_file,
@@ -1393,6 +1397,89 @@ class ToolExecutors:
     async def end_phase_in(self, inputs: dict[str, Any]) -> dict[str, Any]:
         plan_id = _parse_uuid(inputs.get("plan_id") or "", "plan_id")
         return await self._cash_write(lambda e, by: e.end_phase_in(self.session, plan_id, firm_id=self.firm_id, by=by), "Ended. What was held back is released.")
+
+    def _pan_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"person_id": _parse_uuid(inputs["person_id"], "person_id") if inputs.get("person_id") else None,
+                "entity_id": _parse_uuid(inputs["entity_id"], "entity_id") if inputs.get("entity_id") else None,
+                "pan": inputs.get("pan"), "source_document": inputs.get("source_document")}
+
+    async def record_pan(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import pan
+
+        try:
+            done = await pan.record(self.session, await self._firm(), by=await self._shelf_user(), **self._pan_args(inputs))
+        except pan.PanError as exc:
+            raise ExecutorError(str(exc))
+        return {**done, "message": f"Recorded {done['name']}'s PAN, {done['pan']}."}
+
+    async def _pan_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import pan
+
+        try:
+            r = await pan.prepare(self.session, await self._firm(), **self._pan_args(inputs))
+        except pan.PanError as exc:
+            raise ExecutorError(str(exc))
+        return [("Holder", r["name"]), ("Kind", r["kind"].upper() if r["kind"] == "huf" else r["kind"].capitalize()),
+                ("PAN", pan.mask(r["pan"])), ("Replaces", r["replaces"]), ("Document", r["document"])]
+
+    async def read_sips(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import markets, sip
+
+        firm = await self._firm()
+        household_id = _parse_uuid(inputs["household_id"], "household_id") if inputs.get("household_id") else None
+        result = await sip.for_firm(self.session, firm, household_id=household_id)
+        result["message"] = f"{result['active']} active SIP(s), {markets.money_for(firm)(result['monthly'])} a month."
+        return result
+
+    def _sip_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"instrument": inputs.get("instrument"), "amount": inputs.get("amount"), "day_of_month": inputs.get("day_of_month"),
+                "starts_on": self._exit_day(inputs.get("starts_on"), "starts_on"),
+                "ends_on": self._exit_day(inputs.get("ends_on"), "ends_on") if inputs.get("ends_on") else None,
+                "evidence_ref": inputs.get("evidence_ref"), "simulated": str(inputs.get("simulated")).lower() == "true"}
+
+    async def _sip_write(self, write, message: str) -> dict[str, Any]:
+        from app.aurea_core import sip
+
+        firm = await self._firm()
+        try:
+            await write(sip, firm, await self._shelf_user())
+        except sip.SipError as exc:
+            raise ExecutorError(str(exc))
+        result = await sip.for_firm(self.session, firm)
+        result["message"] = message
+        return result
+
+    async def record_sip(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        account_id = _parse_uuid(inputs.get("account_id") or "", "account_id")
+        args = self._sip_args(inputs)
+        return await self._sip_write(lambda e, firm, by: e.record(self.session, firm, account_id, by=by, **args),
+                                     "Recorded. Each instalment is bought at that day's NAV if the cash is there.")
+
+    async def end_sip(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        sip_id = _parse_uuid(inputs.get("sip_id") or "", "sip_id")
+        return await self._sip_write(lambda e, firm, by: e.end(self.session, firm, sip_id, by=by, reason=inputs.get("reason")),
+                                     "Ended. Nothing more is bought under it.")
+
+    async def _sip_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, markets, sip as e
+
+        firm = await self._firm()
+        say = markets.money_for(firm)
+        try:
+            if tool_key == "record_sip":
+                r = await e.prepare(self.session, firm, _parse_uuid(inputs.get("account_id") or "", "account_id"), **self._sip_args(inputs))
+                tags = r["instrument"].values_tags or {}
+                return [("Account", r["account"].name), ("Fund", r["instrument"].name), ("Plan", (tags.get("fund_plan") or "").capitalize() or None),
+                        ("Each month", f"{say(r['amount'])} on day {r['day']}"), ("First instalment", firm_time.spoken(r["first"])),
+                        ("Ends", firm_time.spoken(r["ends_on"]) if r["ends_on"] else "Not set"),
+                        ("Licence", r["licence"].name if r["licence"] else None),
+                        ("Registration", "Simulated, demonstration firm" if r["simulated"] else r["evidence"]),
+                        ("Then", "Each instalment bought at that day's NAV if the cash is there")]
+            r = await e.prepare_end(self.session, firm, _parse_uuid(inputs.get("sip_id") or "", "sip_id"), reason=inputs.get("reason"))
+            return [("Account", r["account"].name if r["account"] else None), ("Fund", r["instrument"].name if r["instrument"] else None),
+                    ("Each month", say(float(r["sip"].amount))), ("Reason", r["reason"]), ("Then", "Nothing more is bought; what it bought stays")]
+        except e.SipError as exc:
+            raise ExecutorError(str(exc))
 
     async def _cash_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core import cash_movement as e, firm_time, markets
@@ -4179,6 +4266,10 @@ class ToolExecutors:
             return rows(*await self._balance_preview(tool_key, inputs))
         if tool_key in ("request_cash_movement", "record_cash_paid", "cancel_cash_request", "record_standing_instruction", "end_standing_instruction", "start_phase_in", "end_phase_in"):
             return rows(*await self._cash_preview(tool_key, inputs))
+        if tool_key in ("record_sip", "end_sip"):
+            return rows(*await self._sip_preview(tool_key, inputs))
+        if tool_key == "record_pan":
+            return rows(*await self._pan_preview(inputs))
         if tool_key in ("record_trusted_contact", "record_estate_document", "record_life_event"):
             return rows(*await self._file_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):

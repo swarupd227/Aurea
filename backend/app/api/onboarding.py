@@ -329,7 +329,7 @@ async def create_case(
     # Infer is_entity from registration_type when provided.
     is_entity = body.is_entity
     entity_type = body.entity_type
-    if body.registration_type in ("trust", "entity_llc", "entity_corp", "entity_partnership"):
+    if body.registration_type in ("trust", "entity_llc", "entity_corp", "entity_partnership", "huf"):
         is_entity = True
         entity_type = entity_type or body.registration_type.replace("entity_", "")
     case = OnboardingCase(

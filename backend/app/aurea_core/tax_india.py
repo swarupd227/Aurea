@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import firm_time, markets
+from app.aurea_core.pan import mask as pan_mask
 from app.aurea_core.valuation import latest_prices
 from app.models.graph import Account, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding, Instrument, TaxLot, Transaction
@@ -401,6 +402,9 @@ async def report(session: AsyncSession, brain: dict, *, firm, today: date | None
             "id": key,
             "name": person.full_name if person else (entity.name if entity else data["accounts"][0].name),
             "kind": str(entity.entity_type) if entity else "individual",
+            # Masked: the PAN itself never leaves aurea_core/pan.py.
+            "pan": pan_mask(person.pan if person else entity.pan if entity else None),
+            "pan_holder": ({"person_id": str(person.id)} if person else {"entity_id": str(entity.id)} if entity else None),
             "regime": inputs["regime"], "slab_rate": inputs["slab_rate"], "income": inputs["income"],
             "demats": [{"id": str(a.id), "name": a.name, "custodian": a.custodian} for a in data["accounts"]],
             "realised": realised, "brought_forward": inputs["brought"], "position": settled,

@@ -64,6 +64,10 @@ MATRIX: dict[str, dict] = {
     "plan_529": {"documents": [_ID], "fields": ["successor"]},
     "hsa": {"documents": [_ID], "fields": ["successor"]},
     "daf": {"documents": [_ID], "fields": ["successor"]},
+    # India: the karta's identity, the declaration that forms the HUF, and the HUF's own PAN card. The PAN itself
+    # is recorded against the entity from that card (aurea_core/pan.py), not as a registration field.
+    "huf": {"documents": [_ID, ("huf", "HUF declaration", ("huf_declaration",)), ("pan", "PAN card of the HUF", ("pan_card",))],
+            "fields": []},
 }
 FIELD_LABELS = {
     "state": "State", "married": "Owners married to each other", "funding": "Funding (contribution, rollover, conversion or transfer)",

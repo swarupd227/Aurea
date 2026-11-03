@@ -184,6 +184,19 @@ def lot_method_for_firm(firm: Firm) -> str:
     return cfg.get("lot_method", LotRelief.FIFO)
 
 
+async def _units_for_amount(session: AsyncSession, spec: dict) -> dict:
+    """An order for an amount (a fund purchase, a SIP instalment) in units at the latest real price, rounded
+    down to three decimals as fund units are. No real price means no units: the order is then refused at the
+    venue like any order on an invented price, with nothing guessed."""
+    price = (await session.execute(
+        select(Price).where(Price.instrument_id == _uuid(spec["instrument_id"]), Price.is_real.is_(True))
+        .order_by(Price.as_of.desc()).limit(1))).scalars().first()
+    if price is None or not float(price.close):
+        return {"quantity": 0, "est_price": 0, "est_value": float(spec["amount"])}
+    units = (Decimal(str(spec["amount"])) / Decimal(str(price.close))).quantize(Decimal("0.001"), rounding="ROUND_DOWN")
+    return {"quantity": float(units), "est_price": float(price.close), "est_value": float(spec["amount"])}
+
+
 async def execute_order_set(
     session: AsyncSession, *, firm: Firm, order_set: list[dict],
     recommendation_id=None, mandate_id=None, actor: str = "adviser",
@@ -203,6 +216,8 @@ async def execute_order_set(
     fees_total = Decimal(0)
 
     for spec in order_set:
+        if spec.get("amount") and not spec.get("quantity"):
+            spec = {**spec, **await _units_for_amount(session, spec)}
         order = Order(
             firm_id=firm.id,
             account_id=_uuid(spec["account_id"]),

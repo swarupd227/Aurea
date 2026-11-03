@@ -14,7 +14,7 @@ const REGISTRATION_LABELS: Record<string, string> = {
   employer_rollover: "Employer Rollover", trust: "Trust",
   entity_llc: "LLC", entity_corp: "Corp", entity_partnership: "Partnership",
   custodial_utma: "Custodial UTMA", custodial_ugma: "Custodial UGMA",
-  estate_inherited: "Estate/Inherited",
+  estate_inherited: "Estate/Inherited", huf: "HUF",
 };
 
 const AML_TIER_STYLE: Record<string, string> = {
@@ -268,6 +268,7 @@ const REGISTRATION_OPTIONS = [
   { value: "custodial_utma", label: "Custodial — UTMA" },
   { value: "custodial_ugma", label: "Custodial — UGMA" },
   { value: "estate_inherited", label: "Estate / Inherited" },
+  { value: "huf", label: "HUF (India)" },
 ];
 
 function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {

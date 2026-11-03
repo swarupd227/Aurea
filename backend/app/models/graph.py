@@ -50,6 +50,8 @@ class Person(Base):
 
     # KYC / AML status object: {"status":"verified","aml_screened":true,"as_of":"..."}.
     kyc: Mapped[dict] = mapped_column(JSON, default=dict)
+    # India's tax identifier, recorded by a person from a document, shown only masked (aurea_core/pan.py).
+    pan: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Stated preferences, values, life-stage signals.
     profile: Mapped[dict] = mapped_column(JSON, default=dict)
     is_next_gen: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -72,6 +74,7 @@ class LegalEntity(Base):
     entity_type: Mapped[EntityType] = mapped_column(String(24))
     # Governance: trustees, settlor, beneficiaries, decision rules.
     governance: Mapped[dict] = mapped_column(JSON, default=dict)
+    pan: Mapped[str | None] = mapped_column(String(10), nullable=True)   # aurea_core/pan.py
     # Mandate / impact objectives for for-purpose entities.
     impact_objectives: Mapped[dict] = mapped_column(JSON, default=dict)
     jurisdiction: Mapped[str] = mapped_column(String(8), default="NZ")

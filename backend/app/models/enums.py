@@ -223,6 +223,8 @@ class PartyRole(StrEnum):
     CUSTODIAN = "custodian"                 # UTMA/UGMA adult custodian
     MINOR = "minor"                         # UTMA/UGMA beneficiary minor
     EXECUTOR = "executor"                   # estate / inherited
+    KARTA = "karta"                         # India: the HUF's manager, who acts and signs for it
+    COPARCENER = "coparcener"               # India: a member with a birthright in the HUF's property
 
 
 class PartyScreeningStatus(StrEnum):
@@ -255,6 +257,7 @@ class RegistrationType(StrEnum):
     PLAN_529 = "plan_529"
     DAF = "daf"
     HSA = "hsa"
+    HUF = "huf"                          # India: a Hindu Undivided Family, a taxpayer of its own, run by its karta
 
 
 class NIGORootCause(StrEnum):

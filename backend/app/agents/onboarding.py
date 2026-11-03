@@ -166,7 +166,9 @@ class OnboardingAgent(BaseAgent):
             exceptions.append("Sanctions match — onboarding must not proceed without compliance escalation.")
         elif screening["status"] == "review":
             exceptions.append("PEP / adverse-media hit — enhanced due diligence required before approval.")
-        required = {"passport", "drivers_licence"} if not case["is_entity"] else {"trust_deed"}
+        # An HUF is formed by a declaration, not a deed (India row 4).
+        required = ({"passport", "drivers_licence"} if not case["is_entity"]
+                    else {"huf_declaration"} if case.get("entity_type") == "huf" else {"trust_deed"})
         present = {d["doc_type"] for d in docs}
         for missing_doc in required - present:
             exceptions.append(f"Missing required document: {DOC_LABELS.get(missing_doc, missing_doc)}.")
@@ -276,10 +278,15 @@ class OnboardingAgent(BaseAgent):
         owner_entity_id = None
 
         if case.is_entity:
+            parties = (case.intake or {}).get("associated_parties", [])
             entity = LegalEntity(
                 firm_id=ctx.firm.id, household_id=household.id, name=case.prospect_name,
                 entity_type=EntityType(case.entity_type or "trust"),
-                governance={"trustees": (case.intake or {}).get("associated_parties", [])},
+                # An HUF is run by its karta for its members; a trust by its trustees.
+                governance=({"karta": (case.intake or {}).get("karta"), "members": parties}
+                            if case.entity_type == "huf" else {"trustees": parties}),
+                # The firm's own market, not the column's New Zealand default.
+                jurisdiction=ctx.firm.jurisdiction or "NZ",
                 impact_objectives={},
             )
             s.add(entity)

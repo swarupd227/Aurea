@@ -87,7 +87,8 @@ async def main() -> int:
             check("no agent runs alone", tier in (AutonomyTier.TIER_1, AutonomyTier.TIER_2), True)
             invented = (await s.execute(select(func.count()).select_from(Price).where(
                 Price.firm_id == firm.id, Price.is_real.is_(False)))).scalar_one()
-            check("prices with no feed are marked as invented", invented, len(india_demo.INSTRUMENTS))
+            listed = [sym for sym, spec in india_demo.INSTRUMENTS.items() if not spec[4].get("amfi_code")]
+            check("prices with no feed are marked as invented", invented, len(listed))
             check("the document set is India's", disclosures.required_for(firm.jurisdiction, "individual")[0], "in_advisory_agreement")
 
             print("\n=== A family's tax ===")
@@ -263,6 +264,130 @@ async def main() -> int:
                 Recommendation.agent_key == AgentKey.TAX_INTELLIGENCE, Recommendation.subject_id == traded,
                 Recommendation.status == RecommendationStatus.PROPOSED))).scalars().all()
             check("a closed memo does not stop the next scan raising one", len(back), 1)
+
+            print("\n=== Row 4: funds in their plans, priced from AMFI ===")
+            from datetime import date as _date, timedelta as _td
+
+            import httpx
+
+            from app.aurea_core import pan as pan_core, shelf, sip as sip_core
+            from app.conduit.marketdata import parse_amfi_navs
+            from app.conduit.service import sync_market_data
+            from app.models.enums import EntityType, PartyRole, RegistrationType
+            from app.models.graph import Account
+            from app.models.portfolio import Instrument
+
+            funds = {sym: spec for sym, spec in india_demo.INSTRUMENTS.items() if spec[4].get("amfi_code")}
+            check("three schemes, each in a direct and a regular plan",
+                  sorted(spec[4]["fund_plan"] for spec in funds.values()), ["direct"] * 3 + ["regular"] * 3)
+            day = _date.today().strftime("%d-%b-%Y")
+            new_layout = "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date\n\n"
+            new_layout += "\n".join(f"{spec[4]['amfi_code']};{spec[4]['isin']};-;{spec[4]['scheme']};x;Growth;{spec[3]};{day}" for spec in funds.values())
+            old_layout = "122639;INF879O01027;-;Parag Parikh Flexi Cap Fund - Direct Plan - Growth;89.7397;02-Nov-2026\n100822;-;-;x;N.A.;02-Nov-2026"
+            check("the NAV file is read by scheme code, in its new layout", len(parse_amfi_navs(new_layout, {s[4]["amfi_code"] for s in funds.values()})), 6)
+            check("and its old one, skipping a NAV that is not given",
+                  parse_amfi_navs(old_layout, {"122639", "100822"}), {"122639": (_date(2026, 11, 2), 89.7397)})
+            fund_ids = {sym: (await s.execute(select(Instrument.id).where(Instrument.firm_id == firm.id, Instrument.symbol == sym))).scalar_one()
+                        for sym in funds}
+            check("a fund is seeded with no invented price", (await s.execute(select(func.count()).select_from(Price).where(
+                Price.instrument_id.in_(list(fund_ids.values()))))).scalar_one(), 0)
+            asked = []
+
+            def _feeds(request):
+                asked.append(request.url.host)
+                return httpx.Response(200, text=new_layout) if "amfiindia" in request.url.host else httpx.Response(404)
+
+            priced = await sync_market_data(s, firm.id, transport=httpx.MockTransport(_feeds), revalue=False)
+            navs = (await s.execute(select(Price).where(Price.instrument_id.in_(list(fund_ids.values()))))).scalars().all()
+            check("the sync prices every fund from AMFI, as real", (len(navs), {p.source for p in navs}, all(p.is_real for p in navs)),
+                  (6, {"amfi"}, True))
+            check("and asks AMFI once, never the listed feed for a fund", (asked.count("portal.amfiindia.com"),
+                  [k for k in priced["failed"] if k in funds]), (1, []))
+
+            mandates = (await s.execute(select(Mandate).where(Mandate.firm_id == firm.id))).scalars().all()
+            ia_m = next(m for m in mandates if m.constraints["service_track"] == "investment_adviser")
+            pms_m = next(m for m in mandates if m.constraints["service_track"] == "pms_discretionary")
+            regular = {fund_ids[sym] for sym, spec in funds.items() if spec[4]["fund_plan"] == "regular"}
+            for label, m in (("an adviser", ia_m), ("a portfolio manager", pms_m)):
+                bars = await shelf.plan_bars(s, firm, m)
+                check(f"{label} buys direct plans only", set(bars), regular)
+            refused, _ = await shelf.order_refusals(s, firm, ia_m, [{"side": "buy", "instrument_id": str(fund_ids["PPFAS-FLEXI-REGULAR"]),
+                                                                  "symbol": "PPFAS-FLEXI-REGULAR"}])
+            check("so a regular plan is refused, saying why", "only direct plans are bought" in (refused[0] if refused else ""), True)
+            check("a distributor's licence buys the regular plan", licences.LICENCES["mutual_fund_distributor"].fund_plans, ("regular",))
+
+            print("\n=== Row 4: a SIP, bought by amount ===")
+            account = (await s.execute(select(Account).where(Account.mandate_id == pms_m.id))).scalars().first()
+            account.cash_balance = 30000
+            await s.flush()
+            terms = dict(instrument="PPFAS-FLEXI-DIRECT", amount=10000, day_of_month=5, starts_on=_date(2030, 1, 1), ends_on=None,
+                         evidence_ref=None, simulated=True)
+
+            async def sip_refused(label, contains, **change):
+                try:
+                    await sip_core.prepare(s, firm, account.id, **{**terms, **change})
+                    check(label, "recorded", "refused")
+                except sip_core.SipError as exc:
+                    check(label, contains in str(exc), True)
+
+            await sip_refused("a SIP is refused in a regular plan", "only direct plans", instrument="PPFAS-FLEXI-REGULAR")
+            await sip_refused("and in a listed share", "not one", instrument="INFY.NS")
+            await sip_refused("and with no registration on file", "registration is on file", simulated=False)
+            await sip_refused("and on a day not every month has", "1 to 28", day_of_month=31)
+            row = await sip_core.record(s, firm, account.id, by="adviser@astra-india.demo", **terms)
+            check("it is recorded as simulated, with nothing bought yet", (row.simulated, row.history), (True, []))
+            nav = float(next(p.close for p in navs if p.instrument_id == fund_ids["PPFAS-FLEXI-DIRECT"]))
+            check("nothing before its day", await sip_core.run_due(s, firm, today=_date(2030, 1, 4)), {"bought": 0, "missed": 0})
+            check("on its day the instalment is bought", await sip_core.run_due(s, firm, today=_date(2030, 1, 5)), {"bought": 1, "missed": 0})
+            first = row.history[-1]
+            check("in units for the amount at the real NAV, to three decimals",
+                  (first["status"], first["units"], first["reaches_market"]), ("bought", float(int(10000 / nav * 1000) / 1000), False))
+            check("once a month", await sip_core.run_due(s, firm, today=_date(2030, 1, 20)), {"bought": 0, "missed": 0})
+            account.cash_balance = 500
+            await s.flush()
+            check("short of cash, the month is missed and says so", await sip_core.run_due(s, firm, today=_date(2030, 2, 5)), {"bought": 0, "missed": 1})
+            check("with the shortfall", "short of cash" in row.history[-1]["reason"], True)
+            ex = ToolExecutors(s, adviser.id, UserRole.ADVISER, firm.id)
+            card = await ex.preview_change("record_sip", {"account_id": str(account.id), "instrument": "UTI-NIFTY50-DIRECT", "amount": 5000,
+                                                          "day_of_month": 10, "starts_on": "2030-03-01", "simulated": True})
+            shown = dict((r["label"], r["value"]) for r in card["rows"]) if card and "rows" in card else {}
+            check("the Confirm card names the fund, the plan and the registration",
+                  (shown.get("Plan"), shown.get("Registration")), ("Direct", "Simulated, demonstration firm"))
+            read = await ex.execute("read_sips", {})
+            check("the SIP is read back, with what it bought", (read["active"], read["sips"][0]["bought"], read["sips"][0]["plan"]), (1, 1, "direct"))
+            await sip_core.end(s, firm, row.id, by="adviser@astra-india.demo", reason="the client asked to stop")
+            check("ended, nothing more is bought", await sip_core.run_due(s, firm, today=_date(2030, 3, 5)), {"bought": 0, "missed": 0})
+
+            print("\n=== Row 4: PAN, recorded from a document and shown masked ===")
+            rajesh_p = (await s.execute(select(Person).where(Person.full_name == "Rajesh Sharma"))).scalar_one()
+            huf_e = (await s.execute(select(LegalEntity).where(LegalEntity.entity_type == EntityType.HUF))).scalars().first()
+
+            async def pan_refused(label, contains, **kw):
+                try:
+                    await pan_core.record(s, firm, by="ops", **kw)
+                    check(label, "recorded", "refused")
+                except pan_core.PanError as exc:
+                    check(label, contains in str(exc), True)
+
+            await pan_refused("a PAN in the wrong form is refused", "five letters", person_id=rajesh_p.id, pan="ABC123", source_document="PAN card")
+            await pan_refused("so is one whose holder letter is not a person's", "is an HUF's", person_id=rajesh_p.id, pan="ABCHS1234K", source_document="PAN card")
+            done = await pan_core.record(s, firm, by="ops", person_id=rajesh_p.id, pan="abcps 1234 k", source_document="PAN card, copy on file")
+            check("it is shown masked, the last four only", done["pan"], "••••••234K")
+            meera_p = (await s.execute(select(Person).where(Person.full_name == "Meera Sharma"))).scalar_one()
+            await pan_refused("one PAN belongs to one holder", "already on file", person_id=meera_p.id, pan="ABCPS1234K", source_document="PAN card")
+            await pan_core.record(s, firm, by="ops", entity_id=huf_e.id, pan="ABCHS1234K", source_document="HUF PAN card")
+            position = await tax_intelligence.for_household(s, sharma.id, firm.jurisdiction, firm_id=firm.id)
+            pans = {t["name"]: t["pan"] for t in position["taxpayers"]}
+            check("the tax position shows whose PAN is on file, masked", (pans["Rajesh Sharma"], pans["Rajesh Sharma HUF"], pans["Meera Sharma"]),
+                  ("••••••234K", "••••••234K", None))
+            check("and no full PAN reaches a read", "ABCPS1234K" in json.dumps(position), False)
+
+            print("\n=== Row 4: an HUF in onboarding ===")
+            check("an HUF is a registration", RegistrationType("huf"), RegistrationType.HUF)
+            from app.aurea_core import document_matrix, parties
+            check("run by its karta", [r[0] for r in parties.required_roles("huf")], [PartyRole.KARTA])
+            check("formed by a declaration, with its own PAN card",
+                  [d[0] for d in document_matrix.MATRIX["huf"]["documents"]], ["id", "huf", "pan"])
 
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)

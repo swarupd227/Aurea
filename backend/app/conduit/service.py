@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.pricing import PRICE_FRESH_DAYS, range_for_gap
 from app.aurea_core.valuation import revalue_firm
-from app.conduit.marketdata import fetch_feed
+from app.conduit.marketdata import FeedResult, fetch_amfi_navs, fetch_feed
 from app.conduit.registry import default_connectors, get_provider_def
 from app.core.db import utcnow
 from app.core.logging import get_logger
@@ -86,9 +86,23 @@ async def sync_market_data(
     ranges = {i.symbol: range_for_gap((today - last_dates[i.id]).days if i.id in last_dates else None)
               for i in instruments}
 
-    feed = await fetch_feed([(i.symbol, i.market_symbol, i.currency) for i in instruments], ranges,
-                            transport=transport)
-    report["provider"] = feed.source
+    # A mutual fund has a NAV, not a market price: AMFI publishes it by scheme code, so a fund is never
+    # asked of the listed feed (which would fail on it every run).
+    funds = {i.symbol: str((i.values_tags or {}).get("amfi_code")) for i in instruments
+             if (i.values_tags or {}).get("amfi_code")}
+    listed = [i for i in instruments if i.symbol not in funds]
+    feed = (await fetch_feed([(i.symbol, i.market_symbol, i.currency) for i in listed], ranges,
+                             transport=transport)) if listed else FeedResult()
+    sources = {symbol: feed.source for symbol in feed.series}
+    if funds:
+        navs, why = await fetch_amfi_navs(set(funds.values()), transport=transport)
+        for symbol, code in funds.items():
+            if code in navs:
+                feed.series[symbol] = [navs[code]]
+                sources[symbol] = "amfi"
+            else:
+                feed.failures[symbol] = why or f"AMFI lists no NAV for scheme {code}"
+    report["provider"] = feed.source if listed else "amfi"
     report["failed"] = dict(feed.failures)
     by_symbol = {i.symbol: i for i in instruments}
     newest: dict[uuid.UUID, date] = {}
@@ -111,11 +125,11 @@ async def sync_market_data(
             row = existing.get(d)
             if row is None:
                 session.add(Price(firm_id=firm_id, instrument_id=inst.id, as_of=d, close=close,
-                                  currency=currency, source=feed.source, is_real=True))
+                                  currency=currency, source=sources.get(symbol, feed.source), is_real=True))
                 report["inserted"] += 1
             elif d == last_stored or not row.is_real:
                 if abs(float(row.close) - close) > 1e-9 or not row.is_real:
-                    row.close, row.source, row.is_real, row.currency = close, feed.source, True, currency
+                    row.close, row.source, row.is_real, row.currency = close, sources.get(symbol, feed.source), True, currency
                     report["updated"] += 1
         newest[inst.id] = max(d for d, _ in points)
 

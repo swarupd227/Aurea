@@ -20,6 +20,7 @@ import { IpsCard } from "./IpsCard";
 import { BalanceSheetCard } from "./BalanceSheetCard";
 import { EquityCompCard } from "./EquityCompCard";
 import { CashCard } from "./CashCard";
+import { SipCard } from "./SipCard";
 import { ClientFileCard } from "./ClientFileCard";
 import { ExitsCard } from "./ExitsCard";
 import { PlanCard } from "./PlanCard";
@@ -240,6 +241,11 @@ export function artifactCard(artifact: Artifact) {
       case "end_phase_in":
         if (!Array.isArray(artifact.result?.requests)) return null;
         return <CashCard result={artifact.result as any} />;
+      case "read_sips":
+      case "record_sip":
+      case "end_sip":
+        if (!Array.isArray(artifact.result?.sips)) return null;
+        return <SipCard result={artifact.result as any} />;
       case "read_client_file":
       case "record_trusted_contact":
       case "record_estate_document":

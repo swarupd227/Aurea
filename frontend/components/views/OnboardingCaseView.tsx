@@ -15,7 +15,7 @@ const REGISTRATION_LABELS: Record<string, string> = {
   employer_rollover: "Employer Rollover", trust: "Trust",
   entity_llc: "LLC", entity_corp: "Corp", entity_partnership: "Partnership",
   custodial_utma: "Custodial UTMA", custodial_ugma: "Custodial UGMA",
-  estate_inherited: "Estate/Inherited",
+  estate_inherited: "Estate/Inherited", huf: "HUF",
 };
 
 const NIGO_LABELS: Record<string, string> = {

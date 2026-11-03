@@ -74,6 +74,25 @@ async def barred(session: AsyncSession, firm: Firm, mandate: Mandate) -> dict[uu
         for instrument_id in rows:
             if instrument_id not in decided:
                 out[instrument_id] = "not on the approved list"
+    for instrument_id, reason in (await plan_bars(session, firm, mandate)).items():
+        out.setdefault(instrument_id, reason)
+    return out
+
+
+async def plan_bars(session: AsyncSession, firm: Firm, mandate: Mandate) -> dict[uuid.UUID, str]:
+    """A mutual fund plan the mandate's licence does not buy: a regular plan under an adviser or a portfolio
+    manager. Nothing for a firm that holds no licence, since only a licence says which plan is right."""
+    from app.aurea_core import licences
+
+    licence = licences.track_for(firm, mandate)
+    if licence is None:
+        return {}
+    out: dict[uuid.UUID, str] = {}
+    for inst in (await session.execute(select(Instrument).where(Instrument.firm_id == firm.id))).scalars().all():
+        plan = (inst.values_tags or {}).get("fund_plan")
+        if plan and plan not in licence.fund_plans:
+            out[inst.id] = (f"a {plan} plan, and under the {licence.name} licence only "
+                            f"{' or '.join(licence.fund_plans)} plans are bought")
     return out
 
 

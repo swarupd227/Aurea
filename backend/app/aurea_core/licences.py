@@ -35,6 +35,10 @@ class Licence:
     per_trade_consent: bool     # does each trade need the client's own consent
     max_tier: AutonomyTier
     citation: str
+    # The mutual fund plans this licence buys for a client. An adviser or a portfolio manager is paid by the
+    # client and takes no distribution commission, so it buys direct plans; a distributor is paid through the
+    # regular plan's commission. From the research report (3.4, I13), for counsel to confirm.
+    fund_plans: tuple[str, ...] = ("direct",)
 
 
 LICENCES: dict[str, Licence] = {l.key: l for l in (
@@ -49,7 +53,7 @@ LICENCES: dict[str, Licence] = {l.key: l for l in (
     Licence("pms_advisory", "Portfolio Manager, advisory", False, False, AutonomyTier.TIER_1,
             "SEBI (Portfolio Managers) Regulations"),
     Licence("mutual_fund_distributor", "Mutual Fund Distributor", True, True, AutonomyTier.TIER_1,
-            "MF Master Circular (Mar 2026)"),
+            "MF Master Circular (Mar 2026)", ("regular",)),
 )}
 
 
@@ -63,7 +67,7 @@ def describe(licence: Licence | None) -> dict | None:
         return None
     return {"key": licence.key, "name": licence.name, "may_execute": licence.may_execute,
             "per_trade_consent": licence.per_trade_consent, "max_tier": licence.max_tier.value,
-            "citation": licence.citation}
+            "citation": licence.citation, "fund_plans": list(licence.fund_plans)}
 
 
 def track_for(firm, mandate: Mandate | None) -> Licence | None:

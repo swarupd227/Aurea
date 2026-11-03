@@ -7,6 +7,7 @@ from app.models import (  # noqa: F401
     balance_sheet,
     billing,
     cash_movement,
+    sip,
     client_file,
     client_experience,
     compliance,

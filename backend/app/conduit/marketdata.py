@@ -237,6 +237,42 @@ async def fetch_quotes(symbols: list[tuple[str, str | None, str]]) -> dict[str, 
     return await fetch_quotes_yahoo(symbols)
 
 
+AMFI_NAV_URL = "https://portal.amfiindia.com/spages/NAVAll.txt"
+
+
+def parse_amfi_navs(text: str, codes: set[str]) -> dict[str, tuple[date, float]]:
+    """(date, NAV) for each scheme code asked for, from AMFI's NAVAll.txt.
+
+    A data line is semicolon-separated and starts with the scheme code; the NAV and its date are the
+    last two fields. The file has changed its middle columns (the plan and option now sit apart from
+    the name), so nothing else on the line is relied on. "N.A." and unparseable lines are skipped."""
+    out: dict[str, tuple[date, float]] = {}
+    for line in text.splitlines():
+        parts = [p.strip() for p in line.split(";")]
+        if len(parts) < 4 or parts[0] not in codes:
+            continue
+        try:
+            out[parts[0]] = (datetime.strptime(parts[-1], "%d-%b-%Y").date(), float(parts[-2]))
+        except ValueError:
+            continue
+    return out
+
+
+async def fetch_amfi_navs(codes: set[str], *, transport: httpx.AsyncBaseTransport | None = None
+                          ) -> tuple[dict[str, tuple[date, float]], str | None]:
+    """The latest NAV per scheme code, and why the file could not be read if it could not."""
+    if not codes:
+        return {}, None
+    try:
+        async with httpx.AsyncClient(timeout=60, headers=_HEADERS, transport=transport) as client:
+            r = await client.get(AMFI_NAV_URL)
+        if r.status_code != 200:
+            return {}, f"AMFI answered {r.status_code}"
+        return parse_amfi_navs(r.text, codes), None
+    except httpx.HTTPError as exc:
+        return {}, f"AMFI could not be reached: {exc.__class__.__name__}"
+
+
 async def fetch_feed(symbols: list[tuple[str, str | None, str]], ranges: dict[str, str], *,
                      transport: httpx.AsyncBaseTransport | None = None) -> FeedResult:
     """The one entry point the sync uses: dated closes per symbol, and why any failed.
