@@ -60,6 +60,8 @@ import { CanvasRetirementView } from "@/components/views/CanvasRetirementView";
 import { CanvasGoalsView } from "@/components/views/CanvasGoalsView";
 import { CanvasNextGenView } from "@/components/views/CanvasNextGenView";
 import { CanvasQuestionnaireView } from "@/components/views/CanvasQuestionnaireView";
+import { AdminView } from "@/components/views/AdminView";
+import { ConnectorsView } from "@/components/views/ConnectorsView";
 import { FamilyView } from "@/components/views/FamilyView";
 import { BehaviouralView } from "@/components/views/BehaviouralView";
 import { RegulatoryCountdownView } from "@/components/views/RegulatoryCountdownView";
@@ -209,6 +211,10 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <CanvasNextGenView household={pane.query.household ?? null} />;
     case "canvas_questionnaire":
       return <CanvasQuestionnaireView household={pane.query.household ?? null} />;
+    case "admin":
+      return <AdminView tab={pane.query.tab ?? null} />;
+    case "connectors":
+      return <ConnectorsView />;
     case "corporate_actions":
       return <CorporateActionsView />;
     case "provenance":

@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
-from app.aurea_core import composites
+from app.aurea_core import platform_admin
+from app.aurea_core.platform_admin import AdminError
 from app.core.db import get_db
 from app.core.security import require_roles, staff_user
 from app.models.enums import UserRole
@@ -42,45 +43,18 @@ class TargetWeightIn(BaseModel):
 
 
 def _mp_dict(mp: ModelPortfolio, targets: list[TargetAllocation] | None = None) -> dict:
-    return {
-        "id": str(mp.id),
-        "name": mp.name,
-        "description": mp.description,
-        "drift_band": float(mp.drift_band),
-        "benchmark_symbol": getattr(mp, "benchmark_symbol", None),
-        "targets": [
-            {"asset_class": t.asset_class, "target_weight": float(t.target_weight)}
-            for t in (targets or [])
-        ],
-        "created_at": mp.created_at.isoformat() if mp.created_at else None,
-    }
+    return platform_admin.model_out(mp, targets)
+
+
+def _refused(exc: AdminError) -> HTTPException:
+    return HTTPException(exc.status, str(exc))
 
 
 @router.get("")
 async def list_model_portfolios(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    rows = (
-        await db.execute(
-            select(ModelPortfolio).where(ModelPortfolio.firm_id == firm.id)
-            .order_by(ModelPortfolio.created_at)
-        )
-    ).scalars().all()
-    # Load targets per model
-    if rows:
-        alloc_rows = (
-            await db.execute(
-                select(TargetAllocation).where(
-                    TargetAllocation.model_id.in_([mp.id for mp in rows])
-                )
-            )
-        ).scalars().all()
-        by_model: dict[uuid.UUID, list[TargetAllocation]] = {}
-        for t in alloc_rows:
-            by_model.setdefault(t.model_id, []).append(t)
-    else:
-        by_model = {}
-    return [_mp_dict(mp, by_model.get(mp.id, [])) for mp in rows]
+    return await platform_admin.list_model_portfolios(db, firm)
 
 
 @router.post("")
@@ -89,13 +63,12 @@ async def create_model_portfolio(
     user: User = AdminDep,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    mp = ModelPortfolio(
-        firm_id=firm.id, name=body.name, description=body.description,
-        drift_band=body.drift_band, benchmark_symbol=body.benchmark_symbol,
-    )
-    db.add(mp)
-    await db.flush()
-    return _mp_dict(mp)
+    try:
+        done = await platform_admin.save_model_portfolio(db, firm, user, name=body.name, description=body.description,
+                                                         drift_band=body.drift_band, benchmark_symbol=body.benchmark_symbol)
+    except AdminError as exc:
+        raise _refused(exc)
+    return _mp_dict(done.record)
 
 
 @router.get("/{model_id}")
@@ -120,19 +93,13 @@ async def update_model_portfolio(
     user: User = AdminDep,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    mp = await db.get(ModelPortfolio, model_id)
-    if not mp or mp.firm_id != firm.id:
-        raise HTTPException(404, "Model portfolio not found.")
-    mp.name = body.name
-    if body.description is not None:
-        mp.description = body.description
-    mp.drift_band = body.drift_band
-    if body.benchmark_symbol is not None:
-        # Ledgered: a composite on this model must disclose the change (aurea_core/composites).
-        await composites.record_benchmark_change(
-            db, mp, to=body.benchmark_symbol.strip(), actor=user.full_name or user.email,
-            reason="Changed by an administrator in model portfolio settings.")
-    await db.flush()
+    # Ledgered: a composite on this model must disclose a benchmark change (aurea_core/composites).
+    try:
+        await platform_admin.save_model_portfolio(db, firm, user, model_id=model_id, name=body.name,
+                                                  description=body.description, drift_band=body.drift_band,
+                                                  benchmark_symbol=body.benchmark_symbol)
+    except AdminError as exc:
+        raise _refused(exc)
     return {"ok": True}
 
 
@@ -142,22 +109,11 @@ async def delete_model_portfolio(
     user: User = AdminDep,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    from sqlalchemy import func
-
-    from app.models.graph import Mandate
-    from app.models.identity import AuditEvent
-
-    mp = await db.get(ModelPortfolio, model_id)
-    if not mp or mp.firm_id != firm.id:
-        raise HTTPException(404, "Model portfolio not found.")
-    # Deleting cascades to its composites and sleeves and leaves its mandates with no model; refuse while any follows it.
-    following = (await db.execute(select(func.count(Mandate.id)).where(Mandate.firm_id == firm.id,
-                                                                       Mandate.model_portfolio_id == model_id))).scalar_one()
-    if following:
-        raise HTTPException(409, f"{following} mandate(s) follow this model. Move them to another model first.")
-    db.add(AuditEvent(firm_id=firm.id, actor_id=user.id, actor_email=user.email, event_type="model_portfolio.deleted",
-                      subject=mp.name))
-    await db.delete(mp)
+    # Deleting cascades to its composites and sleeves and leaves its mandates with no model; refused while any follows it.
+    try:
+        await platform_admin.delete_model_portfolio(db, firm, user, model_id)
+    except AdminError as exc:
+        raise _refused(exc)
     return {"ok": True}
 
 
@@ -168,29 +124,9 @@ async def set_targets(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     """Replace the full target weight set (must sum to 1.0 ± 0.005)."""
-    mp = await db.get(ModelPortfolio, model_id)
-    if not mp or mp.firm_id != firm.id:
-        raise HTTPException(404, "Model portfolio not found.")
-
+    try:
+        done = await platform_admin.set_model_targets(db, firm, user, model_id, [t.model_dump() for t in targets])
+    except AdminError as exc:
+        raise _refused(exc)
     total = sum(t.target_weight for t in targets)
-    if targets and not (0.995 <= total <= 1.005):
-        raise HTTPException(400, f"Weights must sum to 1.0 (got {total:.4f}).")
-
-    # Delete existing
-    existing = (
-        await db.execute(select(TargetAllocation).where(TargetAllocation.model_id == model_id))
-    ).scalars().all()
-    for ta in existing:
-        await db.delete(ta)
-
-    # Insert new
-    new_targets = []
-    for t in targets:
-        ta = TargetAllocation(
-            firm_id=firm.id, model_id=model_id,
-            asset_class=t.asset_class, target_weight=t.target_weight,
-        )
-        db.add(ta)
-        new_targets.append(ta)
-    await db.flush()
-    return {"ok": True, "targets": len(new_targets), "total_weight": round(total, 4)}
+    return {"ok": True, "targets": len(targets), "total_weight": round(total, 4)}

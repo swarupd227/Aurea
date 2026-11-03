@@ -15,7 +15,8 @@ export type PaneViewKey =
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
   | "corporate_actions" | "pipeline" | "tax" | "estate" | "family" | "behavioural" | "regulatory_countdown" | "workforce"
   | "skills" | "book_integration" | "book_batch" | "rulebook"
-  | "canvas" | "canvas_retirement" | "canvas_goals" | "canvas_next_gen" | "canvas_questionnaire";
+  | "canvas" | "canvas_retirement" | "canvas_goals" | "canvas_next_gen" | "canvas_questionnaire"
+  | "admin" | "connectors";
 
 interface PaneViewDef {
   key: PaneViewKey;
@@ -85,6 +86,9 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "workforce", pattern: /^\/studio\/workforce\/?$/, base: "/studio/workforce", label: "Workforce" },
   { key: "skills", pattern: /^\/studio\/skills\/?$/, base: "/studio/skills", label: "Skills" },
   { key: "rulebook", pattern: /^\/admin\/regulatory\/?$/, base: "/admin/regulatory", label: "Rulebook" },
+  // The platform's settings: the Admin page, one tab at a time through `?tab=`, and the connectors catalogue (B-96).
+  { key: "admin", pattern: /^\/admin\/?$/, base: "/admin", label: "Firm & agents" },
+  { key: "connectors", pattern: /^\/admin\/connectors\/?$/, base: "/admin/connectors", label: "Connectors" },
   { key: "book_integration", pattern: /^\/studio\/book-integration\/?$/, base: "/studio/book-integration", label: "Book integration" },
   { key: "book_batch", pattern: /^\/studio\/book-integration\/([0-9a-fA-F-]{8,})\/?$/, base: "/studio/book-integration", label: "Acquired book" },
   // What a client sees, as they see it: their pages, which staff open beside the conversation.
@@ -155,6 +159,14 @@ export function withView(pathname: string, route: string | null): string {
   return route ? `${pathname}?${viewQuery(route)}` : pathname;
 }
 
+/** The Admin page's tab for each section an admin tool reads or changes. */
+const ADMIN_TAB: Record<string, string> = {
+  firm: "firm", branding: "branding", users: "users", agents: "agents", schedules: "schedules", segments: "segments",
+  mandate_types: "mandates", mandates: "mandates", notifications: "notifications", research: "research",
+  model_portfolios: "model-portfolios", connectors: "connectors", cmas: "models", model_routing: "models",
+  assignments: "assignments", audit: "audit", usage: "usage",
+};
+
 /** The pane view a tool result can be opened in, if any - for the "Open" affordance on a card.
  * Ids come from the result itself, never from the model's prose. */
 export function paneRouteForArtifact(toolKey: string, result: Record<string, any> | null | undefined): string | null {
@@ -206,6 +218,27 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
       return "/canvas/retirement";
     case "read_my_goals":
       return "/canvas/goals";
+    case "read_admin_settings":
+      return typeof r.section === "string" ? `/admin?tab=${ADMIN_TAB[r.section] ?? "firm"}` : "/admin";
+    case "update_firm_profile":
+    case "set_agent_switches":
+    case "invite_user":
+    case "change_user":
+    case "save_segment":
+    case "save_mandate_type":
+    case "set_mandate_suitability":
+    case "set_notification":
+    case "add_research":
+    case "research_action":
+    case "save_model_portfolio":
+    case "set_model_targets":
+    case "delete_model_portfolio":
+    case "add_connector":
+    case "set_connector":
+    case "sync_connector":
+    case "set_cmas":
+    case "set_model_routing":
+      return typeof r.section === "string" ? `/admin?tab=${ADMIN_TAB[r.section] ?? "firm"}` : "/admin";
     case "read_book_batches":
     case "start_book_batch":
       return r.batch && typeof r.batch.id === "string" ? `/studio/book-integration/${r.batch.id}` : "/studio/book-integration";

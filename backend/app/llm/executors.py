@@ -18,6 +18,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.graph import household_brain
+from app.llm.admin_executors import AdminToolExecutors
 from app.models.enums import UserRole
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding, Instrument, Price
@@ -41,8 +42,9 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID:
 _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "proposals", "recommendation", "recommendations"}
 
 
-class ToolExecutors:
-    """Factory for tool executors. Each tool_key maps to an executor function."""
+class ToolExecutors(AdminToolExecutors):
+    """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
+    tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
     def __init__(self, session: AsyncSession, user_id: uuid.UUID, role: UserRole, firm_id: uuid.UUID,
                  on_card=None):
@@ -238,6 +240,26 @@ class ToolExecutors:
             "post_corporate_action_entitlement": self.post_corporate_action_entitlement,
             "read_sleeves": self.read_sleeves,
             "net_sleeve_intents": self.net_sleeve_intents,
+            # The Admin and Connectors pages (B-96), one implementation with their routes (aurea_core/platform_admin.py).
+            "read_admin_settings": self.read_admin_settings,
+            "update_firm_profile": self.update_firm_profile,
+            "set_agent_switches": self.set_agent_switches,
+            "invite_user": self.invite_user,
+            "change_user": self.change_user,
+            "save_segment": self.save_segment,
+            "save_mandate_type": self.save_mandate_type,
+            "set_mandate_suitability": self.set_mandate_suitability,
+            "set_notification": self.set_notification,
+            "add_research": self.add_research,
+            "research_action": self.research_action,
+            "save_model_portfolio": self.save_model_portfolio,
+            "set_model_targets": self.set_model_targets,
+            "delete_model_portfolio": self.delete_model_portfolio,
+            "add_connector": self.add_connector,
+            "set_connector": self.set_connector,
+            "sync_connector": self.sync_connector,
+            "set_cmas": self.set_cmas,
+            "set_model_routing": self.set_model_routing,
         }
 
         executor = executor_map.get(tool_key)
@@ -3731,7 +3753,7 @@ class ToolExecutors:
         firm's - an id from the model's memory is not trusted on its own."""
         import json
 
-        from app.core.tools import ONE_CLIENT_VIEWS, OPEN_VIEWS
+        from app.core.tools import ADMIN_TABS, ONE_CLIENT_VIEWS, OPEN_VIEWS
         from app.models.billing import Invoice
         from app.models.engagement import ClientReport, Meeting
         from app.models.governance import Recommendation
@@ -3778,6 +3800,11 @@ class ToolExecutors:
             route = f"{route}/{await grounded('report_id', ClientReport)}"
         elif view == "message_thread":
             route = f"{route}/{await grounded('household_id', Household)}"
+        elif view == "admin" and inputs.get("tab"):
+            tab = str(inputs.get("tab")).strip().lower()
+            if tab not in ADMIN_TABS:
+                raise ExecutorError(f"The admin view has no '{tab}' tab. Tabs: {', '.join(ADMIN_TABS)}.")
+            return {"view": f"{route}?tab={tab}", "kind": view, "message": f"The {label} view is open beside the conversation, on its {tab} tab."}
         elif view in ONE_CLIENT_VIEWS and inputs.get("household_id"):
             household = await self.session.get(Household, await grounded("household_id", Household))
             route = f"{route}?household={household.id}"
@@ -4450,6 +4477,11 @@ class ToolExecutors:
             return rows(*await self._start_preview(inputs))
         if tool_key == "set_agent_control":
             return rows(*await self._control_preview(inputs))
+        if tool_key in ("update_firm_profile", "set_agent_switches", "invite_user", "change_user", "save_segment",
+                        "save_mandate_type", "set_mandate_suitability", "set_notification", "add_research", "research_action",
+                        "save_model_portfolio", "set_model_targets", "delete_model_portfolio", "add_connector", "set_connector",
+                        "sync_connector", "set_cmas", "set_model_routing"):
+            return rows(*await self._admin_preview(tool_key, inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

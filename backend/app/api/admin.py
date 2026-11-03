@@ -16,7 +16,8 @@ from sqlalchemy import delete as sql_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
-from app.aurea_core import knowledge, licences
+from app.aurea_core import licences, platform_admin
+from app.aurea_core.platform_admin import AdminError
 from app.core.config import settings
 from app.core.db import get_db, utcnow
 from app.core.security import UserRole, hash_password, require_roles
@@ -37,6 +38,11 @@ AdminDep = Depends(require_roles(UserRole.ADMIN, UserRole.COMPLIANCE))   # reads
 AdminOnly = Depends(require_roles(UserRole.ADMIN))
 # A connector is operations' to set up, as the Connectors page is (frontend/lib/nav.ts).
 OperationsDep = Depends(require_roles(UserRole.OPERATIONS))
+
+
+def _refused(exc: AdminError) -> HTTPException:
+    """A refusal from aurea_core/platform_admin.py, with the status this route has always answered with."""
+    return HTTPException(status_code=exc.status, detail=str(exc))
 
 
 # ── Firm settings & branding ──────────────────────────────────────────────────
@@ -159,28 +165,13 @@ class CmaIn(BaseModel):
 async def set_cmas(body: CmaIn, user: User = Depends(require_roles(UserRole.ADMIN)),
                    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     """Save firm-level capital-market assumption overrides (expected_return, volatility per asset class)."""
-    from app.aurea_core.planning import CMA
-    s = dict(firm.settings or {})
-    clean = {}
-    for cls, val in body.cmas.items():
-        if cls in CMA and isinstance(val, list) and len(val) == 2:
-            clean[cls] = [float(val[0]), float(val[1])]
-    s["cmas"] = clean
-    firm.settings = s
-    await db.flush()
-    return {"cmas": clean}
+    return {"cmas": await platform_admin.set_cmas(db, firm, user, body.cmas)}
 
 
 @router.get("/foundation/cmas")
 async def get_cmas(user: User = AdminDep, firm: Firm = Depends(current_firm)):
     """Current capital-market assumption overrides for this firm (defaults if none set)."""
-    from app.aurea_core.planning import CMA, effective_cma
-    firm_cmas = effective_cma(firm.settings)
-    return {
-        "defaults": {k: list(v) for k, v in CMA.items()},
-        "overrides": (firm.settings or {}).get("cmas") or {},
-        "effective": {k: list(v) for k, v in firm_cmas.items()},
-    }
+    return platform_admin.cma_table(firm)
 
 
 @router.get("/compliance")
@@ -288,16 +279,8 @@ async def update_branding(
     db: AsyncSession = Depends(get_db),
 ):
     """Update the firm's Canvas/Studio branding — colors, logo text, tagline."""
-    from sqlalchemy.orm.attributes import flag_modified as _flag
-    b = dict(firm.branding or {})
-    for field in ("primary", "accent", "logo_text", "tagline", "logo_url"):
-        val = getattr(body, field)
-        if val is not None:
-            b[field] = val
-    firm.branding = b
-    _flag(firm, "branding")
-    await db.flush()
-    return {"ok": True, "branding": b}
+    await platform_admin.update_branding(db, firm, user, body.model_dump())
+    return {"ok": True, "branding": firm.branding}
 
 
 @router.get("/firm/branding")
@@ -399,9 +382,8 @@ async def test_llm(user: User = Depends(require_roles(UserRole.ADMIN)),
             "reply": result.text.strip()[:60], "usage": result.usage}
 
 
-# Settings that only their own routes change, each with its own checks: the regulatory rules, the foundation
-# policy, the capital market assumptions and PII handling.
-RESERVED_SETTINGS = {"compliance", "foundation", "cmas", "pii"}
+# Settings that only their own routes change, each with its own checks (aurea_core/platform_admin.py).
+RESERVED_SETTINGS = platform_admin.RESERVED_SETTINGS
 
 
 @router.patch("/firm")
@@ -409,27 +391,14 @@ async def update_firm(
     body: FirmUpdate, user: User = AdminOnly,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    for field in ("name", "legal_name", "jurisdiction", "regulator", "base_currency"):
-        val = getattr(body, field)
-        if val is not None:
-            setattr(firm, field, val)
-    if body.branding is not None:
-        firm.branding = {**(firm.branding or {}), **body.branding}
-    if body.settings is not None:
-        if reserved := sorted(set(body.settings) & RESERVED_SETTINGS):
-            raise HTTPException(status_code=422, detail=f"{', '.join(reserved)} are set through their own controls, not here.")
-        firm.settings = {**(firm.settings or {}), **body.settings}
-    if body.model_config_json is not None:
-        # Eval gate — if the firm requires it, a model change can't ship unless the golden gates are green.
-        from app.core.foundation import policy as foundation_policy
-        if foundation_policy(firm).get("enforce_eval_gate") and not eval_gates.run_gates()["all_green"]:
-            raise HTTPException(status_code=409,
-                                detail="Eval gates are not green — model/config change blocked by policy.")
-        firm.model_config_json = {**(firm.model_config_json or {}), **body.model_config_json}
-    _audit_sync(db, firm.id, user, "firm.updated", subject=firm.name,
-                detail={k: v for k, v in body.model_dump(exclude_none=True).items() if k != "settings"}
-                | ({"settings_keys": sorted(body.settings)} if body.settings else {}))
-    await db.flush()
+    """The firm's profile, branding, settings and model routing. A model change waits for green eval gates when
+    the firm enforces them (aurea_core/platform_admin.model_gate_refusal)."""
+    try:
+        await platform_admin.update_firm(
+            db, firm, user, fields={f: getattr(body, f) for f in platform_admin.FIRM_FIELDS},
+            branding=body.branding, settings=body.settings, model_config=body.model_config_json)
+    except AdminError as exc:
+        raise _refused(exc)
     return {"ok": True}
 
 
@@ -449,16 +418,7 @@ class AgentConfigUpdate(BaseModel):
 async def list_agent_configs(
     user: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    rows = (
-        await db.execute(select(AgentConfig).where(AgentConfig.firm_id == firm.id))
-    ).scalars().all()
-    return [
-        {"agent_key": c.agent_key, "enabled": c.enabled, "default_tier": c.default_tier,
-         "paused": c.paused, "paused_reason": c.paused_reason,
-         "schedule_cron": c.schedule_cron, "schedule_enabled": c.schedule_enabled,
-         "config": c.config}
-        for c in rows
-    ]
+    return await platform_admin.list_agent_configs(db, firm)
 
 
 @router.patch("/agents/{agent_key}")
@@ -468,12 +428,9 @@ async def update_agent_config(
 ):
     """An agent's controls (aurea_core/agent_controls.py): a tier within the licence, no resuming an agent
     surveillance paused while its flag is open, a valid schedule, and each change on the record."""
-    from app.aurea_core import agent_controls
-
     try:
-        await agent_controls.change(db, firm, agent_key, actor_id=user.id, actor_email=user.email,
-                                    **body.model_dump(exclude_none=True))
-    except agent_controls.ControlError as exc:
+        await platform_admin.set_agent_switches(db, firm, user, agent_key, **body.model_dump(exclude_none=True))
+    except AdminError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return {"ok": True}
 
@@ -591,19 +548,14 @@ class ResearchIn(BaseModel):
 async def list_research(
     user: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    rows = (
-        await db.execute(select(ResearchDocument).where(ResearchDocument.firm_id == firm.id))
-    ).scalars().all()
-    return [
-        {"id": str(d.id), "title": d.title, "doc_type": d.doc_type, "author": d.author,
-         "summary": d.summary, "tags": d.tags,
-         "status": getattr(d, "status", "published"),
-         "version": getattr(d, "version", 1),
-         "published_by": getattr(d, "published_by", None),
-         "published_at": d.published_at.isoformat() if getattr(d, "published_at", None) else None,
-         "created_at": d.created_at.isoformat() if d.created_at else None}
-        for d in rows
-    ]
+    return await platform_admin.list_research(db, firm)
+
+
+async def _research_step(db: AsyncSession, firm: Firm, user: User, doc_id: uuid.UUID, action: str):
+    try:
+        return (await platform_admin.research_action(db, firm, user, doc_id, action)).record
+    except AdminError as exc:
+        raise _refused(exc)
 
 
 @router.post("/research/{doc_id}/submit")
@@ -611,11 +563,7 @@ async def submit_research(
     doc_id: uuid.UUID, user: User = AdminOnly,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    doc = await db.get(ResearchDocument, doc_id)
-    if not doc or doc.firm_id != firm.id:
-        raise HTTPException(404, "Document not found.")
-    doc.status = "under_review"
-    await db.flush()
+    await _research_step(db, firm, user, doc_id, "submit")
     return {"ok": True, "status": "under_review"}
 
 
@@ -624,14 +572,7 @@ async def publish_research(
     doc_id: uuid.UUID, user: User = AdminOnly,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    doc = await db.get(ResearchDocument, doc_id)
-    if not doc or doc.firm_id != firm.id:
-        raise HTTPException(404, "Document not found.")
-    doc.status = "published"
-    doc.published_by = user.email
-    doc.published_at = utcnow()
-    doc.version = (getattr(doc, "version", 0) or 0) + 1
-    await db.flush()
+    doc = await _research_step(db, firm, user, doc_id, "publish")
     return {"ok": True, "status": "published", "version": doc.version}
 
 
@@ -640,11 +581,7 @@ async def reject_research(
     doc_id: uuid.UUID, user: User = AdminOnly,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    doc = await db.get(ResearchDocument, doc_id)
-    if not doc or doc.firm_id != firm.id:
-        raise HTTPException(404, "Document not found.")
-    doc.status = "draft"
-    await db.flush()
+    await _research_step(db, firm, user, doc_id, "reject")
     return {"ok": True, "status": "draft"}
 
 
@@ -653,14 +590,13 @@ async def add_research(
     body: ResearchIn, user: User = AdminOnly,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    doc = ResearchDocument(
-        firm_id=firm.id, title=body.title, doc_type=body.doc_type, author=body.author,
-        summary=body.summary, body=body.body, tags=body.tags,
-    )
-    db.add(doc)
-    await db.flush()
-    n = await knowledge.ingest_document(db, doc)
-    return {"id": str(doc.id), "chunks": n}
+    """A research document, starting as a draft to be submitted and published."""
+    try:
+        done, n = await platform_admin.add_research(db, firm, user, title=body.title, body=body.body, doc_type=body.doc_type,
+                                                    author=body.author, summary=body.summary, tags=body.tags)
+    except AdminError as exc:
+        raise _refused(exc)
+    return {"id": done.record_id, "chunks": n}
 
 
 # ── User management ───────────────────────────────────────────────────────────
@@ -669,22 +605,11 @@ STAFF_ROLES = [r for r in UserRole if r != UserRole.CLIENT]
 
 
 def _user_out(u: User) -> dict:
-    return {
-        "id": str(u.id), "email": u.email, "full_name": u.full_name,
-        "role": u.role, "title": u.title, "is_active": u.is_active,
-        "created_at": u.created_at.isoformat() if u.created_at else None,
-    }
+    return platform_admin.user_out(u)
 
 
 def _make_token(db: AsyncSession, user: User, firm_id: uuid.UUID, token_type: str, days: int) -> UserInviteToken:
-    tok = UserInviteToken(
-        firm_id=firm_id, user_id=user.id,
-        token=secrets.token_urlsafe(32),
-        token_type=token_type,
-        expires_at=utcnow() + timedelta(days=days),
-    )
-    db.add(tok)
-    return tok
+    return platform_admin.make_token(db, user, firm_id, token_type, days)
 
 
 class UserCreate(BaseModel):
@@ -705,10 +630,7 @@ class UserUpdate(BaseModel):
 async def list_users(
     actor: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    rows = (await db.execute(
-        select(User).where(User.firm_id == firm.id).order_by(User.full_name)
-    )).scalars().all()
-    return [_user_out(u) for u in rows]
+    return await platform_admin.list_users(db, firm)
 
 
 @router.post("/users", status_code=201)
@@ -716,31 +638,14 @@ async def create_user(
     body: UserCreate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    if body.role == UserRole.SUPERADMIN:
-        raise HTTPException(403, "The platform owner's role is not granted from inside a firm.")
-    existing = (await db.execute(
-        select(User).where(User.email == body.email.lower().strip())
-    )).scalar_one_or_none()
-    if existing:
-        raise HTTPException(400, "A user with that email already exists.")
-    new_user = User(
-        firm_id=firm.id,
-        email=body.email.lower().strip(),
-        full_name=body.full_name,
-        hashed_password=hash_password(secrets.token_urlsafe(32)),
-        role=body.role,
-        title=body.title,
-        is_active=False,
-    )
-    db.add(new_user)
-    await db.flush()
-    tok = _make_token(db, new_user, firm.id, "invite", days=7)
-    await db.flush()
-    _audit_sync(db, firm.id, actor, "user.created", subject=new_user.email, detail={"role": body.role})
+    """Invite a person. The invite link comes back to the admin here, and only here: no conversation tool has it."""
+    try:
+        done, tok = await platform_admin.invite_user(db, firm, actor, email=body.email, full_name=body.full_name,
+                                                     role=body.role, title=body.title)
+    except AdminError as exc:
+        raise _refused(exc)
     invite_url = f"{settings.frontend_url}/accept-invite?token={tok.token}"
-    import structlog
-    structlog.get_logger().info("mock_email_invite", to=new_user.email, url=invite_url)
-    return {**_user_out(new_user), "invite_token": tok.token, "invite_url": invite_url}
+    return {**_user_out(done.record), "invite_token": tok.token, "invite_url": invite_url}
 
 
 @router.patch("/users/{user_id}")
@@ -748,27 +653,12 @@ async def update_user(
     user_id: uuid.UUID, body: UserUpdate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    target = await db.get(User, user_id)
-    if not target or target.firm_id != firm.id:
-        raise HTTPException(404, "User not found.")
-    if body.role == UserRole.SUPERADMIN:
-        raise HTTPException(403, "The platform owner's role is not granted from inside a firm.")
-    if target.id == actor.id and (body.role not in (None, target.role) or body.is_active is False):
-        raise HTTPException(400, "You cannot change your own role or deactivate your own account.")
-    if body.full_name is not None:
-        target.full_name = body.full_name
-    if body.role is not None and body.role != target.role:
-        _audit_sync(db, firm.id, actor, "user.role_changed", subject=target.email,
-                    detail={"from": str(target.role), "to": str(body.role)})
-        target.role = body.role
-    if body.title is not None:
-        target.title = body.title
-    if body.is_active is not None and body.is_active != target.is_active:
-        target.is_active = body.is_active
-        if not body.is_active:
-            await _end_sessions(target.id)
-        _audit_sync(db, firm.id, actor, "user.deactivated" if not body.is_active else "user.activated", subject=target.email)
-    return _user_out(target)
+    try:
+        done = await platform_admin.change_user(db, firm, actor, user_id, full_name=body.full_name, role=body.role,
+                                                title=body.title, is_active=body.is_active)
+    except AdminError as exc:
+        raise _refused(exc)
+    return _user_out(done.record)
 
 
 @router.delete("/users/{user_id}", status_code=200)
@@ -779,24 +669,15 @@ async def delete_user(
     """Soft-deactivate a user and immediately invalidate all their active sessions."""
     if user_id == actor.id:
         raise HTTPException(400, "You cannot deactivate your own account.")
-    target = await db.get(User, user_id)
-    if not target or target.firm_id != firm.id:
-        raise HTTPException(404, "User not found.")
-    target.is_active = False
-    await _end_sessions(user_id)
-    _audit_sync(db, firm.id, actor, "user.deactivated", subject=target.email)
+    try:
+        await platform_admin.change_user(db, firm, actor, user_id, is_active=False)
+    except AdminError as exc:
+        raise _refused(exc)
     return {"ok": True}
 
 
 async def _end_sessions(user_id: uuid.UUID) -> None:
-    """Every token issued to this user before now stops working (get_current_user reads the mark). A deactivated
-    user is refused on every request anyway, so with no Redis the mark is skipped rather than the change failing."""
-    from app.core.security import _get_redis
-    try:
-        r = await _get_redis()
-        await r.setex(f"fl:{str(user_id)}", settings.access_token_ttl_minutes * 60, str(int(_time.time())))
-    except Exception:
-        pass
+    await platform_admin.end_sessions(user_id)
 
 
 @router.post("/users/{user_id}/resend-invite")
@@ -830,10 +711,7 @@ async def admin_reset_password(
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 def _audit_sync(db: AsyncSession, firm_id: uuid.UUID, actor: User, event_type: str, subject: str | None = None, detail: dict | None = None) -> None:
-    db.add(AuditEvent(
-        firm_id=firm_id, actor_id=actor.id, actor_email=actor.email,
-        event_type=event_type, subject=subject, detail=detail,
-    ))
+    platform_admin.audit(db, firm_id, actor, event_type, subject=subject, detail=detail)
 
 
 @router.get("/audit")
@@ -842,75 +720,13 @@ async def audit_log(
     event_type: str | None = None,
     actor: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    rows = []
-
-    # Access/admin events
-    q = select(AuditEvent).where(AuditEvent.firm_id == firm.id)
-    if event_type:
-        q = q.where(AuditEvent.event_type == event_type)
-    ae_rows = (await db.execute(q.order_by(AuditEvent.created_at.desc()).limit(limit))).scalars().all()
-    for r in ae_rows:
-        category = "client" if r.event_type.startswith("client.") else "access"
-        rows.append({
-            "ts": r.created_at.isoformat(), "category": category,
-            "event_type": r.event_type, "actor": r.actor_email,
-            "subject": r.subject, "detail": r.detail,
-        })
-
-    # Recommendation decisions from ledger (unless filtering by event_type)
-    if not event_type or event_type.startswith("recommendation"):
-        ledger_rows = (await db.execute(
-            select(LedgerEntry)
-            .where(LedgerEntry.firm_id == firm.id, LedgerEntry.event_type.in_(["decision", "recommendation"]))
-            .order_by(LedgerEntry.created_at.desc()).limit(50)
-        )).scalars().all()
-        for r in ledger_rows:
-            rows.append({
-                "ts": r.created_at.isoformat(), "category": "recommendation",
-                "event_type": f"recommendation.{r.event_type}",
-                "actor": r.actor or "agent",
-                "subject": r.content.get("subject") if r.content else None,
-                "detail": {"agent_key": r.agent_key},
-            })
-
-    # Autonomy changes
-    if not event_type or event_type.startswith("autonomy"):
-        ac_rows = (await db.execute(
-            select(AutonomyChange)
-            .where(AutonomyChange.firm_id == firm.id)
-            .order_by(AutonomyChange.created_at.desc()).limit(30)
-        )).scalars().all()
-        for r in ac_rows:
-            rows.append({
-                "ts": r.created_at.isoformat(), "category": "autonomy",
-                "event_type": "autonomy.tier_changed",
-                "actor": "adaptive" if r.automatic else "admin",
-                "subject": r.agent_key,
-                "detail": {"from": r.from_tier, "to": r.to_tier, "reason": r.reason},
-            })
-
-    rows.sort(key=lambda x: x["ts"], reverse=True)
-    return rows[:limit]
+    return await platform_admin.audit_log(db, firm, limit=limit, event_type=event_type)
 
 
 # ── Express client intake ─────────────────────────────────────────────────────
 
-RISK_SUITABILITY = {
-    "conservative": {"risk_tolerance": "conservative", "investment_horizon": "short", "max_equity": 0.3},
-    "balanced": {"risk_tolerance": "balanced", "investment_horizon": "medium", "max_equity": 0.6},
-    "growth": {"risk_tolerance": "growth", "investment_horizon": "long", "max_equity": 0.8},
-    "aggressive": {"risk_tolerance": "aggressive", "investment_horizon": "long", "max_equity": 1.0},
-}
 
 
-class ClientCreate(BaseModel):
-    full_name: str
-    email: str | None = None
-    date_of_birth: str | None = None
-    segment: str = "private_wealth"
-    mandate_type: str = "advisory"
-    risk_profile: str = "balanced"
-    adviser_id: str | None = None
 
 
 @router.get("/clients")
@@ -942,64 +758,12 @@ async def list_clients(
     return result
 
 
-@router.post("/clients", status_code=201)
-async def create_client(
-    body: ClientCreate,
-    actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
-):
-    from datetime import date as date_type
-
-    from app.aurea_core import advisers
-
-    adviser = None
-    if body.adviser_id:
-        try:
-            adviser = await db.get(User, uuid.UUID(body.adviser_id))
-        except ValueError:
-            adviser = None
-        if adviser is None or adviser.firm_id != firm.id or adviser.role != UserRole.ADVISER or not adviser.is_active:
-            raise HTTPException(422, "The adviser named is not an active adviser of this firm.")
-    household = Household(firm_id=firm.id, name=body.full_name, segment=body.segment)
-    db.add(household)
-    await db.flush()
-
-    dob = None
-    if body.date_of_birth:
-        try:
-            dob = date_type.fromisoformat(body.date_of_birth)
-        except ValueError:
-            pass
-    person = Person(
-        firm_id=firm.id, household_id=household.id,
-        full_name=body.full_name, email=body.email, date_of_birth=dob,
-        segment=body.segment,
-        kyc={"status": "pending", "aml_screened": False},
-    )
-    db.add(person)
-    await db.flush()
-
-    mandate = Mandate(
-        firm_id=firm.id, person_id=person.id,
-        name=f"{body.full_name} — {body.mandate_type.title()} mandate",
-        mandate_type=body.mandate_type,
-        suitability=RISK_SUITABILITY.get(body.risk_profile, RISK_SUITABILITY["balanced"]),
-        constraints={},
-        is_active=True,
-    )
-    db.add(mandate)
-
-    if adviser is not None:
-        await advisers.set_adviser(db, firm.id, household, adviser, actor=actor, reason="Assigned when the client was created",
-                                   was=None)
-
-    _audit_sync(db, firm.id, actor, "client.created", subject=body.full_name,
-                detail={"mandate_type": body.mandate_type, "segment": body.segment})
-    await db.flush()
-    return {
-        "id": str(household.id), "name": household.name,
-        "person_id": str(person.id), "mandate_id": str(mandate.id),
-    }
-
+@router.post("/clients", status_code=410)
+async def create_client(actor: User = AdminOnly):
+    """Retired (B-96): this made a household, a person and a mandate with no screening, agreement or disclosures, so
+    it bypassed every onboarding gate. A client starts as an onboarding case."""
+    raise HTTPException(410, "A client starts as an onboarding case: POST /api/onboarding/cases "
+                             "(aurea_core/onboarding_start.py), or start_onboarding in the conversation.")
 
 @router.patch("/clients/{household_id}/adviser")
 async def assign_adviser(
@@ -1023,30 +787,14 @@ async def assign_adviser(
 # ── Mandate management ────────────────────────────────────────────────────────
 
 def _mandate_out(m: Mandate, client_name: str | None = None) -> dict:
-    return {
-        "id": str(m.id), "name": m.name, "mandate_type": m.mandate_type,
-        "suitability": m.suitability or {}, "constraints": m.constraints or {},
-        "is_active": m.is_active, "client_name": client_name,
-        "created_at": m.created_at.isoformat() if m.created_at else None,
-    }
+    return platform_admin.mandate_out(m, client_name)
 
 
 @router.get("/mandates")
 async def list_mandates(
     actor: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    mandates = (await db.execute(
-        select(Mandate).where(Mandate.firm_id == firm.id).order_by(Mandate.name)
-    )).scalars().all()
-    result = []
-    for m in mandates:
-        client_name = None
-        if m.person_id:
-            p = await db.get(Person, m.person_id)
-            if p:
-                client_name = p.full_name
-        result.append(_mandate_out(m, client_name))
-    return result
+    return await platform_admin.list_mandates(db, firm)
 
 
 class MandateUpdate(BaseModel):
@@ -1064,25 +812,16 @@ async def update_mandate(
     mandate_id: uuid.UUID, body: MandateUpdate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    m = await db.get(Mandate, mandate_id)
-    if not m or m.firm_id != firm.id:
-        raise HTTPException(404, "Mandate not found.")
-    if body.mandate_type is not None:
-        m.mandate_type = body.mandate_type
-    if body.is_active is not None:
-        m.is_active = body.is_active
-    suit = dict(m.suitability or {})
-    changed = False
-    for field in ("risk_tolerance", "investment_horizon", "max_equity", "esg_preference"):
-        val = getattr(body, field)
-        if val is not None:
-            suit[field] = val
-            changed = True
-    if changed:
-        m.suitability = suit
-    _audit_sync(db, firm.id, actor, "mandate.updated", subject=m.name,
-                detail={"mandate_type": m.mandate_type})
-    return _mandate_out(m)
+    """A mandate's type and suitability. A maximum equity is held to the client's capacity ceiling, as an IPS and a
+    risk profile are (aurea_core/platform_admin.prepare_mandate)."""
+    try:
+        done = await platform_admin.update_mandate(
+            db, firm, actor, mandate_id, mandate_type=body.mandate_type, risk_tolerance=body.risk_tolerance,
+            investment_horizon=body.investment_horizon, max_equity=body.max_equity, esg_preference=body.esg_preference,
+            is_active=body.is_active)
+    except AdminError as exc:
+        raise _refused(exc)
+    return _mandate_out(done.record)
 
 
 # ── Per-client data quality ───────────────────────────────────────────────────
@@ -1208,8 +947,8 @@ async def get_data_quality(
 # which runs at the fixed times in aurea_core.price_freshness.SCHEDULE. This used to list three
 # "intervals in hours" that nothing read, so editing one only changed a number on this page.
 
-MARKET_DATA_KEY = "market_data"
-SCHEDULE_PICKED_UP = "within 15 minutes"
+MARKET_DATA_KEY = platform_admin.MARKET_DATA_KEY
+SCHEDULE_PICKED_UP = platform_admin.SCHEDULE_PICKED_UP
 
 
 @router.get("/schedules")
@@ -1217,63 +956,13 @@ async def get_schedules(
     user: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
     """Every job the worker runs on a timer for this firm: the agents' cadences and the price fetch."""
-    from app.agents import schedules as agent_schedules
-    from app.agents.catalogue import CATALOGUE
-    from app.aurea_core import price_freshness
-    from app.models.connectors import ConnectorSync
-
-    configs = {
-        str(c.agent_key): c for c in (await db.execute(
-            select(AgentConfig).where(AgentConfig.firm_id == firm.id)
-        )).scalars().all()
-    }
-    results = []
-    for key, cfg in configs.items():
-        if not cfg.schedule_cron and agent_schedules.default_for(key) is None:
-            continue
-        default = agent_schedules.default_for(key)
-        run_count = (await db.execute(
-            select(func.count()).select_from(AgentRun).where(AgentRun.firm_id == firm.id, AgentRun.agent_key == key)
-        )).scalar() or 0
-        last = (await db.execute(
-            select(AgentRun).where(AgentRun.firm_id == firm.id, AgentRun.agent_key == key)
-            .order_by(AgentRun.started_at.desc()).limit(1)
-        )).scalar_one_or_none()
-        results.append({
-            "agent_key": key, "label": (CATALOGUE.get(key) or {}).get("name") or key.replace("_", " ").title(),
-            "cron": cfg.schedule_cron, "default_cron": default[0] if default else None,
-            "why": default[1] if default else None, "fixed": False,
-            "last_run_at": last.started_at.isoformat() if last and last.started_at else None,
-            "last_run_status": last.status if last else None, "run_count": run_count,
-            "enabled": bool(cfg.enabled and cfg.schedule_enabled), "paused": bool(cfg.paused),
-        })
-    results.sort(key=lambda r: r["label"])
-
-    conn = await price_freshness.market_connector(db, firm.id)
-    last_sync = None
-    n_sync = 0
-    if conn is not None:
-        last_sync = (await db.execute(
-            select(ConnectorSync).where(ConnectorSync.connector_id == conn.id)
-            .order_by(ConnectorSync.started_at.desc()).limit(1))).scalars().first()
-        n_sync = (await db.execute(
-            select(func.count()).select_from(ConnectorSync).where(ConnectorSync.connector_id == conn.id))).scalar() or 0
-    times = " and ".join(f"{h:02d}:{m:02d}" for h, m, _ in price_freshness.SCHEDULE)
-    results.insert(0, {
-        "agent_key": MARKET_DATA_KEY, "label": "Market prices", "cron": f"Mon-Fri {times} UTC",
-        "default_cron": None, "why": "Just after the NZX and US closes. Fixed: the worker builds these times from "
-                                     "one definition, so they are changed in code, not here.",
-        "fixed": True,
-        "last_run_at": last_sync.started_at.isoformat() if last_sync and last_sync.started_at else None,
-        "last_run_status": last_sync.status if last_sync else None, "run_count": n_sync,
-        "enabled": bool(conn and not conn.use_mock), "paused": False,
-    })
-    return results
+    return await platform_admin.list_schedules(db, firm)
 
 
 class ScheduleUpdate(BaseModel):
     cron: str | None = None
     enabled: bool | None = None
+    reason: str | None = None
 
 
 @router.patch("/schedules/{agent_key}")
@@ -1281,8 +970,6 @@ async def update_schedule(
     agent_key: str, body: ScheduleUpdate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    from app.aurea_core import agent_controls
-
     if agent_key == MARKET_DATA_KEY:
         raise HTTPException(409, "Prices are fetched at fixed times just after the market closes; "
                                  "switch the feed on or off under Connectors.")
@@ -1291,10 +978,11 @@ async def update_schedule(
     except ValueError:
         raise HTTPException(404, "Unknown schedule key.")
     try:
-        cfg = await agent_controls.change(db, firm, key, actor_id=actor.id, actor_email=actor.email,
-                                          schedule_cron=body.cron, schedule_enabled=body.enabled)
-    except agent_controls.ControlError as exc:
+        done = await platform_admin.set_agent_switches(db, firm, actor, key, schedule_cron=body.cron,
+                                                       schedule_enabled=body.enabled, reason=body.reason)
+    except AdminError as exc:
         raise HTTPException(422, str(exc))
+    cfg = done.record
     return {"ok": True, "agent_key": agent_key, "cron": cfg.schedule_cron,
             "enabled": bool(cfg.schedule_enabled), "takes_effect": SCHEDULE_PICKED_UP}
 
@@ -1332,18 +1020,10 @@ async def update_research(
     doc_id: uuid.UUID, body: ResearchUpdate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    doc = await db.get(ResearchDocument, doc_id)
-    if not doc or doc.firm_id != firm.id:
-        raise HTTPException(404, "Research document not found.")
-    if body.title is not None:
-        doc.title = body.title
-    if body.doc_type is not None:
-        doc.doc_type = body.doc_type
-    if body.author is not None:
-        doc.author = body.author
-    if body.summary is not None:
-        doc.summary = body.summary
-    _audit_sync(db, firm.id, actor, "research.updated", subject=doc.title)
+    try:
+        doc = await platform_admin.update_research(db, firm, actor, doc_id, **body.model_dump())
+    except AdminError as exc:
+        raise _refused(exc)
     return {"ok": True, "id": str(doc.id)}
 
 
@@ -1352,13 +1032,10 @@ async def delete_research(
     doc_id: uuid.UUID,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    doc = await db.get(ResearchDocument, doc_id)
-    if not doc or doc.firm_id != firm.id:
-        raise HTTPException(404, "Research document not found.")
-    title = doc.title
-    await db.execute(sql_delete(ResearchChunk).where(ResearchChunk.document_id == doc_id))
-    await db.delete(doc)
-    _audit_sync(db, firm.id, actor, "research.deleted", subject=title)
+    try:
+        await platform_admin.research_action(db, firm, actor, doc_id, "delete")
+    except AdminError as exc:
+        raise HTTPException(exc.status, "Research document not found." if exc.status == 404 else str(exc))
     return {"ok": True}
 
 
@@ -1368,31 +1045,7 @@ async def delete_research(
 async def list_assignments(
     actor: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    # RelationshipEdge: from_type="user"/from_id=adviser → to_type="household"/to_id=household
-    edges = (await db.execute(
-        select(RelationshipEdge)
-        .where(RelationshipEdge.firm_id == firm.id, RelationshipEdge.kind == "adviser")
-        .order_by(RelationshipEdge.created_at.desc())
-    )).scalars().all()
-    from app.aurea_core.advisers import members
-
-    # An edge to a person or an entity, as the seed and onboarding write them, names that member's household.
-    people, entities = await members(db, firm.id)
-    out = []
-    for e in edges:
-        adviser = await db.get(User, e.from_id) if e.from_type == "user" else None
-        home = e.to_id if e.to_type == "household" else people.get(e.to_id) if e.to_type == "person" else entities.get(e.to_id)
-        household = await db.get(Household, home) if home else None
-        out.append({
-            "id": str(e.id),
-            "household_id": str(home or e.to_id),
-            "household_name": household.name if household else str(e.to_id),
-            "adviser_id": str(e.from_id),
-            "adviser_name": adviser.full_name if adviser else "—",
-            "adviser_email": adviser.email if adviser else None,
-            "created_at": e.created_at.isoformat() if e.created_at else None,
-        })
-    return out
+    return await platform_admin.list_assignments(db, firm)
 
 
 class AssignmentCreate(BaseModel):
@@ -1442,21 +1095,14 @@ async def delete_assignment(
 # ── Client segments ────────────────────────────────────────────────────────────
 
 def _segment_out(s: FirmSegment) -> dict:
-    return {
-        "id": str(s.id), "slug": s.slug, "label": s.label,
-        "fee_tier_bps": s.fee_tier_bps, "min_aum_usd": s.min_aum_usd,
-        "description": s.description, "is_active": s.is_active,
-    }
+    return platform_admin.segment_out(s)
 
 
 @router.get("/segments")
 async def list_segments(
     actor: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    rows = (await db.execute(
-        select(FirmSegment).where(FirmSegment.firm_id == firm.id).order_by(FirmSegment.label)
-    )).scalars().all()
-    return [_segment_out(s) for s in rows]
+    return await platform_admin.list_segments(db, firm)
 
 
 class SegmentCreate(BaseModel):
@@ -1480,16 +1126,11 @@ async def create_segment(
     body: SegmentCreate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    existing = (await db.execute(
-        select(FirmSegment).where(FirmSegment.firm_id == firm.id, FirmSegment.slug == body.slug)
-    )).scalar_one_or_none()
-    if existing:
-        raise HTTPException(400, "A segment with that slug already exists.")
-    seg = FirmSegment(firm_id=firm.id, **body.model_dump())
-    db.add(seg)
-    await db.flush()
-    _audit_sync(db, firm.id, actor, "segment.created", subject=body.label)
-    return _segment_out(seg)
+    try:
+        done = await platform_admin.save_segment(db, firm, actor, **body.model_dump())
+    except AdminError as exc:
+        raise _refused(exc)
+    return _segment_out(done.record)
 
 
 @router.patch("/segments/{seg_id}")
@@ -1497,13 +1138,11 @@ async def update_segment(
     seg_id: uuid.UUID, body: SegmentUpdate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    seg = await db.get(FirmSegment, seg_id)
-    if not seg or seg.firm_id != firm.id:
-        raise HTTPException(404, "Segment not found.")
-    for field, val in body.model_dump(exclude_none=True).items():
-        setattr(seg, field, val)
-    _audit_sync(db, firm.id, actor, "segment.updated", subject=seg.label)
-    return _segment_out(seg)
+    try:
+        done = await platform_admin.save_segment(db, firm, actor, segment_id=seg_id, **body.model_dump())
+    except AdminError as exc:
+        raise _refused(exc)
+    return _segment_out(done.record)
 
 
 @router.delete("/segments/{seg_id}")
@@ -1511,32 +1150,24 @@ async def delete_segment(
     seg_id: uuid.UUID,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    seg = await db.get(FirmSegment, seg_id)
-    if not seg or seg.firm_id != firm.id:
-        raise HTTPException(404, "Segment not found.")
-    seg.is_active = False
-    _audit_sync(db, firm.id, actor, "segment.deactivated", subject=seg.label)
+    try:
+        await platform_admin.deactivate_segment(db, firm, actor, seg_id)
+    except AdminError as exc:
+        raise _refused(exc)
     return {"ok": True}
 
 
 # ── Mandate type configuration ─────────────────────────────────────────────────
 
 def _mtc_out(m: MandateTypeConfig) -> dict:
-    return {
-        "id": str(m.id), "slug": m.slug, "label": m.label,
-        "default_autonomy_tier": m.default_autonomy_tier,
-        "description": m.description,
-    }
+    return platform_admin.mandate_type_out(m)
 
 
 @router.get("/mandate-types")
 async def list_mandate_types(
     actor: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    rows = (await db.execute(
-        select(MandateTypeConfig).where(MandateTypeConfig.firm_id == firm.id).order_by(MandateTypeConfig.label)
-    )).scalars().all()
-    return [_mtc_out(m) for m in rows]
+    return await platform_admin.list_mandate_types(db, firm)
 
 
 class MandateTypeCreate(BaseModel):
@@ -1557,18 +1188,11 @@ async def create_mandate_type(
     body: MandateTypeCreate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    existing = (await db.execute(
-        select(MandateTypeConfig).where(MandateTypeConfig.firm_id == firm.id, MandateTypeConfig.slug == body.slug)
-    )).scalar_one_or_none()
-    if existing:
-        raise HTTPException(400, "A mandate type with that slug already exists.")
-    if body.default_autonomy_tier and (refused := licences.refusal(firm, body.default_autonomy_tier)):
-        raise HTTPException(422, refused)
-    mtc = MandateTypeConfig(firm_id=firm.id, **body.model_dump())
-    db.add(mtc)
-    await db.flush()
-    _audit_sync(db, firm.id, actor, "mandate_type.created", subject=body.label)
-    return _mtc_out(mtc)
+    try:
+        done = await platform_admin.save_mandate_type(db, firm, actor, **body.model_dump())
+    except AdminError as exc:
+        raise _refused(exc)
+    return _mtc_out(done.record)
 
 
 @router.patch("/mandate-types/{mtc_id}")
@@ -1576,37 +1200,24 @@ async def update_mandate_type(
     mtc_id: uuid.UUID, body: MandateTypeUpdate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    mtc = await db.get(MandateTypeConfig, mtc_id)
-    if not mtc or mtc.firm_id != firm.id:
-        raise HTTPException(404, "Mandate type not found.")
-    changes = body.model_dump(exclude_none=True)
-    if changes.get("default_autonomy_tier") and (refused := licences.refusal(firm, changes["default_autonomy_tier"])):
-        raise HTTPException(422, refused)
-    for field, val in changes.items():
-        setattr(mtc, field, val)
-    _audit_sync(db, firm.id, actor, "mandate_type.updated", subject=mtc.label, detail=changes)
-    return _mtc_out(mtc)
+    try:
+        done = await platform_admin.save_mandate_type(db, firm, actor, mandate_type_id=mtc_id, **body.model_dump())
+    except AdminError as exc:
+        raise _refused(exc)
+    return _mtc_out(done.record)
 
 
 # ── Notification configuration ─────────────────────────────────────────────────
 
 def _notif_out(n: NotificationConfig) -> dict:
-    return {
-        "id": str(n.id), "event_type": n.event_type, "channel": n.channel,
-        "enabled": n.enabled, "recipients": n.recipients or [], "config": n.config or {},
-    }
+    return platform_admin.notification_out(n)
 
 
 @router.get("/notifications")
 async def get_notifications(
     actor: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    rows = (await db.execute(
-        select(NotificationConfig)
-        .where(NotificationConfig.firm_id == firm.id)
-        .order_by(NotificationConfig.event_type, NotificationConfig.channel)
-    )).scalars().all()
-    return [_notif_out(n) for n in rows]
+    return await platform_admin.list_notifications(db, firm)
 
 
 class NotifUpdate(BaseModel):
@@ -1622,25 +1233,11 @@ async def update_notifications(
     body: list[NotifUpdate],
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    """Bulk upsert notification config rows."""
-    for item in body:
-        existing = (await db.execute(
-            select(NotificationConfig).where(
-                NotificationConfig.firm_id == firm.id,
-                NotificationConfig.event_type == item.event_type,
-                NotificationConfig.channel == item.channel,
-            )
-        )).scalar_one_or_none()
-        if existing:
-            existing.enabled = item.enabled
-            existing.recipients = item.recipients
-            existing.config = item.config
-        else:
-            db.add(NotificationConfig(
-                firm_id=firm.id, event_type=item.event_type, channel=item.channel,
-                enabled=item.enabled, recipients=item.recipients, config=item.config,
-            ))
-    _audit_sync(db, firm.id, actor, "notifications.updated")
+    """Bulk upsert notification config rows. Every recipient is one of this firm's own people (B-146)."""
+    try:
+        await platform_admin.update_notifications(db, firm, actor, [item.model_dump() for item in body])
+    except AdminError as exc:
+        raise _refused(exc)
     return {"ok": True}
 
 

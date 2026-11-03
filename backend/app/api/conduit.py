@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
+from app.aurea_core import platform_admin
+from app.aurea_core.platform_admin import AdminError
 from app.conduit.registry import CONNECTOR_REGISTRY, get_provider_def
 from app.conduit.service import run_sync
 from app.core.db import get_db
@@ -26,29 +28,19 @@ router = APIRouter(prefix="/api/conduit", tags=["conduit"], dependencies=[Depend
 SetUp = Depends(require_roles(UserRole.OPERATIONS))
 Syncs = Depends(require_roles(UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM))
 
-REDACTED = "••••••••"
+REDACTED = platform_admin.REDACTED
 
 
 def _secret_keys(provider_key: str) -> set[str]:
-    pdef = get_provider_def(provider_key)
-    return {f.key for f in (pdef.config_schema if pdef else []) if f.secret}
+    return platform_admin.secret_keys(provider_key)
 
 
 def _redact(connector: Connector) -> dict:
-    secrets = _secret_keys(connector.provider_key)
-    cfg = dict(connector.config or {})
-    for k in secrets:
-        if cfg.get(k):
-            cfg[k] = REDACTED
-    pdef = get_provider_def(connector.provider_key)
-    return {
-        "id": str(connector.id), "domain": connector.domain, "provider_key": connector.provider_key,
-        "display_name": connector.display_name, "status": connector.status,
-        "use_mock": connector.use_mock, "config": cfg, "sync_cron": connector.sync_cron,
-        "supports_live": pdef.supports_live if pdef else False,
-        "last_synced_at": connector.last_synced_at.isoformat() if connector.last_synced_at else None,
-        "last_error": connector.last_error,
-    }
+    return platform_admin.connector_out(connector)
+
+
+def _refused(exc: AdminError) -> HTTPException:
+    return HTTPException(status_code=exc.status, detail="Connector not found" if exc.status == 404 else str(exc))
 
 
 class ConnectorUpdate(BaseModel):
@@ -76,10 +68,7 @@ async def registry():
 
 @router.get("/connectors")
 async def connectors(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    rows = (
-        await db.execute(select(Connector).where(Connector.firm_id == firm.id))
-    ).scalars().all()
-    return [_redact(c) for c in rows]
+    return [_redact(c) for c in await platform_admin.list_connectors(db, firm)]
 
 
 @router.post("/connectors")
@@ -87,17 +76,11 @@ async def create_connector(
     body: ConnectorCreate, user: User = SetUp,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    pdef = get_provider_def(body.provider_key)
-    if not pdef:
-        raise HTTPException(status_code=404, detail="Unknown provider")
-    c = Connector(
-        firm_id=firm.id, domain=pdef.domain, provider_key=pdef.key,
-        display_name=pdef.display_name, status=ConnectorStatus.MOCK, use_mock=True,
-        sync_cron=pdef.default_cron, config={},
-    )
-    db.add(c)
-    await db.flush()
-    return _redact(c)
+    try:
+        done = await platform_admin.add_connector(db, firm, user, body.provider_key)
+    except AdminError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    return _redact(done.record)
 
 
 @router.patch("/connectors/{connector_id}")
@@ -106,34 +89,12 @@ async def update_connector(
     user: User = SetUp,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    c = await db.get(Connector, connector_id)
-    if not c or c.firm_id != firm.id:
-        raise HTTPException(status_code=404, detail="Connector not found")
-    if body.config is not None:
-        # Merge; ignore redacted placeholders so we never overwrite a secret with '••••'.
-        merged = dict(c.config or {})
-        for k, v in body.config.items():
-            if v == REDACTED:
-                continue
-            merged[k] = v
-        c.config = merged
-    if body.use_mock is not None:
-        c.use_mock = body.use_mock
-        c.status = ConnectorStatus.MOCK if body.use_mock else ConnectorStatus.CONFIGURED
-    if body.sync_cron is not None:
-        c.sync_cron = body.sync_cron
-    if body.display_name is not None:
-        c.display_name = body.display_name
-    if body.enabled is not None:
-        c.status = ConnectorStatus.DISABLED if not body.enabled else (
-            ConnectorStatus.MOCK if c.use_mock else ConnectorStatus.CONFIGURED
-        )
-    # Going live and new credentials are on the record; the values of secrets are not.
-    db.add(AuditEvent(firm_id=firm.id, actor_id=user.id, actor_email=user.email, event_type="connector.updated",
-                      subject=c.display_name, detail={"config_keys": sorted((body.config or {}).keys()), "use_mock": body.use_mock,
-                                                       "enabled": body.enabled, "sync_cron": body.sync_cron}))
-    await db.flush()
-    return _redact(c)
+    # Going live and new credentials are on the record; the values of secrets are not (aurea_core/platform_admin).
+    try:
+        done = await platform_admin.set_connector(db, firm, user, connector_id, **body.model_dump())
+    except AdminError as exc:
+        raise _refused(exc)
+    return _redact(done.record)
 
 
 @router.post("/connectors/{connector_id}/sync")
@@ -141,13 +102,13 @@ async def sync_connector(
     connector_id: uuid.UUID, user: User = Syncs,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    c = await db.get(Connector, connector_id)
-    if not c or c.firm_id != firm.id:
-        raise HTTPException(status_code=404, detail="Connector not found")
-    sync = await run_sync(db, c)
+    try:
+        done, sync = await platform_admin.sync_connector(db, firm, user, connector_id)
+    except AdminError as exc:
+        raise _refused(exc)
     return {
         "status": sync.status, "records_ingested": sync.records_ingested, "detail": sync.detail,
-        "connector": _redact(c),
+        "connector": _redact(done.record),
     }
 
 

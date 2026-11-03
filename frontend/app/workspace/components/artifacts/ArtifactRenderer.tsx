@@ -61,6 +61,8 @@ import { MyGoalsCard, isMyGoals } from "./MyGoalsCard";
 import { MyFeesCard, isMyFees } from "./MyFeesCard";
 import { MyReportCard, isMyReport } from "./MyReportCard";
 import { QuestionnaireRecordedCard, isQuestionnaireRecorded } from "./QuestionnaireRecordedCard";
+import { AdminSettingsCard, isAdminSettings } from "./AdminSettingsCard";
+import { AdminChangeCard, isAdminChange } from "./AdminChangeCard";
 import { FamilyCard, isFamily } from "./FamilyCard";
 import { BehaviouralCard, isBehavioural } from "./BehaviouralCard";
 import { RegulatoryCountdownCard, isRegulatoryCountdown } from "./RegulatoryCountdownCard";
@@ -381,6 +383,27 @@ export function artifactCard(artifact: Artifact) {
         return isMyFees(artifact.result) ? <MyFeesCard result={artifact.result as any} /> : null;
       case "read_my_report":
         return isMyReport(artifact.result) ? <MyReportCard result={artifact.result as any} /> : null;
+      case "read_admin_settings":
+        return isAdminSettings(artifact.result) ? <AdminSettingsCard result={artifact.result as any} /> : null;
+      case "update_firm_profile":
+      case "set_agent_switches":
+      case "invite_user":
+      case "change_user":
+      case "save_segment":
+      case "save_mandate_type":
+      case "set_mandate_suitability":
+      case "set_notification":
+      case "add_research":
+      case "research_action":
+      case "save_model_portfolio":
+      case "set_model_targets":
+      case "delete_model_portfolio":
+      case "add_connector":
+      case "set_connector":
+      case "sync_connector":
+      case "set_cmas":
+      case "set_model_routing":
+        return isAdminChange(artifact.result) ? <AdminChangeCard result={artifact.result as any} /> : null;
       case "record_questionnaire":
         return isQuestionnaireRecorded(artifact.result) ? <QuestionnaireRecordedCard result={artifact.result as any} /> : null;
       case "read_estate":

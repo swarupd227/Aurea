@@ -14,6 +14,8 @@ from app.core.logging import get_logger
 from app.llm.embeddings import embedding_service
 from app.models.knowledge import ResearchChunk, ResearchDocument
 
+PUBLISHED = "published"
+
 log = get_logger("aurea.knowledge")
 
 
@@ -60,7 +62,8 @@ async def ingest_document(session: AsyncSession, doc: ResearchDocument) -> int:
 async def retrieve(
     session: AsyncSession, firm_id: uuid.UUID, query: str, k: int = 4
 ) -> list[dict]:
-    """Retrieve top-k research chunks with their document for citation."""
+    """Retrieve top-k research chunks with their document for citation. Only published research: a draft or one
+    under review is not yet the firm's view, so no agent grounds on it (B-96)."""
     query = (query or "").strip()
     if not query:
         return []
@@ -72,7 +75,8 @@ async def retrieve(
         rows = (
             await session.execute(
                 select(ResearchChunk)
-                .where(ResearchChunk.firm_id == firm_id, ResearchChunk.embedding.isnot(None))
+                .join(ResearchDocument, ResearchDocument.id == ResearchChunk.document_id)
+                .where(ResearchChunk.firm_id == firm_id, ResearchChunk.embedding.isnot(None), ResearchDocument.status == PUBLISHED)
                 .order_by(ResearchChunk.embedding.cosine_distance(qvec))
                 .limit(k)
             )
@@ -82,7 +86,8 @@ async def retrieve(
         # Lexical fallback.
         terms = [t for t in query.lower().split() if len(t) > 3][:6]
         cond = or_(*[ResearchChunk.text.ilike(f"%{t}%") for t in terms]) if terms else None
-        stmt = select(ResearchChunk).where(ResearchChunk.firm_id == firm_id)
+        stmt = (select(ResearchChunk).join(ResearchDocument, ResearchDocument.id == ResearchChunk.document_id)
+                .where(ResearchChunk.firm_id == firm_id, ResearchDocument.status == PUBLISHED))
         if cond is not None:
             stmt = stmt.where(cond)
         rows = (await session.execute(stmt.limit(k))).scalars().all()

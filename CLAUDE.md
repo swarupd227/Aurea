@@ -208,7 +208,10 @@ pages are artifact views the agents open. Full guideline, including what is buil
   through `aurea_core/agent_controls.py`: a tier within the licence, no resuming an agent conduct surveillance paused while its
   flag is open, a valid cron, and each change an `AutonomyChange` made by a person. A model portfolio is the portfolio
   team's and research's, and one that mandates follow is not deleted; a connector is operations'. A firm switched off
-  signs its people out. A reset or invite link reaches an admin and never a conversation tool.
+  signs its people out. A reset or invite link reaches an admin and never a conversation tool. Every setting the Admin
+  and Connectors pages change is a tool behind a Confirm card, sharing `aurea_core/platform_admin.py` with its route; a
+  secret (an LLM key, a connector's credentials), the CSV import and the firm's jurisdiction and currency stay on the
+  page. Alerts go only to the firm's people, and only published research grounds an agent.
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
@@ -225,7 +228,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_onboarding_states`, `verify_aml_risk`, `verify_consents`, `verify_document_matrix`, `verify_transfer_files`, `verify_transaction_monitoring`, `verify_money_in`, `verify_account_features`, `verify_onboarding_scoreboard`, `verify_repapering`, `verify_advisers`, `verify_stalled_onboarding`, `verify_demo_cards`, `verify_rulebook`, `verify_start_onboarding`, `verify_admin_controls`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`, `verify_studio_views`, `verify_client_canvas`, `verify_goal_likelihood`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_onboarding_states`, `verify_aml_risk`, `verify_consents`, `verify_document_matrix`, `verify_transfer_files`, `verify_transaction_monitoring`, `verify_money_in`, `verify_account_features`, `verify_onboarding_scoreboard`, `verify_repapering`, `verify_advisers`, `verify_stalled_onboarding`, `verify_demo_cards`, `verify_rulebook`, `verify_start_onboarding`, `verify_admin_controls`, `verify_admin_tools`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`, `verify_studio_views`, `verify_client_canvas`, `verify_goal_likelihood`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.
@@ -233,7 +236,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `app/db_bootstrap.py`.
 - **Agent context** is `ctx.session` and `ctx.firm` — there is no `ctx.db` or `ctx.firm_id`. A wrong
   attribute raises only when the agent runs, and scheduled runs log the failure and move on.
-- **Frontend typecheck** has two known pre-existing errors (the admin data-quality tuples). Add no new ones.
+- **Frontend typecheck** is clean (the two admin data-quality errors went with B-96). Add none.
 - **Two dev servers on one checkout** overwrite each other's `.next` and start answering 404. Give each its own
   `NEXT_DIST_DIR` (for example `.next-3011`) in `.claude/launch.json`; builds and deploys still use `.next`.
 

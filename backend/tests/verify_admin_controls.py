@@ -12,7 +12,7 @@ Against a throwaway SQLite database, this checks that:
   - an agent's tier stays within the licence, an agent conduct surveillance paused stays paused while its
     flag is open, a schedule is a valid cron, and each change is an AutonomyChange made by a person;
   - a mandate type's tier is held to the licence; the governance settings are not reachable through the
-    generic firm settings; a new client's adviser is an active adviser of this firm;
+    generic firm settings; a client is not created directly: it starts as an onboarding case;
   - a model portfolio is the portfolio team's and research's, and one that mandates follow is not deleted;
     a connector is operations' to set up and switch live;
   - a firm switched off signs its people out and stops them signing in, and the switch is said, not toggled.
@@ -147,12 +147,16 @@ async def main() -> None:
             for key in ("compliance", "foundation", "cmas", "pii"):
                 check(f"the {key} settings are not reachable through the firm's settings",
                       await outcome(admin.update_firm(admin.FirmUpdate(settings={key: {}}), user=ada, firm=firm, db=s)), "refused 422")
-            client = admin.ClientCreate(full_name="New Client", email="n@t.test", adviser_id=str(zed.id))
-            check("a new client's adviser from another firm is refused", await outcome(admin.create_client(client, actor=ada, firm=firm, db=s)), "refused 422")
-            made = await admin.create_client(admin.ClientCreate(full_name="Kept Client", email="k@t.test", adviser_id=str(ann.id)),
-                                             actor=ada, firm=firm, db=s)
-            edge = (await s.execute(select(RelationshipEdge).where(RelationshipEdge.to_id == uuid.UUID(made["id"])))).scalar_one()
-            check("one of this firm is assigned as every assignment is", (edge.from_id, edge.kind), (ann.id, "adviser"))
+            check("creating a client directly is retired: a client starts as an onboarding case",
+                  await outcome(admin.create_client(actor=ada)), "refused 410")
+            kept = Household(id=uuid.uuid4(), firm_id=firm.id, name="Kept")
+            s.add(kept)
+            await s.flush()
+            owner = Person(id=uuid.uuid4(), firm_id=firm.id, household_id=kept.id, full_name="Kept Client")
+            s.add(owner)
+            await s.flush()
+            s.add(Mandate(id=uuid.uuid4(), firm_id=firm.id, person_id=owner.id, name="Kept mandate", mandate_type="advisory",
+                          suitability={}, constraints={}))
 
             print("\n=== Model portfolios and connectors ===")
             check("an adviser cannot build a model", await outcome(guard(portfolios.AdminDep)(user=ann)), "refused 403")
