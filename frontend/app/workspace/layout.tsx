@@ -97,7 +97,7 @@ function ResizeHandle({ width, onChange, onCommit }: { width: number; onChange: 
 
 function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { threads, threadsLoaded, mention, askAstra, goThread, pane, openView, focus, sheetHidden, setSheetHidden } = useWorkspace();
+  const { threads, threadsLoaded, mention, askAstra, goThread, goHome, pane, openView, focus, sheetHidden, setSheetHidden } = useWorkspace();
   const [width, setWidth] = useState<number | null>(null);
 
   useEffect(() => {
@@ -123,6 +123,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
           activeId={threadId}
           onSelect={(id) => goThread(id)}
           onNew={() => goThread(null)}
+          onHome={goHome}
           onMention={mention}
           onAsk={(text) => void askAstra(text)}
           onOpenView={(route) => openView(route)}

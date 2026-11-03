@@ -41,6 +41,8 @@ interface WorkspaceContextValue {
   registerSender: (send: ((text: string) => void) | null) => void;
   /** Go to a thread (or home, for null), keeping the work pane as it is. */
   goThread: (id: string | null) => void;
+  /** The landing page, with any view beside it closed. */
+  goHome: () => void;
 
   // ── The work pane. Its state is `?view=` on the URL; everything here derives from it.
   /** The open pane view, or null when the pane is closed. Only PANE_VIEWS routes this role may see. */
@@ -153,6 +155,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     (id: string | null) => router.push(withView(id ? `/workspace/${id}` : "/workspace", paneRef.current)),
     [router]
   );
+  // Home is the landing page itself: any view beside it closes, and a widened one lets go, or Home would land under it.
+  const goHome = useCallback(() => {
+    setFocus(false);
+    setSheetHidden(false);
+    router.push("/workspace");
+  }, [router]);
 
   const mention = useCallback((name: string) => {
     setComposerInsert({ text: `@${name} `, nonce: Date.now() });
@@ -190,7 +198,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   return (
     <WorkspaceContext.Provider
       value={{
-        threads, threadsLoaded, refetchThreads, composerInsert, mention, insertInComposer, askAstra, say, registerSender, goThread,
+        threads, threadsLoaded, refetchThreads, composerInsert, mention, insertInComposer, askAstra, say, registerSender, goThread, goHome,
         pane, openView, closeView, trail, titles, setViewTitle, focus, setFocus, sheetHidden, setSheetHidden,
         contextChip, setContextChip,
       }}

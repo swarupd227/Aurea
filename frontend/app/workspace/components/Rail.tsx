@@ -36,6 +36,7 @@ export function Rail({
   activeId,
   onSelect,
   onNew,
+  onHome,
   onMention,
   onAsk,
   onOpenView,
@@ -49,6 +50,8 @@ export function Rail({
   activeId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /** Home: the landing page with any view closed. Without it, Home is a new conversation. */
+  onHome?: () => void;
   onMention: (name: string) => void;
   /** Start a conversation with this sentence. */
   onAsk: (text: string) => void;
@@ -140,7 +143,8 @@ export function Rail({
       <div className="flex items-center gap-1 p-2">
         <button
           type="button"
-          onClick={onNew}
+          onClick={onHome ?? onNew}
+          data-testid="rail-home"
           aria-current={view === "home" ? "page" : undefined}
           className={`${rowBase} ${view === "home" ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60"}`}
         >
