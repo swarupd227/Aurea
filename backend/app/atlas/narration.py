@@ -146,8 +146,17 @@ def sentence(card: dict[str, Any], *, rationale: str = "") -> str:
         head += f" Surveillance raised {card['flags']} flag{'s' if card['flags'] != 1 else ''} on it."
     text = head
     if rationale.strip():
-        text += "\n\n" + rationale.strip()[:700]
+        text += "\n\n" + whole_sentences(rationale.strip(), 900)
     return text
+
+
+def whole_sentences(text: str, limit: int) -> str:
+    """At most `limit` characters, ending at the last full sentence, so a reply never stops mid-word."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = max(cut.rfind(". "), cut.rfind(".\n"), cut.rfind("? "), cut.rfind("! "))
+    return cut[:end + 1] if end > limit // 3 else cut[:cut.rfind(" ")].rstrip(",;:") + "…"
 
 
 def follow_ups(card: dict[str, Any]) -> list[str]:
