@@ -3,12 +3,45 @@
 pure and auditable — the same input always yields the same compliance result."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from app.aurea_core.markets import money
 
 BANNED = ["guarantee", "guaranteed", "risk-free", "riskless", "no risk", "will definitely",
           "can't lose", "cannot lose", "always outperform", "sure thing", "can not lose"]
+# Words that, earlier in the same clause, turn a banned phrase into a denial: "returns are not guaranteed", "no
+# investment is risk-free", "we cannot guarantee". A clause ends at . , ; : ! ?, a line break, or a turn such as "but",
+# so "not perfect, but guaranteed to beat cash" is still a promise. A denial split by commas ("no investment, however
+# diversified, is risk-free") is still flagged: over-flagging is the safe side.
+_NEGATION = re.compile(r"\b(not|no|never|none|nothing|neither|nor|without|cannot|can't|cant|won't|isn't|aren't|wasn't|"
+                       r"doesn't|don't|didn't|hardly|avoid|avoids|avoiding|nobody)\b|n't\b")
+_CLAUSE = re.compile(r"[.,;:!?\n]|\b(?:but|however|yet|although|though|whereas)\b")
+_WINDOW = 7
+_MENTION = re.compile(r"\b(such as|like|words|phrases|language|terms)\s*$")
+_QUOTES = "\"'“”‘’"
+
+
+def promises(text: str) -> list[str]:
+    """The banned phrases the text asserts. A phrase is not asserted where its clause denies it before it ("returns are
+    not guaranteed"), where it is quoted ('avoid "guaranteed"'), or where it is named as an example of language ("such as
+    risk-free"). Over-flagging hid real findings in hundreds of flags, so a denial is read as one (B-48)."""
+    found = set()
+    low = (text or "").lower()
+    for phrase in BANNED:
+        for m in re.finditer(r"(?<![a-z])" + re.escape(phrase) + r"(?![a-z])", low):
+            before = low[:m.start()]
+            # Only the few words before the phrase, in its clause, count: so "can't lose" and "no risk" are not denied by
+            # their own negation, and "this won't fail, it's guaranteed" is not excused by a "won't" about something else.
+            clause = _CLAUSE.split(before)[-1]
+            if _NEGATION.search(" ".join(clause.split()[-_WINDOW:]) + " "):
+                continue
+            if before[-1:] in _QUOTES or low[m.end():m.end() + 1] in _QUOTES:
+                continue
+            if _MENTION.search(clause):
+                continue
+            found.add(phrase)
+    return sorted(found)
 
 
 @dataclass
@@ -35,7 +68,7 @@ def _f(p): return ((p or {}).get("summary") or {})  # payload summary shortcut
 
 
 def no_overpromise(c: CheckContext) -> RuleResult:
-    hits = sorted({b for b in BANNED if b in c.text})
+    hits = promises(c.text)
     if hits:
         return RuleResult("fail", f"Over-promising language: {', '.join(hits)}.")
     return RuleResult("pass", "No misleading or guaranteed-outcome language.")
