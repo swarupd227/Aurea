@@ -39,7 +39,8 @@ class ConductSurveillanceAgent(BaseAgent):
         summary = (
             f"{sensed['open_flags']} open conduct flag(s): {sensed['high']} high-severity, "
             f"{sensed['auto_paused']} triggering an automatic agent pause. "
-            f"By category: {sensed['by_category']}."
+            "By category: " + ", ".join(f"{str(k).replace('_', ' ')} {n}" for k, n in
+                                         sorted(sensed["by_category"].items(), key=lambda kv: -kv[1])) + "."
         )
         return [RecommendationDraft(
             title="Conduct surveillance review",

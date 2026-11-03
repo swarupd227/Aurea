@@ -153,7 +153,7 @@ async def behaviour() -> None:
                   {"proposed": 1, "approved": 1, "dismissed": 1})
             check("decisions made", c["decisions_made"], 2)
             check("open items", c["open_items"], 1)
-            check("hours = (runs + decisions) x 25 min", c["estimated_hours_reclaimed"], round((3 + 2) * 25 / 60, 1))
+            check("hours = decisions x 25 min; a run alone saves nobody time", c["estimated_hours_reclaimed"], round(2 * 25 / 60, 1))
             check("the hours are labelled an estimate with their basis", c["estimate"], {"minutes_per_item": 25, "measured": False})
             check("and the sentence says so", "estimate" in c["message"] and "not a measurement" in c["message"], True)
 

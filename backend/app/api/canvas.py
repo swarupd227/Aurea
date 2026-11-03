@@ -23,7 +23,7 @@ from app.llm.service import firm_llm_creds, llm_service
 from app.models.client_experience import HeirJourney, Message, default_heir_steps
 from app.models.engagement import ClientReport, Task
 from app.models.enums import HeirJourneyStatus, MessageAuthor, ReportStatus, UserRole
-from app.models.graph import Household, Person, RelationshipEdge
+from app.models.graph import Household, Person
 from app.models.identity import User
 from app.models.tenant import Firm
 from sqlalchemy import func
@@ -51,22 +51,11 @@ async def _resolve_household(
 
 
 async def _adviser_for(db: AsyncSession, firm: Firm, brain: dict) -> dict | None:
-    """Find the named adviser via an 'adviser' relationship edge to a household member."""
-    member_ids = {p["id"] for p in brain["persons"]} | {e["id"] for e in brain["entities"]}
-    edges = (
-        await db.execute(
-            select(RelationshipEdge).where(
-                RelationshipEdge.firm_id == firm.id, RelationshipEdge.kind == "adviser"
-            )
-        )
-    ).scalars().all()
-    for e in edges:
-        if str(e.to_id) in member_ids or str(e.from_id) in member_ids:
-            adviser_user_id = e.from_id if e.from_type == "user" else e.to_id
-            u = await db.get(User, adviser_user_id)
-            if u:
-                return {"name": u.full_name, "title": u.title, "email": u.email}
-    return None
+    """The household's named adviser (aurea_core/advisers.py), or None when nobody is on file."""
+    from app.aurea_core.advisers import adviser_of
+
+    u = await adviser_of(db, firm.id, uuid.UUID(brain["household"]["id"]))
+    return {"name": u.full_name, "title": u.title, "email": u.email} if u else None
 
 
 @router.get("/me")

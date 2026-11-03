@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.analytics import assumptions as A
+from app.atlas.history import hours_reclaimed
 from app.aurea_core.analytics._common import gather_brains, positions_of
 from app.models.enums import OnboardingStatus, RecommendationStatus
 from app.models.governance import AgentRun, Recommendation
@@ -50,7 +51,7 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
                                            RecommendationStatus.DISMISSED, RecommendationStatus.EXECUTED]))
         )
     ).scalar_one()
-    hours = round((total_runs + decided) * 25 / 60, 1)
+    hours = hours_reclaimed(decided)
 
     # ── Cost-to-serve, profitability, fee & margin (per household → firm) ──
     rows = []

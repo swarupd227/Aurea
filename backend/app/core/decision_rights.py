@@ -52,6 +52,12 @@ RECON_DECIDERS: frozenset[UserRole] = frozenset({UserRole.OPERATIONS, UserRole.P
 # the client's own terms, so it takes the people who may trade on them, and compliance keeps its veto.
 IPS_AGENTS: frozenset[str] = frozenset({AgentKey.IPS_MONITORING.value})
 
+# Agents whose proposals are about supervising the other agents and the people using them. Supervision is
+# compliance's and the branch leader's (provenance/supervision.py), so an adviser is neither asked nor allowed:
+# a flag may be about their own advice.
+SUPERVISION_AGENTS: frozenset[str] = frozenset({AgentKey.CONDUCT_SURVEILLANCE.value})
+SUPERVISORS: frozenset[UserRole] = frozenset({UserRole.COMPLIANCE, UserRole.BRANCH_LEADER})
+
 STAFF: frozenset[UserRole] = frozenset(r for r in UserRole if r != UserRole.CLIENT)
 
 
@@ -88,6 +94,11 @@ def roles_for(agent_key: str | AgentKey, decision: str) -> frozenset[UserRole]:
                         "revise", "rollback"):
             return RECON_DECIDERS
         return frozenset()
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in SUPERVISION_AGENTS:
+        if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, HumanAction.DISMISS.value,
+                        "revise", "rollback"):
+            return SUPERVISORS
+        return frozenset()
     if not moves_the_book(agent_key) and not _sets_aside_an_ips(agent_key):
         return STAFF
     if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
@@ -111,6 +122,8 @@ def queue_action(role: UserRole | str, agent_key: str | AgentKey) -> str | None:
     Recommendations page and in read_recommendations."""
     role = UserRole(role) if not isinstance(role, UserRole) else role
     approve = role in roles_for(agent_key, "approve")
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in SUPERVISION_AGENTS:
+        return "decide" if approve else None
     if role in TRADE_VETO | BILLING_VETO:
         return "veto" if role in roles_for(agent_key, "dismiss") and not approve else None
     return "decide" if approve else None
@@ -132,6 +145,8 @@ def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> Non
         raise DecisionForbidden(
             f"This proposal decides reconciliation breaks, so only operations or the portfolio team may {decision} it."
         )
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in SUPERVISION_AGENTS:
+        raise DecisionForbidden(f"This proposal is about supervising the agents and their users, so only compliance or a branch leader may {decision} it.")
     if _sets_aside_an_ips(agent_key):
         who = ("an adviser, the portfolio team or compliance" if decision in ("dismiss", "rollback")
                else "an adviser or the portfolio team")

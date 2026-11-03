@@ -200,7 +200,7 @@ export function CapacityCard({ result }: { result: CapacityPayload }) {
         <Tile
           label="Hours reclaimed"
           value={result.estimated_hours_reclaimed}
-          hint={<Chip tone="text-warn">{result.estimate.measured ? "measured" : `estimate · ${result.estimate.minutes_per_item} min each`}</Chip>}
+          hint={<Chip tone="text-warn">{result.estimate.measured ? "measured" : `estimate · ${result.estimate.minutes_per_item} min per decision`}</Chip>}
         />
       </div>
       <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-1.5">

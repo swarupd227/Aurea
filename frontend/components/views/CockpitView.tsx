@@ -6,7 +6,8 @@ import RecommendationCard from "@/components/RecommendationCard";
 import { useAgentRunner } from "@/components/AgentConsole";
 import BookScan from "@/components/BookScan";
 import ActivityRail from "@/components/ActivityRail";
-import { StatTile, SkeletonList, Empty } from "@/components/ui";
+import { SkeletonList, Empty } from "@/components/ui";
+import { MyDayTiles, scopeLabel, type MyDay } from "./MyDay";
 import { useApi } from "@/lib/hooks";
 import { api, getUser } from "@/lib/api";
 import { formatDateFull, timeAgo } from "@/lib/format";
@@ -21,7 +22,7 @@ const SCAN_SENTENCE = "Have the next-best-action agent scan the book for opportu
 export function CockpitView() {
   const nav = useViewNav();
   const { data: feed, loading, refetch } = useApi<any[]>("/api/studio/feed");
-  const { data: cap, refetch: refetchCap } = useApi<any>("/api/studio/capacity");
+  const { data: day, refetch: refetchCap } = useApi<MyDay>("/api/advisers/my-day");
   const { data: activity } = useApi<any[]>("/api/atlas/activity?limit=60");
   const { data: households } = useApi<any[]>("/api/core/households");
   const [user, setUser] = useState<any>(null);
@@ -130,11 +131,9 @@ export function CockpitView() {
 
       <div className="grid gap-5 cq-lg:grid-cols-3">
         <div className="min-w-0 space-y-5 cq-lg:col-span-2">
-          <div className="grid grid-cols-2 gap-3 cq-md:grid-cols-4">
-            <StatTile label="Open actions" value={cap?.open_items ?? "—"} accent="warn" />
-            <StatTile label="Decisions" value={cap?.decisions_made ?? "—"} />
-            <StatTile label="Agent runs" value={cap?.total_agent_runs ?? "—"} />
-            <StatTile label="Hours reclaimed · est." value={cap ? `${cap.estimated_hours_reclaimed}h` : "—"} accent="ok" />
+          <div className="space-y-2">
+            {day && <span className={chip} data-testid="my-day-scope">{scopeLabel(day)}</span>}
+            <MyDayTiles day={day} />
           </div>
 
           {autonomous.length > 0 && (

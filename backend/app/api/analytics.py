@@ -214,7 +214,7 @@ async def get_tax_book(firm: Firm = Depends(current_firm), db: AsyncSession = De
 @router.get("/scorecards")
 async def get_scorecards(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     """Per-adviser scorecard: AUM, household count, recommendation throughput, meetings held."""
-    from app.models.graph import Household, RelationshipEdge
+    from app.models.graph import Household
     from app.models.governance import Recommendation
     from app.models.engagement import Meeting
     from app.models.enums import RecommendationStatus
@@ -224,32 +224,16 @@ async def get_scorecards(firm: Firm = Depends(current_firm), db: AsyncSession = 
         select(User).where(User.firm_id == firm.id, User.role == "adviser", User.is_active.is_(True))
     )).scalars().all()
 
+    from app.aurea_core.advisers import of_households
+    from app.models.graph import LegalEntity, Person
+    held = await of_households(db, firm.id)
+
     scorecards = []
     for adv in advisers:
-        # Households linked via 'adviser' relationship edge (edges go to person/entity).
-        from app.models.graph import LegalEntity, Person
-        edges = (await db.execute(
-            select(RelationshipEdge).where(
-                RelationshipEdge.firm_id == firm.id,
-                RelationshipEdge.kind == "adviser",
-                RelationshipEdge.from_id == adv.id,
-                RelationshipEdge.from_type == "user",
-            )
-        )).scalars().all()
-        person_ids = [e.to_id for e in edges if e.to_type == "person"]
-        entity_ids = [e.to_id for e in edges if e.to_type == "entity"]
-        household_id_set: set[uuid.UUID] = set()
-        if person_ids:
-            rows = (await db.execute(
-                select(Person.household_id).where(Person.id.in_(person_ids), Person.household_id.isnot(None))
-            )).scalars().all()
-            household_id_set.update(rows)
-        if entity_ids:
-            rows2 = (await db.execute(
-                select(LegalEntity.household_id).where(LegalEntity.id.in_(entity_ids), LegalEntity.household_id.isnot(None))
-            )).scalars().all()
-            household_id_set.update(rows2)
-        household_ids = list(household_id_set)
+        # The adviser's households (aurea_core/advisers.py), and the people and entities in them.
+        household_ids = [hid for hid, uid in held.items() if uid == adv.id]
+        person_ids = list((await db.execute(select(Person.id).where(Person.household_id.in_(household_ids)))).scalars().all()) if household_ids else []
+        entity_ids = list((await db.execute(select(LegalEntity.id).where(LegalEntity.household_id.in_(household_ids)))).scalars().all()) if household_ids else []
         hh_count = len(household_ids)
 
         # AUM: sum of holding market values via Account → Mandate → person/entity.

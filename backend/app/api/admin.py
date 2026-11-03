@@ -895,29 +895,20 @@ class ClientCreate(BaseModel):
 async def list_clients(
     actor: User = AdminDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
+    from app.aurea_core.advisers import of_households
+
     households = (await db.execute(
         select(Household).where(Household.firm_id == firm.id).order_by(Household.name)
     )).scalars().all()
+    held = await of_households(db, firm.id)
     result = []
     for h in households:
         # Primary contact
         persons = (await db.execute(
             select(Person).where(Person.household_id == h.id).limit(2)
         )).scalars().all()
-        # Adviser edge
-        adviser_edge = (await db.execute(
-            select(RelationshipEdge).where(
-                RelationshipEdge.firm_id == firm.id,
-                RelationshipEdge.to_type == "household",
-                RelationshipEdge.to_id == h.id,
-                RelationshipEdge.kind == "adviser",
-            ).limit(1)
-        )).scalar_one_or_none()
-        adviser_name = None
-        if adviser_edge:
-            adv = await db.get(User, adviser_edge.from_id)
-            if adv:
-                adviser_name = adv.full_name
+        adv = await db.get(User, held[h.id]) if h.id in held else None
+        adviser_name = adv.full_name if adv else None
         result.append({
             "id": str(h.id), "name": h.name, "segment": h.segment,
             "member_count": len(persons),
@@ -993,24 +984,11 @@ async def assign_adviser(
     adviser = await db.get(User, uuid.UUID(adviser_id))
     if not adviser or adviser.firm_id != firm.id:
         raise HTTPException(404, "Adviser not found.")
-    existing = (await db.execute(
-        select(RelationshipEdge).where(
-            RelationshipEdge.firm_id == firm.id,
-            RelationshipEdge.to_id == household_id,
-            RelationshipEdge.kind == "adviser",
-        )
-    )).scalar_one_or_none()
-    if existing:
-        existing.from_id = adviser.id
-    else:
-        db.add(RelationshipEdge(
-            firm_id=firm.id, kind="adviser",
-            from_type="user", from_id=adviser.id,
-            to_type="household", to_id=household_id,
-            attributes={},
-        ))
-    _audit_sync(db, firm.id, actor, "client.adviser_assigned",
-                subject=household.name, detail={"adviser": adviser.full_name})
+    from app.aurea_core import advisers
+
+    was = await advisers.adviser_of(db, firm.id, household_id)
+    await advisers.set_adviser(db, firm.id, household, adviser, actor=actor, reason="Set on the admin clients page",
+                               was=was.full_name if was else None)
     return {"ok": True}
 
 
@@ -1385,13 +1363,18 @@ async def list_assignments(
         .where(RelationshipEdge.firm_id == firm.id, RelationshipEdge.kind == "adviser")
         .order_by(RelationshipEdge.created_at.desc())
     )).scalars().all()
+    from app.aurea_core.advisers import members
+
+    # An edge to a person or an entity, as the seed and onboarding write them, names that member's household.
+    people, entities = await members(db, firm.id)
     out = []
     for e in edges:
         adviser = await db.get(User, e.from_id) if e.from_type == "user" else None
-        household = await db.get(Household, e.to_id) if e.to_type == "household" else None
+        home = e.to_id if e.to_type == "household" else people.get(e.to_id) if e.to_type == "person" else entities.get(e.to_id)
+        household = await db.get(Household, home) if home else None
         out.append({
             "id": str(e.id),
-            "household_id": str(e.to_id),
+            "household_id": str(home or e.to_id),
             "household_name": household.name if household else str(e.to_id),
             "adviser_id": str(e.from_id),
             "adviser_name": adviser.full_name if adviser else "—",
@@ -1417,28 +1400,16 @@ async def create_assignment(
     adviser = await db.get(User, body.adviser_id)
     if not adviser or adviser.firm_id != firm.id:
         raise HTTPException(404, "Adviser not found.")
-    # Upsert: update the existing adviser edge or create a new one
-    existing = (await db.execute(
-        select(RelationshipEdge).where(
-            RelationshipEdge.firm_id == firm.id,
-            RelationshipEdge.to_id == body.household_id,
-            RelationshipEdge.kind == "adviser",
-        )
-    )).scalar_one_or_none()
-    if existing:
-        existing.from_id = body.adviser_id
-        edge = existing
-    else:
-        edge = RelationshipEdge(
-            firm_id=firm.id, kind="adviser",
-            from_type="user", from_id=body.adviser_id,
-            to_type="household", to_id=body.household_id,
-            attributes={},
-        )
-        db.add(edge)
+    # One adviser per household: every earlier edge, to it or a member, is replaced (aurea_core/advisers.py).
+    from app.aurea_core import advisers
+
+    was = await advisers.adviser_of(db, firm.id, body.household_id)
+    await advisers.set_adviser(db, firm.id, household, adviser, actor=actor, reason="Set on the admin assignments page",
+                               was=was.full_name if was else None)
     await db.flush()
-    _audit_sync(db, firm.id, actor, "assignment.created",
-                subject=household.name, detail={"adviser": adviser.full_name})
+    edge = (await db.execute(select(RelationshipEdge).where(
+        RelationshipEdge.firm_id == firm.id, RelationshipEdge.kind == "adviser", RelationshipEdge.to_id == body.household_id,
+    ))).scalar_one()
     return {"ok": True, "id": str(edge.id)}
 
 

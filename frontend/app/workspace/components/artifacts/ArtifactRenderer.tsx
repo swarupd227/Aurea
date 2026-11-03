@@ -34,6 +34,8 @@ import { MoneyInCard } from "./MoneyInCard";
 import { AccountFeaturesCard } from "./AccountFeaturesCard";
 import { OnboardingScoreboardCard } from "./OnboardingScoreboardCard";
 import { RepaperingCard } from "./RepaperingCard";
+import { MyDayCard } from "./MyDayCard";
+import { AdvisersCard } from "./AdvisersCard";
 import { OnboardingQueuesCard } from "./OnboardingQueuesCard";
 import { InvoiceCard } from "./InvoiceCard";
 import { AccountRegistrationCard } from "./AccountRegistrationCard";
@@ -157,6 +159,13 @@ export function artifactCard(artifact: Artifact) {
       case "record_repapering":
         if (!Array.isArray(artifact.result?.campaigns)) return null;
         return <RepaperingCard result={artifact.result as any} />;
+      case "read_my_day":
+        if (!artifact.result?.waiting) return null;
+        return <MyDayCard result={artifact.result as any} />;
+      case "read_advisers":
+      case "assign_adviser":
+        if (!Array.isArray(artifact.result?.advisers)) return null;
+        return <AdvisersCard result={artifact.result as any} />;
       case "read_onboarding_scoreboard":
       case "record_onboarding_feedback":
         if (!artifact.result?.days_to_invest) return null;

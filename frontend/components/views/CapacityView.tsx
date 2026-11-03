@@ -43,7 +43,7 @@ export function CapacityView() {
   const total = Object.values(byStatus).reduce((s, n) => s + n, 0) || 1;
   const healthy = (evals || []).filter((e) => e.grade === "healthy").length;
   const tiles: [string, string | number, string, string | null][] = [
-    ["Capacity reclaimed", `${cap.estimated_hours_reclaimed}h`, "text-ok", "estimate"],
+    ["Capacity reclaimed", `${cap.estimated_hours_reclaimed}h`, "text-ok", "estimate · 25 min per decision"],
     ["Agent runs", cap.total_agent_runs, "text-ink", null],
     ["Decisions made", cap.decisions_made, "text-ink", "approved · modified · dismissed · executed"],
     ["Open items", cap.open_items, cap.open_items ? "text-warn" : "text-ink-muted", "awaiting a person"],
@@ -58,7 +58,7 @@ export function CapacityView() {
           <Card key={label} className="min-w-0 p-4">
             <div className="tile-label">{label}</div>
             <div className={`mt-1 font-mono text-2xl tabular-nums ${tone}`}>{value}</div>
-            {note && <div className="mt-1.5"><span className={note === "estimate" ? "chip bg-warn-bg text-warn" : muted}>{note}</span></div>}
+            {note && <div className="mt-1.5"><span className={note.startsWith("estimate") ? "chip bg-warn-bg text-warn" : muted}>{note}</span></div>}
           </Card>
         ))}
       </div>

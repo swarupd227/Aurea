@@ -11,9 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.enums import RecommendationStatus
 from app.models.governance import AgentRun, Recommendation
 
-# Indicative time saved: ~25 min of prep/monitoring per agent recommendation handled. This is an
-# assumption, not a measurement, and is returned with the figure so no surface shows it bare.
+# Indicative time saved: ~25 min of preparation per proposal a person decided. This is an assumption,
+# not a measurement, and is returned with the figure so no surface shows it bare. A run counts for
+# nothing on its own: a scheduled scan that found nothing saved nobody 25 minutes.
 MINUTES_PER_ITEM = 25
+
+
+def hours_reclaimed(decided: int) -> float:
+    return round(decided * MINUTES_PER_ITEM / 60, 1)
 
 
 async def run_history(
@@ -69,11 +74,10 @@ async def capacity_outcomes(db: AsyncSession, firm_id: uuid.UUID) -> dict:
         ).scalar_one()
         by_status[st.value] = n
     decided = by_status["approved"] + by_status["modified"] + by_status["dismissed"] + by_status["executed"]
-    minutes_saved = (total_runs + decided) * MINUTES_PER_ITEM
     return {
         "total_agent_runs": total_runs,
         "recommendations_by_status": by_status,
         "open_items": by_status["proposed"],
         "decisions_made": decided,
-        "estimated_hours_reclaimed": round(minutes_saved / 60, 1),
+        "estimated_hours_reclaimed": hours_reclaimed(decided),
     }

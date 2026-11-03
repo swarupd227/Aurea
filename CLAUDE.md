@@ -165,6 +165,11 @@ pages are artifact views the agents open. Full guideline, including what is buil
   port the 30-day block, and never say a rebuy is safe. Figures are estimates and carry `NOT_MODELLED`. The
   Indian firm is `seed/india_demo.py`, marked as a demonstration; its clients are invented and Yahoo's prices
   are for demonstrating with, not licensed for client use.
+- **Whose client a household is, is what a person recorded.** `aurea_core/advisers.py` is the one reading of the
+  "adviser" edges, the household's own outranking one to a member; nothing works out an adviser from activity, and
+  unassigned says so. `assign_adviser` changes it with a reason, replacing every earlier edge, on the audit log. An
+  adviser's cockpit counts their own households only; other roles see the firm's. Hours reclaimed count decided
+  proposals, never runs. Supervision proposals are compliance's and the branch leader's (`decision_rights.SUPERVISION_AGENTS`).
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
@@ -181,7 +186,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_onboarding_states`, `verify_aml_risk`, `verify_consents`, `verify_document_matrix`, `verify_transfer_files`, `verify_transaction_monitoring`, `verify_money_in`, `verify_account_features`, `verify_onboarding_scoreboard`, `verify_repapering`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`, `verify_studio_views`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_onboarding_states`, `verify_aml_risk`, `verify_consents`, `verify_document_matrix`, `verify_transfer_files`, `verify_transaction_monitoring`, `verify_money_in`, `verify_account_features`, `verify_onboarding_scoreboard`, `verify_repapering`, `verify_advisers`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`, `verify_studio_views`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

@@ -20,6 +20,9 @@ const pctf = (v: number) => `${(v * 100).toFixed(1)}%`;
 // agent's own rationale, and it says whose it is.
 const panel = "rounded-lg border border-border bg-paper/40 p-3";
 const chipMuted = "chip bg-border-soft text-ink-soft";
+// The agents that look the firm's research library up (backend `knowledge.retrieve`). Any other agent's card
+// has no research panel, because "none" would read as a gap when the agent never looks.
+const CITING_AGENTS = new Set(["drift_rebalancing", "onboarding", "meeting_prep", "research_reporting"]);
 
 /** The tax, drift and mandate figures behind a rebalancing proposal. Only rendered for drift recs. */
 function DriftAnalysis({ payload, ev, orders }: { payload: any; ev: any; orders: any[] }) {
@@ -310,7 +313,7 @@ export default function RecommendationCard({
             <StatusBadge status={rec.status} />
             {payload?.refreshed?.times > 1 && (
               <span className={chipMuted} title={payload.refreshed.last_at ? `Last found ${String(payload.refreshed.last_at).slice(0, 10)}` : undefined}>
-                Found {payload.refreshed.times}×
+                Seen on {payload.refreshed.times} runs
               </span>
             )}
             {ev.guardrail_breaches?.length > 0 && (
@@ -496,23 +499,25 @@ export default function RecommendationCard({
                 </div>
               )}
             </div>
-            <div className={panel}>
-              <div className="tile-label mb-1.5 flex items-center gap-1">
-                <FileText size={12} /> Firm research cited
+            {(rec.citations?.length > 0 || CITING_AGENTS.has(String(rec.agent_key))) && (
+              <div className={panel}>
+                <div className="tile-label mb-1.5 flex items-center gap-1">
+                  <FileText size={12} /> Firm research cited
+                </div>
+                {rec.citations?.length ? (
+                  <ul className="text-xs space-y-1.5">
+                    {rec.citations.map((c: any, i: number) => (
+                      <li key={i} className="text-ink-soft">
+                        <span className="font-medium text-ink">{c.title}</span>
+                        {c.author && <span className="text-ink-muted"> · {c.author}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-xs text-ink-muted">Nothing in the firm's library matched</div>
+                )}
               </div>
-              {rec.citations?.length ? (
-                <ul className="text-xs space-y-1.5">
-                  {rec.citations.map((c: any, i: number) => (
-                    <li key={i} className="text-ink-soft">
-                      <span className="font-medium text-ink">{c.title}</span>
-                      {c.author && <span className="text-ink-muted"> · {c.author}</span>}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="text-xs text-ink-muted">None</div>
-              )}
-            </div>
+            )}
           </div>
         </div>
       )}

@@ -87,6 +87,9 @@ class ToolExecutors:
             "read_repapering": self.read_repapering,
             "start_repapering": self.start_repapering,
             "record_repapering": self.record_repapering,
+            "read_my_day": self.read_my_day,
+            "read_advisers": self.read_advisers,
+            "assign_adviser": self.assign_adviser,
             "record_private_transfer_item": self.record_private_transfer_item,
             "read_onboarding_scoreboard": self.read_onboarding_scoreboard,
             "record_onboarding_feedback": self.record_onboarding_feedback,
@@ -2060,6 +2063,54 @@ class ToolExecutors:
     def _household_list(self, value) -> list:
         return [_parse_uuid(x.strip(), "household_ids") for x in (value if isinstance(value, list) else str(value or "").split(",")) if str(x).strip()]
 
+    async def read_my_day(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import advisers
+        from app.models.identity import User
+
+        user = await self.session.get(User, self.user_id)
+        d = await advisers.day(self.session, await self._firm(), user)
+        if d["scope"] == "yours" and not d["households"]:
+            d["message"] = f"No households are assigned to you; {d['unassigned']} at the firm have no adviser on file."
+        else:
+            d["message"] = (f"{d['waiting']['count']} waiting on you, {d['due']['count']} due this week ({d['due']['overdue']} overdue), "
+                            f"{d['money']['count']} money item(s) waiting, {d['meetings']['count']} meeting(s) with "
+                            f"{d['meetings']['briefed']} briefed; across {d['households']} household(s)"
+                            + (" assigned to you." if d["scope"] == "yours" else " at the firm."))
+        return d
+
+    async def read_advisers(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import advisers
+
+        result = await advisers.for_firm(self.session, self.firm_id)
+        result["message"] = ("; ".join(f"{a['name']}: {a['households']}" for a in result["advisers"]) or "No advisers.") + f"; {result['unassigned']} unassigned."
+        return result
+
+    async def assign_adviser(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import advisers
+        from app.models.identity import User
+
+        try:
+            result = await advisers.assign(self.session, self.firm_id, actor=await self.session.get(User, self.user_id),
+                                           household_ids=self._household_list(inputs.get("household_ids")),
+                                           adviser=inputs.get("adviser"), reason=inputs.get("reason"))
+        except advisers.AdviserError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Assigned."
+        return result
+
+    async def _adviser_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import advisers
+
+        try:
+            p = await advisers.prepare_assign(self.session, self.firm_id, household_ids=self._household_list(inputs.get("household_ids")),
+                                              adviser=inputs.get("adviser"), reason=inputs.get("reason"))
+        except advisers.AdviserError as exc:
+            raise ExecutorError(str(exc))
+        hs = p["households"]
+        was = sorted({v or "Unassigned" for v in p["from"].values()})
+        return [("Households", f"{len(hs)}: " + ", ".join(h.name for h in hs[:5]) + ("…" if len(hs) > 5 else "")),
+                ("Adviser", p["to"].full_name if p["to"] else "None: unassigned"), ("Currently", ", ".join(was)), ("Reason", p["reason"])]
+
     async def read_repapering(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import repapering
 
@@ -3510,7 +3561,8 @@ class ToolExecutors:
         out["message"] = (
             f"{out['total_agent_runs']} agent run(s) and {out['decisions_made']} decision(s); "
             f"{out['open_items']} proposal(s) still open. About {out['estimated_hours_reclaimed']} hours "
-            f"reclaimed - an estimate at {history.MINUTES_PER_ITEM} minutes per run or decision, not a measurement."
+            f"reclaimed - an estimate at {history.MINUTES_PER_ITEM} minutes per decided proposal, not a measurement. "
+            "Runs on their own count for nothing."
         )
         return out
 
@@ -4083,6 +4135,8 @@ class ToolExecutors:
             return rows(*await self._repapering_start_preview(inputs))
         if tool_key == "record_repapering":
             return rows(*await self._repapering_step_preview(inputs))
+        if tool_key == "assign_adviser":
+            return rows(*await self._adviser_preview(inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

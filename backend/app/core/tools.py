@@ -1383,6 +1383,45 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE},
     ),
 
+    "read_my_day": Tool(
+        key="read_my_day",
+        name="Read My Day",
+        speaking_agent="astra",
+        description="The four figures at the top of the cockpit, for the person asking. For an adviser, over the households assigned to them (scope yours); for any other role, the firm's (scope firm). waiting: open proposals their role is asked to decide, with the oldest's age in days. due: recorded reviews overdue or due within 7 days, and their own tasks due within 7 days or overdue. money: payments asked for and not yet paid, and deposits still on hold. meetings: meetings in the next 7 days and how many have a brief. unassigned is how many households have no adviser on file; an adviser with none assigned has an empty day, which is not the same as nothing to do. Reading opens nothing.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The day's four figures and what is behind each"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
+    "read_advisers": Tool(
+        key="read_advisers",
+        name="Read Advisers",
+        speaking_agent="astra",
+        description="Who each household's adviser is: every active adviser with how many households they hold, each household with its adviser or none, and how many are unassigned. Nobody is worked out from activity: unassigned means nobody has recorded one.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Advisers and their households"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.RESEARCH_CIO, UserRole.COMPLIANCE,
+                        UserRole.OPERATIONS, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "assign_adviser": Tool(
+        key="assign_adviser",
+        name="Assign Adviser",
+        speaking_agent="astra",
+        description="Makes an adviser responsible for households, or leaves them unassigned with adviser none. adviser is a name or id from read_advisers; household_ids are from search_households or read_advisers. reason is the person's own, for example a new client or a departing adviser's book. Every change is kept with its reason.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Assign these households?",
+        inputs=[ToolInput("household_ids", "string", "Households, comma separated ids", required=True),
+                ToolInput("adviser", "string", "The adviser's name or id, or none", required=True),
+                ToolInput("reason", "string", "Why", required=True)],
+        output=ToolOutput("object", "Advisers and their households"),
+        roles_required={UserRole.BRANCH_LEADER, UserRole.ADMIN, UserRole.OPERATIONS},
+    ),
+
     "rate_aml_risk": Tool(
         key="rate_aml_risk",
         name="Rate AML Risk",

@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, ChevronUp, Search } from "lucide-react";
 import { Segment, SkeletonList, Empty, ErrorState } from "@/components/ui";
 import { closestNames } from "@/lib/closestNames";
 import { useApi } from "@/lib/hooks";
+import { getUser } from "@/lib/api";
 import { money } from "@/lib/format";
 import { ViewLink } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
@@ -18,7 +19,12 @@ const SORT_LABEL: Record<SortKey, string> = { name: "Name", value: "AUM", segmen
 export function ClientsView() {
   const { data, loading, error, refetch } = useApi<any[]>("/api/core/households");
   const [search, setSearch] = useState("");
+  const [me, setMe] = useState<string | null>(null);
+  const [mineOnly, setMineOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("name");
+
+  useEffect(() => setMe(getUser()?.id ?? null), []);
+  const holdsAny = !!me && (data || []).some((h) => h.adviser_id === me);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   function toggleSort(key: SortKey) {
@@ -32,7 +38,7 @@ export function ClientsView() {
   const rows = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
-    const result = data.filter((h) => h.name.toLowerCase().includes(q));
+    const result = data.filter((h) => h.name.toLowerCase().includes(q) && (!mineOnly || h.adviser_id === me));
     return [...result].sort((a, b) => {
       let cmp = 0;
       if (sortKey === "name") cmp = a.name.localeCompare(b.name);
@@ -40,7 +46,7 @@ export function ClientsView() {
       else cmp = (a.segment || "").localeCompare(b.segment || "");
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [data, search, sortKey, sortDir]);
+  }, [data, search, sortKey, sortDir, mineOnly, me]);
 
   const total = (data || []).reduce((s, h) => s + (h.total_value || 0), 0);
   const near = !rows.length && search.trim() ? closestNames(search, data || []) : [];
@@ -70,6 +76,12 @@ export function ClientsView() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {holdsAny && (
+          <button onClick={() => setMineOnly((v) => !v)} aria-pressed={mineOnly} data-testid="clients-mine"
+            className={`rounded px-2 py-1 text-xs transition-colors ${mineOnly ? "bg-border-soft text-ink" : "text-ink-muted hover:text-ink"}`}>
+            My clients
+          </button>
+        )}
         <div className="flex items-center gap-1 text-xs" role="group" aria-label="Sort">
           {(["name", "value", "segment"] as SortKey[]).map((k) => (
             <button
@@ -130,6 +142,7 @@ export function ClientsView() {
                   <span className="block truncate font-medium text-ink">{h.name}</span>
                   <span className="mt-1 flex flex-wrap items-center gap-1.5">
                     {h.segment && <Segment>{h.segment}</Segment>}
+                    <span className={`${chip} text-[10px] ${h.adviser ? "" : "text-warn"}`} data-testid="client-adviser">{h.adviser ?? "No adviser"}</span>
                     {h.total_value >= 5_000_000 && <span className={`${chip} text-[10px]`}>Qualified Purchaser</span>}
                     {h.total_value >= 1_000_000 && h.total_value < 5_000_000 && (
                       <span className={`${chip} text-[10px]`}>Accredited Investor</span>

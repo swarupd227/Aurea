@@ -234,6 +234,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "start_repapering":
     case "record_repapering":
       return "/studio/repapering";
+    case "read_my_day":
+      return "/studio";
+    case "read_advisers":
+    case "assign_adviser":
+      return "/studio/clients";
     case "read_onboarding_scoreboard":
     case "record_onboarding_feedback":
       return "/studio/onboarding-scoreboard";

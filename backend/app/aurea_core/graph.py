@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.aurea_core.valuation import account_valuation
 from app.models.balance_sheet import BalanceItem
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person, RelationshipEdge
+from app.models.identity import User
 from app.models.portfolio import Holding
 from app.models.tenant import Firm
 
@@ -106,6 +107,9 @@ async def household_brain(
     held_items = (await session.execute(select(BalanceItem).where(
         BalanceItem.household_id == household_id, BalanceItem.kind == "held_away_investment", BalanceItem.status == "current",
     ))).scalars().all()
+    from app.aurea_core.advisers import adviser_of
+
+    adviser = await adviser_of(session, firm_id, household_id)
     return {
         "currency": firm.base_currency if firm else None,
         "household": {
@@ -113,6 +117,8 @@ async def household_brain(
             "name": household.name,
             "segment": household.segment,
             "values": household.values,
+            # Whose client this is, as a person recorded it; None is unassigned (aurea_core/advisers.py).
+            "adviser": adviser.full_name if adviser else None,
         },
         "persons": [
             {
@@ -159,6 +165,10 @@ async def list_households(session: AsyncSession, firm_id: uuid.UUID) -> list[dic
     households = (
         await session.execute(select(Household).where(Household.firm_id == firm_id, Household.left_on.is_(None)))
     ).scalars().all()
+    from app.aurea_core.advisers import of_households
+
+    held = await of_households(session, firm_id)
+    names = {u.id: u.full_name for u in (await session.execute(select(User).where(User.id.in_(set(held.values()))))).scalars().all()} if held else {}
     out = []
     for h in households:
         # Lightweight total via holdings sum.
@@ -188,6 +198,7 @@ async def list_households(session: AsyncSession, firm_id: uuid.UUID) -> list[dic
                 ).scalars().all()
                 total += sum(float(hh.market_value or 0) for hh in holdings)
         out.append({"id": str(h.id), "name": h.name, "segment": h.segment,
+                    "adviser_id": str(held[h.id]) if h.id in held else None, "adviser": names.get(held.get(h.id)),
                     "total_value": round(total, 2)})
     out.sort(key=lambda x: x["total_value"], reverse=True)
     return out
