@@ -77,7 +77,8 @@ async def _run(db) -> int:
         await s.flush()
 
         async def household(name: str, aum: float, fee_schedule_id=None) -> uuid.UUID:
-            hh = Household(id=uuid.uuid4(), firm_id=firm.id, name=name)
+            # The segment a person gave the household decides its band (B-132); an NZD balance is never read against a USD threshold.
+            hh = Household(id=uuid.uuid4(), firm_id=firm.id, name=name, segment="core")
             p = Person(id=uuid.uuid4(), firm_id=firm.id, household_id=hh.id, full_name=f"{name} owner")
             s.add_all([hh, p])
             await s.flush()

@@ -2288,6 +2288,9 @@ class ToolExecutors:
         from app.aurea_core import autonomy
         from app.models.identity import User
 
+        # The gateway checks the catalogue's roles; this re-checks, as the other tools that change a control do.
+        if self.role != UserRole.ADMIN:
+            raise ExecutorError("An agent's tier is set by an admin; compliance reads it.")
         try:
             result = await autonomy.set_policy(self.session, await self._firm(), actor=await self.session.get(User, self.user_id),
                                                **self._autonomy_args(inputs))
@@ -2300,6 +2303,8 @@ class ToolExecutors:
         from app.aurea_core import autonomy, markets
         from app.core import decision_rights
 
+        if self.role != UserRole.ADMIN:
+            raise ExecutorError("An agent's tier is set by an admin; compliance reads it.")
         try:
             p = await autonomy.prepare_set(self.session, await self._firm(), **self._autonomy_args(inputs))
         except autonomy.AutonomyError as exc:

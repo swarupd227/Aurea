@@ -1506,7 +1506,8 @@ TOOLS: dict[str, Tool] = {
                 ToolInput("mandate_type", "string", "One mandate type, or leave out for all", required=False),
                 ToolInput("guardrails", "string", "JSON object, e.g. {\"max_trade_value\": 250000}", required=False)],
         output=ToolOutput("object", "Policies"),
-        roles_required={UserRole.ADMIN, UserRole.COMPLIANCE},
+        # An agent's tier is the admin's to set; compliance reads it (B-96).
+        roles_required={UserRole.ADMIN},
     ),
 
     "read_compliance_rules": Tool(

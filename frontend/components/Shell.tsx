@@ -65,7 +65,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   }, [router]);
 
   useEffect(() => {
-    if (!user || user.role === "client") return;
+    if (!user || user.role === "client" || user.role === "superadmin") return;
     const poll = async () => {
       try {
         const { api } = await import("@/lib/api");

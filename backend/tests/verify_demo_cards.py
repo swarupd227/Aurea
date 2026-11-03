@@ -107,15 +107,16 @@ async def main() -> int:
             s.add_all([firm, india])
             await s.flush()
             comp = User(id=uuid.uuid4(), firm_id=firm.id, email="c@t", full_name="Cy", role=UserRole.COMPLIANCE, hashed_password="x")
-            icomp = User(id=uuid.uuid4(), firm_id=india.id, email="c@i", full_name="Ira", role=UserRole.COMPLIANCE, hashed_password="x")
-            s.add_all([comp, icomp])
+            boss = User(id=uuid.uuid4(), firm_id=firm.id, email="a@t", full_name="Ada", role=UserRole.ADMIN, hashed_password="x")
+            iboss = User(id=uuid.uuid4(), firm_id=india.id, email="a@i", full_name="Ira", role=UserRole.ADMIN, hashed_password="x")
+            s.add_all([comp, boss, iboss])
             s.add(AutonomyPolicy(firm_id=firm.id, agent_key=AgentKey.DRIFT_REBALANCING, mandate_type=MandateType.ADVISORY, tier="tier_2",
                                  guardrails={"requires_client_consent": True}, rationale="Seeded"))
             await s.flush()
-            ex = ToolExecutors(s, comp.id, comp.role, firm.id)
+            ex = ToolExecutors(s, boss.id, boss.role, firm.id)
 
             print("\n=== Reading ===")
-            out = await ex.execute("read_autonomy_policies", {})
+            out = await ToolExecutors(s, comp.id, comp.role, firm.id).execute("read_autonomy_policies", {})
             g = out["policies"][0]["guardrails"][0]
             check("a stored key nothing enforces is shown as not enforced", (g["key"], g["enforced"]), ("requires_client_consent", False))
 
@@ -141,10 +142,12 @@ async def main() -> int:
             check("both changes on the audit log with their reasons", sorted(a.detail["reason"] for a in audit),
                   ["Back to supervised", "Small rebalances may go ahead on their own"])
 
-            iex = ToolExecutors(s, icomp.id, icomp.role, india.id)
+            iex = ToolExecutors(s, iboss.id, iboss.role, india.id)
             await refused("a licence refuses a tier above its ceiling", iex.preview_change("set_autonomy_policy", ask), "licensed")
-            check("only admin and compliance hold the change",
-                  sorted(str(r) for r in TOOLS["set_autonomy_policy"].roles_required), ["admin", "compliance"])
+            check("only an admin holds the change; compliance reads it (B-96)",
+                  sorted(str(r) for r in TOOLS["set_autonomy_policy"].roles_required), ["admin"])
+            await refused("and compliance is refused even outside the gateway",
+                          ToolExecutors(s, comp.id, comp.role, firm.id).execute("set_autonomy_policy", ask), "admin")
     finally:
         await db.dispose()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")

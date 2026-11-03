@@ -13,13 +13,18 @@ from app.api.deps import current_firm
 from app.conduit.registry import CONNECTOR_REGISTRY, get_provider_def
 from app.conduit.service import run_sync
 from app.core.db import get_db
-from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
+from app.core.security import get_current_user, staff_user, require_roles
 from app.models.connectors import Connector, ConnectorSync
-from app.models.enums import ConnectorStatus
-from app.models.identity import User
+from app.models.enums import ConnectorStatus, UserRole
+from app.models.identity import AuditEvent, User
 from app.models.tenant import Firm
 
 router = APIRouter(prefix="/api/conduit", tags=["conduit"], dependencies=[Depends(staff_user)])
+
+# A connector is operations' to set up and switch to a live feed, as the Connectors page is (frontend/lib/nav.ts);
+# a sync is also the portfolio team's, as refreshing prices is. Every staff role could do all three before (B-96).
+SetUp = Depends(require_roles(UserRole.OPERATIONS))
+Syncs = Depends(require_roles(UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM))
 
 REDACTED = "••••••••"
 
@@ -79,7 +84,7 @@ async def connectors(firm: Firm = Depends(current_firm), db: AsyncSession = Depe
 
 @router.post("/connectors")
 async def create_connector(
-    body: ConnectorCreate, user: User = Depends(require_roles(*STAFF_ROLES)),
+    body: ConnectorCreate, user: User = SetUp,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     pdef = get_provider_def(body.provider_key)
@@ -98,7 +103,7 @@ async def create_connector(
 @router.patch("/connectors/{connector_id}")
 async def update_connector(
     connector_id: uuid.UUID, body: ConnectorUpdate,
-    user: User = Depends(require_roles(*STAFF_ROLES)),
+    user: User = SetUp,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     c = await db.get(Connector, connector_id)
@@ -123,13 +128,17 @@ async def update_connector(
         c.status = ConnectorStatus.DISABLED if not body.enabled else (
             ConnectorStatus.MOCK if c.use_mock else ConnectorStatus.CONFIGURED
         )
+    # Going live and new credentials are on the record; the values of secrets are not.
+    db.add(AuditEvent(firm_id=firm.id, actor_id=user.id, actor_email=user.email, event_type="connector.updated",
+                      subject=c.display_name, detail={"config_keys": sorted((body.config or {}).keys()), "use_mock": body.use_mock,
+                                                       "enabled": body.enabled, "sync_cron": body.sync_cron}))
     await db.flush()
     return _redact(c)
 
 
 @router.post("/connectors/{connector_id}/sync")
 async def sync_connector(
-    connector_id: uuid.UUID, user: User = Depends(require_roles(*STAFF_ROLES)),
+    connector_id: uuid.UUID, user: User = Syncs,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     c = await db.get(Connector, connector_id)

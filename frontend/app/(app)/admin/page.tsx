@@ -43,7 +43,6 @@ const NAV_GROUPS = [
   {
     label: "Compliance",
     items: [
-      { id: "compliance",  label: "Compliance",  icon: ShieldAlert },
       { id: "rule-impact", label: "Rule impact",  icon: Search },
       { id: "audit",       label: "Audit trail", icon: ClipboardList },
     ],
@@ -123,7 +122,6 @@ export default function Admin() {
         {tab === "mandates"         && <MandatesTab />}
         {tab === "model-portfolios" && <ModelPortfoliosTab />}
         {tab === "connectors"       && <ConnectorsTab />}
-        {tab === "compliance"       && <ComplianceTab />}
         {tab === "rule-impact"      && <RuleImpactTab />}
         {tab === "branding"         && <BrandingTab />}
         {tab === "data-quality"     && <DataQualityTab />}
@@ -250,23 +248,27 @@ function FirmTab() {
 function AgentsTab() {
   const { data, loading, refetch } = useApi<any[]>("/api/agents/catalogue");
   const [cronEdit, setCronEdit] = useState<Record<string, string>>({});
+  const [refused, setRefused] = useState<string | null>(null);
   const tiers = ["tier_1", "tier_2", "tier_3"];
 
+  // A change can be refused: a tier the licence does not allow, an agent surveillance paused while its flag is open.
   async function update(key: string, patch: any) {
-    await api(`/api/admin/agents/${key}`, { method: "PATCH", body: patch });
+    setRefused(null);
+    try { await api(`/api/admin/agents/${key}`, { method: "PATCH", body: patch }); }
+    catch (e: any) { setRefused(e?.message || "That change was refused."); }
     refetch();
   }
 
   async function saveCron(key: string) {
     const cron = cronEdit[key] ?? "";
-    await api(`/api/admin/agents/${key}`, { method: "PATCH", body: { schedule_cron: cron || null } });
+    await update(key, { schedule_cron: cron || null });
     setCronEdit((prev) => { const n = { ...prev }; delete n[key]; return n; });
-    refetch();
   }
 
   if (loading) return <Spinner />;
   return (
     <div className="space-y-2">
+      {refused && <div className="chip bg-crit-bg text-crit" data-testid="admin-agent-refused">{refused}</div>}
       {data?.map((a) => (
         <Card key={a.agent_key} className="space-y-2">
           <div className="flex items-center flex-wrap gap-x-4 gap-y-2">
@@ -1860,87 +1862,6 @@ function MandatesTab() {
                     <button className="btn-outline py-1 px-2 text-xs flex items-center gap-1 ml-auto" onClick={() => setEditing({ ...m })}>
                       <Pencil size={11} /> Edit
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-// ── Compliance tab ────────────────────────────────────────────────────────────
-
-const SEVERITY_COLORS: Record<string, string> = {
-  high: "bg-red-100 text-red-700 border-red-200",
-  medium: "bg-amber-100 text-amber-700 border-amber-200",
-  low: "bg-yellow-100 text-yellow-700 border-yellow-200",
-  info: "bg-blue-100 text-blue-700 border-blue-200",
-};
-
-function ComplianceTab() {
-  const { data: flags, loading, refetch } = useApi<any[]>("/api/provenance/surveillance");
-  const [filter, setFilter] = useState<"all" | "open" | "resolved">("open");
-
-  async function resolve(id: string, val: boolean) {
-    await api(`/api/provenance/surveillance/${id}/resolve?resolved=${val}`, { method: "PATCH", body: {} });
-    refetch();
-  }
-
-  const filtered = flags?.filter((f) =>
-    filter === "all" ? true : filter === "open" ? !f.resolved : f.resolved
-  );
-  const openCount = flags?.filter((f) => !f.resolved).length ?? 0;
-
-  return (
-    <div className="max-w-5xl space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        {(["open", "all", "resolved"] as const).map((f) => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${filter === f ? "bg-navy-800 text-white" : "bg-navy-50 text-ink-soft hover:bg-navy-100"}`}>
-            {titleCase(f)}{f === "open" && openCount > 0 && <span className="ml-1.5 bg-red-500 text-white text-[10px] rounded-full px-1.5 py-0.5">{openCount}</span>}
-          </button>
-        ))}
-        <button className="ml-auto btn-outline py-1 px-2 text-xs flex items-center gap-1" onClick={() => refetch()}>
-          <RefreshCw size={12} /> Refresh
-        </button>
-      </div>
-      <Card className="overflow-x-auto p-0">
-        {loading ? <div className="p-6"><Spinner /></div> : !filtered?.length ? (
-          <div className="p-8"><Empty>{filter === "open" ? "No open compliance flags." : "No flags found."}</Empty></div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-navy-100 text-left text-xs text-ink-muted font-medium">
-                <th className="px-4 py-3">Severity</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Finding</th>
-                <th className="px-4 py-3">Agent</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((f) => (
-                <tr key={f.id} className={`border-b border-navy-50 last:border-0 hover:bg-navy-50/40 ${f.resolved ? "opacity-60" : ""}`}>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex px-2 py-0.5 rounded border text-[11px] font-semibold uppercase tracking-wide ${SEVERITY_COLORS[f.severity?.toLowerCase()] || SEVERITY_COLORS.info}`}>
-                      {f.severity}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs capitalize">{f.category?.replace(/_/g, " ")}</td>
-                  <td className="px-4 py-3 text-ink max-w-xs">
-                    <p className="line-clamp-2 text-xs">{f.finding}</p>
-                    {f.auto_paused_agent && <span className="text-[10px] text-red-600 font-medium block mt-0.5">Agent auto-paused</span>}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-ink-muted">{f.target_agent_key?.replace(/_/g, " ") || "—"}</td>
-                  <td className="px-4 py-3 text-xs text-ink-muted whitespace-nowrap">{f.created_at ? new Date(f.created_at).toLocaleDateString() : "—"}</td>
-                  <td className="px-4 py-3 text-right">
-                    {f.resolved
-                      ? <button className="btn-outline py-1 px-2 text-xs" onClick={() => resolve(f.id, false)}>Reopen</button>
-                      : <button className="btn-outline py-1 px-2 text-xs text-positive flex items-center gap-1 ml-auto" onClick={() => resolve(f.id, true)}><Check size={11} /> Resolve</button>}
                   </td>
                 </tr>
               ))}

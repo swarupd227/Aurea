@@ -186,15 +186,21 @@ async def create_firm(
 @router.patch("/firms/{firm_id}/status")
 async def toggle_firm_status(
     firm_id: str,
+    body: dict | None = None,
     actor: User = Depends(_superadmin_only),
     db: AsyncSession = Depends(get_db),
 ):
-    """Activate or deactivate a tenant firm."""
+    """Switch a tenant firm on or off: `{"is_active": false}` signs its people out (core/security.get_current_user)
+    and stops them signing in. Said, not toggled, so a repeated request does not undo itself."""
     from uuid import UUID
-    firm = await db.get(Firm, UUID(firm_id))
+    try:
+        firm = await db.get(Firm, UUID(firm_id))
+    except ValueError:
+        firm = None
     if not firm:
         raise HTTPException(404, "Firm not found.")
-    firm.is_active = not firm.is_active
+    wanted = (body or {}).get("is_active")
+    firm.is_active = (not firm.is_active) if wanted is None else bool(wanted)
     db.add(AuditEvent(
         firm_id=firm.id, actor_id=actor.id, actor_email=actor.email,
         event_type="superadmin.firm_status_changed", subject=firm.slug,

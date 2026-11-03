@@ -15,7 +15,7 @@ from app.aurea_core import markets
 from app.core.config import settings
 from app.core.db import get_db, utcnow
 from app.core.security import (
-    create_access_token, create_preauth_token, get_current_user,
+    create_access_token, create_preauth_token, firm_is_active, get_current_user,
     hash_password, verify_password,
 )
 from app.models.enums import UserRole
@@ -59,6 +59,8 @@ async def _authenticate(db: AsyncSession, email: str, password: str) -> User:
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.is_active:
         raise HTTPException(status_code=401, detail="Account is deactivated.")
+    if user.role != UserRole.SUPERADMIN and not await firm_is_active(db, user.firm_id):
+        raise HTTPException(status_code=401, detail="This firm's access has been switched off.")
     return user
 
 

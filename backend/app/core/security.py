@@ -89,6 +89,9 @@ async def get_current_user(
     user = await db.get(User, uuid.UUID(user_id))
     if user is None or not user.is_active:
         raise cred_exc
+    # A firm the platform owner switched off signs its people out; the owner works across firms and is not one of them.
+    if user.role != UserRole.SUPERADMIN and not await firm_is_active(db, user.firm_id):
+        raise cred_exc
     # Force-logout check: reject tokens issued before the stored revocation timestamp.
     try:
         r = await _get_redis()
@@ -102,23 +105,35 @@ async def get_current_user(
     return user
 
 
+async def firm_is_active(db: AsyncSession, firm_id) -> bool:
+    from app.models.tenant import Firm
+
+    firm = await db.get(Firm, firm_id)
+    return firm is not None and firm.is_active is not False
+
+
 async def staff_user(user: User = Depends(get_current_user)) -> User:
-    """Any internal staff persona (everyone except an external Canvas client)."""
-    if user.role == UserRole.CLIENT:
+    """Any internal staff persona of a firm: everyone except an external Canvas client and the platform owner,
+    who manages firms from its own page and does not act inside one."""
+    if user.role in (UserRole.CLIENT, UserRole.SUPERADMIN):
         raise HTTPException(status_code=403, detail="Staff access only.")
     return user
 
 
 def require_roles(*roles: UserRole):
-    """Dependency factory enforcing that the current user holds one of the given roles."""
+    """Dependency factory enforcing that the current user holds one of the given roles. A firm's administrator
+    passes every check inside their own firm; the platform owner passes none (B-96): it signs in to an
+    arbitrary firm, so letting it through would put it to work inside one."""
 
     async def checker(user: User = Depends(get_current_user)) -> User:
-        if roles and user.role not in roles and user.role not in (UserRole.ADMIN, UserRole.SUPERADMIN):
+        if roles and user.role not in roles and user.role != UserRole.ADMIN:
             raise HTTPException(status_code=403, detail="Insufficient role for this action.")
+        if user.role == UserRole.SUPERADMIN and UserRole.SUPERADMIN not in roles:
+            raise HTTPException(status_code=403, detail="The platform owner manages firms from its own page.")
         return user
 
     return checker
 
 
-# Internal-staff roles (everything except external Canvas clients).
-STAFF_ROLES = tuple(r for r in UserRole if r != UserRole.CLIENT)
+# Internal-staff roles of a firm (everything except external Canvas clients and the platform owner).
+STAFF_ROLES = tuple(r for r in UserRole if r not in (UserRole.CLIENT, UserRole.SUPERADMIN))

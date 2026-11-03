@@ -67,10 +67,10 @@ export default function SuperadminPage() {
     }
   }
 
-  async function toggleStatus(firmId: string) {
+  async function toggleStatus(firmId: string, active: boolean) {
     setTogglingId(firmId);
     try {
-      await api(`/api/superadmin/firms/${firmId}/status`, { method: "PATCH", body: {} });
+      await api(`/api/superadmin/firms/${firmId}/status`, { method: "PATCH", body: { is_active: active } });
       refetch();
     } catch {}
     setTogglingId(null);
@@ -209,7 +209,7 @@ export default function SuperadminPage() {
                       {f.is_active ? "Active" : "Inactive"}
                     </span>
                     <button
-                      onClick={() => toggleStatus(f.id)}
+                      onClick={() => toggleStatus(f.id, !f.is_active)}
                       disabled={togglingId === f.id}
                       className="btn-ghost p-1.5"
                       title={f.is_active ? "Deactivate firm" : "Activate firm"}

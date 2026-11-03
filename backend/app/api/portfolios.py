@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_firm
 from app.aurea_core import composites
 from app.core.db import get_db
-from app.core.security import STAFF_ROLES, require_roles, staff_user
+from app.core.security import require_roles, staff_user
+from app.models.enums import UserRole
 from app.models.enums import AssetClass
 from app.models.identity import User
 from app.models.portfolio import ModelPortfolio, TargetAllocation
@@ -23,7 +24,9 @@ router = APIRouter(
     dependencies=[Depends(staff_user)],
 )
 
-AdminDep = Depends(require_roles(*STAFF_ROLES))
+# A model drives every rebalance on the mandates that follow it: the portfolio team and research build it,
+# and the admin may (B-96). Every staff role could create, retarget or delete one before.
+AdminDep = Depends(require_roles(UserRole.PORTFOLIO_TEAM, UserRole.RESEARCH_CIO))
 
 
 class ModelPortfolioIn(BaseModel):
@@ -139,9 +142,21 @@ async def delete_model_portfolio(
     user: User = AdminDep,
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
+    from sqlalchemy import func
+
+    from app.models.graph import Mandate
+    from app.models.identity import AuditEvent
+
     mp = await db.get(ModelPortfolio, model_id)
     if not mp or mp.firm_id != firm.id:
         raise HTTPException(404, "Model portfolio not found.")
+    # Deleting cascades to its composites and sleeves and leaves its mandates with no model; refuse while any follows it.
+    following = (await db.execute(select(func.count(Mandate.id)).where(Mandate.firm_id == firm.id,
+                                                                       Mandate.model_portfolio_id == model_id))).scalar_one()
+    if following:
+        raise HTTPException(409, f"{following} mandate(s) follow this model. Move them to another model first.")
+    db.add(AuditEvent(firm_id=firm.id, actor_id=user.id, actor_email=user.email, event_type="model_portfolio.deleted",
+                      subject=mp.name))
     await db.delete(mp)
     return {"ok": True}
 
