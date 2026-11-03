@@ -255,6 +255,30 @@ async def behaviour() -> None:
             check("the PDF reads the same page (the total it printed was 0)", home["total_wealth"], 400000.0)
             got = await canvas.get_fees(household_id=None, user=users["mia"], firm=firm, db=s)
             check("the fee panel has no rate it was not given", (got["source"], got["fee_bps"]), ("not_on_file", None))
+
+            print("\n=== A fee band from the household's own segment, never rupees against dollars (B-132) ===")
+            from app.models.tenant import FirmSegment
+            for slug, label, bps, aum in (("private_wealth", "Private Wealth", 75, 500_000),
+                                          ("mass_affluent", "Mass Affluent", 100, 100_000),
+                                          ("next_gen", "Next Gen", 100, None)):
+                s.add(FirmSegment(firm_id=firm.id, slug=slug, label=label, fee_tier_bps=bps, min_aum_usd=aum, is_active=True))
+            lee.segment = "private_wealth"
+            await s.flush()
+            got = await client_view.fee_terms(s, firm, lee.id)
+            check("the segment a person gave it sets the band, not one with no threshold",
+                  (got["applicable_segment"]["slug"], got["segment_basis"], got["fee_bps"]), ("private_wealth", "assigned", 75))
+            check("the schedule says its thresholds are US dollars", {r["min_aum_currency"] for r in got["fee_schedule"]}, {"USD"})
+            lee.segment = "for_purpose"   # one this firm does not offer
+            await s.flush()
+            got = await client_view.fee_terms(s, firm, lee.id)
+            check("a balance in New Zealand dollars is not read against US-dollar thresholds",
+                  (got["source"], got["applicable_segment"]), ("not_on_file", None))
+            firm.base_currency = "USD"
+            got = await client_view.fee_terms(s, firm, lee.id)
+            check("in dollars, the balance picks the highest band it reaches that has a threshold",
+                  (got["applicable_segment"]["slug"], got["segment_basis"]), ("mass_affluent", "balance"))
+            firm.base_currency, lee.segment = "NZD", "private_wealth"
+            await s.flush()
             await refused("staff do not take a next-gen member's steps", canvas.heir_step(
                 canvas.StepIn(key="welcome", person_id=leo.id), user=users["ann"], firm=firm, db=s), "own journey")
             j = await canvas.heir_journey(person_id=sam.id, user=users["leo"], firm=firm, db=s)

@@ -134,6 +134,10 @@ async def billing(session: AsyncSession, firm: Firm, household_id: uuid.UUID) ->
     }
 
 
+# A firm segment's threshold (`FirmSegment.min_aum_usd`) is in US dollars, whatever the firm's own currency.
+THRESHOLD_CURRENCY = "USD"
+
+
 async def fee_terms(session: AsyncSession, firm: Firm, household_id: uuid.UUID) -> dict:
     """The fee for this household: the schedule confirmed at onboarding where its mandate carries one,
     else the firm's segment estimate, labelled as one. With neither, the fee is not on file - no rate
@@ -181,12 +185,21 @@ async def fee_terms(session: AsyncSession, firm: Firm, household_id: uuid.UUID) 
     segments = (await session.execute(
         select(FirmSegment).where(FirmSegment.firm_id == firm.id, FirmSegment.is_active.is_(True))
         .order_by(FirmSegment.min_aum_usd))).scalars().all()
-    applicable = None
-    for seg in segments:
-        if seg.min_aum_usd is None or total_aum >= (seg.min_aum_usd or 0):
-            applicable = seg
+    # The segment a person gave the household decides its band (B-132). The balance is a fallback only for a
+    # household with none, only against segments that have a threshold, and only where the balance is in the
+    # thresholds' currency: they are US dollars and nothing here converts, so rupees are never read against them.
+    from app.models.graph import Household
+    household = await session.get(Household, household_id)
+    assigned = str(household.segment) if household and household.segment else None
+    applicable = next((s for s in segments if s.slug == assigned), None)
+    basis = "assigned" if applicable else None
+    if applicable is None and (firm.base_currency or "USD") == THRESHOLD_CURRENCY:
+        for seg in segments:
+            if seg.min_aum_usd is not None and total_aum >= seg.min_aum_usd:
+                applicable, basis = seg, "balance"
     schedule_rows = [{"slug": s.slug, "label": s.label, "fee_bps": s.fee_tier_bps,
-                      "fee_pct": round((s.fee_tier_bps or 0) / 100, 4), "min_aum": s.min_aum_usd}
+                      "fee_pct": round((s.fee_tier_bps or 0) / 100, 4), "min_aum": s.min_aum_usd,
+                      "min_aum_currency": THRESHOLD_CURRENCY}
                      for s in segments if s.fee_tier_bps]
     bps = applicable.fee_tier_bps if applicable and applicable.fee_tier_bps else None
     if bps is None:
@@ -196,9 +209,9 @@ async def fee_terms(session: AsyncSession, firm: Firm, household_id: uuid.UUID) 
     annual = total_aum * bps / 10000
     return {"aum": total_aum, "currency": firm.base_currency, "fee_bps": bps, "fee_pct": round(bps / 100, 4),
             "annual_fee": round(annual, 2), "monthly_fee": round(annual / 12, 2), "ytd_fee": round(annual / 12 * months, 2),
-            "source": "segment_estimate",
+            "source": "segment_estimate", "segment_basis": basis,
             "applicable_segment": {"slug": applicable.slug, "label": applicable.label, "fee_bps": applicable.fee_tier_bps,
-                                   "min_aum": applicable.min_aum_usd},
+                                   "min_aum": applicable.min_aum_usd, "min_aum_currency": THRESHOLD_CURRENCY},
             "fee_schedule": schedule_rows}
 
 

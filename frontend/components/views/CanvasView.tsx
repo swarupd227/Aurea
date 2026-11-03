@@ -488,7 +488,7 @@ function Fees({ fees, qs }: { fees: any; qs: string }) {
               {fees.fee_schedule.map((s: any) => (
                 <tr key={s.slug}>
                   <td className="py-1 pr-4 text-ink">{s.label}</td>
-                  <td className="py-1 pr-4 font-mono text-ink-muted">{s.min_aum ? money(s.min_aum, ccy) : "any"}</td>
+                  <td className="py-1 pr-4 font-mono text-ink-muted">{s.min_aum ? money(s.min_aum, s.min_aum_currency || ccy) : "any"}</td>
                   <td className="py-1 font-mono text-ink-muted">{Number(s.fee_pct).toFixed(2)}%</td>
                 </tr>
               ))}
