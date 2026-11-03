@@ -21,7 +21,6 @@ R = UserRole
 # Agents a sentence cannot start, and why. Each is page-first today: it needs an inbound book batch
 # a sentence cannot name, or it has its own tool.
 NOT_FROM_CONVERSATION: dict[AgentKey, str] = {
-    AgentKey.ABANDONMENT_RECOVERY: "it belongs to the onboarding desk - run it from the Onboarding page",
     AgentKey.BILLING: "billing has its own tool - ask to prepare a billing run",
 }
 
@@ -53,6 +52,8 @@ _ONLY_RUN_ROLES: dict[AgentKey, frozenset[UserRole]] = {
     AgentKey.IPS_MONITORING: frozenset({R.ADVISER, R.PORTFOLIO_TEAM, R.COMPLIANCE}),
     # An acquired book is the operations desk's, as its page is.
     AgentKey.BOOK_INTEGRATION: frozenset({R.OPERATIONS}),
+    # The whole onboarding board, read against each state's SLA, for the people who own its states.
+    AgentKey.ABANDONMENT_RECOVERY: frozenset({R.ADVISER, R.OPERATIONS, R.COMPLIANCE, R.BRANCH_LEADER}),
 }
 
 # What an agent needs to be pointed at. Anything not listed here may run firm-wide, which is

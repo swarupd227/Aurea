@@ -57,6 +57,21 @@ IPS_AGENTS: frozenset[str] = frozenset({AgentKey.IPS_MONITORING.value})
 # a flag may be about their own advice.
 SUPERVISION_AGENTS: frozenset[str] = frozenset({AgentKey.CONDUCT_SURVEILLANCE.value})
 SUPERVISORS: frozenset[UserRole] = frozenset({UserRole.COMPLIANCE, UserRole.BRANCH_LEADER})
+# Who sees a supervision proposal in a list at all: the supervisors, and the administrators who keep the platform.
+SUPERVISION_READERS: frozenset[UserRole] = SUPERVISORS | {UserRole.ADMIN, UserRole.SUPERADMIN}
+
+
+def may_see(role: UserRole | str, agent_key: str | AgentKey) -> bool:
+    """Whether a proposal from `agent_key` appears in this role's lists. Every proposal does, except supervision,
+    which is about the people using the platform and is compliance's and the branch leader's."""
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) not in SUPERVISION_AGENTS:
+        return True
+    return UserRole(role) in SUPERVISION_READERS
+
+
+def unseen_agents(role: UserRole | str) -> list[str]:
+    """The agents whose proposals this role's lists leave out, for a query's NOT IN."""
+    return [] if UserRole(role) in SUPERVISION_READERS else sorted(SUPERVISION_AGENTS)
 
 STAFF: frozenset[UserRole] = frozenset(r for r in UserRole if r != UserRole.CLIENT)
 

@@ -64,7 +64,9 @@ async def nba_feed(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     """The next-best-action feed: prioritised open recommendations across the book."""
-    stmt = select(Recommendation).where(Recommendation.firm_id == firm.id)
+    from app.core.decision_rights import unseen_agents
+
+    stmt = select(Recommendation).where(Recommendation.firm_id == firm.id, Recommendation.agent_key.notin_(unseen_agents(user.role)))
     if status == "open":
         stmt = stmt.where(Recommendation.status == RecommendationStatus.PROPOSED)
     recs = (
@@ -339,10 +341,13 @@ async def get_notifications(
 
     items = []
 
-    # All staff: pending recommendations (highest-priority first, max 5)
+    # All staff: pending recommendations (highest-priority first, max 5), supervision only to its readers
+    from app.core.decision_rights import unseen_agents
+
     recs = (await db.execute(
         select(Recommendation)
-        .where(Recommendation.firm_id == firm.id, Recommendation.status == RecommendationStatus.PROPOSED)
+        .where(Recommendation.firm_id == firm.id, Recommendation.status == RecommendationStatus.PROPOSED,
+               Recommendation.agent_key.notin_(unseen_agents(user.role)))
         .order_by(Recommendation.priority.asc(), Recommendation.created_at.desc())
         .limit(5)
     )).scalars().all()

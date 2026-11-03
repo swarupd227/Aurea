@@ -63,11 +63,11 @@ CATALOGUE: dict[str, dict] = {
     AgentKey.ABANDONMENT_RECOVERY: {
         "name": "Abandonment Recovery", "stage": "Acquire & onboard",
         "default_tier": AutonomyTier.TIER_1, "subject": "firm",
-        "senses": "Onboarding cases that have stalled — open past their SLA with no recent "
-                  "progress on documents, screening or funding.",
-        "acts": "Identifies stalled applications, attributes the stall to its blocking step, and "
-                "drafts a re-engagement approach for the owning adviser.",
-        "checkpoint": "Adviser decides whether and how to re-approach the prospect.",
+        "senses": "Onboarding accounts that have stayed in their state past that state's SLA, from the "
+                  "onboarding board: the state, its owner, the SLA and how far over.",
+        "acts": "Raises each late account with the step that moves it on and whose move it is; "
+                "approving adds a task for that owner, due today.",
+        "checkpoint": "A person decides whether the owner should be chased; nothing on the account changes.",
     },
     AgentKey.CIP_IDENTITY_VERIFIER: {
         "name": "CIP Identity Verifier", "stage": "Acquire & onboard",

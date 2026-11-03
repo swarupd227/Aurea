@@ -174,14 +174,16 @@ async def behaviour() -> None:
             s.add(review)
             await s.commit()
 
-            async def found(words):
-                r = await ex(R.ADVISER).execute("read_recommendations", {"subject": words})
+            # A supervision proposal is compliance's to read (decision_rights.SUPERVISION_READERS), so compliance looks.
+            async def found(words, role=R.COMPLIANCE):
+                r = await ex(role).execute("read_recommendations", {"subject": words})
                 return [x["title"] for x in r["recommendations"]]
             check("by its title", await found("Conduct surveillance review"), ["Conduct surveillance review"])
             check("by a word of it, any case", await found("SURVEILLANCE"), ["Conduct surveillance review"])
             check("by its client, as before", "Conduct surveillance review" in await found("Mine"), True)
             check("by its agent", await found("conduct surveillance"), ["Conduct surveillance review"])
             check("not by words it does not have", await found("rebalance"), [])
+            check("and an adviser does not see it at all", await found("Conduct surveillance review", R.ADVISER), [])
 
             print("\n=== a book scan counts what was already open ===")
             from app.atlas import scan_stream

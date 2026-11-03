@@ -167,6 +167,16 @@ async def main() -> int:
             check("a branch leader sees the firm: the surveillance review is theirs, the rebalance is not",
                   (f["scope"], f["households"], sorted(i["title"] for i in f["waiting"]["items"])), ("firm", 4, ["Call Brook", "Call Cole", "Conduct surveillance review"]))
 
+            comp = user(UserRole.COMPLIANCE, "Cy Compliance")
+            await s.flush()
+
+            async def listed(u):
+                out = await ex(u).execute("read_recommendations", {})
+                return sorted(r["title"] for r in out[next(k for k, v in out.items() if isinstance(v, list))])
+            check("an adviser's list leaves the surveillance review out", "Conduct surveillance review" in await listed(ann), False)
+            check("compliance's list has it", "Conduct surveillance review" in await listed(comp), True)
+            check("so does a branch leader's", "Conduct surveillance review" in await listed(lead), True)
+
             print("\n=== Assigning ===")
             ask = {"household_ids": f"{hs['Ames'].id},{hs['Dunn'].id}", "adviser": "Cara", "reason": "Ann is going part time"}
             await refused("a reason is needed", ex(ops).preview_change("assign_adviser", {**ask, "reason": " "}), "reason")

@@ -2072,6 +2072,27 @@ class ToolExecutors:
     def _household_list(self, value) -> list:
         return [_parse_uuid(x.strip(), "household_ids") for x in (value if isinstance(value, list) else str(value or "").split(",")) if str(x).strip()]
 
+    @staticmethod
+    def _on_approval(rec) -> str | None:
+        """What approving a proposal with no orders does, where that is known: the stalled-onboarding task, or nothing
+        at all for an agent that keeps the base act()."""
+        from app.atlas.base import BaseAgent
+        from app.atlas.registry import get_agent
+        from app.models.enums import AgentKey
+
+        try:
+            agent = get_agent(AgentKey(str(rec.agent_key)))
+        except ValueError:
+            return None
+        if agent is None:
+            return None
+        if type(agent).act is BaseAgent.act:
+            return "The decision is recorded; this agent takes no other action"
+        if str(rec.agent_key) == AgentKey.ABANDONMENT_RECOVERY.value:
+            p = rec.modified_payload or rec.payload or {}
+            return f"A task for {p.get('owner', 'the owner')}: {p.get('next_step', 'move the account on')}, due today"
+        return None
+
     async def read_my_day(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import advisers
         from app.models.identity import User
@@ -3110,7 +3131,9 @@ class ToolExecutors:
             limit = 20
         subject = str(inputs.get("subject") or "").strip()
 
-        stmt = select(Recommendation).where(Recommendation.firm_id == self.firm_id)
+        from app.core.decision_rights import unseen_agents
+
+        stmt = select(Recommendation).where(Recommendation.firm_id == self.firm_id, Recommendation.agent_key.notin_(unseen_agents(self.role)))
         if status != "all":
             stmt = stmt.where(Recommendation.status == RecommendationStatus.PROPOSED)
         if subject:
@@ -3993,7 +4016,8 @@ class ToolExecutors:
                                 else f"Approve: {len(orders)} orders are placed now" if orders else "Approve")}[action]
         rows: list[tuple[str, Any]] = [("Decision", decision), ("Proposal", rec.title), ("Client", rec.subject_label)]
         if not orders:
-            return [*rows, ("Agent", str(rec.agent_key).replace("_", " ")), ("Note", (note or "").strip() or None)]
+            return [*rows, ("Agent", str(rec.agent_key).replace("_", " ")),
+                    ("On approval", self._on_approval(rec) if action in ("approve", "modify") else None), ("Note", (note or "").strip() or None)]
 
         for n, o in enumerate(orders, 1):
             units = f"{float(o['quantity'] or 0):,.3f}".rstrip("0").rstrip(".")
