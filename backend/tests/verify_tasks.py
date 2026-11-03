@@ -295,6 +295,33 @@ async def behaviour() -> None:
             check("a confirmed change is not called undone", "Not done" in said_to_model(), False)
             check("  it reads as done", "[Done: create_task" in said_to_model() and "Confirmed one" in said_to_model(), True)
 
+            print("\n=== a reply that was only a card keeps its turn ===")
+            t12 = await thread()
+            for words, title in (("Add the first", "First declined"), ("Add the second", "Second declined")):
+                gw_mod.llm_service.stream = script(tool_round("create_task", {"title": title}))
+                async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t12.id, words):
+                    pass
+                await Gateway(s, sophie.id, sophie.role, sophie.firm_id).confirm_pending_action((await s.execute(
+                    select(PendingAction).where(PendingAction.thread_id == t12.id, PendingAction.status == PendingActionStatus.AWAITING_CONFIRMATION)
+                )).scalars().one().id, False)
+            gw_mod.llm_service.stream = hearing
+            async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t12.id, "What is open?"):
+                pass
+            said = [str(m["content"]) for m in heard["messages"]]
+            check("each declined card is its own turn", sum(gw_mod._CARD_ONLY in x for x in said), 2)
+            check("  so the question is not run together with the requests",
+                  [x for x in said if "What is open?" in x and ("Add the first" in x or "Add the second" in x)], [])
+            check("  and the decline follows its card", "Second declined" in said[-1] and said[-1].index("Not done") < said[-1].index("What is open?"), True)
+            async def raised(words):
+                gw_mod.llm_service.stream = script(tool_round("create_task", {"title": "First declined"}), say("Nothing is open."))
+                events = [e async for e in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t12.id, words)]
+                return [e for e in events if e["type"] == "pending_action"]
+            check("a declined change is not raised again for a question", await raised("Which tasks are open for me?"), [])
+            again = await raised("Could you add the first one after all?")
+            check("  a request put as a question still raises it", [e["tool_key"] for e in again], ["create_task"])
+            await Gateway(s, sophie.id, sophie.role, sophie.firm_id).confirm_pending_action(uuid.UUID(again[0]["pending_action_id"]), False)
+            check("turns still alternate", all(a["role"] != b["role"] for a, b in zip(heard["messages"], heard["messages"][1:])), True)
+
             print("\n=== the next turn knows what the last one read ===")
             t11 = await thread()
             gw_mod.llm_service.stream = script(tool_round("read_tasks", {"household_id": str(chen.id)}), say("Two tasks."))

@@ -476,9 +476,9 @@ TOOLS: dict[str, Tool] = {
         inputs=[
             ToolInput("household_id", "uuid", "The household (from search_households or read_client_reviews)", required=True),
             ToolInput("held_on", "string", "The date it was held, YYYY-MM-DD. May be left out when a meeting_id gives it", required=False),
-            ToolInput("covered", "list[string]", "What it covered, from: performance_vs_goals, plan_updates, tax_items, life_changes", required=True),
+            ToolInput("covered", "list[string]", "What it covered, from: performance_vs_goals, plan_updates, tax_items, life_changes. Only a topic the person named: a retirement plan is plan_updates, and a subject that fits none, such as protection, goes in notes and never under another topic", required=True),
             ToolInput("meeting_id", "uuid", "The meeting it took place at, from read_client_reviews or read_meetings", required=False),
-            ToolInput("notes", "string", "Anything the adviser wants on the record, in their words", required=False),
+            ToolInput("notes", "string", "Anything the adviser wants on the record, in their words, including what they covered that no topic names", required=False),
         ],
         output=ToolOutput("object", "The household's review position after recording"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},

@@ -60,6 +60,14 @@ _FIGURE = re.compile(r"\d[\d,]*(?:\.\d+)?\s?%|[$£€₹]\s?\d|\b\d{1,3}(?:,\d{3
 _READ_FIRST = ("[You gave figures and read nothing this turn, so they are not from the record and were not shown. "
                "Call the tool for them now, or say in one sentence that you could not get them.]")
 _NO_FIGURES = "I couldn't read that from the record just now, so I won't give a figure. Ask me again and I'll look it up."
+_CARD_ONLY = "[I showed a card for that change; what became of it follows.]"
+
+# A question, as opposed to a request put as one ("could you record it?"). Live on 3 Nov, "What follow-ups
+# do I have open?" raised again a review card the person had just declined; a change declined in this
+# conversation is not raised for a question.
+_A_QUESTION = re.compile(r"^(?:what|which|when|who|whose|where|why|how|is|are|was|were|do|does|did|has|have|any)\b.*\?$", re.I | re.S)
+_STILL_DECLINED = ("The person chose Not now on this change earlier and has now asked a question, not for the change. "
+                   "Answer the question and do not raise the change again.")
 
 
 class GatewayError(Exception):
@@ -322,6 +330,8 @@ class Gateway:
                         # A task change is checked the same way, and its card names the task.
                         preview = None
                         try:
+                            if _A_QUESTION.match(text.strip()) and tool_key in await self._declined(thread_id):
+                                raise GatewayError(_STILL_DECLINED)
                             checks = ToolExecutors(self.session, self.user_id, self.role, self.firm_id)
                             preview = (await checks.preview_run_agent(inputs, record_refusal=True)
                                        if tool_key == "run_agent" else await checks.preview_change(tool_key, inputs))
@@ -458,11 +468,22 @@ class Gateway:
         for msg in recent_messages:
             if (msg.text or "").strip():    # a run's card while it is still running has no words yet
                 add("user" if msg.role == MessageRole.USER else "assistant", msg.text)
+            elif msg.id in not_done:
+                # A reply that was only a card still took its turn. Without it, the request, the decline and
+                # the next question run together as one message, and a declined change is raised again.
+                add("assistant", _CARD_ONLY)
             if msg.id in used:
                 add("user", used[msg.id])
             for marker in not_done.get(msg.id, []):
                 add("user", marker)
         return messages
+
+    async def _declined(self, thread_id: uuid.UUID) -> set[str]:
+        """The changes the person chose Not now on in this conversation."""
+        return set((await self.session.execute(
+            select(ToolCall.tool_key).join(PendingAction, PendingAction.tool_call_id == ToolCall.id)
+            .where(PendingAction.thread_id == thread_id, PendingAction.status == PendingActionStatus.REJECTED)
+        )).scalars().all())
 
     async def _records_used(self, recent: list[ThreadMessage]) -> dict[uuid.UUID, str]:
         """The records each earlier reply read, as a marker for the model. History is words only, so
