@@ -116,6 +116,17 @@ async def main() -> int:
             check("a firm's only adviser when none is on the case", (await onboarding_start.adviser_for(s, nz, lone)).full_name, "Sophie")
             check("who may open a case", sorted(str(r) for r in UserRole if "start_onboarding" in tools_for_role(r)),
                   ["adviser", "branch_leader", "operations", "paraplanner"])
+
+            print("\n=== A rule comes from a tool, not from what the model knows (B-152) ===")
+            from app.core.tools import TOOLS
+            from app.llm.gateway import CLIENT_PROMPT_TEMPLATE, SYSTEM_PROMPT_TEMPLATE
+            check("staff: general knowledge of tax or law is not a source", "Knowing it is not a source" in SYSTEM_PROMPT_TEMPLATE, True)
+            check("staff: a concern states the rule too", "a 401(k) into a Roth IRA is a taxable\nconversion" in SYSTEM_PROMPT_TEMPLATE, True)
+            check("staff: a rule the person states is neither confirmed nor corrected",
+                  "neither\nconfirm nor correct it" in SYSTEM_PROMPT_TEMPLATE, True)
+            check("client: the same, and their adviser answers it", "what you know in general is not a source" in CLIENT_PROMPT_TEMPLATE, True)
+            check("the account type is passed as named and the card refuses it",
+                  "call it rather than asking or choosing a type yourself" in TOOLS["start_onboarding"].description, True)
     finally:
         await db.dispose()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
