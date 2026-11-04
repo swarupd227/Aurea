@@ -60,6 +60,16 @@ async def bootstrap() -> None:
         # Wave F: MFA columns on app_user
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(64)"))
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
+        # B-158: one entry per number from here on. Appends already take the firm's lock; this
+        # refuses one that ever goes round it. Entries written before carry the forks the lock
+        # came too late for, and stay as they are, so the index starts after them.
+        try:
+            async with conn.begin_nested():
+                await conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_entry_firm_seq ON ledger_entry (firm_id, seq) "
+                    "WHERE created_at >= TIMESTAMPTZ '2026-11-05 00:00:00+00'"))
+        except Exception as exc:  # a fork written since the cut-off: the lock still holds, say so
+            log.warning("ledger_unique_index_skipped", error=str(exc))
         # Ensure server-side default exists even if column was created without one by create_all()
         await conn.execute(text("ALTER TABLE app_user ALTER COLUMN mfa_enabled SET DEFAULT FALSE"))
         # Wave G: Surveillance flag resolution + escalation

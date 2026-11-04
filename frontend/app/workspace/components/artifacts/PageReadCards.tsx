@@ -326,7 +326,7 @@ export function OnboardingCasesCard({ result }: { result: OnboardingPayload }) {
 
 // ── Provenance ──────────────────────────────────────────────────────────────────────────────
 export interface ProvenancePayload {
-  ledger: { valid: boolean; count: number; broken_at_seq: number | null };
+  ledger: { valid: boolean; count: number; broken_at_seq: number | null; forks?: number[] };
   surveillance: {
     open: number; by_severity: Record<string, number>;
     flags: { id: string; severity: string; category: string; target_agent_name: string | null; auto_paused_agent: boolean; escalated: boolean }[];
@@ -346,7 +346,9 @@ export function ProvenanceCard({ result }: { result: ProvenancePayload }) {
         <Tile
           label="Decision ledger"
           value={ledger.count}
-          hint={ledger.valid ? <Chip tone="text-ok">chain intact</Chip> : <Chip tone="text-crit">broken at {ledger.broken_at_seq}</Chip>}
+          hint={!ledger.valid ? <Chip tone="text-crit">broken at {ledger.broken_at_seq}</Chip>
+            : ledger.forks?.length ? <Chip tone="text-warn">intact · {ledger.forks.length} written at once</Chip>
+            : <Chip tone="text-ok">chain intact</Chip>}
         />
         <Tile
           label="Open flags"

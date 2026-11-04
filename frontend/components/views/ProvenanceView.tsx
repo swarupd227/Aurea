@@ -159,6 +159,12 @@ export function ProvenanceView() {
             {verify.valid ? "chain intact" : `broken at #${verify.broken_at_seq}`}
           </span>
           <span className="chip text-ink-muted tabular-nums">{verify.count} entries</span>
+          {verify.valid && verify.forks?.length > 0 && (
+            <span className="chip bg-warn-bg text-warn tabular-nums" data-testid="ledger-forks"
+              title={`Entry numbers shared by two entries written at the same moment: ${verify.forks.join(", ")}`}>
+              {verify.forks.length} written at once · first #{verify.forks[0]}
+            </span>
+          )}
           <span className="chip text-ink-muted">SHA-256 hash chain</span>
         </div>
       )}

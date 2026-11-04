@@ -4621,8 +4621,7 @@ class ToolExecutors(AdminToolExecutors):
             for e in await latest_evaluations(self.session, self.firm_id)
         ]
         changes = [{**c, "agent_name": name(c["agent_key"])} for c in await views.autonomy_changes(self.session, self.firm_id, 5)]
-        integrity = (f"The ledger's hash chain is intact over {chain['count']} entries."
-                     if chain["valid"] else f"The ledger's hash chain is BROKEN at entry {chain['broken_at_seq']}.")
+        integrity = ledger.integrity_line(chain)
         return {
             "ledger": {**chain, "recent": recent},
             "surveillance": {
