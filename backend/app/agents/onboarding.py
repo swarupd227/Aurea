@@ -369,6 +369,9 @@ class OnboardingAgent(BaseAgent):
         # Stamped at the moment activation actually happens — the anchor for cycle time.
         case.activated_at = utcnow()
         await s.flush()
+        # The pipeline deal this case came from now names the client it made (B-159).
+        from app.aurea_core import pipeline
+        await pipeline.on_activation(s, case, household.id)
         return {"executed": True, "note": f"{case.prospect_name} materialised into the client brain as golden records.",
                 **created}
 
@@ -389,5 +392,7 @@ class OnboardingAgent(BaseAgent):
         case.materialized = {}
         case.status = OnboardingStatus.REVIEW
         await s.flush()
+        from app.aurea_core import pipeline
+        await pipeline.on_reversal(s, case)
         return {"reversed": True, "note": f"Reversed onboarding of {case.prospect_name}; "
                 "graph nodes removed and the case reopened for compliance."}

@@ -32,6 +32,7 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
     from app.agents.rollover_pte_documenter import RolloverPTEDocumenterAgent
     from app.agents.nigo_prevention import NIGOPreventionAgent
     from app.agents.abandonment_recovery import AbandonmentRecoveryAgent
+    from app.agents.pipeline_follow_up import PipelineFollowUpAgent
     # Phase 3 mock integrations
     from app.agents.cip_identity_verifier import CIPIdentityVerifierAgent
     from app.agents.custodian_account_opener import CustodianAccountOpenerAgent
@@ -68,6 +69,7 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
         RolloverPTEDocumenterAgent(),
         NIGOPreventionAgent(),
         AbandonmentRecoveryAgent(),
+        PipelineFollowUpAgent(),
         # Phase 3 mock integrations
         CIPIdentityVerifierAgent(),
         CustodianAccountOpenerAgent(),

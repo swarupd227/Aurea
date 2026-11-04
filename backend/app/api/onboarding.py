@@ -41,6 +41,8 @@ class CaseCreate(BaseModel):
     registration_type: str | None = None
     segment: str = "private_wealth"
     intake: dict = {}
+    # The pipeline opportunity this case comes from: opening it wins the deal (aurea_core/pipeline.py).
+    opportunity_id: str | None = None
 
 
 class BeneficialOwnerIn(BaseModel):
@@ -335,7 +337,8 @@ async def create_case(
         case = await onboarding_start.start(
             db, firm, actor=user, prospect_name=body.prospect_name, registration_type=body.registration_type or "individual",
             segment=body.segment, risk_preference=intake.pop("risk_profile", None), mandate_preference=intake.pop("mandate_preference", None),
-            source_of_wealth=intake.pop("source_of_wealth", None), email=intake.pop("email", None), extra_intake=intake)
+            source_of_wealth=intake.pop("source_of_wealth", None), email=intake.pop("email", None), extra_intake=intake,
+            opportunity_id=body.opportunity_id)
     except onboarding_start.StartError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return _case_dict(case, [], [])

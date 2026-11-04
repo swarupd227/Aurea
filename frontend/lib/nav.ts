@@ -84,7 +84,7 @@ export const VIEWS: View[] = [
   { href: "/studio/exits", label: "Departures and estates", icon: DoorOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["offboarding", "leaving", "acat", "transfer out", "death", "estate settlement", "executor", "step-up", "inherited"] },
   { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT], intent: "clients", keywords: ["bias", "nudge"] },
   { href: "/studio/beneficiary-audit", label: "Beneficiary audit", icon: UserCheck, roles: [A, P, PT, C], intent: "clients", keywords: ["registration", "beneficiaries"] },
-  { href: "/studio/pipeline", label: "Growth pipeline", icon: TrendingUp, roles: [A, P, PT], intent: "clients", keywords: ["crm", "prospects", "opportunities"] },
+  { href: "/studio/pipeline", label: "Growth pipeline", icon: TrendingUp, roles: [A, P, PT, B], intent: "clients", keywords: ["crm", "prospects", "opportunities"] },
   { href: "/canvas", label: "Client portal", icon: Sparkles, roles: [A, P, B], intent: "clients", keywords: ["client experience", "wealth"] },
   { href: "/canvas/retirement", label: "Client view — Retirement", icon: PiggyBank, roles: [A, P, B], intent: "clients", keywords: ["planner"] },
   { href: "/canvas/goals", label: "Client view — Goals", icon: Target, roles: [A, P, B], intent: "clients" },

@@ -71,6 +71,8 @@ _AGENTS = [
      "Surfaces held-away consolidation opportunities with talking points."),
     ("abandonment_recovery", "Abandonment Recovery", "agent", "Head of Operations", "low",
      "Detects stalled onboarding cases and drafts an adviser nudge."),
+    ("pipeline_follow_up", "Pipeline Follow-up", "agent", "Head of Advice", "low",
+     "Raises pipeline deals with nothing logged for longer than their stage's target; approving adds a follow-up task for the contact's owner. Moves no stage and contacts no prospect."),
     ("billing", "Billing", "agent", "Head of Operations", "high",
      "Works out each fee, proposes the billing run, and on approval issues bills and takes them from client cash — a wrong fee is a client reimbursement and a named exam topic."),
     ("reconciliation", "Reconciliation", "agent", "Head of Operations", "medium",

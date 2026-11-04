@@ -486,9 +486,9 @@ async def main() -> int:
             check("the write goes through the same checks", await count(CrmActivity), 1)
             stage = {"opportunity_id": opp, "stage": "lost", "lost_reason": "Went elsewhere"}
             shown = await card(ex, "update_crm_opportunity_stage", stage)
-            check("a stage shows from and to", (shown["Opportunity"], shown["Contact"], shown["Stage"], shown["Lost reason"]),
+            check("a stage shows from and to", (shown["Opportunity"], shown["Contact"], shown["Stage"], shown["Lost because"]),
                   ("Rollover", "Dee Roy", "Lead becomes Lost", "Went elsewhere"))
-            await refused("an unknown stage", ex.preview_change("update_crm_opportunity_stage", {**stage, "stage": "maybe"}), "stage must be")
+            await refused("an unknown stage", ex.preview_change("update_crm_opportunity_stage", {**stage, "stage": "maybe"}), "a stage is")
             await refused("another firm's opportunity", outsider.preview_change("update_crm_opportunity_stage", stage), "not found")
             check("showing it moves nothing", (await s.get(CrmOpportunity, uuid.UUID(opp))).stage, "lead")
 

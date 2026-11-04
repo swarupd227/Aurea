@@ -6,6 +6,9 @@ name, the account type, and, only if they said it, a stated risk preference, a m
 wealth; nothing is filled in. An account type is offered only in the market it belongs to (IRAs and the other US types
 for a US firm, an HUF for an Indian one). The same name with a case still open is refused, so one prospect is not
 onboarded twice. The adviser who opens a case is recorded on it, and activation links that adviser.
+
+A case opened from a pipeline opportunity takes the contact's name and email unless others are given, and opening it
+is what wins the deal (`aurea_core/pipeline.link_case`), so the funnel reads on from lead to invested (B-159).
 """
 from __future__ import annotations
 
@@ -49,8 +52,17 @@ def types_for(firm: Firm) -> list[str]:
 
 async def prepare(session: AsyncSession, firm: Firm, *, prospect_name: str | None, registration_type: str | None,
                   segment: str | None = None, risk_preference: str | None = None, mandate_preference: str | None = None,
-                  source_of_wealth: str | None = None, email: str | None = None) -> dict:
+                  source_of_wealth: str | None = None, email: str | None = None, opportunity_id: str | None = None) -> dict:
     """What opening the case would record. Writes nothing."""
+    deal = contact = None
+    if opportunity_id:
+        from app.aurea_core import pipeline
+        try:
+            deal, contact = await pipeline.open_deal(session, firm, opportunity_id)
+        except pipeline.PipelineError as e:
+            raise StartError(str(e))
+        prospect_name = prospect_name or (contact.full_name if contact else None)
+        email = email or (contact.email if contact else None)
     name = " ".join((prospect_name or "").split())
     if not name:
         raise StartError("Name the prospect: the person, couple, trust or company being onboarded.")
@@ -79,7 +91,8 @@ async def prepare(session: AsyncSession, firm: Firm, *, prospect_name: str | Non
         raise StartError(f"{open_case.prospect_name} already has an onboarding case open ({open_case.status}); "
                          "read_onboarding_cases finds it.")
     return {"name": name, "type": rtype, "label": LABELS[rtype], "segment": seg, "risk": risk, "mandate": mandate,
-            "source_of_wealth": (source_of_wealth or "").strip() or None, "email": (email or "").strip() or None}
+            "source_of_wealth": (source_of_wealth or "").strip() or None, "email": (email or "").strip() or None,
+            "deal": deal, "contact": contact}
 
 
 async def start(session: AsyncSession, firm: Firm, *, actor: User, extra_intake: dict | None = None, **terms) -> OnboardingCase:
@@ -97,8 +110,12 @@ async def start(session: AsyncSession, firm: Firm, *, actor: User, extra_intake:
     session.add(case)
     await session.flush()
     session.add(AuditEvent(firm_id=firm.id, actor_id=actor.id, actor_email=actor.email, event_type="onboarding.case_started",
-                           subject=p["name"], detail={"case_id": str(case.id), "registration_type": p["type"].value}))
+                           subject=p["name"], detail={"case_id": str(case.id), "registration_type": p["type"].value,
+                                                      **({"opportunity_id": str(p["deal"].id)} if p["deal"] else {})}))
     await session.flush()
+    if p["deal"] is not None:
+        from app.aurea_core import pipeline
+        await pipeline.link_case(session, firm, p["deal"], p["contact"], case, actor=actor)
     return case
 
 

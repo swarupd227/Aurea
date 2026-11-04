@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
 from app.aurea_core import crm as engine
+from app.aurea_core import pipeline
 from app.core.decision_rights import STAFF
 from app.core.db import get_db, utcnow
 from app.core.security import require_roles
@@ -117,17 +118,18 @@ class OpportunityIn(BaseModel):
     contact_id: uuid.UUID
     title: str
     estimated_aum: float | None = None
-    probability_pct: int = 10
+    probability_pct: int | None = None   # only what someone said; never a default (B-159)
     expected_close_date: date | None = None
 
 
 class OpportunityUpdate(BaseModel):
     stage: str | None = None
+    # Why, in the person's words: required for lost, recorded on the deal's activity for every move.
+    reason: str | None = None
     estimated_aum: float | None = None
     probability_pct: int | None = None
     expected_close_date: date | None = None
     lost_reason: str | None = None
-    converted_household_id: uuid.UUID | None = None
 
 
 @router.get("/opportunities")
@@ -147,6 +149,8 @@ async def create_opportunity(body: OpportunityIn, user: User = CrmDep, firm: Fir
     )).scalar_one_or_none()
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found.")
+    if body.probability_pct is not None and not 0 <= body.probability_pct <= 100:
+        raise HTTPException(status_code=422, detail="probability_pct is between 0 and 100.")
     row = CrmOpportunity(firm_id=firm.id, stage="lead", opened_at=utcnow(), **body.model_dump())
     db.add(row)
     await db.flush()
@@ -163,14 +167,14 @@ async def update_opportunity(opportunity_id: uuid.UUID, body: OpportunityUpdate,
         raise HTTPException(status_code=404, detail="Opportunity not found.")
 
     if body.stage is not None:
-        if body.stage not in PIPELINE_STAGES:
-            raise HTTPException(status_code=422, detail=f"stage must be one of {PIPELINE_STAGES}.")
-        row.stage = body.stage
-        if body.stage in ("won", "lost") and row.closed_at is None:
-            row.closed_at = utcnow()
+        # The conversation's update_crm_opportunity_stage and this route move a deal the same way
+        # (aurea_core/pipeline.move): won only by opening its onboarding case, lost with its reason.
+        try:
+            await pipeline.move(db, firm, row, body.stage, body.reason or body.lost_reason, actor=user)
+        except pipeline.PipelineError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
 
-    for field in ("estimated_aum", "probability_pct", "expected_close_date", "lost_reason",
-                  "converted_household_id"):
+    for field in ("estimated_aum", "probability_pct", "expected_close_date"):
         value = getattr(body, field)
         if value is not None:
             setattr(row, field, value)
@@ -215,6 +219,23 @@ async def log_activity(body: ActivityIn, user: User = CrmDep, firm: Firm = Depen
     db.add(row)
     await db.flush()
     return _activity_out(row)
+
+
+# ── The funnel and a prospect's file ─────────────────────────────────────────────
+
+@router.get("/overview")
+async def overview(user: User = CrmDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """From lead to invested, as the conversation's read_crm_pipeline reads it: an adviser's own contacts, else the firm's."""
+    return {**await pipeline.overview(db, firm, user), "currency": firm.base_currency}
+
+
+@router.get("/contacts/{contact_id}/brief")
+async def brief(contact_id: uuid.UUID, user: User = CrmDep, firm: Firm = Depends(current_firm),
+                db: AsyncSession = Depends(get_db)):
+    try:
+        return {**await pipeline.prospect_brief(db, firm, contact_id), "currency": firm.base_currency}
+    except pipeline.PipelineError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 # ── Pipeline summary ─────────────────────────────────────────────────────────────

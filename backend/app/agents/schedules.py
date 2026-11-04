@@ -77,6 +77,11 @@ DEFAULT_SCHEDULES: dict[str, tuple[str, str]] = {
         "45 2 * * *",
         "Stalled applications age daily; catching one a day late costs a day of the SLA.",
     ),
+    AgentKey.PIPELINE_FOLLOW_UP: (
+        "15 7 * * 1-5",
+        "A prospect's silence is measured in weeks, and the follow-up is a person's morning call, so "
+        "a weekday look before the day starts is enough and a weekend one is noise.",
+    ),
     AgentKey.CONDUCT_SURVEILLANCE: (
         "0 3 * * *",
         "Supervises the recommendations made that day — surveillance that lags is not supervision.",

@@ -29,6 +29,7 @@ THINK_LABELS = {
     "next_best_action": "Scanning for concentration, tax, life-stage and growth signals",
     "client_care": "Stress-testing the plan to ground the outreach",
     "conduct_surveillance": "Reviewing recommendations for suitability and fair conduct",
+    "pipeline_follow_up": "Reading each open deal against the last time anyone logged a touch",
 }
 
 

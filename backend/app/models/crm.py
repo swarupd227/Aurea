@@ -59,7 +59,8 @@ class CrmOpportunity(Base):
     title: Mapped[str] = mapped_column(String(200))
     stage: Mapped[str] = mapped_column(String(16), default="lead", index=True)
     estimated_aum: Mapped[float | None] = mapped_column(Numeric(18, 2), nullable=True)
-    probability_pct: Mapped[int] = mapped_column(Integer, default=10)
+    # What the adviser said the chance is; none said is none, not a default (B-159).
+    probability_pct: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expected_close_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     lost_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -67,6 +68,11 @@ class CrmOpportunity(Base):
     # Set on "won" once the resulting household exists — the pipeline's own conversion record.
     converted_household_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("household.id", ondelete="SET NULL"), nullable=True
+    )
+    # Won is the onboarding case opening (aurea_core/pipeline.py): the case it opened, which carries the deal on to
+    # a household at activation, so the funnel reads from lead to invested (B-159).
+    onboarding_case_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("onboarding_case.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
 

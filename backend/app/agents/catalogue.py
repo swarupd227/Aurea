@@ -69,6 +69,15 @@ CATALOGUE: dict[str, dict] = {
                 "approving adds a task for that owner, due today.",
         "checkpoint": "A person decides whether the owner should be chased; nothing on the account changes.",
     },
+    AgentKey.PIPELINE_FOLLOW_UP: {
+        "name": "Pipeline Follow-up", "stage": "Acquire & onboard",
+        "default_tier": AutonomyTier.TIER_1, "subject": "firm",
+        "senses": "Open pipeline deals and the last call, email, meeting or note logged against each deal or its "
+                  "contact, read against the stage's target: 21 days a lead, 14 qualified, 10 a proposal.",
+        "acts": "Raises each deal gone quiet with its stage, how long and the next step; approving adds a task "
+                "for the contact's owner, due today.",
+        "checkpoint": "A person decides whether to chase; no stage moves and nothing is sent to the prospect.",
+    },
     AgentKey.CIP_IDENTITY_VERIFIER: {
         "name": "CIP Identity Verifier", "stage": "Acquire & onboard",
         "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",

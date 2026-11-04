@@ -1,16 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { UserPlus, TrendingUp, Phone, Plus } from "lucide-react";
-import { Card, StatTile, Empty, SkeletonCard, ErrorState } from "@/components/ui";
+import { UserPlus, TrendingUp, Phone, Plus, ArrowRight, FileText } from "lucide-react";
+import { Card, Empty, SkeletonCard, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
-import { api } from "@/lib/api";
+import { api, getUser } from "@/lib/api";
 import { money, titleCase } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
+import { REGISTRATION_OPTIONS } from "./OnboardingView";
+import { CrmPipelineCard, ProspectBriefCard } from "@/app/workspace/components/artifacts/CrmPipelineCard";
 
-const STAGES = ["lead", "qualified", "proposal", "won", "lost"] as const;
 const STAGE_COLOR: Record<string, string> = {
   lead: "bg-ink-muted", qualified: "bg-info", proposal: "bg-warn", won: "bg-ok", lost: "bg-crit",
 };
@@ -97,7 +98,7 @@ function OpportunityForm({ contact, onAdded }: { contact: any; onAdded: () => vo
     if (!title.trim()) return;
     if (nav.say) {
       nav.say(withRef(
-        `Open an opportunity "${title.trim()}" for ${contact.full_name}${aum.trim() ? ` with an estimated AUM of ${aum.trim()}` : ""}.`,
+        `Open an opportunity "${title.trim()}" for ${contact.full_name}${aum.trim() ? ` with an estimated AUM of ${aum.trim()}` : ""}; no probability was given.`,
         "contact", contact.id));
       setTitle(""); setAum(""); setOpen(false);
       return;
@@ -173,92 +174,205 @@ function LogActivityForm({ contact, onLogged }: { contact: any; onLogged: () => 
   );
 }
 
-/** Contacts, opportunities and activity. In the work pane, every change is the conversation's tool
- * behind its Confirm card; on a page the forms act directly. */
+const OPEN_STAGES = ["lead", "qualified", "proposal"] as const;
+
+/** Won is the onboarding case opening: one account type, and the case takes the contact's name and email. */
+function StartOnboarding({ deal, onStarted }: { deal: any; onStarted: () => void }) {
+  const nav = useViewNav();
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState("individual");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const market = (getUser()?.firm?.jurisdiction || "").toUpperCase();
+  const options = REGISTRATION_OPTIONS.filter((o) => !o.only || o.only === market);
+
+  if (!open) {
+    return (
+      <button className="btn-outline text-xs shrink-0" data-testid="pipeline-start-onboarding" onClick={() => setOpen(true)}>
+        <ArrowRight size={12} /> Start onboarding
+      </button>
+    );
+  }
+
+  async function submit() {
+    const label = options.find((o) => o.value === type)?.label || type;
+    if (nav.say) {
+      nav.say(withRef(`Start onboarding ${deal.contact || deal.title} from the pipeline deal "${deal.title}", as a ${label} account.`,
+        "opportunity", deal.id));
+      return setOpen(false);
+    }
+    setBusy(true);
+    setFailed(null);
+    try {
+      await api("/api/onboarding/cases", { body: { prospect_name: deal.contact || deal.title, registration_type: type, opportunity_id: deal.id } });
+      setOpen(false);
+      onStarted();
+    } catch (e: any) {
+      setFailed(e?.message || "The case was not opened.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <select className="input text-xs w-44" aria-label="Account type" value={type} onChange={(e) => setType(e.target.value)}>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <button className="btn-primary text-xs" disabled={busy} onClick={submit}>{nav.say ? "Ask Astra" : "Open case"}</button>
+      <button className="btn-ghost text-xs" aria-label="Close" onClick={() => setOpen(false)}>×</button>
+      {failed && <span className="text-xs text-crit">{failed}</span>}
+    </div>
+  );
+}
+
+/** Lead, qualified, proposal or lost; lost asks for its reason. Won is not here: it is the case opening. */
+function MoveStage({ deal, onMoved }: { deal: any; onMoved: () => void }) {
+  const nav = useViewNav();
+  const [to, setTo] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  async function submit(stage: string, why: string) {
+    if (nav.say) {
+      nav.say(withRef(
+        `Move "${deal.title}"${deal.contact ? ` for ${deal.contact}` : ""} from ${titleCase(deal.stage)} to ${titleCase(stage)}${why ? `, because ${why}` : ""}.`,
+        "opportunity", deal.id));
+      setTo(null); setReason("");
+      return;
+    }
+    setBusy(true);
+    setFailed(null);
+    try {
+      await api(`/api/crm/opportunities/${deal.id}`, { method: "PATCH", body: { stage, reason: why || undefined } });
+      setTo(null); setReason("");
+      onMoved();
+    } catch (e: any) {
+      setFailed(e?.message || "Not moved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <select className="input w-32 text-xs shrink-0" aria-label={`Stage of "${deal.title}"`} value={to ?? deal.stage} disabled={busy}
+        onChange={(e) => { const v = e.target.value; if (v === deal.stage) return setTo(null); setTo(v); }}>
+        {[...OPEN_STAGES, "lost"].map((s) => <option key={s} value={s}>{titleCase(s)}</option>)}
+      </select>
+      {to && (
+        <>
+          <input className="input text-xs w-44" placeholder={to === "lost" ? "Why it was lost" : "Why (optional)"} aria-label="Reason"
+            value={reason} onChange={(e) => setReason(e.target.value)} />
+          <button className="btn-primary text-xs" disabled={busy || (to === "lost" && !reason.trim())}
+            onClick={() => submit(to, reason.trim())}>{nav.say ? "Ask Astra" : "Move"}</button>
+          <button className="btn-ghost text-xs" aria-label="Cancel" onClick={() => { setTo(null); setReason(""); }}>×</button>
+        </>
+      )}
+      {failed && <span className="text-xs text-crit">{failed}</span>}
+    </div>
+  );
+}
+
+function BriefButton({ contact }: { contact: { id: string; full_name: string } }) {
+  const nav = useViewNav();
+  const [brief, setBrief] = useState<any>(null);
+  async function show() {
+    if (nav.say) return nav.say(withRef(`Prepare me for my meeting with ${contact.full_name}.`, "contact", contact.id));
+    setBrief(brief ? null : await api(`/api/crm/contacts/${contact.id}/brief`));
+  }
+  return (
+    <>
+      <button className="btn-ghost text-xs" data-testid="pipeline-brief" onClick={show}><FileText size={12} /> Brief</button>
+      {brief && <div className="mt-2 w-full"><ProspectBriefCard result={brief} /></div>}
+    </>
+  );
+}
+
+/** The funnel from lead to invested, each deal with its next move, and the contacts. In the work pane, every change
+ * is the conversation's tool behind its Confirm card; on a page the forms act directly. */
 export function PipelineView() {
   const nav = useViewNav();
   const { data: contacts, loading: contactsLoading, error: contactsError, refetch: refetchContacts } =
     useApi<any>("/api/crm/contacts");
-  const { data: opportunities, refetch: refetchOpps } = useApi<any>("/api/crm/opportunities");
-  const { data: summary, refetch: refetchSummary } = useApi<any>("/api/crm/pipeline-summary");
-  const [movingId, setMovingId] = useState<string | null>(null);
+  const { data: funnel, loading, error, refetch: refetchFunnel } = useApi<any>("/api/crm/overview");
 
   function refetchAll() {
-    refetchContacts(); refetchOpps(); refetchSummary();
+    refetchContacts(); refetchFunnel();
   }
 
-  const contactsById: Record<string, any> = {};
-  (contacts?.items || []).forEach((c: any) => { contactsById[c.id] = c; });
-
-  async function moveStage(o: any, stage: string) {
-    if (stage === o.stage) return;
-    if (nav.say) {
-      const who = contactsById[o.contact_id]?.full_name;
-      return nav.say(withRef(
-        `Move the opportunity "${o.title}"${who ? ` for ${who}` : ""} from ${titleCase(o.stage)} to ${titleCase(stage)}.`,
-        "opportunity", o.id));
-    }
-    setMovingId(o.id);
-    try {
-      await api(`/api/crm/opportunities/${o.id}`, { method: "PATCH", body: { stage } });
-      refetchAll();
-    } finally {
-      setMovingId(null);
-    }
-  }
+  const deals: any[] = funnel?.opportunities || [];
+  const open = deals.filter((d) => OPEN_STAGES.includes(d.stage));
+  const closed = deals.filter((d) => !OPEN_STAGES.includes(d.stage));
 
   return (
     <div className="view-container">
       <ViewHeader
         title="Growth pipeline"
-        meta={<span className="chip text-ink-muted">won deal makes a client</span>}
+        meta={funnel ? <span className="chip text-ink-muted">{funnel.scope_label}</span> : null}
         actions={<AddContactForm onAdded={refetchAll} />}
       />
 
-      {summary && (
-        <div className="mb-6 grid grid-cols-2 gap-4 cq-md:grid-cols-4">
-          <StatTile label="Contacts" value={contacts?.items?.length || 0} />
-          <StatTile label="Open opportunities" value={summary.open_pipeline_count} />
-          <StatTile label="Weighted open value" value={money(summary.weighted_open_value)} accent="warn" />
-          <StatTile label="Win rate" value={summary.win_rate_pct !== null ? `${summary.win_rate_pct}%` : "—"} accent="ok" />
-        </div>
-      )}
+      {loading && <SkeletonCard rows={4} />}
+      {error && <ErrorState message={error} onRetry={refetchFunnel} what="pipeline" />}
+      {funnel && <div className="mb-6"><CrmPipelineCard result={funnel} /></div>}
 
       <div className="grid gap-5 cq-lg:grid-cols-3">
         <div className="space-y-5 cq-lg:col-span-2">
           <Card>
-            <div className="font-semibold text-ink mb-3 flex items-center gap-2"><TrendingUp size={17} /> Pipeline</div>
-            <div className="grid grid-cols-5 gap-2 mb-4">
-              {STAGES.map((s) => (
-                <div key={s} className="text-center">
-                  <div className={`h-1.5 rounded-full ${STAGE_COLOR[s]} mb-1`} />
-                  <div className="text-xs text-ink-muted">{titleCase(s)}</div>
-                  <div className="text-sm font-semibold text-ink tabular-nums">{summary?.by_stage?.[s] || 0}</div>
-                </div>
-              ))}
-            </div>
+            <div className="font-semibold text-ink mb-3 flex items-center gap-2"><TrendingUp size={17} /> Open deals</div>
             <div className="divide-y divide-border-soft">
-              {(opportunities?.items || []).map((o: any) => (
-                <div key={o.id} className="py-3 flex items-center gap-3">
+              {open.map((o) => (
+                <div key={o.id} className="py-3 flex flex-wrap items-center gap-3" data-testid="pipeline-deal">
                   <span className={`h-2 w-2 rounded-full shrink-0 ${STAGE_COLOR[o.stage]}`} />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-ink">{o.title}</div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <span className={chip}>{contactsById[o.contact_id]?.full_name || "—"}</span>
-                      {o.estimated_aum
-                        ? <span className={`${chip} font-mono tabular-nums`}>{money(o.estimated_aum)}</span>
-                        : <span className="chip text-ink-muted">no AUM estimate</span>}
+                      <span className={chip}>{o.contact || "—"}</span>
+                      {o.estimated_aum !== null
+                        ? <span className={`${chip} font-mono tabular-nums`}>{money(o.estimated_aum, funnel?.currency)}</span>
+                        : <span className="chip text-ink-muted">no estimate</span>}
+                      {o.probability_pct !== null && <span className={`${chip} tabular-nums`}>{o.probability_pct}%</span>}
+                      {o.quiet
+                        ? <span className="chip bg-warn-bg text-warn tabular-nums" data-testid="pipeline-quiet">quiet {Math.round(o.quiet.days)}d · target {o.quiet.limit}d</span>
+                        : o.days_since_touch !== null && <span className="chip text-ink-muted tabular-nums">touched {Math.round(o.days_since_touch)}d ago</span>}
+                      {o.owner && <span className="chip text-ink-muted">{o.owner}</span>}
                     </div>
                   </div>
-                  <select className="input w-32 text-xs shrink-0" aria-label={`Stage of "${o.title}"`} value={o.stage} disabled={movingId === o.id}
-                    onChange={(e) => moveStage(o, e.target.value)}>
-                    {STAGES.map((s) => <option key={s} value={s}>{titleCase(s)}</option>)}
-                  </select>
+                  <MoveStage deal={o} onMoved={refetchAll} />
+                  <StartOnboarding deal={o} onStarted={refetchAll} />
                 </div>
               ))}
-              {!opportunities?.items?.length && <Empty>No opportunities yet.</Empty>}
+              {!loading && !open.length && <Empty>No open deals.</Empty>}
             </div>
           </Card>
+          {closed.length > 0 && (
+            <Card>
+              <div className="font-semibold text-ink mb-3">Won and lost</div>
+              <div className="divide-y divide-border-soft">
+                {closed.map((o) => (
+                  <div key={o.id} className="py-2.5 flex flex-wrap items-center gap-3" data-testid="pipeline-closed">
+                    <span className={`h-2 w-2 rounded-full shrink-0 ${STAGE_COLOR[o.stage]}`} />
+                    <div className="min-w-0 flex-1 text-sm text-ink">{o.contact || o.title}</div>
+                    {o.stage === "won" ? (
+                      o.onboarding ? (
+                        <>
+                          <span className={`chip tabular-nums ${o.onboarding.state === "invested" ? "bg-ok-bg text-ok" : "text-ink-muted"}`}>
+                            {o.onboarding.state === "invested" ? "Invested" : `${o.onboarding.label} · step ${o.onboarding.step} of ${o.onboarding.steps}`}
+                          </span>
+                          {o.onboarding.overdue && <span className="chip bg-crit-bg text-crit">past SLA · {o.onboarding.owner}</span>}
+                          {o.onboarding.case_id && o.onboarding.state !== "rejected" && (
+                            <button className="btn-ghost text-xs" onClick={() => nav.open(`/studio/onboarding/${o.onboarding.case_id}`)}>Case</button>
+                          )}
+                        </>
+                      ) : <span className="chip text-warn">won with no onboarding case</span>
+                    ) : <span className="chip text-ink-muted">lost{o.lost_reason ? `: ${o.lost_reason}` : ", no reason recorded"}</span>}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-5">
@@ -280,7 +394,8 @@ export function PipelineView() {
                       </div>
                     </div>
                     <div className="ml-9 mt-1 flex flex-wrap items-center gap-3">
-                      <OpportunityForm contact={c} onAdded={refetchAll} />
+                      <BriefButton contact={c} />
+                      {c.contact_type !== "client_contact" && <OpportunityForm contact={c} onAdded={refetchAll} />}
                       <LogActivityForm contact={c} onLogged={refetchAll} />
                     </div>
                   </div>

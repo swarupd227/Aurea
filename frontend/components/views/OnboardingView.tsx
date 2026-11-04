@@ -255,7 +255,7 @@ function CaseCard({ c }: { c: any }) {
 }
 
 // `only`: an account type that exists in one market's law (backend aurea_core/onboarding_start.ONLY_IN).
-const REGISTRATION_OPTIONS: { value: string; label: string; only?: string }[] = [
+export const REGISTRATION_OPTIONS: { value: string; label: string; only?: string }[] = [
   { value: "individual", label: "Individual" },
   { value: "joint_jtwros", label: "Joint — JTWROS" },
   { value: "joint_tic", label: "Joint — Tenants in Common" },

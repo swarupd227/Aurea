@@ -60,6 +60,11 @@ async def bootstrap() -> None:
         # Wave F: MFA columns on app_user
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(64)"))
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
+        # B-159: a won deal names the onboarding case it opened, and a probability nobody gave is none.
+        await conn.execute(text("ALTER TABLE crm_opportunity ADD COLUMN IF NOT EXISTS onboarding_case_id UUID "
+                                "REFERENCES onboarding_case(id) ON DELETE SET NULL"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_crm_opportunity_onboarding_case_id ON crm_opportunity(onboarding_case_id)"))
+        await conn.execute(text("ALTER TABLE crm_opportunity ALTER COLUMN probability_pct DROP NOT NULL"))
         # B-158: one entry per number from here on. Appends already take the firm's lock; this
         # refuses one that ever goes round it. Entries written before carry the forks the lock
         # came too late for, and stay as they are, so the index starts after them.

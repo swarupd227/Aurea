@@ -231,6 +231,7 @@ class ToolExecutors(AdminToolExecutors):
             "mark_conflict_reviewed": self.mark_conflict_reviewed,
             "log_wsp_evidence": self.log_wsp_evidence,
             "read_crm_pipeline": self.read_crm_pipeline,
+            "prepare_prospect_meeting": self.prepare_prospect_meeting,
             "create_crm_contact": self.create_crm_contact,
             "create_crm_opportunity": self.create_crm_opportunity,
             "log_crm_activity": self.log_crm_activity,
@@ -2206,6 +2207,10 @@ class ToolExecutors(AdminToolExecutors):
         if str(rec.agent_key) == AgentKey.ABANDONMENT_RECOVERY.value:
             p = rec.modified_payload or rec.payload or {}
             return f"A task for {p.get('owner', 'the owner')}: {p.get('next_step', 'move the account on')}, due today"
+        if str(rec.agent_key) == AgentKey.PIPELINE_FOLLOW_UP.value:
+            p = rec.modified_payload or rec.payload or {}
+            return (f"A follow-up task for {p.get('owner') or 'whoever picks it up'}: {p.get('next_step', 'get back in touch')}, "
+                    "due today; no stage moves")
         return None
 
     async def read_compliance_rules(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -3880,7 +3885,7 @@ class ToolExecutors(AdminToolExecutors):
 
     def _start_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {k: inputs.get(k) for k in ("prospect_name", "registration_type", "segment", "risk_preference",
-                                           "mandate_preference", "source_of_wealth", "email")}
+                                           "mandate_preference", "source_of_wealth", "email", "opportunity_id")}
 
     async def start_onboarding(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import onboarding_start
@@ -3894,7 +3899,8 @@ class ToolExecutors(AdminToolExecutors):
         board = await self.read_onboarding_cases({"status": "all", "limit": 50})
         board["cases"] = [c for c in board["cases"] if c["id"] == str(case.id)]
         board["shown"] = len(board["cases"])
-        board["message"] = f"Opened {case.prospect_name}'s case as a draft; nothing is screened, signed or invested yet."
+        board["message"] = f"Opened {case.prospect_name}'s case as a draft; nothing is screened, signed or invested yet." + (
+            " The pipeline opportunity it came from is now won." if inputs.get("opportunity_id") else "")
         return board
 
     async def _start_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -3906,7 +3912,11 @@ class ToolExecutors(AdminToolExecutors):
         except onboarding_start.StartError as exc:
             raise ExecutorError(str(exc))
         me = await self.session.get(User, self.user_id)
-        return [("Prospect", p["name"]), ("Account type", p["label"]), ("Segment", p["segment"].replace("_", " ").capitalize()),
+        deal = p.get("deal")
+        return [("Prospect", p["name"]),
+                ("From the pipeline", f"{deal.title}: {deal.stage.capitalize()} becomes Won" if deal else None),
+                ("Email", p["email"] if deal else None),
+                ("Account type", p["label"]), ("Segment", p["segment"].replace("_", " ").capitalize()),
                 ("Stated risk", p["risk"].capitalize() if p["risk"] else "Not stated: the questionnaire will indicate one"),
                 ("Mandate", p["mandate"].capitalize() if p["mandate"] else "Not stated"),
                 ("Source of wealth", p["source_of_wealth"] or "Not stated: the onboarding agent raises it as an exception"),
@@ -5539,37 +5549,36 @@ class ToolExecutors(AdminToolExecutors):
     # ─────────────────────────────────────────────────────────────────────
 
     async def read_crm_pipeline(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.aurea_core import crm as engine
-        from app.models.crm import CrmContact, CrmOpportunity
+        """The funnel from lead to invested (aurea_core/pipeline.py): an adviser's own contacts, else the firm's."""
+        from app.aurea_core import markets, pipeline
+        from app.models.identity import User
 
-        contacts = (await self.session.execute(
-            select(CrmContact).where(CrmContact.firm_id == self.firm_id).order_by(CrmContact.full_name)
-        )).scalars().all()
-        opportunities = (await self.session.execute(
-            select(CrmOpportunity).where(CrmOpportunity.firm_id == self.firm_id)
-            .order_by(CrmOpportunity.opened_at.desc())
-        )).scalars().all()
-        summary = await engine.pipeline_summary(self.session, self.firm_id)
+        firm = await self._firm()
+        out = await pipeline.overview(self.session, firm, await self.session.get(User, self.user_id))
+        say = markets.money_for(firm)
+        o, w = out["open"], out["won"]
+        bits = [f"{o['count']} open deal(s)" + (f", {say(o['estimated_aum'])} estimated" if o["estimated_aum"] else ""),
+                f"{w['count']} won ({w['in_onboarding']} onboarding, {w['invested']} invested)", f"{out['lost']['count']} lost"]
+        if o["quiet"]:
+            bits.append(f"{o['quiet']} gone quiet")
+        out["currency"] = firm.base_currency
+        out["message"] = f"{out['scope_label']}: " + "; ".join(bits) + "."
+        return out
 
-        contacts_by_id = {c.id: c for c in contacts}
-        return {
-            "contacts": [{
-                "id": str(c.id), "full_name": c.full_name, "contact_type": c.contact_type,
-                "source": c.source,
-            } for c in contacts],
-            "opportunities": [{
-                "id": str(o.id), "contact_name": contacts_by_id[o.contact_id].full_name
-                    if o.contact_id in contacts_by_id else None,
-                "title": o.title, "stage": o.stage,
-                "estimated_aum": float(o.estimated_aum) if o.estimated_aum is not None else None,
-                "probability_pct": o.probability_pct,
-            } for o in opportunities],
-            "summary": summary,
-            "message": (
-                f"{len(contacts)} contact(s), {summary['open_pipeline_count']} open opportunity(ies) "
-                f"worth {summary['weighted_open_value']:,.0f} weighted."
-            ),
-        }
+    async def prepare_prospect_meeting(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """What is on file about a prospect before meeting them (aurea_core/pipeline.prospect_brief)."""
+        from app.aurea_core import pipeline
+
+        firm = await self._firm()
+        try:
+            out = await pipeline.prospect_brief(self.session, firm, inputs.get("contact_id") or "")
+        except pipeline.PipelineError as exc:
+            raise ExecutorError(str(exc))
+        out["currency"] = firm.base_currency
+        out["message"] = (f"{out['contact']['name']}: {len(out['opportunities'])} deal(s), {out['activity_count']} logged touch(es)"
+                          + (f", next meeting booked {out['booked'][0]['at'][:10]}" if out["booked"] else ", no meeting booked")
+                          + (f"; not on file: {', '.join(out['not_on_file'])}" if out["not_on_file"] else "") + ".")
+        return out
 
     @staticmethod
     def _contact_args(inputs: dict[str, Any]) -> tuple[str, str]:
@@ -5579,8 +5588,8 @@ class ToolExecutors(AdminToolExecutors):
         if not full_name:
             raise ExecutorError("full_name is required")
         contact_type = inputs.get("contact_type") or "prospect"
-        if contact_type not in CONTACT_TYPES:
-            raise ExecutorError(f"contact_type must be one of {CONTACT_TYPES}")
+        if contact_type not in CONTACT_TYPES or contact_type == "client_contact":
+            raise ExecutorError("contact_type is prospect, referral_source or centre_of_influence; a contact becomes a client only through onboarding.")
         return full_name, contact_type
 
     async def _contact(self, inputs: dict[str, Any]):
@@ -5599,13 +5608,20 @@ class ToolExecutors(AdminToolExecutors):
         if not title:
             raise ExecutorError("title is required")
         contact = await self._contact(inputs)
-        try:
-            probability = int(inputs.get("probability_pct") or 10)
-        except (TypeError, ValueError):
-            raise ExecutorError("probability_pct must be a whole number.")
+        probability = None
+        if inputs.get("probability_pct") not in (None, ""):
+            try:
+                probability = int(inputs["probability_pct"])
+            except (TypeError, ValueError):
+                raise ExecutorError("probability_pct must be a whole number.")
+            if not 0 <= probability <= 100:
+                raise ExecutorError("probability_pct is between 0 and 100.")
         return {"contact": contact, "title": title, "estimated_aum": inputs.get("estimated_aum"), "probability": probability}
 
     async def _activity_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from datetime import datetime as _dt, timezone as _tz
+
+        from app.core.db import utcnow
         from app.models.crm import ACTIVITY_TYPES, CrmOpportunity
 
         detail = inputs.get("detail")
@@ -5623,24 +5639,39 @@ class ToolExecutors(AdminToolExecutors):
                 CrmOpportunity.contact_id == contact.id))).scalar_one_or_none()
             if opportunity is None:
                 raise ExecutorError(f"Opportunity {opportunity_id} is not this contact's.")
-        return {"contact": contact, "detail": detail, "activity_type": activity_type, "opportunity": opportunity}
+        now = utcnow()
+        now = now if now.tzinfo else now.replace(tzinfo=_tz.utc)
+        at = now
+        if inputs.get("occurred_at"):
+            try:
+                at = _dt.fromisoformat(str(inputs["occurred_at"]).replace("Z", "+00:00"))
+            except ValueError:
+                raise ExecutorError("occurred_at is a date and time, such as 2026-11-12T10:00.")
+            at = at if at.tzinfo else at.replace(tzinfo=_tz.utc)
+            if at > now and activity_type != "meeting":
+                raise ExecutorError("Only a meeting can be booked ahead; a call, email or note is logged once it has happened.")
+        return {"contact": contact, "detail": detail, "activity_type": activity_type, "opportunity": opportunity, "at": at,
+                "booked": at > now}
 
     async def _stage_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.models.crm import PIPELINE_STAGES, CrmContact, CrmOpportunity
+        from app.aurea_core import pipeline
+        from app.models.crm import CrmContact, CrmOpportunity
 
         opportunity_id = _parse_uuid(inputs.get("opportunity_id") or "", "opportunity_id")
-        stage = inputs.get("stage")
-        if stage not in PIPELINE_STAGES:
-            raise ExecutorError(f"stage must be one of {PIPELINE_STAGES}")
         row = (await self.session.execute(
             select(CrmOpportunity).where(CrmOpportunity.id == opportunity_id, CrmOpportunity.firm_id == self.firm_id)
         )).scalar_one_or_none()
         if row is None:
             raise ExecutorError(f"Opportunity {opportunity_id} not found")
-        return {"row": row, "stage": stage, "contact": await self.session.get(CrmContact, row.contact_id)}
+        try:
+            move = pipeline.check_move(row, inputs.get("stage"), inputs.get("reason") or inputs.get("lost_reason"))
+        except pipeline.PipelineError as exc:
+            raise ExecutorError(str(exc))
+        return {"row": row, "move": move, "contact": await self.session.get(CrmContact, row.contact_id)}
 
     async def _crm_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core import markets
+        from app.aurea_core.pipeline import STAGE_LABEL
 
         say = markets.money_for(await self._firm())
         if tool_key == "create_crm_contact":
@@ -5650,16 +5681,20 @@ class ToolExecutors(AdminToolExecutors):
         if tool_key == "create_crm_opportunity":
             a = await self._opportunity_args(inputs)
             return [("Contact", a["contact"].full_name), ("Opportunity", a["title"]),
-                    ("Estimated assets", say(float(a["estimated_aum"])) if a["estimated_aum"] else None),
-                    ("Probability", f"{a['probability']}%"), ("Stage", "Lead")]
+                    ("Estimated assets", say(float(a["estimated_aum"])) if a["estimated_aum"] else "Not given"),
+                    ("Probability", f"{a['probability']}%" if a["probability"] is not None else "Not given"), ("Stage", "Lead")]
         if tool_key == "log_crm_activity":
             a = await self._activity_args(inputs)
             return [("Contact", a["contact"].full_name), ("Type", a["activity_type"].capitalize()), ("Detail", a["detail"]),
+                    ("Booked for" if a["booked"] else "When",
+                     a["at"].strftime("%d %b %Y %H:%M") if (a["booked"] or inputs.get("occurred_at")) else "Now"),
                     ("Opportunity", a["opportunity"].title if a["opportunity"] else None)]
         a = await self._stage_args(inputs)
+        m = a["move"]
         return [("Opportunity", a["row"].title), ("Contact", a["contact"].full_name if a["contact"] else None),
-                ("Stage", f"{a['row'].stage.capitalize()} becomes {a['stage'].capitalize()}"),
-                ("Lost reason", inputs.get("lost_reason") if a["stage"] == "lost" else None)]
+                ("Stage", f"{STAGE_LABEL[m['from']]} becomes {STAGE_LABEL[m['to']]}"),
+                ("Lost because" if m["to"] == "lost" else "Reason", m["reason"] or "None given"),
+                ("Recorded", "On the deal's activity, in your name")]
 
     async def create_crm_contact(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.models.crm import CrmContact
@@ -5698,7 +5733,6 @@ class ToolExecutors(AdminToolExecutors):
         }
 
     async def log_crm_activity(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.core.db import utcnow
         from app.models.crm import CrmActivity
 
         a = await self._activity_args(inputs)
@@ -5706,7 +5740,7 @@ class ToolExecutors(AdminToolExecutors):
         row = CrmActivity(
             firm_id=self.firm_id, contact_id=contact.id,
             opportunity_id=a["opportunity"].id if a["opportunity"] else None,
-            activity_type=activity_type, occurred_at=utcnow(), detail=a["detail"],
+            activity_type=activity_type, occurred_at=a["at"], detail=a["detail"],
             logged_by_user_id=self.user_id,
         )
         self.session.add(row)
@@ -5714,24 +5748,25 @@ class ToolExecutors(AdminToolExecutors):
 
         return {
             "activity_id": str(row.id), "contact_name": contact.full_name, "activity_type": activity_type,
-            "message": f"Logged a {activity_type} with {contact.full_name}.",
+            "booked": a["booked"],
+            "message": (f"Booked a meeting with {contact.full_name} for {a['at'].strftime('%d %b %Y %H:%M')}." if a["booked"]
+                        else f"Logged a {activity_type} with {contact.full_name}."),
         }
 
     async def update_crm_opportunity_stage(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.core.db import utcnow
+        from app.aurea_core import pipeline
+        from app.models.identity import User
 
         a = await self._stage_args(inputs)
-        row, stage = a["row"], a["stage"]
-        row.stage = stage
-        if stage in ("won", "lost") and row.closed_at is None:
-            row.closed_at = utcnow()
-        if stage == "lost" and inputs.get("lost_reason"):
-            row.lost_reason = inputs["lost_reason"]
-        await self.session.flush()
-
+        row = a["row"]
+        try:
+            m = await pipeline.move(self.session, await self._firm(), row, a["move"]["to"], a["move"]["reason"],
+                                    actor=await self.session.get(User, self.user_id))
+        except pipeline.PipelineError as exc:
+            raise ExecutorError(str(exc))
         return {
             "opportunity_id": str(row.id), "title": row.title, "stage": row.stage,
-            "message": f"Moved '{row.title}' to {stage}.",
+            "message": f"Moved '{row.title}' from {m['from']} to {m['to']}" + (f": {m['reason']}." if m["reason"] else "."),
         }
 
     # ─────────────────────────────────────────────────────────────────────

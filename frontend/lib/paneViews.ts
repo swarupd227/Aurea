@@ -407,6 +407,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "post_corporate_action_entitlement":
       return "/studio/corporate-actions";
     case "read_crm_pipeline":
+    case "prepare_prospect_meeting":
     case "create_crm_contact":
     case "create_crm_opportunity":
     case "log_crm_activity":
