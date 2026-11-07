@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 
 from app.agents._common import firm_voice, narrate
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import ips, markets, risk_profile
 from app.aurea_core.graph import household_brain, list_households
@@ -109,7 +110,11 @@ def _rrttllu(brain: dict) -> dict:
     }
 
 
-class IPSDraftingAgent(BaseAgent):
+class IPSDraftingAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Take to the client"
+    follow_up_what = "take the draft to the client"
+    follow_up_days = 14
+    follow_up_caveat = "a draft is not an IPS until an adviser records the accepted one"
     key = AgentKey.IPS_DRAFTING
     name = "IPS Drafter"
     lifecycle_stage = "advise_engage"

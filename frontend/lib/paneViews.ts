@@ -422,7 +422,12 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     }
     case "search_households": {
       const hits = Array.isArray(r.results) ? r.results : [];
-      return hits.length === 1 && hits[0]?.household_id ? `/studio/clients/${hits[0].household_id}` : hits.length ? "/studio/clients" : null;
+      if (hits.length === 1 && hits[0]?.household_id) return `/studio/clients/${hits[0].household_id}`;
+      if (hits.length) return "/studio/clients";
+      // Not a client yet: their deal on the pipeline, else their onboarding case (B-160).
+      if (Array.isArray(r.prospects) && r.prospects.length) return "/studio/pipeline";
+      const cs = Array.isArray(r.onboarding_cases) ? r.onboarding_cases : [];
+      return cs.length === 1 && cs[0]?.case_id ? `/studio/onboarding/${cs[0].case_id}` : cs.length ? "/studio/onboarding" : null;
     }
     default:
       return typeof r.household_id === "string" ? `/studio/clients/${r.household_id}` : null;

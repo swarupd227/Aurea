@@ -6,12 +6,18 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.models.enums import AgentKey, AutonomyTier, SurveillanceSeverity
 from app.models.governance import SurveillanceFlag
 
 
-class ConductSurveillanceAgent(BaseAgent):
+class ConductSurveillanceAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_owner = "compliance"
+    follow_up_verb = "Work through"
+    follow_up_what = "work through the open flags"
+    follow_up_days = 7
+    follow_up_caveat = "no flag closes and no paused agent resumes"
     key = AgentKey.CONDUCT_SURVEILLANCE
     name = "Conduct Surveillance"
     lifecycle_stage = "protect_govern"

@@ -8,6 +8,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from app.agents._signals import book_signals
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
@@ -15,7 +16,11 @@ from app.models.enums import AgentKey, AutonomyTier
 MAX_ITEMS = 15
 
 
-class NextBestActionAgent(BaseAgent):
+class NextBestActionAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Follow up"
+    follow_up_what = "follow this up with the client"
+    follow_up_days = 7
+    follow_up_caveat = "nothing on the book changes"
     key = AgentKey.NEXT_BEST_ACTION
     name = "Next-Best-Action & Growth"
     lifecycle_stage = "manage_optimise"

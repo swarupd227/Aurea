@@ -7,6 +7,7 @@ accounts (IRA, Roth, ISA, pension) and let growth assets compound in taxable acc
 from __future__ import annotations
 
 from app.agents._common import firm_voice, narrate
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
@@ -90,7 +91,11 @@ def _analyze_location(brain: dict) -> list[dict]:
     return findings
 
 
-class AssetLocationAgent(BaseAgent):
+class AssetLocationAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Review with the client"
+    follow_up_what = "review where assets are held with the client"
+    follow_up_days = 14
+    follow_up_caveat = "no order is placed"
     key = AgentKey.ASSET_LOCATION
     name = "Asset Location Optimizer"
     lifecycle_stage = "manage_optimise"

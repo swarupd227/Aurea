@@ -26,9 +26,29 @@ export function OnboardingQueuesView() {
             <div className="tile-label">{label} clock</div>
             <div className="font-mono text-2xl tabular-nums text-ink">{days(s.p50)}</div>
             <div className="font-mono text-xs text-ink-muted">P90 {days(s.p90)} · {s.n} accounts · {what}</div>
+            {s.out_of_order > 0 && (
+              <div className="mt-1.5"><span className="chip text-warn" data-testid="onboarding-clock-out-of-order">{s.out_of_order} out of order, left out</span></div>
+            )}
           </Card>
         ))}
       </div>
+      {(c.out_of_order ?? []).length > 0 && (
+        <Card className="mb-4 overflow-hidden p-0" data-testid="onboarding-dates-out-of-order">
+          <div className="border-b border-border-soft px-4 py-2.5 tile-label">Dates out of order</div>
+          <table className="w-full text-sm">
+            <tbody>
+              {c.out_of_order.map((w: any) => (
+                <tr key={`${w.case_id}-${w.clock}`} className="border-b border-border-soft last:border-0">
+                  <td className="px-4 py-2 text-ink">{w.client ?? w.case_id.slice(0, 8)}</td>
+                  <td className="px-4 py-2"><span className="chip text-warn">{w.clock}</span></td>
+                  <td className="px-4 py-2 font-mono text-xs tabular-nums text-ink-muted">{String(w.from).slice(0, 10)} → {String(w.to).slice(0, 10)}</td>
+                  <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-warn">{w.days}d</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
 
       <Card className="mb-4 overflow-hidden p-0">
         <div className="flex flex-wrap gap-1.5 border-b border-border-soft px-4 py-2.5" data-testid="onboarding-queue-tabs">

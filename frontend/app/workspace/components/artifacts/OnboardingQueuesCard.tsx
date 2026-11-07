@@ -15,6 +15,9 @@ export function OnboardingQueuesCard({ result }: { result: any }) {
         <span className="chip text-ink-muted">paperwork {c.paperwork.p50 ?? "—"}d</span>
         <span className="chip text-ink-muted">money {c.money.p50 ?? "—"}d</span>
         <span className="chip text-ink-muted">invested {c.invested.p50 ?? "—"}d</span>
+        {(c.out_of_order ?? []).length > 0 && (
+          <span className="chip text-warn" data-testid="onboarding-card-out-of-order">{c.out_of_order.length} dates out of order</span>
+        )}
       </div>
       <div className="flex flex-wrap gap-1.5 px-3 py-2">
         {queues.length === 0 ? <span className="chip text-ink-muted">nothing stuck</span> : queues.map((q) => <span key={q.label} className="chip text-warn">{q.label} {q.items.length}</span>)}

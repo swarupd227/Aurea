@@ -348,6 +348,21 @@ class ToolExecutors(AdminToolExecutors):
             })
 
         if not results:
+            # Someone not yet a client is named as often as one who is: a pipeline contact or an onboarding case
+            # comes before a household whose name only sounds alike (B-160).
+            prospects, cases = await self._not_yet_clients(str(query))
+            if prospects or cases:
+                said = [f"{p['name']}, a pipeline {p['contact_type']}"
+                        + (f" at {p['stage']}" if p.get("stage") else "")
+                        + (f", owned by {p['owner']}" if p.get("owner") else ", with no owner recorded") for p in prospects]
+                said += [f"{c['prospect_name']}'s onboarding case ({c['status']})" for c in cases
+                         if not any(p.get("onboarding_case_id") == c["case_id"] for p in prospects)]
+                return {
+                    "results": [], "prospects": prospects, "onboarding_cases": cases,
+                    "message": (f"No household matches '{query}': not a client yet. On file: " + "; ".join(said) + ". "
+                                "Read the deal with read_crm_pipeline or prepare_prospect_meeting (contact_id), and the case with "
+                                "read_onboarding_cases; offer no household in their place."),
+                }
             near = await self._near_households(str(query))
             names = ", ".join(n["name"] for n in near)
             return {
@@ -360,6 +375,50 @@ class ToolExecutors(AdminToolExecutors):
             "results": results,
             "message": f"Found {len(results)} household(s) matching '{query}'",
         }
+
+    async def _not_yet_clients(self, query: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Pipeline contacts and onboarding cases with this name, each only for a role that may read them: the
+        pipeline as read_crm_pipeline reads it (an adviser their own contacts), cases as read_onboarding_cases does.
+        A name contained in theirs, or failing that one close to it, as a household's would be."""
+        from app.aurea_core import client_names
+        from app.core.tools import tools_for_role
+        from app.models.crm import CrmContact, CrmOpportunity
+        from app.models.identity import User
+        from app.models.onboarding import OnboardingCase
+
+        held = tools_for_role(UserRole(self.role))
+        want = query.strip().lower()
+
+        def named(rows, name_of):
+            hits = [r for r in rows if want and want in (name_of(r) or "").lower()]
+            if hits:
+                return hits
+            return [r for r, _ in client_names.closest(query, [(r, name_of(r) or "") for r in rows], limit=3)]
+
+        prospects: list[dict[str, Any]] = []
+        if "read_crm_pipeline" in held:
+            q = select(CrmContact).where(CrmContact.firm_id == self.firm_id, CrmContact.is_active.is_(True),
+                                         CrmContact.household_id.is_(None))
+            if UserRole(self.role) == UserRole.ADVISER:
+                q = q.where(CrmContact.owner_user_id == self.user_id)
+            for c in named((await self.session.execute(q)).scalars().all(), lambda c: c.full_name)[:5]:
+                deal = (await self.session.execute(
+                    select(CrmOpportunity).where(CrmOpportunity.firm_id == self.firm_id, CrmOpportunity.contact_id == c.id)
+                    .order_by(CrmOpportunity.opened_at.desc().nulls_last(), CrmOpportunity.created_at.desc()).limit(1))).scalars().first()
+                owner = await self.session.get(User, c.owner_user_id) if c.owner_user_id else None
+                prospects.append({
+                    "contact_id": str(c.id), "name": c.full_name, "contact_type": c.contact_type,
+                    "owner": owner.full_name if owner else None,
+                    "opportunity_id": str(deal.id) if deal else None, "stage": deal.stage if deal else None,
+                    "onboarding_case_id": str(deal.onboarding_case_id) if deal and deal.onboarding_case_id else None,
+                })
+        cases: list[dict[str, Any]] = []
+        if "read_onboarding_cases" in held:
+            rows = (await self.session.execute(select(OnboardingCase).where(
+                OnboardingCase.firm_id == self.firm_id, OnboardingCase.status.notin_(("approved", "rejected"))))).scalars().all()
+            cases = [{"case_id": str(c.id), "prospect_name": c.prospect_name, "status": str(c.status)}
+                     for c in named(rows, lambda c: c.prospect_name)[:5]]
+        return prospects, cases
 
     async def _near_households(self, query: str) -> list[dict[str, Any]]:
         """This firm's households nearest a name that matched nothing, by their own name, their people's
@@ -1599,7 +1658,9 @@ class ToolExecutors(AdminToolExecutors):
         s, c = result["summary"], result["clocks"]
         stuck = ", ".join(f"{q['label'].lower()} {len(q['items'])}" for q in result["queues"].values() if q["items"]) or "none"
         result["message"] = (f"{s['accounts']} account(s) in onboarding, {s['overdue']} past their SLA. Exceptions: {stuck}. "
-                             f"Median clocks: paperwork {c['paperwork']['p50']}, money {c['money']['p50']}, invested {c['invested']['p50']} day(s).")
+                             f"Median clocks: paperwork {c['paperwork']['p50']}, money {c['money']['p50']}, invested {c['invested']['p50']} day(s)."
+                             + (f" {len(c['out_of_order'])} account(s) have dates out of order (one step recorded before the step it follows),"
+                                " left out of the clocks for a person to correct." if c.get("out_of_order") else ""))
         return result
 
     def _risk_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2190,8 +2251,9 @@ class ToolExecutors(AdminToolExecutors):
 
     @staticmethod
     def _on_approval(rec) -> str | None:
-        """What approving a proposal with no orders does, where that is known: the stalled-onboarding task, or nothing
-        at all for an agent that keeps the base act()."""
+        """What approving a proposal with no orders does, where that is known: the task an agent's approval adds
+        (its own `on_approval`, or the stalled-onboarding and pipeline wording), or nothing at all for an agent that
+        keeps the base act()."""
         from app.atlas.base import BaseAgent
         from app.atlas.registry import get_agent
         from app.models.enums import AgentKey
@@ -2204,6 +2266,8 @@ class ToolExecutors(AdminToolExecutors):
             return None
         if type(agent).act is BaseAgent.act:
             return "The decision is recorded; this agent takes no other action"
+        if callable(getattr(agent, "on_approval", None)):
+            return agent.on_approval(rec)
         if str(rec.agent_key) == AgentKey.ABANDONMENT_RECOVERY.value:
             p = rec.modified_payload or rec.payload or {}
             return f"A task for {p.get('owner', 'the owner')}: {p.get('next_step', 'move the account on')}, due today"
@@ -4823,11 +4887,16 @@ class ToolExecutors(AdminToolExecutors):
         result = await skill_runtime.run_skill(self.session, await self._firm(), s,
                                                subject_type="household" if household else None,
                                                subject_id=household.id if household else None, persist=True)
+        again = set(result.get("refreshed_ids") or [])
+        new = result["surfaced"] - len(again)
         return {"skill": s.name, "run_id": result["run_id"], "scanned": result["scanned"], "surfaced": result["surfaced"],
-                "proposals": [{"recommendation_id": rid, "household": p["household"], "household_id": p["household_id"], "title": p["title"]}
+                "new": new, "brought_up_to_date": len(again),
+                "proposals": [{"recommendation_id": rid, "household": p["household"], "household_id": p["household_id"], "title": p["title"],
+                               "still_open": rid in again}
                               for rid, p in zip(result["recommendation_ids"], result["proposals"])],
-                "message": f"The skill {s.name} looked at {result['scanned']} household(s) and proposed {result['surfaced']} thing(s) "
-                           "for a person to decide. It acted on nothing."}
+                "message": f"The skill {s.name} looked at {result['scanned']} household(s): {new} new proposal(s)"
+                           + (f", and {len(again)} still waiting from an earlier run brought up to date rather than raised again" if again else "")
+                           + ", for a person to decide. It acted on nothing."}
 
     async def _run_skill_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core.graph import list_households

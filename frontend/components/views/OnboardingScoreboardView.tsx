@@ -27,6 +27,9 @@ export function OnboardingScoreboardView() {
         <span className="chip">Paperwork p50 {days(data.clocks.paperwork.p50)}</span>
         <span className="chip">Money p50 {days(data.clocks.money.p50)}</span>
         <span className="chip">Invested p50 {days(data.clocks.invested.p50)}</span>
+        {(data.clocks.out_of_order ?? []).length > 0 && (
+          <span className="chip text-warn" data-testid="scoreboard-out-of-order">{data.clocks.out_of_order.length} dates out of order</span>
+        )}
         <span className="chip">Days to invest p90 {days(d.p90)}</span>
         <span className="chip text-warn">{ab.stalled} stalled over {ab.stalled_days}d</span>
         <span className="chip">{ab.rejected} rejected of {ab.cases}</span>

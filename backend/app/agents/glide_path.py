@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date
 
 from app.agents._common import firm_voice, narrate
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
@@ -51,7 +52,11 @@ def _years_to_goal(goal: dict) -> float | None:
         return None
 
 
-class GlidePathAgent(BaseAgent):
+class GlidePathAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Review the glide path"
+    follow_up_what = "review the allocation against the horizon with the client"
+    follow_up_days = 14
+    follow_up_caveat = "no order is placed and no mandate changes"
     key = AgentKey.GLIDE_PATH
     name = "Glide Path Advisor"
     lifecycle_stage = "manage_optimise"

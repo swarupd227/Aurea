@@ -139,24 +139,41 @@ def households(rows: list[dict], cases: dict) -> list[dict]:
 
 
 def clocks(cases: list, *, transfers_by_case: dict, fills: dict) -> dict:
-    """The three clocks, as day counts across activated accounts. Each starts where the last ends."""
+    """The three clocks, as day counts across activated accounts. Each starts where the last ends.
+
+    A clock never runs backwards (B-157). An account whose dates are out of order - opened before its agreement was
+    signed, funded before it was opened - is a data error to show, not a figure to average: it is left out of that
+    clock's count and named in `out_of_order`, with the two dates, for a person to put right."""
     from app.aurea_core.onboarding_metrics import _summary
 
     paperwork, money, invested = [], [], []
+    wrong: list[dict] = []
+
+    def take(into: list, clock: str, case, start, end) -> None:
+        d = _days(start, end)
+        if d is None:
+            return
+        if d < 0:
+            wrong.append({"case_id": str(case.id), "client": getattr(case, "prospect_name", None), "clock": clock,
+                          "from": _aware(start).isoformat(), "to": _aware(end).isoformat(), "days": d})
+            return
+        into.append(d)
+
     for c in cases:
         opened = c.custodian_push_at if c.custodian_push_status == "active" else None
         if c.agreement_signed_at and opened:
-            d = _days(c.agreement_signed_at, opened)
-            if d is not None:
-                paperwork.append(d)
+            take(paperwork, "paperwork", c, c.agreement_signed_at, opened)
         inbound = [t for t in transfers_by_case.get(c.id, []) if t.direction == "in"]
         settled = [t.settled_at for t in inbound if t.status == "settled" and t.settled_at]
         if opened and settled and not [t for t in inbound if t.status not in ("settled", "failed")]:
             funded = max(settled, key=_aware)
-            d = _days(opened, funded)
-            if d is not None:
-                money.append(d)
+            take(money, "money", c, opened, funded)
             fill = fills.get(c.id)
             if fill and _aware(fill) >= _aware(funded):
                 invested.append(_days(funded, fill))
-    return {"paperwork": _summary(paperwork), "money": _summary(money), "invested": _summary(invested)}
+
+    def summary(values: list, clock: str) -> dict:
+        return {**_summary(values), "out_of_order": sum(1 for w in wrong if w["clock"] == clock)}
+
+    return {"paperwork": summary(paperwork, "paperwork"), "money": summary(money, "money"),
+            "invested": summary(invested, "invested"), "out_of_order": wrong}

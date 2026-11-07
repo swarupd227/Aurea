@@ -12,6 +12,7 @@ import uuid
 from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import markets, tax_intelligence
 from app.aurea_core.graph import list_households
@@ -72,7 +73,11 @@ def _uk_findings(result: dict, say) -> list[str]:
 FINDINGS = {"NZ": _nz_findings, "US": _us_findings, "UK": _uk_findings}
 
 
-class TaxIntelligenceAgent(BaseAgent):
+class TaxIntelligenceAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Check with a tax adviser"
+    follow_up_what = "have the figures checked by a qualified person before they reach the client"
+    follow_up_days = 14
+    follow_up_caveat = "every figure stays an estimate and nothing is traded"
     key = AgentKey.TAX_INTELLIGENCE
     name = "Tax Intelligence"
     lifecycle_stage = "manage_optimise"

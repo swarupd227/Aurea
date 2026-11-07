@@ -19,8 +19,11 @@ from app.core.db import Base
 from app.core.tools import TOOLS
 from app.llm import follow_ups
 from app.llm.executors import ToolExecutors
+from app.models.crm import CrmContact, CrmOpportunity
 from app.models.enums import EntityType, UserRole
 from app.models.graph import Household, LegalEntity, Person
+from app.models.identity import User
+from app.models.onboarding import OnboardingCase
 from app.models.tenant import Firm
 
 PASS, FAIL = [], []
@@ -91,6 +94,60 @@ async def main() -> int:
             check("and an entity's", [(h["name"], h.get("matched")) for h in r["did_you_mean"]], [("The Morrison Family", "Sokolov Trust")])
             r = await search("Zzyzx")
             check("nothing close says so", (r["results"], r["did_you_mean"], "no name on file" in r["message"]), ([], [], True))
+
+            print("\n=== Not a client yet (B-160) ===")
+
+            def user(name, role):
+                return User(id=uuid.uuid4(), firm_id=mine.id, email=f"{uuid.uuid4().hex}@x.test", full_name=name,
+                            hashed_password="x", role=role, is_active=True)
+            sophie, ben, carla = user("Sophie Tran", UserRole.ADVISER), user("Ben Ade", UserRole.ADVISER), user("Carla Ruiz", UserRole.COMPLIANCE)
+            pt, cio = user("Pat Team", UserRole.PORTFOLIO_TEAM), user("Rua Cio", UserRole.RESEARCH_CIO)
+            s.add_all([sophie, ben, carla, pt, cio, Household(id=uuid.uuid4(), firm_id=mine.id, name="Aroha Whanau Trust")])
+            rohan_case = OnboardingCase(id=uuid.uuid4(), firm_id=mine.id, prospect_name="Rohan Mehta", registration_type="individual")
+            tane_case = OnboardingCase(id=uuid.uuid4(), firm_id=mine.id, prospect_name="Tane Wiremu", registration_type="individual")
+            far_case = OnboardingCase(id=uuid.uuid4(), firm_id=theirs.id, prospect_name="Rohan Mehta", registration_type="individual")
+            s.add_all([rohan_case, tane_case, far_case])
+            await s.flush()
+            rohan = CrmContact(id=uuid.uuid4(), firm_id=mine.id, full_name="Rohan Mehta", contact_type="prospect", owner_user_id=sophie.id)
+            priya = CrmContact(id=uuid.uuid4(), firm_id=mine.id, full_name="Priya Raman", contact_type="lead", owner_user_id=ben.id)
+            far_rohan = CrmContact(id=uuid.uuid4(), firm_id=theirs.id, full_name="Rohan Mehta", contact_type="prospect")
+            s.add_all([rohan, priya, far_rohan])
+            await s.flush()
+            s.add(CrmOpportunity(firm_id=mine.id, contact_id=rohan.id, title="Rohan Mehta", stage="won", onboarding_case_id=rohan_case.id))
+            await s.flush()
+
+            def as_(u):
+                return ToolExecutors(s, u.id, u.role, mine.id)
+
+            r = await as_(sophie).search_households({"query": "Rohan Mehta"})
+            check("no household is treated as found", r["results"], [])
+            check("the adviser's own prospect comes first",
+                  [(p["name"], p["stage"], p["owner"], p["onboarding_case_id"]) for p in r["prospects"]],
+                  [("Rohan Mehta", "won", "Sophie Tran", str(rohan_case.id))])
+            check("with the contact id, for a brief", r["prospects"][0]["contact_id"], str(rohan.id))
+            check("and their open case", [c["case_id"] for c in r["onboarding_cases"]], [str(rohan_case.id)])
+            check("no household that only sounds alike is offered", ("did_you_mean" in r, "Aroha" in str(r)), (False, False))
+            check("the message says not a client yet, and to offer no household",
+                  ("not a client yet" in r["message"], "offer no household" in r["message"], "Sophie Tran" in r["message"]), (True, True, True))
+            check("the case is not said twice", r["message"].count("onboarding case ("), 0)
+            check("a typo still reaches the prospect",
+                  [p["name"] for p in (await as_(sophie).search_households({"query": "Rohan Mehtaa"}))["prospects"]], ["Rohan Mehta"])
+            r = await as_(sophie).search_households({"query": "Priya Raman"})
+            check("an adviser does not see another adviser's contact", ("prospects" in r, "Priya" in str(r.get("did_you_mean"))), (False, False))
+            r = await as_(pt).search_households({"query": "Priya Raman"})
+            check("the portfolio team reads the firm's pipeline", [(p["name"], p["owner"]) for p in r["prospects"]], [("Priya Raman", "Ben Ade")])
+            r = await as_(carla).search_households({"query": "Tane Wiremu"})
+            check("compliance holds no pipeline but sees an open case",
+                  (r["prospects"], [c["prospect_name"] for c in r["onboarding_cases"]]), ([], ["Tane Wiremu"]))
+            r = await as_(cio).search_households({"query": "Rohan Mehta"})
+            check("research reads the pipeline and not the cases", ([p["name"] for p in r["prospects"]], r["onboarding_cases"]), (["Rohan Mehta"], []))
+            leaked = (str(far_rohan.id) in str(await as_(pt).search_households({"query": "Rohan Mehta"}))
+                      or str(far_case.id) in str(await as_(carla).search_households({"query": "Rohan Mehta"})))
+            check("another firm's prospect or case is never found", leaked, False)
+            tane_case.status = "approved"
+            await s.flush()
+            check("a closed case is not offered", "onboarding_cases" in await as_(carla).search_households({"query": "Tane Wiremu"}), False)
+            check("the tool says prospects come first", "someone not yet a client comes first" in TOOLS["search_households"].description, True)
 
             print("\n=== What the person can press ===")
             used = [{"tool_key": "search_households", "inputs": {"query": "Hurtley"}, "result": await search("Hurtley")}]

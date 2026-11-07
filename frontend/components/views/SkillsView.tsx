@@ -30,7 +30,7 @@ type LogLine =
   | { kind: "start"; skill: string; total: number; test: boolean }
   | { kind: "scan"; index: number; total: number; household: string }
   | { kind: "result"; index: number; total: number; household: string; applies: boolean; title?: string }
-  | { kind: "done"; scanned: number; surfaced: number }
+  | { kind: "done"; scanned: number; surfaced: number; refreshed?: number }
   | { kind: "error"; message: string };
 
 type SkillResult = {
@@ -38,6 +38,8 @@ type SkillResult = {
   log: LogLine[];
   scanned: number;
   surfaced: number;
+  /** Of those surfaced, how many were still waiting from an earlier run and were brought up to date. */
+  refreshed?: number;
   total: number;
   proposals?: any[];
   recommendations?: any[];
@@ -111,7 +113,12 @@ function SkillLog({ log, streaming, scanned, total }: { log: LogLine[]; streamin
               </div>
             );
           if (line.kind === "done")
-            return <div key={i} className="mt-1 text-ok">Done · {line.scanned} scanned · {line.surfaced} surfaced</div>;
+            return (
+              <div key={i} className="mt-1 text-ok">
+                Done · {line.scanned} scanned · {line.surfaced} surfaced
+                {line.refreshed ? ` · ${line.refreshed} already waiting, brought up to date` : ""}
+              </div>
+            );
           if (line.kind === "error")
             return <div key={i} className="flex items-center gap-1 text-crit"><AlertTriangle size={11} /> {line.message}</div>;
           return null;
@@ -183,9 +190,9 @@ export function SkillsView() {
             return {
               ...r, [id]: {
                 ...prev, streaming: false,
-                scanned: ev.scanned, surfaced: ev.surfaced,
+                scanned: ev.scanned, surfaced: ev.surfaced, refreshed: (ev.refreshed_ids ?? []).length,
                 proposals: ev.proposals, recommendations: ev.recommendations,
-                log: [...prev.log, { kind: "done", scanned: ev.scanned, surfaced: ev.surfaced }],
+                log: [...prev.log, { kind: "done", scanned: ev.scanned, surfaced: ev.surfaced, refreshed: (ev.refreshed_ids ?? []).length }],
               },
             };
           if (ev.phase === "error")
@@ -398,6 +405,9 @@ export function SkillsView() {
                             <span className={chip}>{r.mode === "test" ? "Test · nothing saved" : "Run"}</span>
                             <span className={`${chip} tabular-nums`}>Scanned {r.scanned}</span>
                             <span className={`${chip} tabular-nums`}>{r.mode === "test" ? "Would surface" : "Surfaced"} {r.surfaced}</span>
+                            {r.refreshed ? (
+                              <span className={`${chip} tabular-nums`} data-testid="skill-refreshed">Brought up to date {r.refreshed}</span>
+                            ) : null}
                           </>}
                     </div>
                     <SkillLog log={r.log} streaming={isStreaming} scanned={r.scanned} total={r.total} />

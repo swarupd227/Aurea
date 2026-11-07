@@ -103,6 +103,20 @@ def pure() -> None:
     clocks = st.clocks([c1], transfers_by_case={c1.id: [transfer(status="settled", initiated_at=NOW - timedelta(days=17), settled_at=NOW - timedelta(days=11))]},
                        fills={c1.id: NOW - timedelta(days=10)})
     check("paperwork, money and invested", (clocks["paperwork"]["p50"], clocks["money"]["p50"], clocks["invested"]["p50"]), (2.0, 7.0, 1.0))
+    check("nothing out of order", (clocks["out_of_order"], clocks["paperwork"]["out_of_order"]), ([], 0))
+
+    print("\n=== A clock never runs backwards (B-157) ===")
+    early = case(prospect_name="Early Opener", agreement_signed_at=NOW - timedelta(days=10), custodian_push_status="active",
+                 custodian_push_at=NOW - timedelta(days=12))
+    clocks = st.clocks([c1, early], transfers_by_case={c1.id: [transfer(status="settled", settled_at=NOW - timedelta(days=11))],
+                                                       early.id: [transfer(status="settled", settled_at=NOW - timedelta(days=13))]},
+                       fills={c1.id: NOW - timedelta(days=10)})
+    check("opened before it was signed: left out of paperwork", (clocks["paperwork"]["n"], clocks["paperwork"]["p50"]), (1, 2.0))
+    check("and funded before it was opened: left out of money", (clocks["money"]["n"], clocks["money"]["p50"]), (1, 7.0))
+    check("each counted against its clock", (clocks["paperwork"]["out_of_order"], clocks["money"]["out_of_order"]), (1, 1))
+    check("and named, with its dates, for a person to correct",
+          [(w["client"], w["clock"], w["days"]) for w in clocks["out_of_order"]], [("Early Opener", "paperwork", -2.0), ("Early Opener", "money", -1.0)])
+    check("no clock reads below zero", min(v for k in ("paperwork", "money", "invested") for v in (clocks[k]["p50"], clocks[k]["p90"], clocks[k]["mean"]) if v is not None) >= 0, True)
 
 
 async def main() -> int:

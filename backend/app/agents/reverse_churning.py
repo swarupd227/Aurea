@@ -18,6 +18,7 @@ from datetime import date
 from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import firm_time, markets, reviews
 from app.aurea_core.graph import household_brain, list_households
@@ -33,7 +34,11 @@ def _last_activity_date(held_reviews: list[date], held_meetings: list[date]) -> 
     return max([*held_reviews, *held_meetings], default=None)
 
 
-class ReverseChurningAgent(BaseAgent):
+class ReverseChurningAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Book a review"
+    follow_up_what = "book a review with the client"
+    follow_up_days = 14
+    follow_up_caveat = "the flag stays until a person resolves it, and a task is not a review"
     key = AgentKey.REVERSE_CHURNING
     name = "Reverse Churning Detector"
     lifecycle_stage = "protect_govern"

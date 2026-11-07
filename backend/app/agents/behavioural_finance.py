@@ -9,13 +9,18 @@ Analyses decision history, meeting transcripts, and client messages to:
 from __future__ import annotations
 
 from app.agents._common import narrate
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import behavioural
 from app.aurea_core.graph import list_households
 from app.models.enums import AgentKey, AutonomyTier
 
 
-class BehaviouralFinanceAgent(BaseAgent):
+class BehaviouralFinanceAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Discuss with the client"
+    follow_up_what = "talk it through with the client"
+    follow_up_days = 14
+    follow_up_caveat = "nothing is sent and nothing on the book changes"
     key = AgentKey.BEHAVIOURAL_FINANCE
     name = "Behavioural Finance"
     lifecycle_stage = "advise_engage"

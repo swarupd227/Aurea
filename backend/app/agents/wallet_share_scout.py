@@ -8,6 +8,7 @@ talking-point memos, calibrated to each household's life stage, goals, and estat
 from __future__ import annotations
 
 from app.agents._common import firm_voice, narrate
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import markets
 from app.aurea_core.analytics import assumptions as A
@@ -31,7 +32,11 @@ def _held_away_for_brain(brain: dict) -> float:
     return max(aum / default_share - aum, 0.0)
 
 
-class WalletShareScoutAgent(BaseAgent):
+class WalletShareScoutAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Discuss consolidation"
+    follow_up_what = "raise consolidating what is held away"
+    follow_up_days = 30
+    follow_up_caveat = "nothing is transferred"
     key = AgentKey.WALLET_SHARE_SCOUT
     name = "Wallet Share Scout"
     lifecycle_stage = "manage_optimise"

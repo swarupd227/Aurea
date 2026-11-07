@@ -3,15 +3,24 @@
 The skill's plain-English instruction is the `think` step — Claude reasons over each client's brain
 (PII-masked, cost-capped, metered via the model gateway) and proposes a recommendation. Output is
 ALWAYS a proposal: skills are capped at Tier 2 and never execute on the world. Every proposal runs
-through the same persistence, compliance/surveillance check and ledger as the built-in workforce."""
+through the same persistence, compliance/surveillance check and ledger as the built-in workforce.
+
+One open proposal per skill and household (B-135). Running a skill again over the book used to raise every
+proposal beside the ones still waiting from the last run. A skill raises at most one proposal per household, so
+its identity is the skill and the household, not the title the model wrote this time: a rerun brings the open
+one up to date (`atlas/proposals.refresh`, on the ledger) and closes any extras an earlier rerun left. A
+proposal someone has decided is never touched, and a household the rerun no longer matches keeps its open
+proposal for a person to dismiss: the model's "no" on one run is not a fact that the condition cleared."""
 from __future__ import annotations
 
 import json
 import re
 import uuid
 
-from app.atlas import activity
-from app.atlas.base import Subject
+from sqlalchemy import select
+
+from app.atlas import activity, proposals as proposals_mod
+from app.atlas.base import RecommendationDraft, Subject
 from app.atlas.runtime import _ledger_content
 from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
@@ -120,6 +129,36 @@ async def _persist_rec(session, firm, skill, run, tier, item) -> Recommendation:
     return rec
 
 
+async def _open_by_household(session, firm, skill, run) -> dict[str, list[Recommendation]]:
+    """This skill's open proposals from earlier runs, by household, newest first, locked for update. Extras an
+    earlier rerun left beside the newest are closed here, saying which one stands."""
+    rows = (await session.execute(
+        select(Recommendation)
+        .where(Recommendation.firm_id == firm.id, Recommendation.agent_key == SKILL_AGENT_KEY,
+               Recommendation.status == RecommendationStatus.PROPOSED, Recommendation.run_id != run.id)
+        .order_by(Recommendation.created_at.desc())
+        .with_for_update())).scalars().all()
+    out: dict[str, list[Recommendation]] = {}
+    for rec in rows:
+        if str((rec.payload or {}).get("skill_id")) == str(skill.id) and rec.subject_id:
+            out.setdefault(str(rec.subject_id), []).append(rec)
+    for recs in out.values():
+        for extra in recs[1:]:
+            await proposals_mod.expire(session, extra, run_id=run.id,
+                                       reason=f"Superseded by a newer open proposal for the same skill and household ({recs[0].id}).")
+        del recs[1:]
+    return out
+
+
+async def _refresh_rec(session, skill, run, rec: Recommendation, item) -> None:
+    draft = RecommendationDraft(
+        title=item["title"], summary=item["summary"], rationale=item["rationale"], confidence=item["confidence"],
+        priority=item["priority"], subject=Subject("household", rec.subject_id, item["household"]),
+        payload={"skill_id": str(skill.id), "output_kind": skill.output_kind},
+        evidence={"source": f"Skill: {skill.name}", "scope": skill.scope, "authored_by": "adviser"}, citations=[])
+    await proposals_mod.refresh(session, rec, draft, run_id=run.id, trigger="skill")
+
+
 async def stream_skill(session, firm, skill, *, subject_type: str | None = None, subject_id=None,
                        persist: bool = True):
     """Run a skill, yielding live progress events (one per household) so the UI can show a log."""
@@ -149,8 +188,9 @@ async def stream_skill(session, firm, skill, *, subject_type: str | None = None,
         await session.flush()
         await activity.emit(session, firm_id=firm.id, agent_key=SKILL_AGENT_KEY, kind=ActivityKind.SENSING,
                             summary=f"Skill '{skill.name}' swept {len(brains)} household(s)")
+    open_now = await _open_by_household(session, firm, skill, run) if persist else {}
 
-    proposals, rec_ids, recs = [], [], []
+    proposals, rec_ids, recs, refreshed = [], [], [], []
     for i, brain in enumerate(brains):
         hh = brain["household"]
         yield {"phase": "scan", "index": i + 1, "total": len(brains), "household": hh["name"]}
@@ -162,23 +202,33 @@ async def stream_skill(session, firm, skill, *, subject_type: str | None = None,
         if item:
             proposals.append(item)
             if persist:
-                rec = await _persist_rec(session, firm, skill, run, tier, item)
+                earlier = open_now.get(str(hh["id"]))
+                if earlier:
+                    rec = earlier[0]
+                    await _refresh_rec(session, skill, run, rec, item)
+                    refreshed.append(str(rec.id))
+                else:
+                    rec = await _persist_rec(session, firm, skill, run, tier, item)
                 rec_ids.append(str(rec.id))
                 recs.append(_rec_dict(rec))
 
     if persist:
-        run.status = AgentRunStatus.AWAITING_APPROVAL if rec_ids else AgentRunStatus.COMPLETED
-        run.finished_at = None if rec_ids else utcnow()
+        new = len(rec_ids) - len(refreshed)
+        run.status = AgentRunStatus.AWAITING_APPROVAL if new else AgentRunStatus.COMPLETED
+        run.finished_at = None if new else utcnow()
+        if refreshed:
+            run.context = {**(run.context or {}), "refreshed": refreshed}
         await session.commit()  # durable before the client is told it's done
 
     yield {"phase": "done", "scanned": len(brains), "surfaced": len(proposals), "run_id": str(run.id) if run else None,
-           "recommendation_ids": rec_ids, "proposals": proposals, "recommendations": recs}
+           "recommendation_ids": rec_ids, "refreshed_ids": refreshed, "proposals": proposals, "recommendations": recs}
 
 
 async def run_skill(session, firm, skill, *, subject_type: str | None = None, subject_id=None,
                     persist: bool = True) -> dict:
     """Blocking wrapper over stream_skill — returns the final result (used by the non-stream endpoints)."""
-    out = {"run_id": None, "scanned": 0, "surfaced": 0, "recommendation_ids": [], "proposals": [], "recommendations": []}
+    out = {"run_id": None, "scanned": 0, "surfaced": 0, "recommendation_ids": [], "refreshed_ids": [], "proposals": [],
+           "recommendations": []}
     async for ev in stream_skill(session, firm, skill, subject_type=subject_type, subject_id=subject_id, persist=persist):
         if ev["phase"] == "done":
             out = {k: ev.get(k, out.get(k)) for k in out}

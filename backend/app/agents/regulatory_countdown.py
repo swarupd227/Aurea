@@ -9,13 +9,18 @@ from __future__ import annotations
 import uuid
 
 from app.agents._common import firm_voice, narrate
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import regulatory_countdown
 from app.aurea_core.graph import list_households
 from app.models.enums import AgentKey, AutonomyTier
 
 
-class RegulatoryCountdownAgent(BaseAgent):
+class RegulatoryCountdownAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Plan before the deadline"
+    follow_up_what = "plan for the deadline with the client"
+    follow_up_days = 14
+    follow_up_caveat = "nothing on the book changes"
     key = AgentKey.REGULATORY_COUNTDOWN
     name = "Regulatory Countdown"
     lifecycle_stage = "protect_govern"

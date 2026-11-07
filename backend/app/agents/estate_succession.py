@@ -11,6 +11,7 @@ from datetime import date
 from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
+from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import markets
 from app.aurea_core.graph import household_brain, list_households
@@ -285,7 +286,11 @@ def _succession_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str = 
     return gaps
 
 
-class EstateSucessionAgent(BaseAgent):
+class EstateSucessionAgent(FollowUpOnApproval, BaseAgent):
+    follow_up_verb = "Discuss with the client"
+    follow_up_what = "discuss the estate plan with the client"
+    follow_up_days = 30
+    follow_up_caveat = "no document is recorded or changed"
     key = AgentKey.ESTATE_SUCCESSION
     name = "Estate & Succession Planning"
     lifecycle_stage = "manage_optimise"
