@@ -184,6 +184,11 @@ async def _subject_households(session: AsyncSession, firm_id: uuid.UUID, recs: l
     return out
 
 
+async def subject_households(session: AsyncSession, firm_id: uuid.UUID, recs: list[Recommendation]) -> dict:
+    """Each proposal's household, where its subject has one: the cockpit's feed reads proposals as `day` does."""
+    return await _subject_households(session, firm_id, recs)
+
+
 async def day(session: AsyncSession, firm: Firm, user: User) -> dict:
     """The four figures at the top of an adviser's cockpit, each from what is on file."""
     today, now = firm_time.today(firm), utcnow()

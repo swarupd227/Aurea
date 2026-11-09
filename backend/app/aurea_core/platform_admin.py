@@ -472,7 +472,8 @@ async def invite_user(session: AsyncSession, firm: Firm, actor: User, *, email: 
     tok = make_token(session, new_user, firm.id, "invite", days=7)
     await session.flush()
     audit(session, firm.id, actor, "user.created", subject=new_user.email, detail={"role": v["role"]})
-    structlog.get_logger().info("mock_email_invite", to=new_user.email, url=f"{app_settings.frontend_url}/accept-invite?token={tok.token}")
+    # The link is a credential: it reaches the admin who asked, in the route's reply, and never a log (B-154).
+    structlog.get_logger().info("mock_email_invite", to=new_user.email, expires_days=7)
     return _done(plan, new_user), tok
 
 
@@ -906,6 +907,7 @@ RESEARCH_ACTIONS = {"submit": "under_review", "publish": "published", "reject": 
 def research_out(d: ResearchDocument) -> dict:
     return {"id": str(d.id), "title": d.title, "doc_type": d.doc_type, "author": d.author, "summary": d.summary,
             "tags": d.tags, "status": getattr(d, "status", "published"), "version": getattr(d, "version", 1),
+            "submitted_by": getattr(d, "submitted_by", None),
             "published_by": getattr(d, "published_by", None),
             "published_at": d.published_at.isoformat() if getattr(d, "published_at", None) else None,
             "created_at": d.created_at.isoformat() if d.created_at else None}
@@ -943,7 +945,21 @@ async def add_research(session: AsyncSession, firm: Firm, actor: User, *, title:
     return _done(plan, doc), n
 
 
-async def prepare_research_action(session: AsyncSession, firm: Firm, doc_id: Any, action: str) -> Plan:
+async def submitter_of(session: AsyncSession, firm: Firm, doc: ResearchDocument) -> str | None:
+    """Who sent a document for review: as recorded on it, else, for one submitted before that was recorded, the
+    latest `research.submitted` on the audit log for its title."""
+    if doc.submitted_by:
+        return doc.submitted_by
+    row = (await session.execute(select(AuditEvent.actor_email).where(
+        AuditEvent.firm_id == firm.id, AuditEvent.event_type == "research.submitted", AuditEvent.subject == doc.title)
+        .order_by(AuditEvent.created_at.desc()).limit(1))).scalar_one_or_none()
+    return row
+
+
+async def prepare_research_action(session: AsyncSession, firm: Firm, doc_id: Any, action: str,
+                                  actor: User | None = None) -> Plan:
+    """What a research step would do. Publishing is a second person's (B-147): a document is published only from
+    review, and not by whoever sent it there, because a house view grounds every agent's advice once it is out."""
     action = str(action or "").strip().lower()
     if action not in RESEARCH_ACTIONS:
         raise AdminError(f"'{action}' is not something done to research. Actions: {', '.join(RESEARCH_ACTIONS)}.")
@@ -951,6 +967,17 @@ async def prepare_research_action(session: AsyncSession, firm: Firm, doc_id: Any
     to = RESEARCH_ACTIONS[action]
     changes: list[dict] = []
     notes: list[tuple[str, str]] = []
+    if action == "publish" and doc.status != "published":
+        if doc.status != "under_review":
+            raise AdminError(f"{doc.title} is a draft. Submit it for review first: a second person publishes it.")
+        by = await submitter_of(session, firm, doc)
+        if by is None:
+            raise AdminError(f"Who submitted {doc.title} is not on record, so a second person cannot be shown to publish "
+                             "it. Send it back to draft and submit it again.")
+        if actor is not None and by.lower() == (actor.email or "").lower():
+            raise AdminError(f"You submitted {doc.title} for review. A second person publishes it, so that no house "
+                             "view grounds the agents on one person's word.")
+        notes.append(("Submitted by", by))
     if action == "delete":
         changes.append({"field": "document", "from": doc.status, "to": "deleted"})
         notes.append(("Cannot be undone", "The document and its retrieval chunks are deleted"))
@@ -964,8 +991,8 @@ async def prepare_research_action(session: AsyncSession, firm: Firm, doc_id: Any
 async def research_action(session: AsyncSession, firm: Firm, actor: User, doc_id: Any, action: str,
                           reason: str | None = None) -> Outcome:
     """Submit a document for review, publish it, send it back to draft, or delete it (the research routes).
-    Nothing records who submitted a document, so publishing cannot yet be held to a second person (B-147)."""
-    plan = await prepare_research_action(session, firm, doc_id, action)
+    Submitting records who sent it, and publishing is refused to that person (B-147); back to draft clears it."""
+    plan = await prepare_research_action(session, firm, doc_id, action, actor)
     doc, act = plan.record, plan.values["action"]
     if act == "delete":
         title = doc.title
@@ -975,6 +1002,10 @@ async def research_action(session: AsyncSession, firm: Firm, actor: User, doc_id
         await session.flush()
         return _done(plan)
     doc.status = plan.values["to"]
+    if act == "submit":
+        doc.submitted_by, doc.submitted_at = actor.email, utcnow()
+    elif act == "reject":
+        doc.submitted_by, doc.submitted_at = None, None
     if act == "publish":
         doc.published_by = actor.email
         doc.published_at = utcnow()

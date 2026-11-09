@@ -112,20 +112,20 @@ async def resolve_flag(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Close a flag, with the reason, through `provenance/supervision.py` as the conversation's tool does (B-145).
+    A resolved flag stays on record: there is no reopening one, so `resolved: false` is refused rather than read
+    as another resolve."""
     if user.role not in supervision.SUPERVISORS:
         raise HTTPException(403, "Resolving a surveillance flag is for compliance or a branch leader.")
-    flag = await db.get(SurveillanceFlag, flag_id)
-    if not flag or flag.firm_id != firm.id:
-        raise HTTPException(404, "Flag not found.")
-    flag.resolved = body.resolved
-    flag.resolution_note = body.resolution_note
-    flag.resolved_by = user.email
-    flag.resolved_at = utcnow()
-    await append_entry(db, firm_id=firm.id, event_type="flag_resolved",
-                       agent_key=flag.target_agent_key, actor=user.email,
-                       content={"flag_id": str(flag_id), "severity": flag.severity,
-                                "category": flag.category, "resolution_note": body.resolution_note})
-    return {"ok": True, "resolved": body.resolved}
+    if not body.resolved:
+        raise HTTPException(422, "A resolved flag stays on record and is not reopened. If the issue is back, the "
+                                 "rules engine raises a new flag on the next proposal that breaks the rule.")
+    try:
+        row = await supervision.flag(db, firm.id, flag_id)
+        out = await supervision.resolve(db, row, note=body.resolution_note, by=user.email)
+    except supervision.SupervisionError as exc:
+        raise HTTPException(404 if "not found" in str(exc) else 409 if "already" in str(exc) else 422, str(exc))
+    return {"ok": True, **out}
 
 
 @router.post("/surveillance/{flag_id}/escalate")
@@ -136,19 +136,12 @@ async def escalate_flag(
 ):
     if user.role not in supervision.SUPERVISORS:
         raise HTTPException(403, "Escalating a surveillance flag is for compliance or a branch leader.")
-    flag = await db.get(SurveillanceFlag, flag_id)
-    if not flag or flag.firm_id != firm.id:
-        raise HTTPException(404, "Flag not found.")
-    flag.escalated = True
-    flag.escalated_to = body.escalated_to
-    flag.escalated_at = utcnow()
-    flag.escalation_note = body.escalation_note
-    await append_entry(db, firm_id=firm.id, event_type="flag_escalated",
-                       agent_key=flag.target_agent_key, actor=user.email,
-                       content={"flag_id": str(flag_id), "severity": flag.severity,
-                                "escalated_to": body.escalated_to,
-                                "note": body.escalation_note})
-    return {"ok": True, "escalated_to": body.escalated_to}
+    try:
+        row = await supervision.flag(db, firm.id, flag_id)
+        out = await supervision.escalate(db, row, to=body.escalated_to, note=body.escalation_note, by=user.email)
+    except supervision.SupervisionError as exc:
+        raise HTTPException(404 if "not found" in str(exc) else 409 if "already" in str(exc) else 422, str(exc))
+    return {"ok": True, **out}
 
 
 @router.get("/ledger/export")

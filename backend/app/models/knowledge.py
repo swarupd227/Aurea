@@ -31,6 +31,9 @@ class ResearchDocument(Base):
     body: Mapped[str] = mapped_column(Text)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(16), default="published")  # draft/under_review/published
+    # Who sent it for review, so a second person publishes it (B-147). Cleared when it goes back to draft.
+    submitted_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)

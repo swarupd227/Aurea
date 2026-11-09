@@ -76,6 +76,8 @@ def _serialize_message(
             "id": str(pending.id),
             "tool_key": pending_call.tool_key,
             "confirmation_text": pending.confirmation_text,
+            # Naive UTC as the gateway writes it, sent as UTC, so a card left open past it stops offering Confirm.
+            "expires_at": pending.expires_at.isoformat() + "Z" if pending.expires_at else None,
             "decision": (
                 None if pending.status == PendingActionStatus.AWAITING_CONFIRMATION
                 else "expired" if pending.status == PendingActionStatus.EXPIRED
@@ -284,7 +286,10 @@ async def needs_you(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Pending actions assigned to this user, awaiting their decision."""
+    """Pending actions assigned to this user, awaiting their decision. Those past their time lapse first (B-51)."""
+    from app.llm import pending as pending_mod
+
+    await pending_mod.lapse(session, user_id=user.id)
 
     stmt = (
         select(PendingAction, Thread, ToolCall)
@@ -341,7 +346,9 @@ async def briefing(
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     """Home stats: real counts only. A row we can't measure is left out, not faked."""
+    from app.llm import pending as pending_mod
 
+    await pending_mod.lapse(session, user_id=user.id)  # a lapsed confirmation is not waiting on anyone (B-51)
     needs_stmt = (
         select(func.count(PendingAction.id))
         .join(Thread, PendingAction.thread_id == Thread.id)
@@ -415,7 +422,11 @@ async def list_threads(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """List the current user's own threads, with a computed status."""
+    """List the current user's own threads, with a computed status. A confirmation past its time lapses first, so
+    a thread is not shown as waiting on one that can no longer be confirmed (B-51)."""
+    from app.llm import pending as pending_mod
+
+    await pending_mod.lapse(session, user_id=user.id)
 
     stmt = (
         select(Thread)
@@ -468,6 +479,10 @@ async def get_thread(
     if not _is_theirs(thread, user):
         raise HTTPException(status_code=404, detail="Thread not found")
 
+    # A confirmation past its time reads Expired as soon as the thread is shown, not when it is next clicked (B-51).
+    from app.llm import pending as pending_mod
+
+    await pending_mod.lapse(session, thread_ids=[thread_id])
     pending_stmt = select(PendingAction).where(PendingAction.thread_id == thread_id)
     pending_rows = (await session.execute(pending_stmt)).scalars().all()
     pending_by_tool_call = {p.tool_call_id: p for p in pending_rows}

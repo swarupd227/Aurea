@@ -410,12 +410,12 @@ export function ProvenanceView() {
                         <div className="mt-3 space-y-2">
                           <textarea
                             className="input text-xs" rows={2}
-                            placeholder="Resolution note (optional)…"
+                            placeholder="Why it is resolved (on the ledger, with your name)…"
                             value={resolveNote}
                             onChange={(e) => setResolveNote(e.target.value)}
                           />
                           <div className="flex gap-2">
-                            <button className="btn-primary text-xs py-1 px-2" disabled={flagBusy} onClick={() => resolveFlag(f)}>
+                            <button className="btn-primary text-xs py-1 px-2" disabled={flagBusy || resolveNote.trim().length < 3} onClick={() => resolveFlag(f)}>
                               {flagBusy ? "…" : nav.say ? "Ask Astra" : "Mark resolved"}
                             </button>
                             <button className="btn-ghost text-xs py-1 px-2" onClick={() => { setResolving(null); setResolveNote(""); }}>Cancel</button>
@@ -429,11 +429,11 @@ export function ProvenanceView() {
                           />
                           <textarea
                             className="input text-xs" rows={2}
-                            placeholder="Escalation note (optional)…"
+                            placeholder="Why it is escalated (on the ledger)…"
                             value={escalateNote} onChange={(e) => setEscalateNote(e.target.value)}
                           />
                           <div className="flex gap-2">
-                            <button className="btn-primary text-xs py-1 px-2" disabled={flagBusy || !escalateTo.trim()} onClick={() => escalateFlag(f)}>
+                            <button className="btn-primary text-xs py-1 px-2" disabled={flagBusy || !escalateTo.trim() || escalateNote.trim().length < 3} onClick={() => escalateFlag(f)}>
                               {flagBusy ? "…" : nav.say ? "Ask Astra" : "Escalate"}
                             </button>
                             <button className="btn-ghost text-xs py-1 px-2" onClick={() => { setEscalating(null); setEscalateTo(""); setEscalateNote(""); }}>Cancel</button>

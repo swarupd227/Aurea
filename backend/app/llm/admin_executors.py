@@ -406,7 +406,7 @@ class AdminToolExecutors:
         if tool_key == "add_research":
             return pa.prepare_research(**a)
         if tool_key == "research_action":
-            plan = await pa.prepare_research_action(s, firm, a["doc_id"], a["action"])
+            plan = await pa.prepare_research_action(s, firm, a["doc_id"], a["action"], await self._me())
             if a["action"] == "publish" and plan.record.status == "published":
                 raise pa.AdminError(f"Already so: {plan.label} is published.")
             return plan

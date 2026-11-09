@@ -174,6 +174,12 @@ export function CockpitView() {
             </div>
           ) : (
             <div className="space-y-3">
+              {top.some((r) => r.mine !== undefined) && (
+                <div className="flex flex-wrap gap-1.5" data-testid="cockpit-feed-scope">
+                  <span className={chip}>Your households first</span>
+                  <span className={`${chip} tabular-nums`}>{(feed || []).filter((r) => r.mine).length} yours</span>
+                </div>
+              )}
               {top.map((r) => (
                 <RecommendationCard
                   key={r.id}

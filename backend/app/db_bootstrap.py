@@ -16,6 +16,8 @@ import app.models  # noqa: F401
 
 log = get_logger("aurea.bootstrap")
 
+SUPERADMIN_MIN_LENGTH = 12
+
 
 _DEFAULT_SEGMENTS = [
     ("private_wealth",  "Private Wealth",  75,  500_000,  "High-net-worth individuals and families"),
@@ -91,6 +93,8 @@ async def bootstrap() -> None:
         # Wave G: Research document publishing workflow
         await conn.execute(text("ALTER TABLE research_document ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'published'"))
         await conn.execute(text("ALTER TABLE research_document ADD COLUMN IF NOT EXISTS published_by VARCHAR(200)"))
+        await conn.execute(text("ALTER TABLE research_document ADD COLUMN IF NOT EXISTS submitted_by VARCHAR(200)"))
+        await conn.execute(text("ALTER TABLE research_document ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE research_document ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE research_document ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1"))
         # Wave H: Onboarding SLA
@@ -251,20 +255,27 @@ async def bootstrap() -> None:
                     "ON CONFLICT (firm_id, event_type, channel) DO NOTHING"
                 ), {"fid": firm_id, "ev": ev, "ch": ch, "en": en, "recip": recip, "cfg": cfg})
 
-        # Seed superadmin user (idempotent — password: aurea-super)
+        # The platform owner (idempotent). Its password is never in the code (B-144): it is created only from
+        # AUREA_SUPERADMIN_PASSWORD, and an existing one is changed with `python -m seed.rotate_superadmin`.
         sa_exists = (await conn.execute(
             text("SELECT id FROM app_user WHERE email = 'superadmin@aurea.platform' LIMIT 1")
         )).fetchone()
         if not sa_exists:
+            from app.core.config import settings as _settings
+
             firm_row = (await conn.execute(text("SELECT id FROM firm LIMIT 1"))).fetchone()
-            if firm_row:
+            given = _settings.superadmin_password or ""
+            if firm_row and len(given) >= SUPERADMIN_MIN_LENGTH:
                 from app.core.security import hash_password as _hp
                 await conn.execute(text(
                     "INSERT INTO app_user "
                     "(id, firm_id, email, full_name, hashed_password, role, is_active, mfa_enabled, created_at, updated_at) "
                     "VALUES (gen_random_uuid(), :fid, 'superadmin@aurea.platform', "
                     "'Platform Superadmin', :hp, 'superadmin', true, false, now(), now())"
-                ), {"fid": firm_row[0], "hp": _hp("aurea-super")})
+                ), {"fid": firm_row[0], "hp": _hp(given)})
+            elif firm_row:
+                log.warning("superadmin_not_created",
+                            reason=f"set AUREA_SUPERADMIN_PASSWORD (at least {SUPERADMIN_MIN_LENGTH} characters) to create it")
 
     log.info("schema_bootstrapped", tables=len(Base.metadata.tables))
 

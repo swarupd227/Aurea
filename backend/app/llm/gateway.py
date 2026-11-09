@@ -229,6 +229,10 @@ class Gateway:
         if not thread or thread.firm_id != self.firm_id or thread.created_by_user_id != self.user_id:
             raise GatewayError(f"Thread {thread_id} not found or access denied")
 
+        # A confirmation on this thread past its time has lapsed, so the model reads it as not done (B-51).
+        from app.llm import pending as pending_mod
+
+        await pending_mod.lapse(self.session, thread_ids=[thread_id])
         user_msg = ThreadMessage(thread_id=thread_id, role=MessageRole.USER, text=text)
         self.session.add(user_msg)
         # Committed at once: the question is on the thread however the turn ends, including a browser

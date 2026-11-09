@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Save, Power, Pause, Play, Plus, Clock, Pencil, X, CheckCircle2, Eye, SendHorizonal, RefreshCw, Trash2 } from "lucide-react";
 import { Card, Spinner, InlineConfirmButton, Empty, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
-import { api } from "@/lib/api";
+import { api, getUser } from "@/lib/api";
 import { money, titleCase } from "@/lib/format";
 import { chip } from "../ViewHeader";
 import { PageOnly, ReasonInput, Saved, because, q, tierWord, useAsk } from "./shared";
@@ -306,7 +306,12 @@ export function ResearchTab() {
                       )}
                       {d.status === "under_review" && (
                         <>
-                          <button className="btn-primary px-2 py-0.5 text-xs" disabled={actionBusy === d.id + "publish"} onClick={() => docAction(d, "publish")}>
+                          {d.submitted_by && <span className={chip} data-testid="research-submitted-by">Submitted by {d.submitted_by}</span>}
+                          {/* A second person publishes (B-147): the server refuses the submitter, so the button does too. */}
+                          <button className="btn-primary px-2 py-0.5 text-xs"
+                            disabled={actionBusy === d.id + "publish" || (!!d.submitted_by && d.submitted_by.toLowerCase() === String(getUser()?.email ?? "").toLowerCase())}
+                            title={d.submitted_by && d.submitted_by.toLowerCase() === String(getUser()?.email ?? "").toLowerCase() ? "You submitted it; a second person publishes it" : undefined}
+                            onClick={() => docAction(d, "publish")}>
                             <CheckCircle2 size={11} /> Publish
                           </button>
                           <button className="btn-crit px-2 py-0.5 text-xs" disabled={actionBusy === d.id + "reject"} onClick={() => docAction(d, "reject")}>

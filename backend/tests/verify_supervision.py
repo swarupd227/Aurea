@@ -138,6 +138,26 @@ async def behaviour() -> None:
             await refused("an adviser cannot escalate", api.escalate_flag(other_flag.id, api.EscalateIn(escalated_to="x"), firm=mine, db=s, user=adviser), "compliance")
             await refused("an adviser cannot re-run the evaluation", api.run_evaluation(user=adviser, firm=mine, db=s), "compliance")
 
+            print("\n=== the routes hold to the same rules (B-145) ===")
+            carla = SimpleNamespace(role=R.COMPLIANCE, email="carla@x")
+            before = await ledger("flag_resolved")
+            await refused("reopening is refused, not read as a resolve",
+                          api.resolve_flag(paused_flag.id, api.ResolveIn(resolved=False, resolution_note="Reopen it"), firm=mine, db=s, user=carla), "not reopened")
+            await s.refresh(paused_flag)
+            check("  the resolved flag keeps its note and the ledger does not grow",
+                  (paused_flag.resolution_note, await ledger("flag_resolved")), (ask["note"], before))
+            await refused("a resolved flag is not resolved again on the route",
+                          api.resolve_flag(paused_flag.id, api.ResolveIn(resolution_note="Again"), firm=mine, db=s, user=carla), "already resolved")
+            await refused("the route needs a reason", api.resolve_flag(other_flag.id, api.ResolveIn(), firm=mine, db=s, user=carla), "Say why")
+            await refused("another firm's flag is not found", api.resolve_flag(theirs_flag.id, api.ResolveIn(resolution_note="Closed"), firm=mine, db=s, user=carla), "not found")
+            await refused("an escalation on the route needs a reason",
+                          api.escalate_flag(other_flag.id, api.EscalateIn(escalated_to="Head of Advice"), firm=mine, db=s, user=carla), "Say why")
+            done = await api.resolve_flag(other_flag.id, api.ResolveIn(resolution_note="Letters reworded and re-sent."), firm=mine, db=s, user=carla)
+            await s.commit()
+            await s.refresh(other_flag)
+            check("with a reason it resolves, once, on the ledger",
+                  (done["resolved"], other_flag.resolved, other_flag.resolved_by, await ledger("flag_resolved")), (True, True, "carla@x", before + 1))
+
             print("\n=== the evaluation ===")
             s.add(AgentConfig(firm_id=mine.id, agent_key=AgentKey.NEXT_BEST_ACTION, enabled=True, default_tier="tier_2"))
             s.add(AgentConfig(firm_id=mine.id, agent_key=AgentKey.CLIENT_CARE, enabled=True, default_tier="tier_1"))

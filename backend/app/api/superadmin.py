@@ -173,7 +173,8 @@ async def create_firm(
     ))
 
     import structlog
-    structlog.get_logger().info("firm_provisioned", slug=slug, admin=admin_email, invite_url=invite_url)
+    # The invite link is a credential: it is in this reply to the platform owner, not in the log (B-154).
+    structlog.get_logger().info("firm_provisioned", slug=slug, admin=admin_email)
 
     return {
         "id": str(firm.id), "slug": slug, "name": body.name,

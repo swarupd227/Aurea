@@ -178,6 +178,22 @@ async def main() -> int:
             check("compliance's list has it", "Conduct surveillance review" in await listed(comp), True)
             check("so does a branch leader's", "Conduct surveillance review" in await listed(lead), True)
 
+            print("\n=== The cockpit's feed leads with the adviser's own (B-126) ===")
+            from app.api import studio as studio_api
+            proposal("client_care", "household", hs["Dunn"].id, "Call Dunn")
+            await s.flush()
+            feed = await studio_api.nba_feed(status="open", user=ann, firm=firm, db=s)
+            titles = [r["title"] for r in feed]
+            check("Ann's two come first, Cole's (Ben's) and Dunn's (nobody's) after",
+                  (sorted(titles[:2]), sorted(titles[2:])), (["Call Brook", "Rebalance Ames"], ["Call Cole", "Call Dunn"]))
+            check("each says whether it is hers", {r["title"]: r["mine"] for r in feed},
+                  {"Rebalance Ames": True, "Call Brook": True, "Call Cole": False, "Call Dunn": False})
+            check("a decided proposal is not in the open feed", "Already decided" in titles, False)
+            ben_feed = await studio_api.nba_feed(status="open", user=ben, firm=firm, db=s)
+            check("Ben's leads with Cole's", (ben_feed[0]["title"], ben_feed[0]["mine"]), ("Call Cole", True))
+            lead_feed = await studio_api.nba_feed(status="open", user=lead, firm=firm, db=s)
+            check("a branch leader reads the firm's, with no mine marked", ("mine" in lead_feed[0], len(lead_feed)), (False, 5))
+
             print("\n=== Assigning ===")
             ask = {"household_ids": f"{hs['Ames'].id},{hs['Dunn'].id}", "adviser": "Cara", "reason": "Ann is going part time"}
             await refused("a reason is needed", ex(ops).preview_change("assign_adviser", {**ask, "reason": " "}), "reason")

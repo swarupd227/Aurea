@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-insecure-change-me-please-0123456789abcdef"  # AUREA_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 720
+    # The platform owner's first password, for a database that has none (AUREA_SUPERADMIN_PASSWORD). Never in the
+    # code: with none set, no platform owner is created, and `seed.rotate_superadmin` changes an existing one (B-144).
+    superadmin_password: str = ""
 
     # ── LLM (Anthropic-first, model-portable) ─────────────────────────────────
     anthropic_api_key: str = ""
@@ -66,6 +69,7 @@ _ENV_ALIASES = {
     "marketdata_provider": "AUREA_MARKETDATA_PROVIDER",
     "run_seed": "AUREA_RUN_SEED",
     "role": "AUREA_ROLE",
+    "superadmin_password": "AUREA_SUPERADMIN_PASSWORD",
 }
 
 

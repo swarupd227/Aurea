@@ -83,7 +83,9 @@ export function ConfirmationCard({
   onReject: (id: string) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
-  const decided = action.decision;
+  // A card left open past its time reads Expired, as the server will say once the thread is read again (B-51).
+  const lapsed = !action.decision && !!action.expires_at && Date.parse(action.expires_at) <= Date.now();
+  const decided = action.decision ?? (lapsed ? "expired" : null);
   const preview = action.preview && "agent_key" in action.preview ? (action.preview as RunPreview) : null;
   const unavailable = action.preview && "unavailable" in action.preview && action.preview.unavailable ? action.preview.unavailable : null;
   const changes = action.preview && "rows" in action.preview ? action.preview.rows : null;

@@ -15,7 +15,7 @@ from app.atlas.runtime import AgentPausedError, run_agent
 from app.core.db import get_db
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
 from app.llm.service import firm_llm_creds, llm_service
-from app.models.enums import AgentKey, AgentRunStatus, HumanAction, MandateType, RecommendationStatus
+from app.models.enums import AgentKey, AgentRunStatus, HumanAction, MandateType, RecommendationStatus, UserRole
 from app.models.governance import AgentRun, Recommendation
 from app.models.graph import Mandate
 from app.models.identity import User
@@ -63,16 +63,28 @@ async def nba_feed(
     status: str = "open", user: User = Depends(get_current_user),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    """The next-best-action feed: prioritised open recommendations across the book."""
+    """The next-best-action feed: prioritised open recommendations across the book.
+
+    An adviser's feed leads with their own households (B-126), as the figures above it count only those
+    (`advisers.day`): each item says whether it is `mine`, theirs come first in priority order, and the rest of the
+    firm's follow, because a household nobody holds still needs someone to see it. Other roles read the firm's."""
+    from app.aurea_core import advisers
     from app.core.decision_rights import unseen_agents
 
     stmt = select(Recommendation).where(Recommendation.firm_id == firm.id, Recommendation.agent_key.notin_(unseen_agents(user.role)))
     if status == "open":
         stmt = stmt.where(Recommendation.status == RecommendationStatus.PROPOSED)
+    adviser = UserRole(user.role) == UserRole.ADVISER
     recs = (
-        await db.execute(stmt.order_by(Recommendation.priority.asc(), Recommendation.created_at.desc()).limit(200))
+        await db.execute(stmt.order_by(Recommendation.priority.asc(), Recommendation.created_at.desc()).limit(1000 if adviser else 200))
     ).scalars().all()
-    return [_rec_dict(r, user.role) for r in recs]
+    if not adviser:
+        return [_rec_dict(r, user.role) for r in recs]
+    held = await advisers.of_households(db, firm.id)
+    homes = await advisers.subject_households(db, firm.id, list(recs))
+    mine = {r.id: held.get(homes.get(r.id)) == user.id for r in recs}
+    ordered = sorted(recs, key=lambda r: not mine[r.id])[:200]  # stable: priority order kept within each part
+    return [{**_rec_dict(r, user.role), "mine": mine[r.id]} for r in ordered]
 
 
 @router.get("/recommendations/{rec_id}")

@@ -343,7 +343,24 @@ async def main() -> None:
             shown = await card(ada, "research_action", {"doc_id": str(doc.id), "action": "delete"})
             check("deleting says it cannot be undone", "Cannot be undone" in shown, True)
             await refused("another firm's document", ex(zed).preview_change("research_action", {"doc_id": str(doc.id), "action": "delete"}), "not found")
-            await ex(ada).execute("research_action", {"doc_id": str(doc.id), "action": "publish"})
+            await refused("a draft is not published straight away", ex(ada).preview_change("research_action", {"doc_id": str(doc.id), "action": "publish"}),
+                          "Submit it for review first")
+            await ex(ada).execute("research_action", {"doc_id": str(doc.id), "action": "submit"})
+            await s.refresh(doc)
+            check("submitting records who sent it", (doc.status, doc.submitted_by), ("under_review", "ada@t.test"))
+            await refused("whoever submitted it does not publish it (B-147)",
+                          ex(ada).preview_change("research_action", {"doc_id": str(doc.id), "action": "publish"}), "A second person publishes it")
+            await refused("  not even past the card", ex(ada).execute("research_action", {"doc_id": str(doc.id), "action": "publish"}), "A second person")
+            check("  and the document is still under review", (await s.get(ResearchDocument, doc.id)).status, "under_review")
+            abe = User(id=uuid.uuid4(), firm_id=firm.id, email="abe@t.test", full_name="Abe", hashed_password=hash_password("pw"),
+                       role=R.ADMIN, is_active=True)
+            s.add(abe)
+            await s.flush()
+            shown = await card(abe, "research_action", {"doc_id": str(doc.id), "action": "publish"})
+            check("a second admin's card names who submitted it", shown.get("Submitted by"), "ada@t.test")
+            await ex(abe).execute("research_action", {"doc_id": str(doc.id), "action": "publish"})
+            await s.refresh(doc)
+            check("and they publish it", (doc.status, doc.published_by, doc.submitted_by), ("published", "abe@t.test", "ada@t.test"))
             check("once published it is the firm's view", [c["title"] for c in await knowledge.retrieve(s, firm.id, "quality equity duration")],
                   ["House view Q4"])
             await refused("publishing a published one is already so", ex(ada).preview_change("research_action", {"doc_id": str(doc.id), "action": "publish"}),
@@ -470,6 +487,8 @@ async def main() -> None:
             doc_out = await admin.add_research(admin.ResearchIn(title="Note", body="Some text"), user=ada, firm=firm, db=s)
             check("POST research", sorted(doc_out), ["chunks", "id"])
             check("POST research submit", await admin.submit_research(uuid.UUID(doc_out["id"]), user=ada, firm=firm, db=s), {"ok": True, "status": "under_review"})
+            check("POST research publish by the submitter is refused", await outcome(admin.publish_research(uuid.UUID(doc_out["id"]), user=ada, firm=firm, db=s)),
+                  "refused 422")
             check("DELETE research of another firm", await outcome(admin.delete_research(uuid.UUID(doc_out["id"]), actor=zed, firm=other, db=s)), "refused 404")
             mp2 = await portfolios.create_model_portfolio(portfolios.ModelPortfolioIn(name="Growth"), user=pete, firm=firm, db=s)
             check("POST model portfolio", (mp2["name"], mp2["drift_band"]), ("Growth", 0.05))
@@ -492,8 +511,8 @@ async def main() -> None:
             check("GET agents", sorted((await admin.list_agent_configs(user=ada, firm=firm, db=s))[0]),
                   ["agent_key", "config", "default_tier", "enabled", "paused", "paused_reason", "schedule_cron", "schedule_enabled"])
             check("GET research", sorted((await admin.list_research(user=ada, firm=firm, db=s))[0]),
-                  sorted(["created_at", "doc_type", "id", "published_at", "published_by", "status", "summary", "tags", "title", "author", "version"]))
-            check("POST research publish", (await admin.publish_research(uuid.UUID(doc_out["id"]), user=ada, firm=firm, db=s))["status"], "published")
+                  sorted(["created_at", "doc_type", "id", "published_at", "published_by", "status", "submitted_by", "summary", "tags", "title", "author", "version"]))
+            check("POST research publish, by a second admin", (await admin.publish_research(uuid.UUID(doc_out["id"]), user=abe, firm=firm, db=s))["status"], "published")
             check("POST research reject", await admin.reject_research(uuid.UUID(doc_out["id"]), user=ada, firm=firm, db=s), {"ok": True, "status": "draft"})
             check("PATCH research", (await admin.update_research(uuid.UUID(doc_out["id"]), admin.ResearchUpdate(title="Note 2"), actor=ada, firm=firm, db=s))["ok"], True)
             check("DELETE research", await admin.delete_research(uuid.UUID(doc_out["id"]), actor=ada, firm=firm, db=s), {"ok": True})

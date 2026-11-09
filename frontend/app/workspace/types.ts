@@ -21,6 +21,8 @@ export interface PendingActionRef {
   tool_key: string;
   confirmation_text: string;
   decision: "confirmed" | "declined" | "expired" | "failed" | null;
+  /** When an undecided confirmation lapses (UTC). Past it the card reads Expired without waiting for a click. */
+  expires_at?: string | null;
   /** Present for a run or a task: what confirming does, or the reason it no longer can. */
   preview?: (RunPreview & { unavailable?: undefined }) | ChangePreview | { unavailable: string } | null;
 }
