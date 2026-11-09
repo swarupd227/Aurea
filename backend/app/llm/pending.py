@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.thread import PendingAction, PendingActionStatus
@@ -25,16 +25,19 @@ async def lapse(session: AsyncSession, *, thread_ids: list[uuid.UUID] | None = N
     Returns how many lapsed. One of the two scopes is required, so a read never touches another person's cards."""
     if not thread_ids and user_id is None:
         raise ValueError("lapse needs thread_ids or a user_id")
-    stmt = (update(PendingAction)
-            .where(PendingAction.status == PendingActionStatus.AWAITING_CONFIRMATION,
-                   PendingAction.expires_at.is_not(None),
-                   PendingAction.expires_at < (now or datetime.utcnow()))
-            .values(status=PendingActionStatus.EXPIRED)
-            .execution_options(synchronize_session="fetch"))  # a row already loaded in this session reads expired too
+    lapsed = [PendingAction.status == PendingActionStatus.AWAITING_CONFIRMATION,
+              PendingAction.expires_at.is_not(None),
+              PendingAction.expires_at < (now or datetime.utcnow())]
     if thread_ids:
-        stmt = stmt.where(PendingAction.thread_id.in_(list(thread_ids)))
+        lapsed.append(PendingAction.thread_id.in_(list(thread_ids)))
     if user_id is not None:
-        stmt = stmt.where(PendingAction.requires_user_id == user_id)
-    result = await session.execute(stmt)
+        lapsed.append(PendingAction.requires_user_id == user_id)
+    # Looked for first, so a read with nothing lapsed - nearly every read - writes nothing and takes no lock.
+    ids = list((await session.execute(select(PendingAction.id).where(*lapsed))).scalars().all())
+    if not ids:
+        return 0
+    await session.execute(update(PendingAction).where(PendingAction.id.in_(ids), *lapsed)
+                          .values(status=PendingActionStatus.EXPIRED)
+                          .execution_options(synchronize_session="fetch"))  # a row already loaded here reads expired too
     await session.flush()
-    return int(result.rowcount or 0)
+    return len(ids)
