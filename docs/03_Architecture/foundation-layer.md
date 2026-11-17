@@ -155,4 +155,7 @@ Each step is safe on its own: no existing firm or test changes until a firm is c
 - Whether it holds tax lots and how much transaction history. That decides how much of the tax and trading logic works
   on its data on day one.
 - Which system owns IPS and risk-profile records, if the platform keeps them.
-- Their markets. A South African firm resolves to `NO_REGIME` today (`aurea_core/markets.py`): no rules, no tax report.
+- Their markets. A South African firm resolves to `NO_REGIME` today (`aurea_core/markets.py`): no rules, no tax report (B-206).
+
+The agents the client asked for on top of this (meeting preparation, introductions, personas, learning) are B-198 to
+B-205 in the backlog's experience-layer section.

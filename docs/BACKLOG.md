@@ -75,6 +75,25 @@ directly, and `runtime.decide`'s lock, a proposal's evidence and the SQLite suit
 | B-165 | Orders out through the wealth platform | Not started; after B-164. An approved proposal's orders and a direct order leave through an `OrderSink`; holdings, lots and cash change only when the platform's confirmation syncs back, as a custodian's paper moves money today. `order_guard`, the wash-sale guard and the IPS checks run unchanged on the local copy before the card and again at Confirm | L |
 | B-166 | Astra's tools as an MCP server | Not started. The other direction: other agents call Astra's read tools, and its state-changing ones still stop at a Confirm card held server-side for a named person. Signed-in identity, firm scope and decision rights as on every route | M |
 
+### Experience layer: agents for the RM, from the 17 Nov CTO follow-up
+
+What a prospective client's CTOs asked the agents to do after the demo, beside the Foundation layer above. Meeting
+preparation comes first: a whole picture so the RM does no research, for clients and prospects alike, shaped to the RM.
+Already built and only to be shown: the one-card brief (B-137), net worth with what is held elsewhere, wallet share,
+the prospect brief and a prospect meeting booked ahead (B-159), the onboarding journeys (L200-1) and the skill builder.
+Suggested order for the full demo: B-198, B-200, B-202, then B-203. Every fact a card shows still comes from a tool, with
+its source and date; advice about money held elsewhere goes to the RM, never to the client from an agent.
+
+| ID | Item | Where it stands | Size |
+|---|---|---|---|
+| B-198 | How money held elsewhere is doing | Not started. Held away is a total today (`BalanceItem` `held_away_investment` or a profile figure, `graph.held_away_of`), with no holdings, so nothing can say a part is doing badly. Holdings held elsewhere, recorded from a statement or taken from an aggregation feed (a vendor parked under L200-2), with their performance over the period on real prices; an underperformer or an overlap with the managed book raised to the RM as an opportunity with its evidence, beside a like-for-like alternative from the shelf. Nothing is estimated, an unpriced holding is listed with no value, and nothing reaches the client: it is advice and goes through the adviser | L |
+| B-199 | The client's history in the brief | Not started. The meeting brief adds the last interactions (CRM activities, after B-163), past meetings and what was agreed, the RM's decisions on recent proposals with their reasons (`decision_note`), and open complaints or service issues, each dated and cited | M |
+| B-200 | The way in to a prospect, from people the firm already knows | Not started. `RelationshipEdge` and the CRM's referral sources and centres of influence hold the links; nothing searches them for a path. A warm-introduction agent ranks paths to a prospect or a client's contact by the kind and recency of each link and the connector's own standing with the firm, names who should ask whom, and proposes a task for the RM. Links come only from what a person recorded or a CRM synced, never inferred; it introduces nobody itself. External networks are B-201 | M |
+| B-202 | A persona card for a client or prospect, from public sources | Not started; needs a licensed news and company-data connector (today the only news source is the adverse-media mock in screening). Interests at work and beyond, as dated talking points, each citing its source and expiring after a set time. Professional and public sources only, nothing inferred about health, religion, politics or other special categories, and adverse media stays with screening and compliance, never a talking point. Profiling needs a lawful basis and usually a notice under GDPR and POPIA: the firm's privacy notice decides whether it runs | L |
+| B-203 | Briefs shaped to the RM | Not started. An RM profile the RM keeps: which sections lead, how long, the topics they open with, their strengths. The meeting brief and the prospect brief follow it; the facts do not change, only their order and emphasis. What the RM opens, expands or skips is offered back as a change to the profile, which they accept or not | M |
+| B-204 | Agents that learn from decisions | Not started. Approve, dismiss and revise reasons (`decision_note`, revisions) become per-RM and firm preferences an agent retrieves when it reasons, versioned, shown to the person they describe and removable. A change in behaviour is checked against the eval gates before it applies, and learning never widens an agent's autonomy, as `provenance/evaluation.py` only narrows | M |
+| B-205 | Agents for operations beyond advice | Not started. Marketing and finance asked for. Two firm-library skills to show it (a campaign list from segments and life events; a fee and revenue variance against the billing run), proposals only, as every skill is | S |
+
 ### L200-2, financial planning and advice delivery
 
 From an audit on 17 Nov of `L200-2_Financial_Planning_Advice_Delivery_1.docx` (the user's OneDrive, Domain Material)
@@ -151,6 +170,8 @@ B-26 waits for a real custodian statement.
 
 | ID | Decision | Why it is stuck |
 |---|---|---|
+| B-201 | Where external network links may come from | The CTOs asked for LinkedIn. Its terms bar scraping, so a link comes only through its official product (Sales Navigator through a licensed integration) or connections an RM exports and imports themselves. Needs the client's choice and licence before B-200 reads anything external |
+| B-206 | Which markets the client needs | If any of its firms is South African, Astra has no ZA market: such a firm resolves to `NO_REGIME`, no rules and no tax report (`aurea_core/markets.py`). A ZA market (FSCA and FAIS, FICA, POPIA, the SARS tax year) is a build of its own. The UK is covered |
 | B-76 | The firm's cost of care | Care reads "not assessed" until a branch leader or administrator sets a yearly cost and years to plan for, from a source. Needs a real figure, and it differs by country, so the Indian firm needs its own. Not decided on 2 Nov: no default is ever supplied |
 | B-27 | PPEF1 real valuation | Needs a real figure and its source. Not decided on 2 Nov: a valuation is a fact, and none may be invented |
 | B-28 | Credit and rebill the 13 bills issued on stale prices | Decided 2 Nov on recommendation: yes, after the cloud build, by operations, one invoice at a time through the credit card, each confirmed by a person. It moves real money, so it is not done from here |
