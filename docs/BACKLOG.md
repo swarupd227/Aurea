@@ -57,6 +57,24 @@ untrue. Section numbers are the guide's.
 Parked from L200-1: identity-fraud signals (device, phone and email age, velocity), which need a vendor, and the real
 vendors themselves.
 
+### Foundation layer: Astra over a firm's established products
+
+Raised 17 Nov by a prospective client's target architecture: their wealth platform and Dynamics 365 as the Foundation,
+Astra's pages and agents as the experience layer on top, reaching it through MCP. Design:
+`docs/03_Architecture/foundation-layer.md`. Astra keeps its tables as a local copy fed through a versioned contract
+with swappable adapters, native by default, so no existing firm, agent or test changes until a firm is configured to a
+new adapter. Read through to the source live was rejected: 62 files read holdings, accounts, lots or transactions
+directly, and `runtime.decide`'s lock, a proposal's evidence and the SQLite suites need the data local.
+
+| ID | Item | Where it stands | Size |
+|---|---|---|---|
+| B-161 | Where each record came from | Not started. `source`, `external_id` and `as_of` on the Foundation-owned tables (parties, accounts, mandates, holdings, lots, transactions, cash) through `db_bootstrap` ALTERs, an `external_ref` table mapping a source's id to Astra's UUID, and `firm.settings["foundation"]` naming each domain's owner, native when unset. Changes nothing for an existing firm | S |
+| B-162 | The contract, the native adapter and the conformance kit | Not started. Pydantic contract v1 per domain (parties, accounts, positions, activity, prices, crm) in `app/foundation/contract/`; each adapter declares its capabilities, and a module missing one reads "not assessed", never an estimate. The native adapter maps Astra's tables both ways. A `tests.verify_foundation_contract` suite sends a golden household set out and back and checks the brain, valuation, the rebalancer's proposal and rule outputs match. Adapters are conduit connectors: `conduit/service.run_sync` records a no-op for every domain but market data today | M |
+| B-163 | Dynamics 365 as the CRM | Not started; `crm.dynamics` is registered as a mock with a tenant id field only. Contacts, opportunities and activities in through the Dataverse Web API (or the client's Dataverse MCP server), activities out through an outbound port, upserted by external id, a difference reported as a break. The Growth pipeline and `prepare_prospect_meeting` read the synced records unchanged. Field ownership decides whether Astra's pipeline tools write to D365 or are refused naming it | M |
+| B-164 | The wealth platform, read side | Not started, and waits on what the platform exposes (API, feed, events or MCP) and whether it holds tax lots and transaction history. Parties, accounts, mandates and positions into a demonstration firm marked as sourced from the Foundation, beside the native firms, with `as_of` on the brain and the cards and no trade proposed on data past the firm's freshness limit | L |
+| B-165 | Orders out through the wealth platform | Not started; after B-164. An approved proposal's orders and a direct order leave through an `OrderSink`; holdings, lots and cash change only when the platform's confirmation syncs back, as a custodian's paper moves money today. `order_guard`, the wash-sale guard and the IPS checks run unchanged on the local copy before the card and again at Confirm | L |
+| B-166 | Astra's tools as an MCP server | Not started. The other direction: other agents call Astra's read tools, and its state-changing ones still stop at a Confirm card held server-side for a named person. Signed-in identity, firm scope and decision rights as on every route | M |
+
 ## Smaller items
 
 | ID | Item | L100 | Where it stands |
