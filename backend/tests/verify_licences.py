@@ -127,9 +127,9 @@ async def main() -> int:
             await s.flush()
 
             async def book(f, name, *, track=None, mandate_type="advisory"):
-                eq = Instrument(id=uuid.uuid4(), firm_id=f.id, symbol=f"EQ{uuid.uuid4().hex[:4]}", name="Equity", asset_class="equity",
+                eq = Instrument(id=uuid.uuid4(), firm_id=f.id, symbol=f"EQ{uuid.uuid4().hex[:12]}", name="Equity", asset_class="equity",
                                 market_type=MarketType.PUBLIC, currency=f.base_currency, values_tags={"tax_class": "listed_equity"})
-                fi = Instrument(id=uuid.uuid4(), firm_id=f.id, symbol=f"FI{uuid.uuid4().hex[:4]}", name="Gilt", asset_class="fixed_income",
+                fi = Instrument(id=uuid.uuid4(), firm_id=f.id, symbol=f"FI{uuid.uuid4().hex[:12]}", name="Gilt", asset_class="fixed_income",
                                 market_type=MarketType.PUBLIC, currency=f.base_currency, values_tags={"tax_class": "specified_fund"})
                 s.add_all([eq, fi])
                 await s.flush()

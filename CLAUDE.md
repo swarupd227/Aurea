@@ -26,7 +26,8 @@ pages are artifact views the agents open. Full guideline, including what is buil
 
 - **Trade decisions.** Proposals that move money on a book (`BOOK_MOVING_AGENTS`) are approved, modified or
   revised only by an adviser or portfolio team; compliance may dismiss or roll back but not approve;
-  admins hold neither. Single source: `backend/app/core/decision_rights.py`. Do not reintroduce
+  admins hold neither. An acquired book is committed by operations alone (`BOOK_INTEGRATION_AGENTS`), and its agent
+  always stops at a proposal. Single source: `backend/app/core/decision_rights.py`. Do not reintroduce
   `require_roles(*STAFF_ROLES)` on a decision route.
 - **Exactly-once decisions.** `runtime.decide` and `runtime.rollback` lock the recommendation and re-read
   its status. Callers must not re-implement the check instead.
@@ -211,10 +212,18 @@ pages are artifact views the agents open. Full guideline, including what is buil
   signs its people out. A reset or invite link reaches an admin and never a conversation tool. Every setting the Admin
   and Connectors pages change is a tool behind a Confirm card, sharing `aurea_core/platform_admin.py` with its route; a
   secret (an LLM key, a connector's credentials), the CSV import and the firm's jurisdiction and currency stay on the
-  page. Alerts go only to the firm's people, and only published research grounds an agent.
+  page. Alerts go only to the firm's people, and only published research grounds an agent. An address that sends or
+  shows something outside (a webhook, a logo) is https on the firm's own `allowed_domains`, and none listed refuses
+  all (`platform_admin.check_outbound_url`). An admin sets a mandate's type and whether it is active; its risk,
+  horizon and equity are the adviser's (`decide_risk_profile`, `record_ips`).
 - **A prospect becomes a client through onboarding, and the funnel reads both.** `aurea_core/pipeline.py`: a deal is won only when its onboarding case opens (`start_onboarding` with its `opportunity_id`), activation names the household on the deal and a reversal takes it back. A stage moves with its reason on the deal's activity, lost needs one, and a probability nobody gave is none. A deal is quiet past its stage's target with nothing logged; the follow-up agent gives the owner a task and moves nothing. An adviser reads their own contacts' deals. A prospect's brief is what was recorded and advises nothing about their money.
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
+- **A legal figure carries its law.** `aurea_core/law_figures.py` holds each exemption, allowance and rate with its
+  source, as-of date and window; one past its window reads expired, never a countdown. A figure the code would assume
+  is named as assumed or not used. Check a new one against its source before a client relies on it.
+- **Today is the firm's day.** A date a person reads (an age, a tax year, a due date, a settlement) is
+  `firm_time.today(firm)` or `today_of(session, firm_id)`; `utcnow()` is for stored instants only.
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
   `price_source: "synthetic"`; the paper venue never claims a market was reached; a filled order is
   offset, never reversed.
@@ -229,7 +238,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_onboarding_states`, `verify_aml_risk`, `verify_consents`, `verify_document_matrix`, `verify_transfer_files`, `verify_transaction_monitoring`, `verify_money_in`, `verify_account_features`, `verify_onboarding_scoreboard`, `verify_repapering`, `verify_advisers`, `verify_stalled_onboarding`, `verify_demo_cards`, `verify_rulebook`, `verify_start_onboarding`, `verify_overpromise`, `verify_admin_controls`, `verify_admin_tools`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`, `verify_studio_views`, `verify_client_canvas`, `verify_goal_likelihood`, `verify_ledger`, `verify_pipeline_funnel`, `verify_approval_tasks`, `verify_skill_reruns`, `verify_lapsed_confirmations`, `verify_platform_secrets`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_onboarding_states`, `verify_aml_risk`, `verify_consents`, `verify_document_matrix`, `verify_transfer_files`, `verify_transaction_monitoring`, `verify_money_in`, `verify_account_features`, `verify_onboarding_scoreboard`, `verify_repapering`, `verify_advisers`, `verify_stalled_onboarding`, `verify_demo_cards`, `verify_rulebook`, `verify_start_onboarding`, `verify_overpromise`, `verify_admin_controls`, `verify_admin_tools`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`, `verify_studio_views`, `verify_client_canvas`, `verify_goal_likelihood`, `verify_firm_dates`, `verify_book_scan_route`, `verify_fees`, `verify_wash_sale`, `verify_ledger`, `verify_pipeline_funnel`, `verify_approval_tasks`, `verify_skill_reruns`, `verify_lapsed_confirmations`, `verify_platform_secrets`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.
