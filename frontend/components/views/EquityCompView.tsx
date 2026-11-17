@@ -78,7 +78,7 @@ function Exposures({ household, canRecord, say, onSaved, asOf }: { household: Eq
             </tr>
             {showing && (
               <tr>
-                <td colSpan={6} className="bg-border-soft/30 px-4 py-3">
+                <td colSpan={6} className="bg-border-soft px-4 py-3">
                   <table className="w-full text-xs" data-testid="exposure-paths">
                     <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className="py-1 font-medium">Over</th><th className="py-1 text-right font-medium">Sold a year</th><th className="py-1 text-right font-medium">Units a year</th><th className="py-1 text-right font-medium">Gain a year</th></tr></thead>
                     <tbody className="divide-y divide-border-soft">
@@ -97,7 +97,7 @@ function Exposures({ household, canRecord, say, onSaved, asOf }: { household: Eq
             )}
             {open && (
               <tr>
-                <td colSpan={6} className="bg-border-soft/30 px-4 py-3">
+                <td colSpan={6} className="bg-border-soft px-4 py-3">
                   <div className="flex flex-wrap items-center gap-2" data-testid="plan-form">
                     <select className="input text-xs" aria-label="Method" value={open.method} onChange={(x) => setForm({ ...open, method: x.target.value })}>
                       {METHODS.map((m) => <option key={m} value={m}>{m.replace("_", " ")}</option>)}

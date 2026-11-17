@@ -19,7 +19,7 @@ const pctf = (v: number) => `${(v * 100).toFixed(1)}%`;
 
 // Figures, tables and chips only (CLAUDE.md rule 5). The one paragraph of prose on this card is the
 // agent's own rationale, and it says whose it is.
-const panel = "rounded-lg border border-border bg-paper/40 p-3";
+const panel = "rounded-lg border border-border bg-paper p-3";
 const chipMuted = "chip bg-border-soft text-ink-soft";
 // The agents that look the firm's research library up (backend `knowledge.retrieve`). Any other agent's card
 // has no research panel, because "none" would read as a gap when the agent never looks.
@@ -93,8 +93,8 @@ function DriftAnalysis({ payload, ev, orders }: { payload: any; ev: any; orders:
           )}
           {payload.wash_sale?.held?.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1" data-testid="wash-sale-held">
-              {payload.wash_sale.held.map((h: any) => (
-                <span key={`${h.side}-${h.symbol}`} className="chip text-warn" title={`${h.account} · ${h.on}`}>
+              {payload.wash_sale.held.map((h: any, i: number) => (
+                <span key={`${h.side}-${h.symbol}-${h.account ?? ""}-${i}`} className="chip text-warn" title={`${h.account} · ${h.on}`}>
                   {h.symbol} {h.side === "sell" ? "loss" : "buy"} held · clears {h.clear_on}
                 </span>
               ))}
@@ -131,13 +131,13 @@ function IndiaTaxPanel({ tax }: { tax: any }) {
         {(tax.incomplete || []).map((m: string) => (
           <span key={m} className="chip text-warn">{m.replace(/_/g, " ")} not on file</span>
         ))}
-        {(tax.held || []).map((h: any) => (
-          <span key={`${h.side}-${h.symbol}`} className="chip text-warn" title={h.say} data-testid="rec-india-held">
+        {(tax.held || []).map((h: any, i: number) => (
+          <span key={`${h.side}-${h.symbol}-${i}`} className="chip text-warn" title={h.say} data-testid="rec-india-held">
             {h.symbol} {h.side} held · clears {h.clear_on}
           </span>
         ))}
-        {(tax.flags || []).map((f: any) => (
-          <span key={f.symbol} className="chip text-warn" title={`${f.account} · ${f.on}`} data-testid="rec-india-flag">
+        {(tax.flags || []).map((f: any, i: number) => (
+          <span key={`${f.symbol}-${f.account ?? ""}-${i}`} className="chip text-warn" title={`${f.account} · ${f.on}`} data-testid="rec-india-flag">
             {f.symbol} rebuy after a loss · adviser to judge
           </span>
         ))}
@@ -160,8 +160,8 @@ function CompliancePanel({ recId }: { recId: string }) {
         <span className={`chip ${tone} ml-auto capitalize`}>{a.status === "clear" ? "Clear" : a.status}</span>
       </div>
       <div className="space-y-1.5">
-        {a.results.map((r: any) => (
-          <div key={r.rule_id} className="flex items-start gap-2 text-xs" title={r.citation}>
+        {a.results.map((r: any, i: number) => (
+          <div key={`${r.rule_id}-${i}`} className="flex items-start gap-2 text-xs" title={r.citation}>
             {r.status === "pass" ? <Check size={13} className="text-ok shrink-0 mt-0.5" />
               : r.status === "fail" ? <ShieldAlert size={13} className={`shrink-0 mt-0.5 ${r.severity === "high" ? "text-crit" : "text-warn"}`} />
               : <span className="text-ink-muted shrink-0 w-3 text-center">—</span>}
@@ -339,7 +339,7 @@ export default function RecommendationCard({
           {payload.signal === "ips_breach" && (
             <div className="flex flex-wrap items-center gap-1.5 mt-2" data-testid="rec-ips-breach">
               <span className={chipMuted}>IPS v{payload.version}</span>
-              {(payload.findings ?? []).map((f: IpsFinding) => <span key={f.term} className="chip bg-crit-bg text-crit">{findingText(f)}</span>)}
+              {(payload.findings ?? []).map((f: IpsFinding, i: number) => <span key={`${f.term}-${i}`} className="chip bg-crit-bg text-crit">{findingText(f)}</span>)}
               {payload.accept_until && <span className={chipMuted}>Accepting runs to {reviewDay(payload.accept_until)}</span>}
             </div>
           )}
@@ -386,7 +386,7 @@ export default function RecommendationCard({
       </div>
 
       {justApproved && (
-        <div className="mx-4 rounded-lg bg-ok-bg border border-ok/30 px-3 py-2 flex items-center gap-2 text-sm text-ok font-medium fade-in">
+        <div className="mx-4 rounded-lg bg-ok-bg border border-ok-soft px-3 py-2 flex items-center gap-2 text-sm text-ok font-medium fade-in">
           <Check size={16} /> Decision recorded · ledger
         </div>
       )}
@@ -419,7 +419,7 @@ export default function RecommendationCard({
               </div>
               <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-sm">
-                  <thead className="bg-border-soft/60 text-ink-muted text-[11px] uppercase tracking-wide">
+                  <thead className="bg-border-soft text-ink-muted text-[11px] uppercase tracking-wide">
                     <tr>
                       {mode === "modify" && <th className="px-3 py-2 w-8"></th>}
                       <th className="px-3 py-2 text-left">Side</th>
@@ -686,11 +686,11 @@ export default function RecommendationCard({
               {draft && (
                 <div className="space-y-2">
                   {draft.subject && (
-                    <div className="rounded-lg border border-border bg-paper/40 px-3 py-2 text-sm font-medium text-ink">
+                    <div className="rounded-lg border border-border bg-paper px-3 py-2 text-sm font-medium text-ink">
                       Subject: {draft.subject}
                     </div>
                   )}
-                  <div className="rounded-lg border border-border bg-paper/40 px-3 py-2 text-sm text-ink-soft whitespace-pre-line leading-relaxed">
+                  <div className="rounded-lg border border-border bg-paper px-3 py-2 text-sm text-ink-soft whitespace-pre-line leading-relaxed">
                     {draft.body}
                   </div>
                   <button className="btn-outline text-xs" onClick={copyDraft}>

@@ -144,8 +144,8 @@ export function MeetingView({ id }: { id: string }) {
         </div>
       )}
       {m.status === "completed" && (
-        <div className="card mt-5 flex flex-wrap items-center gap-2 border-positive/30 p-4 text-sm">
-          <CheckSquare className="text-positive" size={18} aria-hidden />
+        <div className="card mt-5 flex flex-wrap items-center gap-2 border-ok-soft p-4 text-sm">
+          <CheckSquare className="text-ok" size={18} aria-hidden />
           <span className="chip bg-ok-bg text-ok">Notes approved</span>
           <span className="chip bg-ok-bg text-ok">Tasks and goals added</span>
           <ViewLink href="/studio/tasks" className="ml-1 text-ink underline">View tasks</ViewLink>

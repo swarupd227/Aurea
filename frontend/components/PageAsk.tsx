@@ -16,6 +16,11 @@ import { MessageView } from "@/app/workspace/components/MessageView";
 import { reduceLive } from "@/app/workspace/lib/live";
 import type { LiveTurn, Mentionable, ThreadDetail } from "@/app/workspace/types";
 
+/** A chip offered twice (a follow-up the reply repeats) is one chip: two would share a key. */
+function unique(chips: { label: string; prompt: string }[]) {
+  return chips.filter((c, i) => chips.findIndex((d) => d.prompt === c.prompt) === i);
+}
+
 /** A conversation with Astra docked at the foot of a page. It is the same Astra with the same
  * tools as the workspace - a Confirm / Not now card here is the server-held pause, not a copy -
  * and it never replaces the page: answers open above the composer and fold away. After a
@@ -127,9 +132,9 @@ export default function PageAsk() {
   return (
     <div
       data-testid="page-ask"
-      className="fixed bottom-0 left-64 right-0 z-30 border-t border-border bg-paper/95 backdrop-blur"
+      className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-paper md:left-64"
     >
-      <div className="mx-auto max-w-[1280px] px-8 pb-4 pt-2">
+      <div className="mx-auto max-w-[1280px] px-3 pb-3 pt-2 md:px-8 md:pb-4">
         {open && hasConversation && (
           <section
             aria-label="Conversation about this page"
@@ -171,7 +176,7 @@ export default function PageAsk() {
                 <ChevronDown className="h-4 w-4" />
               </button>
             </header>
-            <div className="max-h-[45vh] space-y-4 overflow-y-auto p-3">
+            <div className="max-h-[45vh] space-y-4 overflow-y-auto overflow-x-hidden p-3">
               {messages.map((m) => (
                 <MessageView
                   key={m.id}
@@ -182,14 +187,14 @@ export default function PageAsk() {
               ))}
               {pendingUser && (
                 <div className="flex justify-end">
-                  <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg border border-accent/20 bg-accent/15 px-3.5 py-2 text-sm text-ink">
+                  <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg border border-border bg-border-soft px-3.5 py-2 text-sm text-ink">
                     {readable(pendingUser)}
                   </div>
                 </div>
               )}
               {live && <LiveMessage live={live} />}
               {error && (
-                <div role="alert" className="flex gap-2 rounded-lg border border-crit/35 bg-crit-bg p-3 text-sm text-ink">
+                <div role="alert" className="flex gap-2 rounded-lg border border-crit-soft bg-crit-bg p-3 text-sm text-ink">
                   <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-crit" aria-hidden />
                   <span>{error}</span>
                 </div>
@@ -213,8 +218,8 @@ export default function PageAsk() {
         )}
 
         {shownChips.length > 0 && !live && (
-          <ul className="mb-2 flex flex-wrap gap-2" data-testid="page-ask-chips">
-            {shownChips.map((c) => (
+          <ul className="mb-2 flex flex-wrap gap-2 max-md:max-h-[4.5rem] max-md:overflow-y-auto" data-testid="page-ask-chips">
+            {unique(shownChips).map((c) => (
               <li key={c.prompt}>
                 <button
                   type="button"
@@ -222,7 +227,7 @@ export default function PageAsk() {
                   disabled={waiting}
                   title={c.prompt}
                   data-testid="page-ask-chip"
-                  className="rounded-full border border-border px-3 py-1 text-xs text-ink-soft transition-colors hover:border-accent/60 hover:text-ink disabled:opacity-40"
+                  className="rounded-full border border-border px-3 py-1 text-xs text-ink-soft transition-colors hover:border-ink-faint hover:text-ink disabled:opacity-40"
                 >
                   {c.label}
                 </button>

@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { PanelRight, Plus, Search } from "lucide-react";
+import { Menu, PanelRight, Plus, Search } from "lucide-react";
 import { getToken, getUser } from "@/lib/api";
 import { hasWorkspace } from "@/lib/nav";
 import { roleLanding } from "@/lib/roles";
@@ -88,7 +88,7 @@ function ResizeHandle({ width, onChange, onCommit }: { width: number; onChange: 
         onChange(w);
         onCommit(w);
       }}
-      className="group relative hidden w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-accent/60 focus-visible:bg-accent focus-visible:outline-none lg:block"
+      className="group relative hidden w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-ink-faint focus-visible:bg-accent focus-visible:outline-none lg:block"
     >
       <span aria-hidden className="absolute inset-y-0 -left-1.5 -right-1.5" />
     </div>
@@ -99,6 +99,10 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { threads, threadsLoaded, mention, askAstra, goThread, goHome, pane, openView, focus, sheetHidden, setSheetHidden } = useWorkspace();
   const [width, setWidth] = useState<number | null>(null);
+  // Below md the rail is a drawer behind a menu button in the header.
+  const [railOpen, setRailOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const railWasOpen = useRef(false);
 
   useEffect(() => {
     setWidth(clampWidth(readWidth() ?? defaultWidth()));
@@ -108,6 +112,31 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   }, []);
   const commit = useCallback((w: number) => saveWidth(w), []);
 
+  // A conversation or a view chosen from the drawer closes it.
+  useEffect(() => setRailOpen(false), [pathname, pane?.route]);
+  useEffect(() => {
+    if (!railOpen) {
+      if (railWasOpen.current) menuButton.current?.focus();
+      railWasOpen.current = false;
+      return;
+    }
+    railWasOpen.current = true;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRailOpen(false);
+    };
+    const onResize = () => {
+      if (window.matchMedia("(min-width: 768px)").matches) setRailOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
+    // Focus moves into the drawer, to its first control.
+    requestAnimationFrame(() => document.querySelector<HTMLElement>("#astra-rail button")?.focus());
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [railOpen]);
+
   const threadId = pathname.startsWith("/workspace/") ? pathname.slice("/workspace/".length) : null;
   const activeThread = threadId ? threads.find((t) => t.id === threadId) : null;
 
@@ -116,7 +145,16 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-paper text-ink">
-      <div className="hidden w-[260px] shrink-0 border-r border-border md:block">
+      {railOpen && (
+        <div aria-hidden className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setRailOpen(false)} />
+      )}
+      {/* From md a column; below it a drawer, off screen and out of the tab order when shut. */}
+      <div
+        id="astra-rail"
+        className={`fixed inset-y-0 left-0 z-50 w-[260px] max-w-[85vw] border-r border-border bg-paper transition-[transform,visibility] duration-200 motion-reduce:transition-none md:static md:z-auto md:max-w-none md:shrink-0 md:translate-x-0 md:visible ${
+          railOpen ? "visible translate-x-0 shadow-lift" : "invisible -translate-x-full"
+        }`}
+      >
         <Rail
           threads={threads}
           threadsLoaded={threadsLoaded}
@@ -137,7 +175,19 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
           paneOpen && !focus ? "lg:min-w-[340px]" : ""
         }`}
       >
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2 md:px-4">
+          <button
+            ref={menuButton}
+            type="button"
+            onClick={() => setRailOpen(true)}
+            data-testid="rail-menu"
+            aria-label="Open conversations and views"
+            aria-expanded={railOpen}
+            aria-controls="astra-rail"
+            className="flex items-center rounded p-1.5 text-ink-muted hover:bg-border-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:hidden"
+          >
+            <Menu className="h-4 w-4" aria-hidden />
+          </button>
           <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
             {threadId ? activeThread?.title || "Conversation" : "New conversation"}
           </h1>

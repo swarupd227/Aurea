@@ -85,7 +85,7 @@ class PaneBoundary extends Component<{ children: ReactNode; route: string }, { f
   render() {
     if (!this.state.failed) return this.props.children;
     return (
-      <div role="alert" className="flex gap-2 rounded-lg border border-crit/35 bg-crit-bg p-3 text-sm text-ink">
+      <div role="alert" className="flex gap-2 rounded-lg border border-crit-soft bg-crit-bg p-3 text-sm text-ink">
         <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-crit" aria-hidden />
         <span>{this.state.failed}</span>
       </div>

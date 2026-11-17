@@ -8,10 +8,10 @@ import { streamSSE } from "@/lib/stream";
 import { money } from "@/lib/format";
 
 const SIGNAL: Record<string, { label: string; icon: any; cls: string }> = {
-  concentration: { label: "Concentration risk", icon: AlertTriangle, cls: "text-critical bg-critical/10" },
-  loss_harvest: { label: "Tax-loss harvest", icon: TrendingDown, cls: "text-positive bg-positive/10" },
-  idle_cash: { label: "Cash drag", icon: Coins, cls: "text-caution bg-caution/10" },
-  goal_gap: { label: "Goal off-track", icon: Target, cls: "text-caution bg-caution/10" },
+  concentration: { label: "Concentration risk", icon: AlertTriangle, cls: "text-crit bg-crit-bg" },
+  loss_harvest: { label: "Tax-loss harvest", icon: TrendingDown, cls: "text-ok bg-ok-bg" },
+  idle_cash: { label: "Cash drag", icon: Coins, cls: "text-warn bg-warn-bg" },
+  goal_gap: { label: "Goal off-track", icon: Target, cls: "text-warn bg-warn-bg" },
   intergenerational: { label: "Next-gen engagement", icon: Users2, cls: "text-info bg-info-bg" },
   insight: { label: "Insight", icon: Sparkles, cls: "text-ink-soft bg-border-soft" },
 };
@@ -75,7 +75,7 @@ export default function BookScan({
 
       <div className="p-4">
         {error ? (
-          <div className="text-sm text-critical">{error}</div>
+          <div className="text-sm text-crit">{error}</div>
         ) : !result ? (
           /* ── Live sweep ── */
           <div className="grid cq-md:grid-cols-3 gap-4">
@@ -93,13 +93,13 @@ export default function BookScan({
               <div className="mt-3 space-y-1">
                 {recent.map((r, i) => (
                   <div key={i} className="flex items-center justify-between text-xs text-ink-muted">
-                    <span className="flex items-center gap-1.5"><CheckCircle2 size={12} className="text-positive" /> {r.name}</span>
+                    <span className="flex items-center gap-1.5"><CheckCircle2 size={12} className="text-ok" /> {r.name}</span>
                     <span>{r.found} signal{r.found === 1 ? "" : "s"}</span>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="rounded-lg bg-paper/40 border border-border p-3">
+            <div className="rounded-lg bg-paper border border-border p-3">
               <div className="text-2xl font-bold text-ink tabular-nums">{detected}</div>
               <div className="text-xs text-ink-muted mb-2">signals so far</div>
               <div className="flex flex-wrap gap-1">
@@ -137,7 +137,7 @@ export default function BookScan({
                 const m = meta(it.signal); const Icon = m.icon;
                 return (
                   <Link key={it.id} href={`/studio/review?rec=${it.id}`}
-                    className="flex items-start gap-3 p-3 hover:bg-border-soft/60 transition-colors">
+                    className="flex items-start gap-3 p-3 hover:bg-border-soft transition-colors">
                     <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${m.cls}`}><Icon size={14} /></span>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-ink">{it.title}</div>
@@ -167,7 +167,7 @@ export default function BookScan({
 
 function Tile({ label, value, sub, accent }: any) {
   return (
-    <div className="rounded-lg border border-border bg-paper/40 p-3">
+    <div className="rounded-lg border border-border bg-paper p-3">
       <div className="text-[11px] uppercase tracking-wide text-ink-muted">{label}</div>
       <div className="text-xl font-semibold tabular-nums text-ink">{value}</div>
       {sub && <div className="text-[11px] text-ink-muted mt-0.5">{sub}</div>}

@@ -39,7 +39,7 @@ export function MeetingsView() {
           {data.map((m) => (
             <li key={m.id}>
               <ViewLink href={`/studio/meetings/${m.id}`} data-testid="meeting-row"
-                className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-border-soft/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
+                className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-border-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
                 <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-border-soft text-ink-soft"><CalendarClock size={16} /></span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-ink">{m.title}</span>
@@ -72,7 +72,7 @@ function NewMeeting({ onClose, onCreated }: { onClose: () => void; onCreated: ()
     finally { setBusy(false); }
   }
   return (
-    <div className="fixed inset-0 bg-ink/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="card p-6 w-full max-w-md" role="dialog" aria-label="New meeting" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-ink mb-4">New meeting</h3>
         <div className="space-y-3">

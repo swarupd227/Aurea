@@ -145,7 +145,7 @@ export default function LoginPage() {
                   autoFocus
                 />
               </div>
-              {error && <div className="text-sm text-critical bg-critical/5 rounded-lg px-3 py-2">{error}</div>}
+              {error && <div className="text-sm text-crit bg-crit-bg rounded-lg px-3 py-2">{error}</div>}
               <button className="btn-primary w-full" disabled={busy || mfaCode.length < 6}>
                 {busy ? "Verifying…" : "Verify"}
               </button>
@@ -216,7 +216,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            {error && <div className="text-sm text-critical bg-critical/5 rounded-lg px-3 py-2">{error}</div>}
+            {error && <div className="text-sm text-crit bg-crit-bg rounded-lg px-3 py-2">{error}</div>}
             <button className="btn-primary w-full" disabled={busy} data-testid="login-submit">
               {busy ? "Signing in…" : "Sign in"}
             </button>

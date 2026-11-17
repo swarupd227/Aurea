@@ -74,11 +74,11 @@ export default function Foundation() {
           return (
             <Card key={p.key}>
               <div className="flex items-start gap-3">
-                <span className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${strong ? "bg-positive/10 text-positive" : "bg-caution/10 text-caution"}`}><Icon size={20} /></span>
+                <span className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${strong ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn"}`}><Icon size={20} /></span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-ink">{p.title}</h3>
-                    <span className={`chip ${strong ? "bg-positive/10 text-positive" : "bg-caution/10 text-caution"}`}>
+                    <span className={`chip ${strong ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn"}`}>
                       {strong ? <><CheckCircle2 size={11} /> Inherited</> : <><AlertTriangle size={11} /> {p.status === "attention" ? "Attention" : "Partial"}</>}
                     </span>
                   </div>
@@ -111,7 +111,7 @@ export default function Foundation() {
               <div className="flex flex-wrap gap-2 mt-1">
                 {CATS.map((c) => (
                   <button key={c} onClick={() => toggleCat(c)} disabled={!!lock("pii_categories")}
-                    className={`chip ${(cfg.pii_categories || []).includes(c) ? "bg-navy-800 text-white" : "bg-navy-50 text-ink-muted"}`}>{c}</button>
+                    className={`chip ${(cfg.pii_categories || []).includes(c) ? "bg-ink text-paper" : "bg-border-soft text-ink-muted"}`}>{c}</button>
                 ))}
               </div>
             </div>
@@ -126,7 +126,7 @@ export default function Foundation() {
 
           <Group title="Eval & quality gates" icon={CheckCircle2}>
             <Toggle label="Block model/config change unless gates green" v={cfg.enforce_eval_gate} on={(b) => set("enforce_eval_gate", b)} locked={lock("enforce_eval_gate")} />
-            <div className="text-xs text-ink-muted">Gates now: <b className={ev.all_green ? "text-positive" : "text-caution"}>{ev.passed}/{ev.total} green</b></div>
+            <div className="text-xs text-ink-muted">Gates now: <b className={ev.all_green ? "text-ok" : "text-warn"}>{ev.passed}/{ev.total} green</b></div>
           </Group>
 
           <Group title="Grounding & context" icon={BookOpen}>
@@ -162,14 +162,14 @@ export default function Foundation() {
         <Card>
           <div className="flex items-center justify-between mb-3">
             <div className="font-semibold text-ink flex items-center gap-2"><CheckCircle2 size={17} /> Eval gates · {ev.agent}</div>
-            <span className={`chip ${ev.all_green ? "bg-positive/10 text-positive" : "bg-caution/10 text-caution"}`}>{ev.passed}/{ev.total} green</span>
+            <span className={`chip ${ev.all_green ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn"}`}>{ev.passed}/{ev.total} green</span>
           </div>
           <div className="space-y-1.5">
             {(ev.cases || []).map((c: any) => (
               <div key={c.key} className="flex items-center gap-2 text-sm">
-                {c.passed ? <CheckCircle2 size={14} className="text-positive shrink-0" /> : <AlertTriangle size={14} className="text-critical shrink-0" />}
+                {c.passed ? <CheckCircle2 size={14} className="text-ok shrink-0" /> : <AlertTriangle size={14} className="text-crit shrink-0" />}
                 <span className="text-ink-soft">{c.name}</span>
-                <span className="chip bg-navy-50 text-ink-muted ml-auto">{c.category}</span>
+                <span className="chip bg-border-soft text-ink-muted ml-auto">{c.category}</span>
               </div>
             ))}
           </div>
@@ -187,7 +187,7 @@ function AIGovernancePanel() {
   if (!data) return null;
 
   const TIER_COLOR: Record<string, string> = {
-    high: "bg-critical/10 text-critical", medium: "bg-caution/10 text-caution", low: "bg-navy-50 text-ink-muted",
+    high: "bg-crit-bg text-crit", medium: "bg-warn-bg text-warn", low: "bg-border-soft text-ink-muted",
   };
 
   async function markReviewed(id: string) {
@@ -211,17 +211,17 @@ function AIGovernancePanel() {
       <p className="text-xs text-ink-muted mb-3">
         Every agent and high-stakes tool, with its owner and risk tier.
       </p>
-      <div className="divide-y divide-navy-50 max-h-96 overflow-y-auto">
+      <div className="divide-y divide-border-soft max-h-96 overflow-y-auto">
         {(useCases?.items || []).map((u: any) => (
           <div key={u.id} className="py-2.5 flex items-center gap-3">
             {overdueKeys.has(u.use_case_key)
-              ? <AlertTriangle size={15} className="text-caution shrink-0" />
-              : <CheckCircle2 size={15} className="text-positive shrink-0" />}
+              ? <AlertTriangle size={15} className="text-warn shrink-0" />
+              : <CheckCircle2 size={15} className="text-ok shrink-0" />}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-medium text-ink text-sm">{u.name}</span>
                 <span className={`chip ${TIER_COLOR[u.risk_tier]}`}>{u.risk_tier}</span>
-                <span className="chip bg-navy-50 text-ink-muted">{u.category}</span>
+                <span className="chip bg-border-soft text-ink-muted">{u.category}</span>
               </div>
               <div className="text-xs text-ink-muted mt-0.5">
                 {u.owner} · {u.last_reviewed_at ? `reviewed ${u.last_reviewed_at.slice(0, 10)}` : "never reviewed"}
@@ -234,7 +234,7 @@ function AIGovernancePanel() {
         ))}
       </div>
       {data.recent_changes.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-navy-50">
+        <div className="mt-3 pt-3 border-t border-border-soft">
           <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-1.5">Recent changes</div>
           {data.recent_changes.slice(0, 5).map((c: any, i: number) => (
             <div key={i} className="text-xs text-ink-muted py-0.5">
@@ -286,7 +286,7 @@ function PerAgentOverrides({ firmPolicy }: { firmPolicy: any }) {
     <Card className="mb-6">
       <div className="font-semibold text-ink mb-1 flex items-center gap-2"><Cpu size={17} /> Per-agent overrides</div>
       <p className="text-xs text-ink-muted mb-3">Tune any agent independently — blank fields inherit the firm policy above.</p>
-      <div className="divide-y divide-navy-50">
+      <div className="divide-y divide-border-soft">
         {cat.map((a) => {
           const ov = byKey[a.agent_key] || {};
           const n = Object.keys(ov).length;
@@ -295,8 +295,8 @@ function PerAgentOverrides({ firmPolicy }: { firmPolicy: any }) {
             <div key={a.agent_key} className="py-2">
               <button onClick={() => edit(a.agent_key)} className="w-full flex items-center gap-2 text-left">
                 <span className="text-sm font-medium text-ink flex-1">{a.name}</span>
-                {n > 0 ? <span className="chip bg-gold-soft/40 text-gold-dark">{n} override{n > 1 ? "s" : ""}</span>
-                       : <span className="chip bg-navy-50 text-ink-muted">inherits firm</span>}
+                {n > 0 ? <span className="chip bg-info-bg text-info">{n} override{n > 1 ? "s" : ""}</span>
+                       : <span className="chip bg-border-soft text-ink-muted">inherits firm</span>}
                 <span className="text-xs text-ink-muted">{isOpen ? "Close" : "Edit"}</span>
               </button>
               {isOpen && (
@@ -388,7 +388,7 @@ function CmaPanel() {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-navy-100">
+            <tr className="border-b border-border">
               <th className="text-left py-1.5 pr-4 text-ink-muted font-medium">Asset class</th>
               <th className="text-left py-1.5 pr-4 text-ink-muted font-medium">Expected return %</th>
               <th className="text-left py-1.5 text-ink-muted font-medium">Volatility %</th>
@@ -399,10 +399,10 @@ function CmaPanel() {
               const [r, v] = draft[cls] || ["", ""];
               const isOverridden = data.overrides?.[cls] != null;
               return (
-                <tr key={cls} className="border-b border-navy-50 last:border-0">
+                <tr key={cls} className="border-b border-border-soft last:border-0">
                   <td className="py-1.5 pr-4 text-ink font-medium">
                     {CMA_LABELS[cls]}
-                    {isOverridden && <span className="ml-2 chip bg-gold-100 text-gold-700 text-[10px]">overridden</span>}
+                    {isOverridden && <span className="ml-2 chip bg-info-bg text-info text-[10px]">overridden</span>}
                   </td>
                   <td className="py-1.5 pr-4">
                     <input type="number" step="0.1" className="input w-24 text-sm" value={r}
@@ -438,8 +438,8 @@ function Toggle({ label, v, on, locked }: { label: string; v: boolean; on: (b: b
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-sm text-ink-soft">{label} <Owner who={locked} /></span>
-      <button onClick={() => on(!v)} disabled={!!locked} className={`h-6 w-11 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${v ? "bg-positive" : "bg-navy-200"}`}>
-        <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-all ${v ? "left-6" : "left-1"}`} />
+      <button onClick={() => on(!v)} disabled={!!locked} className={`h-6 w-11 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${v ? "bg-ok" : "bg-border"}`}>
+        <span className={`absolute top-1 h-4 w-4 rounded-full bg-ink shadow-sm transition-all ${v ? "left-6" : "left-1"}`} />
       </button>
     </div>
   );
@@ -454,7 +454,7 @@ function Num({ label, v, on, step = 1, locked }: { label: string; v: number; on:
 }
 function Stat({ label, value }: { label: string; value: any }) {
   return (
-    <div className="rounded-lg border border-navy-100 bg-surface p-3">
+    <div className="rounded-lg border border-border bg-surface p-3">
       <div className="text-[11px] uppercase tracking-wide text-ink-muted">{label}</div>
       <div className="text-lg font-semibold text-ink tabular-nums">{value}</div>
     </div>
@@ -470,7 +470,7 @@ function Mix({ title, data, total }: { title: string; data: Record<string, numbe
         {entries.map(([k, n]) => (
           <div key={k} className="flex items-center gap-2 text-xs">
             <span className="text-ink-soft w-40 truncate">{k.replace(/_/g, " ")}</span>
-            <div className="flex-1 h-2 rounded-full bg-navy-50 overflow-hidden"><div className="h-full bg-navy-400" style={{ width: `${total ? (n / total) * 100 : 0}%` }} /></div>
+            <div className="flex-1 h-2 rounded-full bg-border-soft overflow-hidden"><div className="h-full bg-ink-muted" style={{ width: `${total ? (n / total) * 100 : 0}%` }} /></div>
             <span className="text-ink-muted tabular-nums w-8 text-right">{n}</span>
           </div>
         ))}

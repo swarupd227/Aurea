@@ -39,7 +39,7 @@ export function MonitoringView() {
                   <td className="px-4 py-2 font-mono text-xs text-ink-muted">{reviewDay(i.detected_on)}</td>
                   <td className="px-4 py-2 text-xs">
                     {i.reported_on ? <span className="chip text-ok">{i.clock.regime?.report ?? "report"} {i.report_reference}</span>
-                      : i.clock.due ? <span className={`chip ${i.clock.days_left <= 7 ? "text-critical" : "text-warn"}`}>{reviewDay(i.clock.due)} · {i.clock.days_left}d</span>
+                      : i.clock.due ? <span className={`chip ${i.clock.days_left <= 7 ? "text-crit" : "text-warn"}`}>{reviewDay(i.clock.due)} · {i.clock.days_left}d</span>
                       : <span className="chip text-ink-muted">{i.clock.regime ? "suspicion not recorded" : "no clock for this market"}</span>}
                   </td>
                   <td className="px-4 py-2"><div className="flex flex-wrap gap-1">{i.steps.map((st: any, n: number) => <span key={n} className="chip text-ink-muted">{st.step.replace(/_/g, " ")}</span>)}</div></td>
@@ -61,7 +61,7 @@ export function MonitoringView() {
                   <td className="px-4 py-2 text-xs text-ink">{a.label}</td>
                   <td className="px-4 py-2"><div className="flex flex-wrap gap-1">{Object.entries(a.figures).filter(([, v]) => v != null).map(([k, v]) => <span key={k} className="chip font-mono text-[11px]">{k.replace(/_/g, " ")} {MONEY.has(k) ? money(v as number) : String(v)}</span>)}</div></td>
                   <td className="px-4 py-2 font-mono text-xs text-ink-muted">{reviewDay(a.last_on)}</td>
-                  <td className="px-4 py-2">{a.decision ? <span className={`chip ${a.decision.decision === "escalated" ? "text-warn" : "text-ink-muted"}`}>{a.decision.decision}</span> : <span className="chip text-critical">open</span>}</td>
+                  <td className="px-4 py-2">{a.decision ? <span className={`chip ${a.decision.decision === "escalated" ? "text-warn" : "text-ink-muted"}`}>{a.decision.decision}</span> : <span className="chip text-crit">open</span>}</td>
                 </tr>
               ))}
             </tbody>

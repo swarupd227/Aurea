@@ -234,7 +234,7 @@ function Page({ householdId }: { householdId: string | null }) {
             <div className="mt-4 border-t border-border-soft pt-3">
               <div className="tile-label mb-1.5 flex items-center gap-1"><Leaf size={12} aria-hidden /> Values</div>
               <div className="flex flex-wrap gap-1.5">
-                {view.values.themes.map((t: string) => <span key={t} className="chip bg-ok/10 text-ok">{titleCase(t)}</span>)}
+                {view.values.themes.map((t: string) => <span key={t} className="chip bg-ok-bg text-ok">{titleCase(t)}</span>)}
               </div>
             </div>
           )}
@@ -349,7 +349,7 @@ function Page({ householdId }: { householdId: string | null }) {
       {client && (
         <Card className="mb-4" data-testid="canvas-requests">
           <div className="mb-3 text-sm font-medium text-ink">Requests</div>
-          {requestDone ? <span className="chip bg-ok/10 text-ok">sent to your adviser</span> : (
+          {requestDone ? <span className="chip bg-ok-bg text-ok">sent to your adviser</span> : (
             <div className="flex flex-wrap gap-2">
               <button className="btn-outline text-sm" disabled={requestBusy} onClick={() => sendRequest("meeting")}><CalendarPlus size={15} aria-hidden /> Request a meeting</button>
               <button className="btn-outline text-sm" disabled={requestBusy} onClick={() => sendRequest("goal_update")}><Target size={15} aria-hidden /> Update my goals</button>

@@ -7,6 +7,7 @@ import { clearSession, getUser } from "@/lib/api";
 import { moreViews, pinnedViews } from "@/lib/nav";
 import { matchPaneView } from "@/lib/paneViews";
 import RoleSwitcher from "@/components/RoleSwitcher";
+import { BrandMark } from "@/components/BrandMark";
 import { fetchMentionables, fetchNeedsYou } from "../api";
 import type { Mentionable, NeedsYou, ThreadSummary } from "../types";
 
@@ -129,14 +130,9 @@ export function Rail({
   const needsYouTotal = waitingThreads.length + (needsYou?.needs_decision_count ?? 0) + proposalsTotal;
 
   return (
-    <nav className="flex h-full min-h-0 flex-col bg-surface/60" aria-label="Astra" data-testid="astra-rail">
+    <nav className="flex h-full min-h-0 flex-col bg-surface" aria-label="Astra" data-testid="astra-rail">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
-        <div
-          aria-hidden
-          className="flex h-6 w-6 items-center justify-center rounded bg-accent font-mono text-[11px] font-bold text-black"
-        >
-          A
-        </div>
+        <BrandMark accent={user?.firm?.branding?.accent} />
         <span className="truncate text-[15px] font-semibold tracking-tight text-ink" data-testid="app-name">Astra for Wealth</span>
       </div>
 
@@ -146,7 +142,7 @@ export function Rail({
           onClick={onHome ?? onNew}
           data-testid="rail-home"
           aria-current={view === "home" ? "page" : undefined}
-          className={`${rowBase} ${view === "home" ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60"}`}
+          className={`${rowBase} ${view === "home" ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft"}`}
         >
           <House className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden /> Home
         </button>
@@ -182,7 +178,7 @@ export function Rail({
                 </li>
               ))}
               {items.slice(0, 6).map((item) => (
-                <li key={item.id} className="rounded px-2 py-1.5 hover:bg-border-soft/60">
+                <li key={item.id} className="rounded px-2 py-1.5 hover:bg-border-soft">
                   <div className="flex items-start gap-2">
                     <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-crit" />
                     <div className="min-w-0 flex-1">
@@ -255,7 +251,7 @@ export function Rail({
                         ? open("/studio/review")
                         : onAsk("What proposals are waiting for my decision, most urgent first?")
                     }
-                    className={`${rowBase} text-xs text-ink-muted hover:bg-border-soft/60 hover:text-ink`}
+                    className={`${rowBase} text-xs text-ink-muted hover:bg-border-soft hover:text-ink`}
                   >
                     {proposalsTotal - Math.min(proposals.length, 5)} more proposals
                     <ChevronRight className="ml-auto h-3.5 w-3.5" aria-hidden />
@@ -280,7 +276,7 @@ export function Rail({
                     onClick={() => onSelect(t.id)}
                     aria-current={t.id === activeId ? "page" : undefined}
                     className={`${rowBase} ${
-                      t.id === activeId ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60"
+                      t.id === activeId ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft"
                     }`}
                   >
                     <span className="truncate">{t.title || "Conversation"}</span>
@@ -296,7 +292,7 @@ export function Rail({
                     type="button"
                     onClick={() => setShowAllThreads((v) => !v)}
                     data-testid="rail-all-conversations"
-                    className={`${rowBase} text-xs text-ink-muted hover:bg-border-soft/60 hover:text-ink`}
+                    className={`${rowBase} text-xs text-ink-muted hover:bg-border-soft hover:text-ink`}
                   >
                     {showAllThreads ? "Show fewer" : `All ${threads.length} conversations`}
                   </button>
@@ -318,7 +314,7 @@ export function Rail({
                     onClick={() => open(v.href)}
                     aria-current={here ? "page" : undefined}
                     data-pane={matchPaneView(v.href) ? "true" : undefined}
-                    className={`${rowBase} ${here ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60 hover:text-ink"}`}
+                    className={`${rowBase} ${here ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft hover:text-ink"}`}
                   >
                     <Icon className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
                     <span className="truncate">{v.label}</span>
@@ -331,7 +327,7 @@ export function Rail({
           {more.length > 0 && (
             <details className="group" data-testid="rail-more-views">
               <summary
-                className={`${rowBase} cursor-pointer list-none text-xs text-ink-muted hover:bg-border-soft/60 hover:text-ink [&::-webkit-details-marker]:hidden`}
+                className={`${rowBase} cursor-pointer list-none text-xs text-ink-muted hover:bg-border-soft hover:text-ink [&::-webkit-details-marker]:hidden`}
               >
                 <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" aria-hidden />
                 More views
@@ -349,7 +345,7 @@ export function Rail({
                             onClick={() => open(v.href)}
                             aria-current={openPath === v.href ? "page" : undefined}
                             className={`${rowBase} ${
-                              openPath === v.href ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft/60 hover:text-ink"
+                              openPath === v.href ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft hover:text-ink"
                             }`}
                           >
                             <span className="truncate pl-1">{v.label}</span>
@@ -377,7 +373,7 @@ export function Rail({
                     type="button"
                     onClick={() => onMention(a.name)}
                     title={`Mention @${a.name} in your message`}
-                    className={`${rowBase} text-ink-soft hover:bg-border-soft/60`}
+                    className={`${rowBase} text-ink-soft hover:bg-border-soft`}
                   >
                     <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" />
                     <span className="truncate">{a.name}</span>
@@ -394,7 +390,7 @@ export function Rail({
         <button
           type="button"
           onClick={() => window.dispatchEvent(new Event("astra:open-palette"))}
-          className={`${rowBase} text-ink-soft hover:bg-border-soft/60 hover:text-ink`}
+          className={`${rowBase} text-ink-soft hover:bg-border-soft hover:text-ink`}
         >
           <Search className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden /> Search
           <kbd className="ml-auto font-mono text-[10px] text-ink-muted">{shortcutLabel}</kbd>

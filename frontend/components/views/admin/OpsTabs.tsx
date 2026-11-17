@@ -386,7 +386,7 @@ export function NotificationsTab() {
                             aria-checked={!!cell.enabled}
                             aria-label={`${ev.label} by ${ch.label}`}
                             data-testid={`admin-notif-${ev.key}-${ch.key}`}
-                            className={`relative h-5 w-9 rounded-full border transition-colors ${cell.enabled ? "border-ok/40 bg-ok/30" : "border-border bg-border-soft"}`}
+                            className={`relative h-5 w-9 rounded-full border transition-colors ${cell.enabled ? "border-ok-soft bg-ok-bg" : "border-border bg-border-soft"}`}
                           >
                             <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-all ${cell.enabled ? "left-4 bg-ok" : "left-0.5 bg-ink-muted"}`} />
                           </button>

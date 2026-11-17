@@ -8,7 +8,7 @@ export function MonitoringCard({ result }: { result: any }) {
         <div className="flex gap-1.5">
           <span className={`chip ${s.open_alerts ? "text-warn" : "text-ok"}`}>{s.open_alerts} open</span>
           <span className="chip">{s.open_investigations} investigation(s)</span>
-          {s.reports_due_7_days > 0 && <span className="chip text-critical">{s.reports_due_7_days} report(s) due in 7d</span>}
+          {s.reports_due_7_days > 0 && <span className="chip text-crit">{s.reports_due_7_days} report(s) due in 7d</span>}
         </div>
       </div>
       {open.length > 0 && (

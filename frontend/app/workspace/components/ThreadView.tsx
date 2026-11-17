@@ -120,7 +120,7 @@ export function ThreadView({
                       <button
                         type="button"
                         onClick={() => onSend(s.prompt)}
-                        className="h-full w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-left text-sm text-ink hover:border-accent/60 transition-colors"
+                        className="h-full w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-left text-sm text-ink hover:border-ink-faint transition-colors"
                       >
                         <span className="text-ink-muted">&ldquo;</span>
                         {s.prompt}
@@ -139,7 +139,7 @@ export function ThreadView({
 
           {pendingUser && (
             <div className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent/15 border border-accent/20 px-3.5 py-2 text-sm text-ink">
+              <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-border-soft border border-border px-3.5 py-2 text-sm text-ink">
                 {readable(pendingUser)}
               </div>
             </div>
@@ -153,7 +153,7 @@ export function ThreadView({
           )}
 
           {error && (
-            <div role="alert" className="flex gap-2 rounded-lg border border-crit/35 bg-crit-bg p-3 text-sm text-ink">
+            <div role="alert" className="flex gap-2 rounded-lg border border-crit-soft bg-crit-bg p-3 text-sm text-ink">
               <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-crit" aria-hidden />
               <span>{error}</span>
             </div>
@@ -162,7 +162,7 @@ export function ThreadView({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-border/60 bg-paper px-4 pb-4 pt-3 sm:px-6">
+      <div className="shrink-0 border-t border-border-soft bg-paper px-4 pb-4 pt-3 sm:px-6">
         <div className="mx-auto w-full max-w-3xl space-y-2">
           {suggestions.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -172,7 +172,7 @@ export function ThreadView({
                   type="button"
                   onClick={() => onSend(s)}
                   title={s}
-                  className="max-w-full truncate rounded-full border border-border px-3 py-1 text-xs text-ink-soft hover:border-accent/60 hover:text-ink transition-colors"
+                  className="max-w-full truncate rounded-full border border-border px-3 py-1 text-xs text-ink-soft hover:border-ink-faint hover:text-ink transition-colors"
                 >
                   {s}
                 </button>

@@ -136,7 +136,7 @@ export function AgentHistoryView() {
                     </thead>
                     <tbody className="divide-y divide-border-soft">
                       {dayRuns.map((r) => (
-                        <tr key={r.id} className="hover:bg-border-soft/40">
+                        <tr key={r.id} className="hover:bg-border-soft">
                           <td className="px-4 py-3 font-medium text-ink">{r.agent_key?.replace(/_/g, " ")}</td>
                           <td className="px-4 py-3 text-ink-muted">{r.trigger || "—"}</td>
                           <td className="px-4 py-3 text-ink-muted">{r.tier || "—"}</td>

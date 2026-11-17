@@ -6,7 +6,7 @@ import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { ViewHeader } from "./ViewHeader";
 
 const th = "px-4 py-2 font-medium";
-export const repaperTone: Record<string, string> = { consented: "text-ok", deemed_consent: "text-ok", objected: "text-critical", notice_bounced: "text-critical",
+export const repaperTone: Record<string, string> = { consented: "text-ok", deemed_consent: "text-ok", objected: "text-crit", notice_bounced: "text-crit",
   in_notice_period: "text-warn", awaiting_signature: "text-warn", not_sent: "text-ink-muted" };
 
 /** Bulk repapering: each campaign's consent rule, its dates, and where every household stands. */

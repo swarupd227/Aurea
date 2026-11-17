@@ -63,7 +63,10 @@ export function CommandPalette() {
     requestAnimationFrame(() => inputRef.current?.focus());
     fetchThreads().then((d) => setThreads(d.threads)).catch(() => {});
     api<any[]>("/api/core/households")
-      .then((rows) => setHouseholds((rows || []).map((h) => ({ id: String(h.id), name: String(h.name) }))))
+      .then((rows) => {
+        const all = (rows || []).map((h) => ({ id: String(h.id), name: String(h.name) }));
+        setHouseholds(all.filter((h, i) => all.findIndex((o) => o.id === h.id) === i));
+      })
       .catch(() => {});
   }, [open]);
 
@@ -128,7 +131,9 @@ export function CommandPalette() {
     const nav = [...views, ...clients];
     // A word or two that names somewhere to go: go there first, Astra second.
     const navFirst = !!q && !isSentence && nav.length > 0;
-    return navFirst ? [...nav, ...askItems, ...near, ...convs] : [...askItems, ...nav, ...near, ...convs];
+    const ordered = navFirst ? [...nav, ...askItems, ...near, ...convs] : [...askItems, ...nav, ...near, ...convs];
+    // Each row once: a row listed twice would share its key.
+    return ordered.filter((item, i) => ordered.findIndex((o) => o.key === item.key) === i);
   }, [q, query, role, ctx, households, threads, isSentence, router, ws]);
 
   if (!open) return null;

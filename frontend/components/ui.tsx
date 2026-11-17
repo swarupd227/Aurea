@@ -254,7 +254,7 @@ export function InlineConfirmButton({
     >
       <button
         data-main=""
-        className="btn-ghost text-xs text-critical"
+        className="btn-ghost px-2 py-0.5 text-xs text-crit"
         onClick={(e) => {
           const parent = e.currentTarget.closest(".group") as HTMLElement | null;
           const btn = parent?.querySelector("[data-confirm]") as HTMLElement | null;
@@ -267,7 +267,7 @@ export function InlineConfirmButton({
       <button
         data-confirm=""
         style={{ display: "none" }}
-        className="btn-ghost text-xs text-critical border border-critical/40 px-2 py-0.5 rounded"
+        className="btn-crit rounded-lg px-2 py-0.5 text-xs"
         onClick={onConfirm}
       >
         {confirmLabel}

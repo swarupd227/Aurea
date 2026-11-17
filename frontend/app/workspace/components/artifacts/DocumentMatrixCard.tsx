@@ -1,4 +1,4 @@
-const tone: Record<string, string> = { critical: "text-critical", high: "text-warn", medium: "text-ink-muted", low: "text-ink-muted" };
+const tone: Record<string, string> = { critical: "text-crit", high: "text-warn", medium: "text-ink-muted", low: "text-ink-muted" };
 
 export function DocumentMatrixCard({ result }: { result: any }) {
   const check = result.check;
@@ -7,14 +7,14 @@ export function DocumentMatrixCard({ result }: { result: any }) {
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3 py-2">
         <div className="text-sm font-medium text-ink">{check ? check.case ?? "Registration check" : "Document matrix"}</div>
         {check
-          ? <span className={`chip ${check.in_good_order ? "text-ok" : "text-critical"}`}>{check.in_good_order ? "in good order" : `${check.issues.length} issue(s)`}</span>
+          ? <span className={`chip ${check.in_good_order ? "text-ok" : "text-crit"}`}>{check.in_good_order ? "in good order" : `${check.issues.length} issue(s)`}</span>
           : <span className="chip">{result.registrations.length} registrations</span>}
       </div>
       {check ? (
         <div className="px-3 py-2 text-xs">
           <div className="mb-2 flex flex-wrap gap-1.5">
             <span className="chip">{check.registration_type.replace(/_/g, " ")}</span>
-            {check.requirements.documents.map((d: any) => <span key={d.key} className={`chip ${d.on_file ? "text-ok" : "text-critical"}`}>{d.label}</span>)}
+            {check.requirements.documents.map((d: any) => <span key={d.key} className={`chip ${d.on_file ? "text-ok" : "text-crit"}`}>{d.label}</span>)}
             {check.requirements.fields.map((f: any) => <span key={f.field} className={`chip ${f.value != null && f.value !== "" ? "text-ok" : "text-warn"}`}>{f.label}</span>)}
           </div>
           {check.issues.length > 0 && (

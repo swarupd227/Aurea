@@ -150,7 +150,7 @@ function Questionnaire({ householdId, initialSubject, canRecord }: { householdId
         {loading ? <SkeletonList count={3} /> : saved ? (
           <div className="flex flex-col items-center gap-3 py-8" data-testid="questionnaire-saved">
             <CheckCircle2 size={36} className="text-ok" aria-hidden />
-            <span className="chip bg-ok/10 text-ok">saved</span>
+            <span className="chip bg-ok-bg text-ok">saved</span>
             {nav.inPane && <ViewLink href={back} className="btn-outline text-sm">Back to the canvas</ViewLink>}
           </div>
         ) : loadError || !schema.length ? (
@@ -189,7 +189,7 @@ function Questionnaire({ householdId, initialSubject, canRecord }: { householdId
               </fieldset>
             ))}
 
-            {saveError && <div role="alert" className="rounded-lg border border-crit/35 bg-crit-bg px-3 py-2 text-sm text-ink">{saveError}</div>}
+            {saveError && <div role="alert" className="rounded-lg border border-crit-soft bg-crit-bg px-3 py-2 text-sm text-ink">{saveError}</div>}
             {canRecord && (
               <div className="flex flex-wrap items-center gap-2">
                 <button type="submit" className="btn-primary" disabled={saving || !canSubmit || handed} data-testid="questionnaire-submit">
