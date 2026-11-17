@@ -29,7 +29,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import fees as fees_core
+from app.aurea_core import fees as fees_core, firm_time
 from app.aurea_core.pricing import PRIVATE_MAX_STALE_DAYS, price_basis
 from app.aurea_core.valuation import latest_prices
 from app.core.db import utcnow
@@ -165,7 +165,7 @@ def _check(code: str, severity: str, detail: str) -> dict:
 
 async def preview(session: AsyncSession, firm_id: uuid.UUID, *, as_of: date | None = None) -> dict:
     """What a billing run on `as_of` would charge, and what is wrong with it. Writes nothing."""
-    as_of = as_of or utcnow().date()
+    as_of = as_of or await firm_time.today_of(session, firm_id)   # the period ends on the firm's day
 
     arrangements = (await session.execute(
         select(FeeArrangement).where(FeeArrangement.firm_id == firm_id, FeeArrangement.status == "active")

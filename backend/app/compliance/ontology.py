@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.aurea_core import markets
+
 
 @dataclass(frozen=True)
 class Rule:
@@ -360,7 +362,9 @@ def _names(regulator: str, *words: str) -> bool:
 def framework_for(firm) -> Framework:
     """The regime for a firm, from its jurisdiction and regulator. NO_REGIME when neither names one."""
     reg = (getattr(firm, "regulator", "") or "").upper()
-    juris = (getattr(firm, "jurisdiction", "") or "NZ").strip().upper()
+    # Read as markets.py reads it, the one place a jurisdiction is resolved (GB is UK, India is IN, and an
+    # unset column is the column's own default). There is no default here of its own.
+    juris = markets.code(getattr(firm, "jurisdiction", None))
     if juris in ("IN", "INDIA") or _names(reg, "SEBI", "SECURITIES AND EXCHANGE BOARD OF INDIA"):
         return FRAMEWORKS["IN-SEBI"]
     if _names(reg, "FCA") or juris in ("UK", "GB", "UNITED KINGDOM"):

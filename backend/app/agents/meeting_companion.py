@@ -13,6 +13,7 @@ from datetime import date, timedelta
 from app.agents._common import firm_voice, narrate
 from app.llm.service import firm_llm_creds, llm_service
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import firm_time
 from app.core.db import utcnow
 from app.models.engagement import Meeting, Task
 from app.models.enums import AgentKey, AutonomyTier, MeetingStatus, TaskStatus
@@ -97,7 +98,7 @@ class MeetingCompanionAgent(BaseAgent):
                     proposed_goals.append({
                         "name": f"{kind.title()} goal", "kind": kind,
                         "target_amount": amount,
-                        "target_date": (date.today() + timedelta(days=365)).isoformat(),
+                        "target_date": (firm_time.today(ctx.firm) + timedelta(days=365)).isoformat(),
                     })
 
         notes = {"summary": summary[:5], "sentiment": sentiment,
@@ -186,7 +187,7 @@ class MeetingCompanionAgent(BaseAgent):
         for item in payload.get("action_items", []):
             t = Task(firm_id=ctx.firm.id, household_id=household_id,
                      meeting_id=payload.get("meeting_id"), title=item, source="meeting_companion",
-                     status=TaskStatus.OPEN, due_date=date.today() + timedelta(days=7),
+                     status=TaskStatus.OPEN, due_date=firm_time.today(ctx.firm) + timedelta(days=7),
                      subject_label=recommendation.subject_label)
             s.add(t)
             await s.flush()

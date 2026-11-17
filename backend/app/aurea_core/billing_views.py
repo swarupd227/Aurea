@@ -13,7 +13,8 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import billing_run
+from app.aurea_core import billing_run, firm_time
+from app.models.tenant import Firm
 from app.models.billing import BillingRun, Invoice
 from app.models.enums import RecommendationStatus
 from app.models.governance import Recommendation
@@ -91,9 +92,11 @@ async def overview(session: AsyncSession, firm_id: uuid.UUID) -> dict:
     issued = (await session.execute(
         select(Invoice).where(Invoice.firm_id == firm_id, Invoice.status.in_(("issued", "debited", "credited"))
                               | (Invoice.kind == "credit_note")))).scalars().all()
-    year = date.today().year
+    # This year and an invoice's year are both the firm's, not the server's.
+    firm = await session.get(Firm, firm_id)
+    year = firm_time.today(firm).year
     for i in issued:
-        if i.issued_at and i.issued_at.year == year:
+        if i.issued_at and firm_time.today(firm, i.issued_at).year == year:
             billed[i.currency] = round(billed.get(i.currency, 0.0) + float(i.amount), 2)
     return {
         "open_run": await run_view(session, open_run, with_invoices=True) if open_run else None,

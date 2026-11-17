@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents._signals import book_signals
 from app.atlas.base import Subject
 from app.atlas.runtime import AgentPausedError, run_agent
+from app.aurea_core import firm_time
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey
 from app.models.governance import Recommendation
@@ -28,9 +29,10 @@ async def scan_book_stream(session: AsyncSession, *, firm: Firm, agent_key: Agen
 
     detected = 0
     tally: dict[str, int] = {}
+    today = firm_time.today(firm)
     for i, h in enumerate(households):
         brain = await household_brain(session, h["id"], firm_id=firm.id)
-        sigs = book_signals(brain) if brain else []
+        sigs = book_signals(brain, today) if brain else []
         detected += len(sigs)
         for s in sigs:
             tally[s["kind"]] = tally.get(s["kind"], 0) + 1

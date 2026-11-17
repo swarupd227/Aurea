@@ -100,7 +100,9 @@ class ReverseChurningAgent(FollowUpOnApproval, BaseAgent):
         for item in sensed["flagged"]:
             brain = item["brain"]
             hh = brain["household"]
-            jurisdiction = (hh.get("values") or {}).get("jurisdiction") or ctx.firm.jurisdiction or "NZ"
+            # The household's own market, else its firm's; one with no market is named as none, not New Zealand.
+            market = markets.of_household(ctx.firm, hh.get("values"))
+            jurisdiction = market.code if market else None
             currency = markets.currency(jurisdiction, ctx.firm.base_currency)
 
             goals = brain.get("goals", [])
@@ -108,7 +110,7 @@ class ReverseChurningAgent(FollowUpOnApproval, BaseAgent):
 
             prompt = (
                 f"Draft a re-engagement check-in agenda for the adviser. "
-                f"Household: {hh['name']} | Jurisdiction: {jurisdiction}\n"
+                f"Household: {hh['name']} | Jurisdiction: {jurisdiction or 'not a supported market'}\n"
                 f"AUM: {currency} {item['aum']:,.0f} | "
                 f"Inactive for: {item['months_inactive']} months\n"
                 f"Last review or meeting on record: {item['last_active']}\n"

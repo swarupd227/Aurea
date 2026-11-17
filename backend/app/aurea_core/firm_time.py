@@ -37,6 +37,11 @@ def today(firm: Firm | None, now: datetime | None = None) -> date:
     return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone(zone(firm)).date()
 
 
+async def today_of(session, firm_id, now: datetime | None = None) -> date:
+    """`today` for a firm known only by its id. A firm that is not found is read as UTC, as `zone` reads None."""
+    return today(await session.get(Firm, firm_id) if firm_id else None, now)
+
+
 def spoken(day: date) -> str:
     """A date with its weekday, so a wrong "Friday" can be seen before anyone confirms it."""
     return f"{day:%A} {day.day} {day:%B %Y}"

@@ -296,7 +296,7 @@ async def end_item(session: AsyncSession, item_id: uuid.UUID, *, firm_id: uuid.U
                                  .execution_options(populate_existing=True))).scalar_one()
     if row.status != "current":
         raise BalanceSheetError("This item has already ended.")
-    row.status, row.ended_on, row.ended_by, row.ended_reason = "ended", utcnow().date(), by, ready["reason"]
+    row.status, row.ended_on, row.ended_by, row.ended_reason = "ended", await firm_time.today_of(session, firm_id), by, ready["reason"]
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="balance_item_ended", actor=by, content={
         "item_id": str(row.id), "household_id": str(row.household_id), "kind": row.kind, "name": row.name, "reason": ready["reason"],

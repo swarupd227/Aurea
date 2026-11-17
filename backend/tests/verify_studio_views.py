@@ -139,7 +139,7 @@ def figures_in_code() -> None:
     check("the FCA date nobody sourced is gone", hasattr(rc, "_uk_fca_targeted_support"), False)
 
     print("\n=== The tax view (B-120) ===")
-    gift = ti._us_gift_tracker(couple)
+    gift = ti._us_gift_tracker(couple, today=today)
     check("gifts count only the recipients on file", (gift["recipients_on_file"], gift["max_annual_exclusion_gifts"]), (1, 2 * 1 * 19_000))
     check("and say who is not", gift["not_on_file"], ["recipients outside the household"])
     check("the estate is read against the exclusion in force", gift["estate_exclusion"], 30_000_000)
@@ -148,15 +148,15 @@ def figures_in_code() -> None:
           (10_000_000, 250_000.0))
     check("the yield is named as assumed", div["assumed"]["equity_dividend_yield"], 0.025)
     saver = {"persons": [{"full_name": "Kai", "profile": {"tax": {"marginal_rate": 0.33, "kiwisaver_rate": 0.03, "annual_income": 80_000}}}]}
-    ks = ti._kiwisaver_optimisation(saver)["recommendations"][0]
+    ks = ti._kiwisaver_optimisation(saver, today=today)["recommendations"][0]
     check("no employer rate is assumed", (ks["employer_match_annual"], ks["not_on_file"]), (None, ["employer contribution rate"]))
     check("the government contribution is Budget 2025's, with its source", (ks["max_govt_topup"], ks["law"][1]["source"].startswith("Budget 2025")),
           (260.72, True))
     saver["persons"][0]["profile"]["tax"]["employer_contribution_rate"] = 0.035
-    check("a recorded employer rate is used", ti._kiwisaver_optimisation(saver)["recommendations"][0]["employer_match_annual"], 2800.0)
+    check("a recorded employer rate is used", ti._kiwisaver_optimisation(saver, today=today)["recommendations"][0]["employer_match_annual"], 2800.0)
     saver["persons"][0]["profile"]["tax"]["annual_income"] = 200_000
     check("above the income limit there is no government contribution",
-          ti._kiwisaver_optimisation(saver)["recommendations"][0]["max_govt_topup"], 0)
+          ti._kiwisaver_optimisation(saver, today=today)["recommendations"][0]["max_govt_topup"], 0)
 
     print("\n=== The behavioural draft claims nothing no tool established (B-120) ===")
     stressed = {"is_stressed": True, "drawdown_pct": -12.5}

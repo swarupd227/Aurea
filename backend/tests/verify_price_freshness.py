@@ -262,13 +262,20 @@ async def main() -> int:
 
                 print("\n=== The admin data-quality view reads the prices, not the connector clock ===")
                 from app.api import admin as admin_api
-                dq = await admin_api.get_data_quality(user=SimpleNamespace(role=UserRole.ADMIN), firm=firm, db=s)
+                # The admin view dates prices on the firm's own today (firm_time), so the clock is pinned to the
+                # test's fixed day: midnight UTC is already that day in Auckland. Read against the real clock, the
+                # ageing price went stale as the calendar moved on.
+                from app.aurea_core import firm_time
+                real_clock = firm_time.utcnow
+                firm_time.utcnow = lambda: datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
+                try:
+                    dq = await admin_api.get_data_quality(user=SimpleNamespace(role=UserRole.ADMIN), firm=firm, db=s)
+                finally:
+                    firm_time.utcnow = real_clock
                 h = dq["households"][0]
                 check("the household rests on a stale, a placeholder and a missing price",
                       h["untrusted_prices"], ["NOPRICE", "PPEF1", "STALE"])
-                # The admin view dates prices against the real clock, in UTC, not the test's fixed day.
-                check("its oldest price is named", (h["price_age_days"], h["stalest_symbol"]),
-                      ((utcnow().date() - (today - timedelta(days=290))).days, "PPEF1"))
+                check("its oldest price is named", (h["price_age_days"], h["stalest_symbol"]), (290, "PPEF1"))
                 check("an untrusted price makes it critical however recent the feed run", h["health"], "red")
 
                 print("\n=== The schedules the page shows are the ones the worker runs ===")

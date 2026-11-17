@@ -68,7 +68,9 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     entities_gov = [{"id": str(e.id), "name": e.name, "entity_type": e.entity_type,
                      "governance": e.governance or {}, "jurisdiction": e.jurisdiction} for e in entity_rows]
 
-    hh_jurisdiction = (brain["household"].get("values") or {}).get("jurisdiction") or firm.jurisdiction or "NZ"
+    # The household's own market, else its firm's. A market with no rules here gets no country's law.
+    market = markets.of_household(firm, brain["household"].get("values"))
+    hh_jurisdiction = market.code if market else None
     totals = brain.get("totals", {})
     total_value = totals.get("total_value", 0) or 0
     wealth_breakdown = {cls: {"value": round(v, 2), "pct": round(v / total_value, 4) if total_value else 0.0}
@@ -87,7 +89,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
             "beneficiaries_count": len(beneficiaries) if isinstance(beneficiaries, list) else 1,
             "established": gov.get("established"), "review_date": gov.get("review_date"),
             "jurisdiction": ent["jurisdiction"],
-            "compliance_note": TRUST_NOTES.get(ent["jurisdiction"] or hh_jurisdiction),
+            "compliance_note": TRUST_NOTES.get(markets.code(ent["jurisdiction"]) if ent["jurisdiction"] else hh_jurisdiction),
         })
 
     person_ids_with_mandate = {m.get("person_id") for m in brain.get("mandates", []) if m.get("person_id")}
@@ -110,7 +112,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
             "suggested_actions": actions,
         })
 
-    gaps = _succession_gaps(brain, entities_gov, jurisdiction=hh_jurisdiction)
+    gaps = _succession_gaps(brain, entities_gov, jurisdiction=hh_jurisdiction, today=firm_time.today(firm))
     high_count = sum(1 for g in gaps if g.get("severity") == "high")
     risk_score = min(100, high_count * 30 + sum(10 if g["severity"] == "medium" else 5 for g in gaps if g["severity"] != "high"))
 

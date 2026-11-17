@@ -35,7 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.aurea_core import balance_sheet
+from app.aurea_core import balance_sheet, firm_time
 from app.aurea_core.balance_sheet import income_of, retirement_accounts_of  # noqa: F401  - read from here elsewhere
 from app.aurea_core.goal_tradeoff import human_capital_pv
 from app.aurea_core.graph import household_brain, list_households
@@ -213,7 +213,7 @@ def _policy_row(p: ProtectionPolicy, names: dict, today: date) -> dict:
 async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID,
                         today: date | None = None) -> dict | None:
     """Every earner's gaps for one household, or None if it is not in this firm."""
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     brain = await household_brain(session, household_id, firm_id=firm_id)
     if brain is None:
         return None
@@ -285,8 +285,8 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
 
 async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, today: date | None = None) -> dict:
     """Every household, those with a gap first, then the ones nobody can assess yet."""
-    today = today or utcnow().date()
     firm = await session.get(Firm, firm_id)
+    today = today or firm_time.today(firm)
     rows = []
     for h in await list_households(session, firm_id):
         view = await for_household(session, uuid.UUID(h["id"]), firm_id=firm_id, today=today)
@@ -364,7 +364,7 @@ async def prepare_policy(
 ) -> dict:
     """Everything recording a policy would refuse, refused without writing, so a Confirm card that
     would only fail is not shown. Returns what would be written."""
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     person = await _person(session, firm_id, person_id)
     if person.household_id is None:
         raise ProtectionError("That person is not in a household, so the cover has nowhere to count.")
@@ -447,7 +447,7 @@ async def end_policy(session: AsyncSession, firm_id: uuid.UUID, policy_id: uuid.
         raise ProtectionError("That policy was not found.")
     if row.status != "in_force":
         raise ProtectionError("This policy has already ended.")
-    row.status, row.ended_on, row.ended_by, row.ended_reason = "ended", today or utcnow().date(), by, reason.strip()[:255]
+    row.status, row.ended_on, row.ended_by, row.ended_reason = "ended", today or await firm_time.today_of(session, firm_id), by, reason.strip()[:255]
     await session.flush()
     return {"policy_id": str(row.id), "status": "ended", "provider": row.provider, "kind": row.kind}
 

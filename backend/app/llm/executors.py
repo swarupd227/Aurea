@@ -3325,7 +3325,7 @@ class ToolExecutors(AdminToolExecutors):
                 (f"{a['designation_class'].title()} total", f"{now:g}% becomes {now + a['share']:g}%")]
 
     async def add_account_beneficiary(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        from app.core.db import utcnow
+        from app.aurea_core import firm_time
         from app.models.graph import AccountBeneficiary
 
         a = await self._beneficiary_args(inputs)
@@ -3333,7 +3333,7 @@ class ToolExecutors(AdminToolExecutors):
             firm_id=self.firm_id, account_id=a["account"].id, beneficiary_name=a["name"],
             percentage=a["share"], designation_class=a["designation_class"],
             relationship_to_owner=a["relationship"], per_stirpes=a["per_stirpes"],
-            date_designated=utcnow().date(),
+            date_designated=firm_time.today(await self._firm()),
         )
         self.session.add(row)
         await self.session.flush()

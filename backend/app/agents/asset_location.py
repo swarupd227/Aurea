@@ -6,12 +6,18 @@ accounts (IRA, Roth, ISA, pension) and let growth assets compound in taxable acc
 """
 from __future__ import annotations
 
+import uuid
+
+from sqlalchemy import select
+
 from app.agents._common import firm_voice, narrate
 from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import markets
+from app.aurea_core.exits import _RETIREMENT
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
+from app.models.graph import Account
 
 # Tax efficiency score by asset class: lower = more tax-inefficient → prefer tax-advantaged
 _TAX_EFFICIENCY: dict[str, float] = {
@@ -24,22 +30,14 @@ _TAX_EFFICIENCY: dict[str, float] = {
     "cash": 0.9,            # interest income taxable but low yield; liquidity trumps optimization
 }
 
-# Account types that are tax-advantaged
-_TAX_ADVANTAGED_KEYWORDS = {"ira", "roth", "pension", "isa", "kiwisaver", "smsf",
-                             "superannuation", "401k", "403b", "rrsp", "tfsa"}
-
-
-def _is_tax_advantaged(account_name: str) -> bool:
-    name_lower = account_name.lower()
-    return any(kw in name_lower for kw in _TAX_ADVANTAGED_KEYWORDS)
-
-
-def _analyze_location(brain: dict) -> list[dict]:
+def _analyze_location(brain: dict, registrations: dict[str, str | None]) -> list[dict]:
+    """`registrations` is each account's registration type by id. An account is sheltered by how it is
+    registered (exits._RETIREMENT, the set the step-up rule reads), never by a word in its name."""
     findings = []
     accounts = brain.get("accounts", [])
 
     for account in accounts:
-        is_sheltered = _is_tax_advantaged(account.get("name", ""))
+        is_sheltered = registrations.get(account.get("id")) in _RETIREMENT
         positions = account.get("positions", [])
 
         for pos in positions:
@@ -109,20 +107,26 @@ class AssetLocationAgent(FollowUpOnApproval, BaseAgent):
         else:
             ids = [str(ctx.subject.id)]
         brains = [b for hid in ids if (b := await household_brain(s, hid, firm_id=ctx.firm.id))]
-        return {"brains": brains}
+        account_ids = [uuid.UUID(a["id"]) for b in brains for a in b.get("accounts", [])]
+        registrations = {str(i): r for i, r in (await s.execute(
+            select(Account.id, Account.registration_type).where(
+                Account.firm_id == ctx.firm.id, Account.id.in_(account_ids)))).all()} if account_ids else {}
+        return {"brains": brains, "registrations": registrations}
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
         drafts = []
         for brain in sensed["brains"]:
             hh = brain["household"]
-            findings = _analyze_location(brain)
+            findings = _analyze_location(brain, sensed.get("registrations") or {})
             if not findings:
                 continue
 
             high = [f for f in findings if f["severity"] == "high"]
             medium = [f for f in findings if f["severity"] == "medium"]
             total_mislocated = sum(f["market_value"] for f in findings if f["issue"] == "tax_inefficient_in_taxable")
-            jurisdiction = (hh.get("values") or {}).get("jurisdiction") or ctx.firm.jurisdiction or "NZ"
+            # The household's own market, else its firm's; one with no market is named as none, not New Zealand.
+            market = markets.of_household(ctx.firm, hh.get("values"))
+            jurisdiction = market.code if market else None
             currency = markets.currency(jurisdiction, ctx.firm.base_currency)
 
             finding_text = "\n".join(
@@ -131,7 +135,7 @@ class AssetLocationAgent(FollowUpOnApproval, BaseAgent):
             )
             prompt = (
                 f"Write a concise asset location memo for adviser use — household '{hh['name']}', "
-                f"jurisdiction {jurisdiction}. "
+                f"jurisdiction {jurisdiction or 'not a supported market'}. "
                 f"{len(findings)} mis-location finding(s) identified "
                 f"({currency} {total_mislocated:,.0f} potentially mis-located):\n\n{finding_text}\n\n"
                 "In 3–4 sentences: summarise the overall picture, name the most impactful swap, "

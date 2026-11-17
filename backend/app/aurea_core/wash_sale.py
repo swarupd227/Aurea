@@ -22,6 +22,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.core.db import utcnow
 from app.models.graph import Account, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding, TaxLot, Transaction
@@ -65,7 +66,7 @@ def _note(found: dict, instrument_id, *, on: date, account: str) -> None:
 async def guard(session: AsyncSession, firm: Firm, mandate: Mandate, *, today: date | None = None) -> dict:
     """What the household did in the window, as the solver needs it. JSON-able: it travels through
     the agent's sensed state and onto the proposal."""
-    today = today or utcnow().date()
+    today = today or firm_time.today(firm)
     household_id = await household_of(session, mandate)
     household = await session.get(Household, household_id) if household_id else None
     jurisdiction = ((household.values or {}).get("jurisdiction") if household else None) or firm.jurisdiction

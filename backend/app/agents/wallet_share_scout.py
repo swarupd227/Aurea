@@ -67,7 +67,9 @@ class WalletShareScoutAgent(FollowUpOnApproval, BaseAgent):
             if wallet_share > (1.0 - _MIN_WALLET_SHARE_GAP):
                 continue  # already well-consolidated
 
-            jurisdiction = (hh.get("values") or {}).get("jurisdiction") or ctx.firm.jurisdiction or "NZ"
+            # The household's own market, else its firm's; one with no market is named as none, not New Zealand.
+            market = markets.of_household(ctx.firm, hh.get("values"))
+            jurisdiction = market.code if market else None
             currency = markets.currency(jurisdiction, ctx.firm.base_currency)
 
             # Life-stage context for personalised talking points
@@ -87,7 +89,7 @@ class WalletShareScoutAgent(FollowUpOnApproval, BaseAgent):
 
             prompt = (
                 f"Generate a personalised consolidation talking-point memo for the adviser. "
-                f"Household: {hh['name']} | Jurisdiction: {jurisdiction}\n"
+                f"Household: {hh['name']} | Jurisdiction: {jurisdiction or 'not a supported market'}\n"
                 f"Managed AUM: {currency} {aum:,.0f}\n"
                 f"Estimated held-away: {currency} {held_away:,.0f}\n"
                 f"Wallet share: {wallet_share:.0%}\n"

@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import firm_time
 from app.aurea_core.book_recon import _norm, reconcile
 from app.aurea_core.document_intel import DOC_LABELS, extract
 from app.aurea_core.graph import list_households
@@ -149,7 +150,7 @@ class BookIntegrationAgent(BaseAgent):
 
         feed = batch.feed or {}
         mappings = recommendation.modified_payload or recommendation.payload or batch.mappings
-        today = date.today()
+        today = firm_time.today(ctx.firm)
         model = (
             await s.execute(select(ModelPortfolio).where(ModelPortfolio.firm_id == ctx.firm.id).limit(1))
         ).scalars().first()

@@ -14,8 +14,9 @@ def positions_of(brain: dict) -> list[dict]:
     return [p for acc in brain.get("accounts", []) for p in acc.get("positions", [])]
 
 
-def book_signals(brain: dict) -> list[dict]:
-    """Opportunities / risks / anomalies for a single household, each with a priority."""
+def book_signals(brain: dict, today: date) -> list[dict]:
+    """Opportunities / risks / anomalies for a single household, each with a priority. `today` is the
+    firm's date (firm_time.today): a goal's horizon is counted from the firm's day, not the server's."""
     out: list[dict] = []
     total = brain["totals"]["total_value"] or 1.0
     positions = positions_of(brain)
@@ -47,7 +48,7 @@ def book_signals(brain: dict) -> list[dict]:
                     "payload": {"cash": round(cash, 2)}})
 
     # Goal off-track.
-    for g in goal_projections(brain):
+    for g in goal_projections(brain, today):
         if not g["on_track"]:
             out.append({"kind": "goal_gap", "priority": 2, "confidence": 0.72,
                         "title": f"Goal off-track: {g['name']}",
@@ -66,10 +67,10 @@ def book_signals(brain: dict) -> list[dict]:
     return out
 
 
-def goal_projections(brain: dict, today: date | None = None) -> list[dict]:
+def goal_projections(brain: dict, today: date) -> list[dict]:
     """Each goal's likelihood, from the one engine every screen reads (goal_tradeoff.likelihoods), so an
-    agent says what the client's page says. `today` is the firm's day where the caller has the firm."""
-    result = goal_tradeoff.likelihoods(brain, today or date.today())
+    agent says what the client's page says. `today` is the firm's day (firm_time.today)."""
+    result = goal_tradeoff.likelihoods(brain, today)
     return [{"name": g["name"], "kind": g["kind"], "target_amount": g["target_amount"], "on_track": g["on_track"],
              "probability": g["success_probability"], "projected_median": g["projected_median"],
              "years": g["years"], "horizon": g["horizon"], "assumed": g["assumed"], "estimate": True}

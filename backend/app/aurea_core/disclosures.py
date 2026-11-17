@@ -11,6 +11,8 @@ into firm configuration later without touching call sites.
 """
 from __future__ import annotations
 
+from app.aurea_core import markets
+
 # doc_type -> (label, regime, why it is required)
 CATALOGUE: dict[str, tuple[str, str, str]] = {
     "form_adv_2a": (
@@ -90,7 +92,8 @@ _BY_JURISDICTION: dict[str, list[str]] = {
     "US": ["form_adv_2a", "form_adv_2b", "form_crs", "privacy_notice"],
     "UK": ["terms_of_business", "kid", "privacy_notice"],
     "NZ": ["disclosure_statement", "soa", "privacy_notice"],
-    "AU": ["soa", "privacy_notice"],
+    # Australia had a set here, but it has no market in markets.py and no regime in the ontology, so a
+    # set of its own made its cases look supported. It holds activation like any other country with none.
     "IN": ["in_advisory_agreement", "in_mitc", "in_ai_use_disclosure", "privacy_notice"],
 }
 
@@ -106,14 +109,22 @@ _US_BY_ENGAGEMENT: dict[str, list[str]] = {
 }
 
 
+def _market_code(jurisdiction: str | None) -> str | None:
+    """The firm's market as markets.py reads it (the one place it is resolved), or None where it has none.
+    A country with no market is not read as New Zealand: it holds activation on `jurisdiction_not_supported`."""
+    market = markets.get(jurisdiction)
+    return market.code if market else None
+
+
 def required_for(jurisdiction: str | None, registration_type: str | None, engagement_type: str | None = None) -> list[str]:
     """The doc_types this case must evidence before the account can be activated."""
-    base = list(_BY_JURISDICTION.get((jurisdiction or "NZ").upper(), ["jurisdiction_not_supported"]))
-    if (jurisdiction or "").upper() == "US" and engagement_type in _US_BY_ENGAGEMENT:
+    code = _market_code(jurisdiction)
+    base = list(_BY_JURISDICTION.get(code or "", ["jurisdiction_not_supported"]))
+    if code == "US" and engagement_type in _US_BY_ENGAGEMENT:
         base = list(_US_BY_ENGAGEMENT[engagement_type])
 
     # US rollovers carry the PTE 2020-02 best-interest disclosure as well as the memo.
-    if (registration_type or "") in _ROLLOVER_TYPES and (jurisdiction or "").upper() == "US":
+    if (registration_type or "") in _ROLLOVER_TYPES and code == "US":
         base.append("pte_rollover_disclosure")
 
     return base
@@ -136,7 +147,7 @@ def describe(doc_type: str, jurisdiction: str | None = None) -> dict:
     label, regime, why = CATALOGUE.get(
         doc_type, (doc_type.replace("_", " ").title(), "—", "")
     )
-    override = _PER_JURISDICTION_REGIME.get(doc_type, {}).get((jurisdiction or "").upper())
+    override = _PER_JURISDICTION_REGIME.get(doc_type, {}).get(_market_code(jurisdiction) or "")
     if override:
         regime, why = override[0], f"{why} {override[1]}"
     return {"doc_type": doc_type, "label": label, "regime": regime, "why": why}
@@ -197,7 +208,8 @@ def status_for(
 
     outstanding = [i["doc_type"] for i in items if i["required"] and not i["delivered"]]
     return {
-        "jurisdiction": (jurisdiction or "NZ").upper(),
+        # The market it was read as; a country with no market is named as written, never as New Zealand.
+        "jurisdiction": _market_code(jurisdiction) or markets.code(jurisdiction),
         "items": items,
         "required_count": len(required),
         "delivered_count": len(required) - len(outstanding),

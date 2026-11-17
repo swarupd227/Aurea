@@ -7,7 +7,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import ips, performance, planning
+from app.aurea_core import firm_time, ips, performance, planning
 from app.aurea_core.analytics._common import gather_brains, goal_projections_all, positions_of
 from app.models.graph import Account, Mandate
 from app.models.portfolio import Holding, Instrument, ModelPortfolio, TargetAllocation
@@ -119,7 +119,7 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
     period = (f"{date.fromisoformat(perf['start']).strftime('%b %Y')} - "
               f"{date.fromisoformat(perf['end']).strftime('%b %Y')}") if perf["start"] else None
 
-    goals = await goal_projections_all(brains)
+    goals = await goal_projections_all(brains, await firm_time.today_of(session, firm_id))
     on_track = sum(1 for g in goals if g["on_track"])
 
     # Benchmark alpha over exactly the window the book was measured on.

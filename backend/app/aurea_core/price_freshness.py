@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.aurea_core.billing import MAX_STALE_DAYS
 from app.aurea_core.pricing import PRICE_FRESH_DAYS, PRIVATE_MAX_STALE_DAYS, price_basis
 from app.aurea_core.valuation import latest_prices
@@ -86,7 +87,7 @@ def classify(market_type: str, basis: str | None, age_days: int | None) -> tuple
 
 async def price_freshness(session: AsyncSession, firm_id: uuid.UUID, *, today: date | None = None,
                           now: datetime | None = None) -> dict:
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     held = {iid: (int(n), float(v or 0)) for iid, n, v in (await session.execute(
         select(Holding.instrument_id, func.count(Holding.id), func.sum(Holding.market_value))
         .where(Holding.firm_id == firm_id).group_by(Holding.instrument_id))).all()}
@@ -132,7 +133,7 @@ async def price_freshness(session: AsyncSession, firm_id: uuid.UUID, *, today: d
 async def statuses_by_mandate(session: AsyncSession, firm_id: uuid.UUID, *, today: date | None = None) -> dict[uuid.UUID, list[dict]]:
     """For each mandate, the price status of every instrument it holds - what a data-quality
     view needs to say which clients rest on a price that cannot be trusted."""
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     pairs = (await session.execute(
         select(Account.mandate_id, Holding.instrument_id).join(Account, Account.id == Holding.account_id)
         .where(Holding.firm_id == firm_id, Account.mandate_id.isnot(None)).distinct())).all()

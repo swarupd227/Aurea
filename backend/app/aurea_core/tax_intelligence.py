@@ -15,7 +15,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import law_figures, markets, tax_india
+from app.aurea_core import firm_time, law_figures, markets, tax_india
 from app.aurea_core.graph import household_brain, list_households
 from app.aurea_core.wash_sale import WINDOW_DAYS
 from app.models.portfolio import Holding, Instrument, TaxLot
@@ -75,12 +75,12 @@ _UK_DIVIDEND_RATE_HIGHER = 0.3375
 _UK_ESTIMATED_EQUITY_YIELD = 0.025   # used to estimate dividend income from portfolio
 
 
-def _age(dob: str | None) -> int | None:
+def _age(dob: str | None, today: date) -> int | None:
+    """Age on the firm's calendar (firm_time.today), so a birthday turns over on the firm's day."""
     if not dob:
         return None
     try:
         y, m, d = map(int, dob.split("-"))
-        today = date.today()
         return today.year - y - ((today.month, today.day) < (m, d))
     except Exception:
         return None
@@ -88,7 +88,8 @@ def _age(dob: str | None) -> int | None:
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-async def _load_lots(session: AsyncSession, brain: dict) -> list[dict]:
+async def _load_lots(session: AsyncSession, brain: dict, *, today: date) -> list[dict]:
+    """`today` is the firm's date: days held and the wash-sale window are counted on its calendar."""
     account_ids = [uuid.UUID(a["id"]) for a in brain.get("accounts", [])]
     if not account_ids:
         return []
@@ -126,7 +127,6 @@ async def _load_lots(session: AsyncSession, brain: dict) -> list[dict]:
     # account, of which instrument — not just whether "some" recent purchase exists.
     # Anywhere in the household, per the module: a spouse's account or an IRA repurchasing
     # the same security is exactly the case a single-account check misses.
-    today = date.today()
     recent_purchases: dict[uuid.UUID, list[dict]] = {}
     for lot in lots:
         days_held = (today - lot.acquired_on).days
@@ -210,7 +210,7 @@ async def household_wash_sale_calendar(
             "total_disallowed_loss": 0,
         }
 
-    lots = await _load_lots(session, brain)
+    lots = await _load_lots(session, brain, today=firm_time.today(firm))
     flagged = [l for l in lots if l["wash_sale_risk"]]
 
     return {
@@ -302,7 +302,7 @@ def _pie_optimisation(brain: dict) -> dict:
     }
 
 
-def _kiwisaver_optimisation(brain: dict) -> dict:
+def _kiwisaver_optimisation(brain: dict, *, today: date) -> dict:
     persons = brain.get("persons", [])
     recommendations = []
 
@@ -349,7 +349,7 @@ def _kiwisaver_optimisation(brain: dict) -> dict:
             "employer_rate_pct": round(employer_rate * 100, 2) if employer_rate is not None else None,
             "employer_match_annual": round(annual_income * employer_rate, 2) if employer_rate is not None else None,
             "rate_analysis": rate_analysis,
-            "law": law_figures.cited(("nz_ks_govt_rate", "nz_ks_govt_max", "nz_ks_govt_income_limit"), date.today()),
+            "law": law_figures.cited(("nz_ks_govt_rate", "nz_ks_govt_max", "nz_ks_govt_income_limit"), today),
             "not_on_file": [] if employer_rate is not None else ["employer contribution rate"],
             "action": (
                 f"Change KiwiSaver rate from {int(current_rate*100)}% to {best['rate_pct']}% "
@@ -360,9 +360,8 @@ def _kiwisaver_optimisation(brain: dict) -> dict:
     return {"recommendations": recommendations, "count": len(recommendations)}
 
 
-def _bright_line_check(brain: dict) -> dict:
+def _bright_line_check(brain: dict, *, today: date) -> dict:
     persons = brain.get("persons", [])
-    today = date.today()
     flags = []
 
     for person in persons:
@@ -462,11 +461,11 @@ def _withdrawal_sequencing_nz(brain: dict) -> dict:
     }
 
 
-def _nz_tax_report(brain: dict, lots: list[dict]) -> dict:
+def _nz_tax_report(brain: dict, lots: list[dict], *, today: date) -> dict:
     loss_harvest = _scan_loss_harvest_nz(lots)
     pie_opt = _pie_optimisation(brain)
-    ks_opt = _kiwisaver_optimisation(brain)
-    bright = _bright_line_check(brain)
+    ks_opt = _kiwisaver_optimisation(brain, today=today)
+    bright = _bright_line_check(brain, today=today)
     withdrawal = _withdrawal_sequencing_nz(brain)
 
     return {
@@ -549,7 +548,7 @@ def _us_cgt_analysis(lots: list[dict], brain: dict) -> dict:
     }
 
 
-def _us_rmd_planning(brain: dict) -> dict:
+def _us_rmd_planning(brain: dict, *, today: date) -> dict:
     """RMD alerts for persons aged 73+ and pre-planning for 65–72."""
     persons = brain.get("persons", [])
     alerts = []
@@ -563,7 +562,7 @@ def _us_rmd_planning(brain: dict) -> dict:
         if not ira:
             continue
 
-        age = _age(person.get("date_of_birth"))
+        age = _age(person.get("date_of_birth"), today)
         if not age:
             continue
 
@@ -612,7 +611,7 @@ def _us_rmd_planning(brain: dict) -> dict:
     }
 
 
-def _us_gift_tracker(brain: dict) -> dict:
+def _us_gift_tracker(brain: dict, *, today: date) -> dict:
     """Annual gift exclusion utilisation and 529 superfunding opportunity."""
     persons = brain.get("persons", [])
     adults = [p for p in persons if not p.get("is_next_gen")]
@@ -654,7 +653,7 @@ def _us_gift_tracker(brain: dict) -> dict:
         "not_on_file": ["recipients outside the household"],
         "estate_exclusion": exemption,
         "estate_exposed": estate_exposed,
-        "law": law_figures.cited(("us_annual_gift_exclusion", "us_basic_exclusion"), date.today()),
+        "law": law_figures.cited(("us_annual_gift_exclusion", "us_basic_exclusion"), today),
         "529_superfunding": superfunding,
         "action": (
             f"Annual exclusion: each donor may give ${_US_ANNUAL_GIFT_EXCLUSION:,.0f}/recipient tax-free. "
@@ -806,10 +805,10 @@ def _us_withdrawal_seq(brain: dict) -> dict:
     }
 
 
-def _us_tax_report(brain: dict, lots: list[dict]) -> dict:
+def _us_tax_report(brain: dict, lots: list[dict], *, today: date) -> dict:
     cgt = _us_cgt_analysis(lots, brain)
-    rmd = _us_rmd_planning(brain)
-    gift = _us_gift_tracker(brain)
+    rmd = _us_rmd_planning(brain, today=today)
+    gift = _us_gift_tracker(brain, today=today)
     roth = _us_roth_conversion(brain)
     withdrawal = _us_withdrawal_seq(brain)
 
@@ -1182,6 +1181,8 @@ async def for_household(
     if not brain:
         return None
 
+    # The firm's date: ages, holding periods and the law in force are read on its calendar, not the server's.
+    today = await firm_time.today_of(session, firm_id)
     jurisdiction = markets.code((brain["household"]["values"] or {}).get("jurisdiction") or firm_jurisdiction)
     market = markets.get(jurisdiction)
 
@@ -1191,17 +1192,17 @@ async def for_household(
     elif jurisdiction == "IN":
         result = await tax_india.report(session, brain, firm=await session.get(Firm, firm_id))
     elif jurisdiction == "US":
-        result = _us_tax_report(brain, await _load_lots(session, brain))
+        result = _us_tax_report(brain, await _load_lots(session, brain, today=today), today=today)
     elif jurisdiction == "UK":
-        result = _uk_tax_report(brain, await _load_lots(session, brain))
+        result = _uk_tax_report(brain, await _load_lots(session, brain, today=today))
     else:
-        result = _nz_tax_report(brain, await _load_lots(session, brain))
+        result = _nz_tax_report(brain, await _load_lots(session, brain, today=today), today=today)
 
     result.update({
         "household_id": str(household_id),
         "household_name": brain["household"]["name"],
         "total_portfolio_value": brain["totals"]["total_value"],
-        "generated_at": date.today().isoformat(),
+        "generated_at": today.isoformat(),
     })
     return result
 
@@ -1225,7 +1226,7 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction:
         if not result:
             continue
 
-        jur = result.get("jurisdiction", "NZ")
+        jur = result.get("jurisdiction")   # every report names it; none is not New Zealand
         hh_ctx = {"household_id": h["id"], "household_name": h["name"]}
 
         if jur == "NZ":
@@ -1295,5 +1296,5 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction:
             }
             for r in in_results
         ],
-        "generated_at": date.today().isoformat(),
+        "generated_at": (await firm_time.today_of(session, firm_id)).isoformat(),
     }

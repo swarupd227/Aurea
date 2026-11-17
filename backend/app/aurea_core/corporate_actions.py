@@ -20,6 +20,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.core.db import utcnow
 from app.models.corporate_actions import CorporateAction, CorporateActionEntitlement
 from app.models.graph import Account
@@ -180,7 +181,7 @@ async def _apply_mechanical(session: AsyncSession, action: CorporateAction, row:
         session.add(Transaction(
             firm_id=action.firm_id, account_id=account.id, instrument_id=action.instrument_id,
             txn_type="dividend", quantity=row.shares_entitled, price=per_share, amount=amount,
-            trade_date=action.payable_date or utcnow().date(),
+            trade_date=action.payable_date or await firm_time.today_of(session, action.firm_id),
             lineage={"corporate_action_id": str(action.id)},
         ))
 
@@ -222,6 +223,6 @@ async def _apply_mechanical(session: AsyncSession, action: CorporateAction, row:
         session.add(Transaction(
             firm_id=action.firm_id, account_id=account.id, instrument_id=action.instrument_id,
             txn_type="distribution", quantity=row.shares_entitled, price=per_share, amount=amount,
-            trade_date=action.payable_date or utcnow().date(),
+            trade_date=action.payable_date or await firm_time.today_of(session, action.firm_id),
             lineage={"corporate_action_id": str(action.id)},
         ))

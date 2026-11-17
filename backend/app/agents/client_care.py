@@ -9,19 +9,19 @@ from datetime import date
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import markets
+from app.aurea_core import firm_time, markets
 from app.aurea_core.graph import household_brain, list_households
 from app.aurea_core.planning import stress_test
 from app.models.client_experience import Message
 from app.models.enums import AgentKey, AutonomyTier, MessageAuthor
 
 
-def _age(dob: str | None) -> int | None:
+def _age(dob: str | None, today: date) -> int | None:
+    """Age on the firm's calendar: a birthday falls on the firm's day, not the server's."""
     if not dob:
         return None
     try:
         y, m, d = map(int, dob.split("-"))
-        today = date.today()
         return today.year - y - ((today.month, today.day) < (m, d))
     except Exception:
         return None
@@ -47,6 +47,7 @@ class ClientCareAgent(BaseAgent):
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
         drafts: list[RecommendationDraft] = []
         scenario = sensed["scenario"]
+        today = firm_time.today(ctx.firm)
         for brain in sensed["brains"]:
             hh = brain["household"]
             allocation = brain["totals"]["by_asset_class"]
@@ -64,7 +65,7 @@ class ClientCareAgent(BaseAgent):
 
             # 3. Pre-retirement milestone.
             for p in living:
-                age = _age(p.get("date_of_birth"))
+                age = _age(p.get("date_of_birth"), today)
                 stage = (p.get("profile") or {}).get("life_stage")
                 if (age is not None and 60 <= age <= 67) or stage == "pre-retirement":
                     drafts.append(self._milestone(ctx, hh, p, age))

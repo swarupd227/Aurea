@@ -50,7 +50,7 @@ class MeetingPrepAgent(BaseAgent):
         hh = brain["household"]
         totals = brain["totals"]
         goals = goal_projections(brain, firm_time.today(ctx.firm))
-        signals = book_signals(brain)
+        signals = book_signals(brain, firm_time.today(ctx.firm))
         events = life_events(brain)
         cites = sensed["citations"]
 

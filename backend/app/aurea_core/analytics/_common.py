@@ -23,12 +23,12 @@ def positions_of(brain: dict) -> list[dict]:
     return [p for acc in brain.get("accounts", []) for p in acc.get("positions", [])]
 
 
-def age_from(dob: str | None) -> int | None:
+def age_from(dob: str | None, today: date) -> int | None:
+    """Age on `today`, the firm's date (firm_time.today), not the server's."""
     if not dob:
         return None
     try:
         y, m, d = map(int, dob.split("-"))
-        today = date.today()
         return today.year - y - ((today.month, today.day) < (m, d))
     except Exception:
         return None
@@ -38,12 +38,12 @@ def pct(n: float, d: float) -> float:
     return round(n / d, 4) if d else 0.0
 
 
-async def goal_projections_all(brains: list[dict]) -> list[dict]:
+async def goal_projections_all(brains: list[dict], today: date) -> list[dict]:
     """Goal projections across every household (reuses the planning engine)."""
     from app.agents._signals import goal_projections
 
     out = []
     for b in brains:
-        for g in goal_projections(b):
+        for g in goal_projections(b, today):
             out.append({"household": b["household"]["name"], **g})
     return out

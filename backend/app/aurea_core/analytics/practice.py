@@ -9,6 +9,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.aurea_core.analytics import assumptions as A
 from app.atlas.history import hours_reclaimed
 from app.aurea_core.analytics._common import gather_brains, positions_of
@@ -28,8 +29,10 @@ async def _billing_position(session: AsyncSession, firm_id: uuid.UUID) -> dict:
     currency = (firm.base_currency if firm else None) or "NZD"
     rows = (await session.execute(select(Invoice).where(
         Invoice.firm_id == firm_id, Invoice.currency == currency))).scalars().all()
-    year = date.today().year
-    billed = [i for i in rows if i.status in ("issued", "debited", "credited") and i.issued_at and i.issued_at.year == year]
+    # This year and an invoice's year are both the firm's: one issued late on 31 Dec UTC may be 1 Jan for it.
+    year = firm_time.today(firm).year
+    billed = [i for i in rows if i.status in ("issued", "debited", "credited") and i.issued_at
+              and firm_time.today(firm, i.issued_at).year == year]
     unpaid = sum(float(i.amount) for i in rows if i.kind == "invoice" and i.status == "issued"
                  and i.debit_status == "insufficient_cash")
     held = sum(float(i.amount) for i in rows if i.status == "held")

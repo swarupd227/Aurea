@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import balance_sheet, billing, firm_time, ips, knowledge
+from app.aurea_core import balance_sheet, billing, firm_time, ips, knowledge, markets
 from app.aurea_core.document_intel import DOC_LABELS, extract
 from app.aurea_core.screening import screen_parties
 from app.core.db import utcnow
@@ -286,8 +286,9 @@ class OnboardingAgent(BaseAgent):
                 # An HUF is run by its karta for its members; a trust by its trustees.
                 governance=({"karta": (case.intake or {}).get("karta"), "members": parties}
                             if case.entity_type == "huf" else {"trustees": parties}),
-                # The firm's own market, not the column's New Zealand default.
-                jurisdiction=ctx.firm.jurisdiction or "NZ",
+                # The firm's own jurisdiction as markets.py reads it, not the column's New Zealand default.
+                # One with no market stays as written, so nothing downstream reads it as New Zealand.
+                jurisdiction=markets.code(ctx.firm.jurisdiction),
                 impact_objectives={},
             )
             s.add(entity)
@@ -333,7 +334,7 @@ class OnboardingAgent(BaseAgent):
             arrangement = await billing.activate_arrangement(
                 s, firm_id=ctx.firm.id, mandate=mandate, fee_schedule_id=case.fee_schedule_id,
                 billing_method=case.billing_method, billing_frequency=case.billing_frequency,
-                householding=bool(case.householding), effective_from=utcnow().date(),
+                householding=bool(case.householding), effective_from=firm_time.today(ctx.firm),
                 set_by=case.fee_set_by, set_at=case.fee_set_at,
                 confirmed_by=case.fee_confirmed_by, confirmed_at=case.fee_confirmed_at,
                 source="onboarding",

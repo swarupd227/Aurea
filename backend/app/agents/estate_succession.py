@@ -13,18 +13,18 @@ from sqlalchemy import select
 from app.agents._common import firm_voice, narrate
 from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import markets
+from app.aurea_core import firm_time, markets
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
 from app.models.graph import LegalEntity, Mandate
 
 
-def _age(dob: str | None) -> int | None:
+def _age(dob: str | None, today: date) -> int | None:
+    """Age on the firm's calendar: a birthday falls on the firm's day, not the server's."""
     if not dob:
         return None
     try:
         y, m, d = map(int, dob.split("-"))
-        today = date.today()
         return today.year - y - ((today.month, today.day) < (m, d))
     except Exception:
         return None
@@ -63,11 +63,13 @@ def _trust_review_recommendation(jurisdiction: str) -> str:
             "Schedule a review of the trust deed with counsel under the Indian Trusts Act 1882, and "
             "check that nominations on each demat, folio and policy agree with the will."
         )
-    else:
+    elif jurisdiction == "NZ":
         return (
             "Schedule a trust review; update deed to meet NZ Trusts Act 2019 §23 obligations. "
             "Three-yearly review recommended with the trust solicitor."
         )
+    # A market with no rules here gets no country's law.
+    return "Schedule a trust review with the trust's solicitor."
 
 
 def _trust_governance_recommendation(jurisdiction: str) -> str:
@@ -77,8 +79,9 @@ def _trust_governance_recommendation(jurisdiction: str) -> str:
         return "Update trust deed; review pour-over will, health care proxies, and durable power of attorney. Confirm step-up in basis planning."
     elif jurisdiction == "IN":
         return "Update the trust deed under the Indian Trusts Act 1882 and record the trustees' decision rules."
-    else:
+    elif jurisdiction == "NZ":
         return "Schedule a trust review; update deed to meet NZ Trusts Act 2019 §23 obligations."
+    return "Complete the trust's governance record with the trust's solicitor."
 
 
 def _jurisdiction_specific_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str) -> list[dict]:
@@ -182,8 +185,9 @@ def _jurisdiction_specific_gaps(brain: dict, entities_gov: list[dict], jurisdict
     return gaps
 
 
-def _succession_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str = "NZ") -> list[dict]:
-    """Identify succession gaps from the household brain. Returns list of gap dicts."""
+def _succession_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str | None, *, today: date) -> list[dict]:
+    """Identify succession gaps from the household brain. Returns list of gap dicts. `today` is the
+    firm's date (firm_time.today), so an age or a three-year review turns over on the firm's day."""
     gaps: list[dict] = []
     totals = brain.get("totals", {})
     total_value = totals.get("total_value", 0) or 0
@@ -229,7 +233,7 @@ def _succession_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str = 
         if established_str and not gov.get("review_date"):
             try:
                 est_year = int(established_str[:4])
-                if date.today().year - est_year >= 3:
+                if today.year - est_year >= 3:
                     gaps.append({
                         "type": "trust_review_overdue",
                         "severity": "medium",
@@ -268,7 +272,7 @@ def _succession_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str = 
 
     # 6. No legacy goal for person ≥ 65 (all jurisdictions)
     for p in persons:
-        age = _age(p.get("date_of_birth"))
+        age = _age(p.get("date_of_birth"), today)
         if age and age >= 65:
             name = p.get("preferred_name") or p["full_name"]
             goals = brain.get("goals", [])
@@ -333,16 +337,17 @@ class EstateSucessionAgent(FollowUpOnApproval, BaseAgent):
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
         drafts: list[RecommendationDraft] = []
-        firm_jurisdiction = ctx.firm.jurisdiction if hasattr(ctx.firm, "jurisdiction") else "NZ"
+        today = firm_time.today(ctx.firm)
 
         for brain in sensed["brains"]:
             hh = brain["household"]
             entities_gov = sensed["entities_gov_by_hh"].get(hh["id"], [])
 
-            # Household-level jurisdiction overrides firm default
-            jurisdiction = hh.get("values", {}).get("jurisdiction") or firm_jurisdiction
+            # The household's own market, else its firm's. One with no market gets no country's law.
+            market = markets.of_household(ctx.firm, hh.get("values"))
+            jurisdiction = market.code if market else None
 
-            gaps = _succession_gaps(brain, entities_gov, jurisdiction)
+            gaps = _succession_gaps(brain, entities_gov, jurisdiction, today=today)
             if not gaps:
                 continue
 

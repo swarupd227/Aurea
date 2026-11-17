@@ -1,7 +1,11 @@
 """Unit tests for the Advise & Engage / Manage & Optimise engines — pure, no DB."""
+from datetime import date
+
 from app.agents._signals import book_signals, goal_projections, life_events
 from app.agents.meeting_companion import _parse_amount, MeetingCompanionAgent
 from app.agents.client_care import _age
+
+TODAY = date(2026, 11, 17)   # the firm's date, as firm_time.today gives it
 
 
 def _brain(**over):
@@ -29,7 +33,7 @@ def _brain(**over):
 
 
 def test_book_signals_detects_concentration_loss_idlecash_heir():
-    sigs = {s["kind"] for s in book_signals(_brain())}
+    sigs = {s["kind"] for s in book_signals(_brain(), TODAY)}
     assert "concentration" in sigs       # AAPL 700k / 900k = 78%
     assert "loss_harvest" in sigs        # AAPL at a loss
     assert "idle_cash" in sigs           # cash 100k / 900k > 15%
@@ -37,7 +41,7 @@ def test_book_signals_detects_concentration_loss_idlecash_heir():
 
 
 def test_goal_projection_flags_unreachable_goal():
-    g = goal_projections(_brain())[0]
+    g = goal_projections(_brain(), TODAY)[0]
     assert g["on_track"] is False        # $900k can't reach $5m in 5y
     assert 0.0 <= g["probability"] <= 1.0
 
@@ -55,5 +59,6 @@ def test_parse_amount_handles_k_and_commas():
 
 
 def test_age_computation():
-    assert _age("1960-01-01") >= 60
-    assert _age(None) is None
+    assert _age("1960-01-01", TODAY) == 66
+    assert _age("1960-11-18", TODAY) == 65   # the birthday is the firm's tomorrow
+    assert _age(None, TODAY) is None

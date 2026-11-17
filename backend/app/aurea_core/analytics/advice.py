@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents._signals import book_signals
+from app.aurea_core import firm_time
 from app.aurea_core.analytics._common import gather_brains, goal_projections_all
 from app.models.client_experience import HeirJourney, Message
 from app.models.engagement import Meeting
@@ -33,14 +34,15 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
     # Opportunity & risk detection (reuse the agentic signal scanner).
     opp_counts: dict[str, int] = {}
     opportunities = []
+    today = await firm_time.today_of(session, firm_id)
     for b in brains:
-        for s in book_signals(b):
+        for s in book_signals(b, today):
             opp_counts[s["kind"]] = opp_counts.get(s["kind"], 0) + 1
             opportunities.append({"household": b["household"]["name"], "kind": s["kind"],
                                   "title": s["title"], "priority": s["priority"]})
 
     # Attrition / churn risk + engagement, per household.
-    goals = await goal_projections_all(brains)
+    goals = await goal_projections_all(brains, today)
     off_track_hh = {g["household"] for g in goals if not g["on_track"]}
     attrition = []
     engagement = []

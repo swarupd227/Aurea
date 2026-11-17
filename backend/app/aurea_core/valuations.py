@@ -28,6 +28,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.aurea_core.pricing import DECLARED_SOURCE, PRIVATE_MAX_STALE_DAYS, price_basis
 from app.aurea_core.valuation import latest_prices, revalue_firm
 from app.core.db import utcnow
@@ -48,7 +49,7 @@ async def prepare_valuation(
 ) -> dict:
     """Everything recording would refuse, refused without writing, so a Confirm card that would only
     fail is not shown. Returns what is on file now and what would change."""
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     inst = await session.get(Instrument, instrument_id)
     if inst is None or inst.firm_id != firm_id:
         raise ValuationError("Instrument not found.")
@@ -145,7 +146,7 @@ async def record_valuation(
 async def private_valuations(session: AsyncSession, firm_id: uuid.UUID, *, today: date | None = None) -> list[dict]:
     """Every private instrument: what it is carried at, on what basis, how old that is, and how
     much of the book depends on it."""
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     instruments = (await session.execute(
         select(Instrument).where(Instrument.firm_id == firm_id, Instrument.market_type == MarketType.PRIVATE)
         .order_by(Instrument.symbol))).scalars().all()

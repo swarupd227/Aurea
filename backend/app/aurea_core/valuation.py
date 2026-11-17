@@ -12,6 +12,7 @@ from datetime import date
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.aurea_core.pricing import price_basis
 from app.core.logging import get_logger
 from app.models.graph import Account
@@ -132,5 +133,5 @@ async def account_valuation(session: AsyncSession, account: Account) -> dict:
         "by_asset_class": {k: round(v, 2) for k, v in by_class.items()},
         "positions": positions,
         "data_confidence": round(sum(confidences) / len(confidences), 3) if confidences else 1.0,
-        "as_of": date.today().isoformat(),
+        "as_of": (await firm_time.today_of(session, account.firm_id)).isoformat(),
     }

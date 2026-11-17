@@ -20,6 +20,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.core.db import utcnow
 from app.models.corporate_actions import CorporateAction, CorporateActionEntitlement
 from app.models.graph import Account, Household, LegalEntity, Mandate, Person
@@ -271,7 +272,7 @@ async def prepare_statement(
     """Refused when a statement cannot be taken at face value: no source document, a date in the
     future, a currency other than the account's, a statement older than the one already on file, or
     nothing on it to compare. Writes nothing, so a Confirm card that would only fail is not shown."""
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     account = await session.get(Account, account_id)
     if account is None or account.firm_id != firm_id:
         raise ReconciliationError("That account is not in this firm.")
@@ -307,7 +308,7 @@ async def import_statement(
 ) -> dict:
     """Record the custodian's statement for an account and compare it with the book. A second
     statement for the same date replaces the first."""
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     ready = await prepare_statement(session, firm_id, account_id=account_id, as_of=as_of, positions=positions,
                                     cash_balance=cash_balance, currency=currency, source_document=source_document,
                                     today=today)
@@ -331,7 +332,7 @@ async def import_statement(
 
 async def reconcile(session: AsyncSession, firm_id: uuid.UUID, stmt: CustodyStatement,
                     *, today: date | None = None) -> dict:
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     account = await session.get(Account, stmt.account_id)
     firm = await session.get(Firm, firm_id)
     cash_tol = cash_tolerance(firm)
@@ -493,7 +494,7 @@ async def needs_attention(session: AsyncSession, firm_id: uuid.UUID, *, today: d
     """The open breaks a person should decide on, each with the agent's proposed action, and the
     ones it is leaving to clear by themselves. Escalated, explained and set-aside breaks already have
     a decision and are not raised again."""
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     rows = (await session.execute(
         select(ReconBreak).where(ReconBreak.firm_id == firm_id, ReconBreak.status == "open")
     )).scalars().all()
@@ -574,7 +575,7 @@ def _break_row(b: ReconBreak, accounts: dict, instruments: dict, households: dic
 async def overview(session: AsyncSession, firm_id: uuid.UUID, *, today: date | None = None) -> dict:
     """Every account's reconciliation state, and its breaks: the ones that need someone first, then
     explained ones, then differences that were set aside with a reason."""
-    today = today or utcnow().date()
+    today = today or await firm_time.today_of(session, firm_id)
     accounts = (await session.execute(
         select(Account).where(Account.firm_id == firm_id).order_by(Account.name))).scalars().all()
     by_id = {a.id: a for a in accounts}

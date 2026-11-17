@@ -11,7 +11,7 @@ from datetime import date
 from app.agents._common import firm_voice, narrate
 from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import markets
+from app.aurea_core import firm_time, markets
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
 
@@ -39,14 +39,15 @@ def _current_equity_pct(brain: dict) -> float:
     return equity / total
 
 
-def _years_to_goal(goal: dict) -> float | None:
+def _years_to_goal(goal: dict, today: date) -> float | None:
+    """Years from the firm's today (firm_time.today) to the goal's date."""
     target_date = goal.get("target_date")
     if not target_date:
         return None
     try:
         y, m, d = map(int, target_date[:10].split("-"))
         target = date(y, m, d)
-        delta = (target - date.today()).days / 365.25
+        delta = (target - today).days / 365.25
         return delta
     except (ValueError, TypeError):
         return None
@@ -74,6 +75,7 @@ class GlidePathAgent(FollowUpOnApproval, BaseAgent):
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
         drafts = []
+        today = firm_time.today(ctx.firm)
         for brain in sensed["brains"]:
             hh = brain["household"]
             goals = brain.get("goals", [])
@@ -89,7 +91,7 @@ class GlidePathAgent(FollowUpOnApproval, BaseAgent):
                     kind_lower = kind.lower()
                     if "retire" not in kind_lower and "goal" not in kind_lower:
                         continue
-                yrs = _years_to_goal(g)
+                yrs = _years_to_goal(g, today)
                 if yrs is None:
                     continue
                 if 0 < yrs <= _WINDOW_YEARS:
@@ -107,7 +109,9 @@ class GlidePathAgent(FollowUpOnApproval, BaseAgent):
             if equity_gap < 0.05:  # within 5pp — no action needed
                 continue
 
-            jurisdiction = (hh.get("values") or {}).get("jurisdiction") or ctx.firm.jurisdiction or "NZ"
+            # The household's own market, else its firm's; one with no market is named as none, not New Zealand.
+            market = markets.of_household(ctx.firm, hh.get("values"))
+            jurisdiction = market.code if market else None
             currency = markets.currency(jurisdiction, ctx.firm.base_currency)
 
             # Compute year-by-year glide schedule
@@ -118,7 +122,7 @@ class GlidePathAgent(FollowUpOnApproval, BaseAgent):
 
             prompt = (
                 f"Write a glide-path advisory memo for the adviser. "
-                f"Household: {hh['name']} | Jurisdiction: {jurisdiction}\n"
+                f"Household: {hh['name']} | Jurisdiction: {jurisdiction or 'not a supported market'}\n"
                 f"Portfolio: {currency} {total_value:,.0f}\n"
                 f"Goal: {target_goal.get('kind', 'retirement')} in {years_remaining:.1f} years "
                 f"(target {currency} {target_goal.get('target_amount', 0):,.0f})\n"

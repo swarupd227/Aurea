@@ -30,6 +30,7 @@ from datetime import date, timedelta
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.aurea_core.pricing import month_end_points, price_basis
 from app.core.db import utcnow
 from app.models.enums import AssetClass
@@ -330,7 +331,7 @@ async def performance_for_accounts(
         "disclosures": {
             "scope": "securities_only", "gross_of_fees": True, "external_cash_flows_recorded": False,
             **base_disclosure, "periods_skipped": skipped, "as_of": periods[-1]["end"],
-            "stale_days": (utcnow().date() - end_date).days,
+            "stale_days": (await firm_time.today_of(session, firm_id) - end_date).days,
         },
     }
 

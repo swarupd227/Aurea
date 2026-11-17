@@ -24,6 +24,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.core.db import utcnow
 from app.core.logging import get_logger
 from app.models.enums import LotRelief, OrderSide, OrderStatus, SettlementStatus
@@ -189,7 +190,7 @@ async def settle(
     )).scalar_one_or_none()
 
     realised = Decimal(0)
-    trade_day = trade_day or date.today()
+    trade_day = trade_day or await firm_time.today_of(session, order.firm_id)   # the book takes it on the firm's day
     relieved: list[dict] = []
 
     if str(order.side) == OrderSide.BUY:

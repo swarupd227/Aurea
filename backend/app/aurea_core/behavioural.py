@@ -15,6 +15,7 @@ from datetime import date
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.aurea_core.graph import household_brain, list_households
 from app.models.client_experience import Message
 from app.models.engagement import Meeting
@@ -373,7 +374,7 @@ async def for_household(
             "is_stressed": stress.get("is_stressed", False),
             "drawdown_pct": stress.get("drawdown_pct", 0),
         },
-        "generated_at": date.today().isoformat(),
+        "generated_at": (await firm_time.today_of(session, firm_id)).isoformat(),
     }
 
 
@@ -406,5 +407,5 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict:
         "stressed": sorted(stressed, key=lambda x: x["drawdown_pct"]),
         "stress_count": len(stressed),
         "bias_profiles": biased,
-        "generated_at": date.today().isoformat(),
+        "generated_at": (await firm_time.today_of(session, firm_id)).isoformat(),
     }

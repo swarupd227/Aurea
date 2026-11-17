@@ -10,6 +10,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.models.governance import SurveillanceFlag
 from app.models.onboarding import OnboardingCase
 from app.models.portfolio import Holding, Price
@@ -54,7 +55,8 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
 
     private_ids = {i for i in (await session.execute(select(Instrument.id).where(
         Instrument.firm_id == firm_id, Instrument.market_type == MarketType.PRIVATE))).scalars().all()}
-    fresh = sum(1 for p in latest if (date.today() - p.as_of).days <=
+    today = await firm_time.today_of(session, firm_id)
+    fresh = sum(1 for p in latest if (today - p.as_of).days <=
                 (PRIVATE_MAX_STALE_DAYS if p.instrument_id in private_ids else PRICE_FRESH_DAYS))
     completeness = with_lineage / n
     timeliness = fresh / (len(latest) or 1)

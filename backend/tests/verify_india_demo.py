@@ -23,7 +23,7 @@ from app.agents import drift_rebalancing as drift
 from app.agents import tax_intelligence as tax_agent
 from app.atlas import runtime, tax_refresh
 from app.atlas.base import Subject
-from app.aurea_core import disclosures, licences, protection, tax_intelligence
+from app.aurea_core import disclosures, firm_time, licences, protection, tax_intelligence
 from app.aurea_core.graph import household_brain
 from app.compliance import ontology
 from app.core.db import Base
@@ -120,7 +120,7 @@ async def main() -> int:
             on_track = {}
             for h in (await s.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all():
                 brain = await household_brain(s, h.id, firm_id=firm.id)
-                for g in _signals.goal_projections(brain):
+                for g in _signals.goal_projections(brain, firm_time.today(firm)):
                     on_track[f"{h.name}: {g['name']}"] = g["on_track"]
             check("a book with some goals met and some to talk about", sum(on_track.values()), 4)
             check("the client we sign in as has one of each", [v for k, v in sorted(on_track.items()) if "Sharma" in k],
@@ -135,7 +135,7 @@ async def main() -> int:
             check("in rupees", mine["currency"], "INR")
             check("each goal with its target and likelihood, as an estimate",
                   [(g["target_amount"], g["probability"], g["estimate"]) for g in mine["goals"]],
-                  [(g["target_amount"], g["probability"], True) for g in _signals.goal_projections(brain)])
+                  [(g["target_amount"], g["probability"], True) for g in _signals.goal_projections(brain, firm_time.today(firm))])
 
             print("\n=== Protection works from what is on file ===")
             view = await protection.for_household(s, sharma.id, firm_id=firm.id)

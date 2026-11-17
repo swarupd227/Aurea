@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.agents._signals import book_signals
 from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import firm_time
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
 
@@ -47,9 +48,10 @@ class NextBestActionAgent(FollowUpOnApproval, BaseAgent):
         # Group candidate signals by kind so we can surface a DIVERSE set across the book,
         # rather than letting one dominant signal (e.g. concentration) crowd out the rest.
         by_kind: dict[str, list[tuple[int, float, RecommendationDraft]]] = {}
+        today = firm_time.today(ctx.firm)
         for brain in sensed["brains"]:
             hh = brain["household"]
-            for sig in book_signals(brain):
+            for sig in book_signals(brain, today):
                 label = hh["name"]
                 draft = RecommendationDraft(
                     title=f"{sig['title']}",

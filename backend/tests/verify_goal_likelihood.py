@@ -167,7 +167,7 @@ async def surfaces() -> None:
             check("the agents", agent, page)
             check("the staff planning view", staff, page)
             check("two goals, each read", sorted(page), ["Bach", "Retirement"])
-            signals = [x["title"] for x in _signals.book_signals(b) if x["kind"] == "goal_gap"]
+            signals = [x["title"] for x in _signals.book_signals(b, today) if x["kind"] == "goal_gap"]
             check("an agent's off-track goals are the page's", sorted(t.removeprefix("Goal off-track: ") for t in signals),
                   sorted(n for n, p in page.items() if p < 0.70))
 

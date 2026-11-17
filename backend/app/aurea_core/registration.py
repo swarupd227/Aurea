@@ -21,6 +21,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.models.graph import Account, AccountBeneficiary, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding
 
@@ -48,10 +49,10 @@ _US_RMD_FACTORS = {
 }
 
 
-def _age(dob: date | None) -> int | None:
+def _age(dob: date | None, today: date) -> int | None:
+    """Age on the firm's date (firm_time.today): an RMD age turns over on the firm's day."""
     if not dob:
         return None
-    today = date.today()
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
@@ -62,7 +63,7 @@ async def _account_value(session: AsyncSession, account_id: uuid.UUID) -> float:
     return sum(float(h.market_value or 0) for h in holdings)
 
 
-def _inherited_rmd(account: Account, value: float) -> dict:
+def _inherited_rmd(account: Account, value: float, today: date) -> dict:
     if account.original_owner_death_date is None:
         return {
             "status": "needs_election",
@@ -71,7 +72,7 @@ def _inherited_rmd(account: Account, value: float) -> dict:
     death_year = account.original_owner_death_date.year
     if account.rmd_election_method == "10_year_rule":
         deadline = date(death_year + 10, 12, 31)
-        days_left = (deadline - date.today()).days
+        days_left = (deadline - today).days
         return {
             "status": "ten_year_rule", "deadline": deadline.isoformat(),
             "days_remaining": days_left, "account_value": round(value, 2),
@@ -92,8 +93,9 @@ async def rmd_for_account(session: AsyncSession, account: Account) -> dict | Non
     """RMD status for one account, computed from its actual holdings value. Returns None
     for a registration type that carries no RMD obligation at all (a Roth IRA, taxable
     account, trust, etc.) — the caller can tell "not applicable" from "applicable, clear"."""
+    today = await firm_time.today_of(session, account.firm_id)
     if account.registration_type == "inherited_ira":
-        return _inherited_rmd(account, await _account_value(session, account.id))
+        return _inherited_rmd(account, await _account_value(session, account.id), today)
     if account.registration_type not in _IRA_LIKE:
         return None
 
@@ -101,7 +103,7 @@ async def rmd_for_account(session: AsyncSession, account: Account) -> dict | Non
     owner_age = None
     if mandate and mandate.person_id:
         person = await session.get(Person, mandate.person_id)
-        owner_age = _age(person.date_of_birth) if person else None
+        owner_age = _age(person.date_of_birth, today) if person else None
 
     if owner_age is None:
         return {"status": "unknown", "reason": "Owner's date of birth is not on file."}

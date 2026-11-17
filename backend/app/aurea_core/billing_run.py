@@ -25,6 +25,7 @@ from decimal import Decimal
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import firm_time
 from app.aurea_core.billing import preview
 from app.aurea_core.billing_reconcile import merge_checks, reconcile_invoice
 from app.core.db import utcnow
@@ -100,7 +101,7 @@ async def what_would_bill(session: AsyncSession, firm_id: uuid.UUID, *, as_of: d
         select(BillingRun).where(BillingRun.firm_id == firm_id, BillingRun.status == "proposed")
     )).scalars().first()
     waiting = run if run is not None and not await _dismissed(session, run) else None
-    pv = await preview(session, firm_id, as_of=as_of or utcnow().date())
+    pv = await preview(session, firm_id, as_of=as_of or await firm_time.today_of(session, firm_id))
     entries, already, _ = await _unbilled(session, firm_id, pv)
     amounts: dict[str, float] = defaultdict(float)
     for e in entries:
@@ -119,7 +120,7 @@ async def propose_run(
 
     Returns None when there is nothing to bill. Raises BillingError if a run is already
     waiting: two open runs would double-bill the same period the moment both were approved."""
-    as_of = as_of or utcnow().date()
+    as_of = as_of or await firm_time.today_of(session, firm_id)
     waiting = await open_run(session, firm_id)
     if waiting is not None:
         raise BillingError(f"A billing run for {waiting.as_of.isoformat()} is already awaiting approval.")
@@ -183,6 +184,7 @@ async def post_debit(session: AsyncSession, invoice: Invoice) -> dict:
         select(Account).where(Account.firm_id == invoice.firm_id, Account.mandate_id == invoice.mandate_id)
     )).scalars().all()
     accounts.sort(key=lambda a: -_d(a.cash_balance))
+    today = await firm_time.today_of(session, invoice.firm_id)   # the fee is dated on the firm's day
     available = sum((_d(a.cash_balance) for a in accounts), Decimal(0))
     if available < amount:
         invoice.debit_status = "insufficient_cash"
@@ -198,7 +200,7 @@ async def post_debit(session: AsyncSession, invoice: Invoice) -> dict:
         acc.cash_balance = _d(acc.cash_balance) - take
         session.add(Transaction(
             firm_id=invoice.firm_id, account_id=acc.id, instrument_id=None, txn_type="fee",
-            quantity=0, price=0, amount=take, trade_date=utcnow().date(),
+            quantity=0, price=0, amount=take, trade_date=today,
             lineage={"invoice_id": str(invoice.id), "invoice_number": invoice.invoice_number,
                      "period_start": invoice.period_start.isoformat(), "period_end": invoice.period_end.isoformat()},
         ))
@@ -279,13 +281,14 @@ async def credit_invoice(session: AsyncSession, invoice: Invoice, *, reason: str
     check_creditable(inv)
 
     now = utcnow()
+    today = await firm_time.today_of(session, inv.firm_id)   # the note is numbered and dated on the firm's day
     note = Invoice(
         firm_id=inv.firm_id, run_id=inv.run_id, kind="credit_note", credit_of_id=inv.id, status="issued",
         arrangement_id=inv.arrangement_id, mandate_id=inv.mandate_id, household_id=inv.household_id,
         mandate_name=inv.mandate_name, household_name=inv.household_name,
         period_start=inv.period_start, period_end=inv.period_end, amount=-_d(inv.amount), currency=inv.currency,
         calculation={"credit_of": inv.invoice_number}, checks=[], issued_at=now, issued_by=by,
-        credit_reason=reason, invoice_number=await _next_number(session, inv.firm_id, "CN", now.date()),
+        credit_reason=reason, invoice_number=await _next_number(session, inv.firm_id, "CN", today),
     )
     session.add(note)
     await session.flush()
@@ -299,7 +302,7 @@ async def credit_invoice(session: AsyncSession, invoice: Invoice, *, reason: str
             acc.cash_balance = _d(acc.cash_balance) + _d(row["amount"])
             session.add(Transaction(
                 firm_id=inv.firm_id, account_id=acc.id, instrument_id=None, txn_type="fee_credit",
-                quantity=0, price=0, amount=_d(row["amount"]), trade_date=now.date(),
+                quantity=0, price=0, amount=_d(row["amount"]), trade_date=today,
                 lineage={"invoice_id": str(inv.id), "credit_note_id": str(note.id),
                          "credit_note_number": note.invoice_number, "reason": reason},
             ))
