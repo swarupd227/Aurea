@@ -35,7 +35,7 @@ function Lines({ rows, cur }: { rows: [string, number | null | undefined, string
   );
 }
 
-const amount = (v: number, cur: string) => (v > 0 ? money(v, cur) : "none");
+const amount = (v: number | null | undefined, cur: string) => (v == null ? "not assessed" : v > 0 ? money(v, cur) : "none");
 
 function Figures({ a }: { a: CountdownAnalysis }) {
   const f = a.figures;
@@ -45,9 +45,9 @@ function Figures({ a }: { a: CountdownAnalysis }) {
       <>
         <div className="mb-3 grid grid-cols-2 gap-2 cq-md:grid-cols-4">
           <Tile label="Gross estate" value={money(f.gross_estate, cur)} sub={f.married ? "couple" : "individual"} />
-          <Tile label="Exemption now" value={money(f.post_sunset_exemption, cur)} sub={f.married ? "combined" : undefined} />
-          <Tile label="Exposure" value={amount(f.exposure_post_sunset, cur)} tone={f.exposure_post_sunset > 0 ? "text-warn" : "text-ok"} />
-          <Tile label="Additional tax at risk" value={amount(f.additional_tax_at_risk, cur)} tone={f.additional_tax_at_risk > 0 ? "text-crit" : "text-ok"} />
+          <Tile label="Exclusion in force" value={money(f.exemption, cur)} sub={f.married ? "combined" : "per person"} />
+          <Tile label="Exposure" value={amount(f.exposure, cur)} tone={f.exposure > 0 ? "text-warn" : "text-ok"} />
+          <Tile label="Estimated estate tax" value={amount(f.estimated_tax, cur)} tone={f.estimated_tax > 0 ? "text-crit" : "text-ok"} />
         </div>
         <div className="tile-label mb-1">Estate</div>
         <Lines cur={cur} rows={[
@@ -56,8 +56,8 @@ function Figures({ a }: { a: CountdownAnalysis }) {
           ["Retirement accounts", f.retirement_accounts],
           ["Real estate", f.real_estate],
           ["Gross estate", f.gross_estate, "text-ink"],
-          ["Exemption before sunset", f.current_exemption],
-          ["Exemption after sunset", f.post_sunset_exemption],
+          ["Exclusion per person", f.exemption_per_person],
+          ["Exclusion", f.exemption],
         ]} />
       </>
     );
@@ -93,10 +93,10 @@ function Figures({ a }: { a: CountdownAnalysis }) {
   if (a.type === "uk_bpr_apr_cap") {
     return (
       <div className="mb-1 grid grid-cols-2 gap-2 cq-md:grid-cols-4">
-        <Tile label="Qualifying assets" value={money(f.estimated_qualifying_assets, cur)} sub="estimate · alternatives as proxy" />
-        <Tile label="Cap per person" value={money(f.cap, cur)} />
+        <Tile label="Qualifying assets" value={amount(f.estimated_qualifying_assets, cur)} sub={f.assessed === false ? "not on file" : undefined} />
+        <Tile label="Allowance per person" value={money(f.cap, cur)} />
         <Tile label="Above cap" value={amount(f.cap_exposure, cur)} tone={f.cap_exposure > 0 ? "text-warn" : "text-ok"} />
-        <Tile label="Additional IHT" value={amount(f.estimated_additional_iht, cur)} sub="estimate" tone={f.estimated_additional_iht > 0 ? "text-crit" : "text-ok"} />
+        <Tile label="Additional IHT" value={amount(f.estimated_additional_iht, cur)} tone={f.estimated_additional_iht > 0 ? "text-crit" : "text-ink-muted"} />
       </div>
     );
   }
@@ -120,8 +120,8 @@ function Analysis({ a }: { a: CountdownAnalysis }) {
           <div className="mt-0.5 text-xs text-ink-muted">{a.regulation}</div>
         </div>
         <div className="text-right">
-          <div className={`font-mono text-2xl tabular-nums ${URGENCY_TONE[a.urgency] ?? "text-ink"}`}>{a.days_remaining > 0 ? a.days_remaining : "in force"}</div>
-          <div className="font-mono text-xs tabular-nums text-ink-muted">{a.days_remaining > 0 ? `days to ${a.deadline}` : `since ${a.deadline}`}</div>
+          <div className={`font-mono text-2xl tabular-nums ${URGENCY_TONE[a.urgency] ?? "text-ink"}`}>{countdown(a).replace(/d$/, "")}</div>
+          <div className="font-mono text-xs tabular-nums text-ink-muted">{countdown(a).endsWith("d") ? `days to ${a.deadline}` : `since ${a.deadline}`}</div>
         </div>
       </div>
       <div className="mb-3 flex flex-wrap gap-1.5">
@@ -130,8 +130,26 @@ function Analysis({ a }: { a: CountdownAnalysis }) {
           <span className={`chip bg-border-soft ${a.figures.affected ? "text-crit" : "text-ok"}`}>{a.figures.affected ? "affected" : "not affected"}</span>
         )}
         <span className="chip bg-border-soft text-ink-muted">{a.currency}</span>
+        {(a.assumed ?? []).map((x) => <span key={x} className="chip bg-border-soft text-warn">assumed · {x}</span>)}
       </div>
       <Figures a={a} />
+      {(a.law ?? []).length > 0 && (
+        <div className="mt-3" data-testid="countdown-law">
+          <div className="tile-label mb-1">Figures in law</div>
+          <div className="divide-y divide-border-soft text-xs">
+            {a.law!.map((l) => (
+              <div key={l.key} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                <span className="min-w-0 flex-1 text-ink-soft" title={l.source}>{l.label}</span>
+                <span className="font-mono tabular-nums text-ink">
+                  {l.value == null ? (l.applies_from ?? l.applies_to ?? "—") : l.unit === "rate" ? `${Math.round(l.value * 1000) / 10}%` : money(l.value, l.unit)}
+                </span>
+                <span className="chip bg-border-soft text-ink-muted">as of {l.as_of}</span>
+                <span className={`chip bg-border-soft ${l.status === "expired" ? "text-warn" : "text-ink-muted"}`}>{URGENCY_LABEL[l.status] ?? l.status}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {a.actions.length > 0 && (
         <div className="mt-4">
           <div className="tile-label mb-1">Planning actions</div>

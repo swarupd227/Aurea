@@ -82,7 +82,9 @@ class ResearchReportingAgent(BaseAgent):
         hid = uuid.UUID(str(sensed["household_id"]))
         period = f"As at {firm_time.today(ctx.firm).isoformat()}"
         title = f"Portfolio review — {hh['name']}"
-        data = {"allocation": allocation, "risk": risk, "stress": stress, "goals": goals}
+        # The day these figures were taken, so whoever approves it sees their age (aurea_core/reports.age, B-55).
+        data = {"allocation": allocation, "risk": risk, "stress": stress, "goals": goals,
+                "as_of": firm_time.today(ctx.firm).isoformat()}
         report = await reports.waiting_draft(ctx.session, ctx.firm.id, hid)
         if report:
             report.title, report.period, report.sections, report.data = title, period, sections, data

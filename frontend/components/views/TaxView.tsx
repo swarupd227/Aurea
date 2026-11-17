@@ -218,7 +218,7 @@ function Book({ data }: { data: any }) {
       <Tiles testId="tax-book-summary">
         <Tile label="Households scanned" value={data.total_households_scanned} caption={`as of ${data.generated_at}`} />
         <Tile label="NZ harvestable losses" value={nzd(lh.total_harvestable_loss)} caption={`${lh.count} lot(s)`} tone={lh.count ? "text-crit" : "text-ink"} />
-        <Tile label="NZ est. tax saving" value={nzd(lh.estimated_tax_saving + pie.total_annual_saving)} caption="loss harvest + PIE" tone="text-ok" />
+        <Tile label="NZ est. tax saving" value={nzd(lh.estimated_tax_saving)} caption={`loss harvest · once; PIE ${nzd(pie.total_annual_saving)} / yr`} tone="text-ok" />
         <Tile label="Bright-line alerts" value={bl.count} caption={bl.count > 0 ? "NZ properties" : "none"} tone={bl.count ? "text-warn" : "text-ink-muted"} />
       </Tiles>
 
@@ -475,14 +475,14 @@ function UnitedStates({ data, ccy }: { data: any; ccy: string }) {
 
       <Section title="Annual gift exclusion" note={gift.action} testId="tax-us-gift"
         chips={<>
-          {gift.estate_exposed && <Chip tone="text-warn">estate above post-sunset exemption</Chip>}
+          {gift.estate_exposed && <Chip tone="text-warn">estate above the federal exclusion</Chip>}
           <Chip title={gift.qualified_exclusions?.tuition}>tuition paid direct · unlimited</Chip>
           <Chip title={gift.qualified_exclusions?.medical}>medical paid direct · unlimited</Chip>
         </>}>
         <div className="grid grid-cols-2 gap-3 p-4 cq-md:grid-cols-3">
           <Tile label="Per donor, per recipient" value={m(gift.annual_exclusion_per_donor)}
             caption={gift.gift_splitting_available ? `${m(gift.effective_annual_per_recipient)} with gift splitting` : undefined} />
-          <Tile label="Max exclusion gifts this year" value={m(gift.max_annual_exclusion_gifts)} caption={`${gift.donors} donor(s) · assumes 4 outside recipients`} />
+          <Tile label="Max exclusion gifts this year" value={m(gift.max_annual_exclusion_gifts)} caption={`${gift.donors} donor(s) · ${gift.recipients_on_file ?? 0} recipient(s) on file · others not on file`} />
           {sf && <Tile label="529 superfunding" value={m(sf.max_per_recipient)} caption="per beneficiary · 5-year front-load" />}
         </div>
       </Section>
@@ -589,7 +589,8 @@ function UnitedKingdom({ data, ccy }: { data: any; ccy: string }) {
         chips={div.flag ? <Chip tone="text-warn">likely exceeded</Chip> : <Chip tone="text-ok">within allowance</Chip>}>
         <div className="grid grid-cols-2 gap-3 p-4 cq-md:grid-cols-3" title={div.action}>
           <Tile label="Annual allowance" value={m(div.annual_allowance)} caption="per person" />
-          <Tile label="Est. annual dividends" value={m(div.estimated_annual_dividends)} caption="estimate · 60% equity at 2.5% yield" />
+          <Tile label="Est. annual dividends" value={m(div.estimated_annual_dividends)}
+            caption={`estimate · equity on file ${m(div.equity_value ?? 0)} at an assumed ${((div.assumed?.equity_dividend_yield ?? 0) * 100).toFixed(1)}% yield`} />
           {div.flag && <Tile label="Est. tax (higher rate)" value={m(div.estimated_tax)} caption="33.75% rate" tone="text-warn" />}
         </div>
       </Section>
@@ -612,7 +613,7 @@ function NewZealand({ data, ccy }: { data: any; ccy: string }) {
     <>
       <Tiles testId="tax-nz-summary">
         <Tile label="Harvestable losses" value={m(lh.total_harvestable_loss)} caption={`${lh.count} lot(s)`} tone={lh.count ? "text-crit" : "text-ink"} />
-        <Tile label="Est. tax saving" value={m(data.summary.estimated_tax_saving)} caption="loss harvest + PIE" tone="text-ok" />
+        <Tile label="Est. tax saving" value={m(data.summary.estimated_tax_saving)} caption={`loss harvest · once; PIE ${m(data.summary.annual_pie_saving ?? 0)} / yr`} tone="text-ok" />
         <Tile label="Bright-line alerts" value={bl.count} caption={bl.count > 0 ? "review before any sale" : "none"} tone={bl.count ? "text-warn" : "text-ink-muted"} />
         <Tile label="Total portfolio" value={m(data.total_portfolio_value)} caption={`${ks.count} KiwiSaver flag(s)`} />
       </Tiles>
@@ -645,7 +646,10 @@ function NewZealand({ data, ccy }: { data: any; ccy: string }) {
                     ? <Chip tone="text-warn">{r.current_rate_pct}% → {r.recommended_rate_pct}%</Chip>
                     : <Chip>{r.current_rate_pct}% · optimal</Chip>}
                   <Chip>max govt top-up {m(r.max_govt_topup)} / yr</Chip>
-                  <Chip>employer match {m(r.employer_match_annual)} / yr · 3% assumed</Chip>
+                  {r.employer_match_annual != null
+                    ? <Chip>employer {m(r.employer_match_annual)} / yr · {r.employer_rate_pct}% on file</Chip>
+                    : <Chip tone="text-warn">employer rate not on file</Chip>}
+                  {r.govt_topup_eligible === false && <Chip>income above the government contribution limit</Chip>}
                 </>} />
             ))}
           </Rows>

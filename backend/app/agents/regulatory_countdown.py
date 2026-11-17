@@ -29,7 +29,7 @@ class RegulatoryCountdownAgent(FollowUpOnApproval, BaseAgent):
 
     async def sense(self, ctx: AgentContext) -> dict:
         s = ctx.session
-        firm_jurisdiction = ctx.firm.jurisdiction or "NZ"
+        firm_jurisdiction = ctx.firm.jurisdiction   # no New Zealand fallback (B-121)
 
         if ctx.subject.type in (None, "firm"):
             ids = [h["id"] for h in await list_households(s, ctx.firm.id)]
@@ -51,7 +51,7 @@ class RegulatoryCountdownAgent(FollowUpOnApproval, BaseAgent):
         for hh_result in sensed["analyses"]:
             for analysis in hh_result.get("analyses", []):
                 figures = analysis.get("figures", {})
-                if not figures.get("affected"):
+                if not figures.get("affected") or analysis["type"] not in ("us_estate_tax_sunset", "uk_iht_pension_inclusion"):
                     continue
 
                 urgency = analysis.get("urgency", "medium")
@@ -61,24 +61,26 @@ class RegulatoryCountdownAgent(FollowUpOnApproval, BaseAgent):
                 action_text = "; ".join(a["action"] for a in actions[:3])
 
                 if analysis["type"] == "us_estate_tax_sunset":
-                    additional_tax = figures.get("additional_tax_at_risk", 0)
+                    # The sunset did not happen (P.L. 119-21): the exposure is against the exclusion in force, with
+                    # its source, and there is no countdown to quote (B-120).
+                    estimated_tax = figures.get("estimated_tax", 0)
                     gross_estate = figures.get("gross_estate", 0)
+                    exemption = figures.get("exemption", 0)
                     fallback = (
-                        f"Estate tax sunset alert for {hh_result['household_name']}: "
-                        f"${gross_estate/1e6:.1f}M gross estate faces ${additional_tax/1e6:.2f}M additional "
-                        f"federal estate tax if the TCJA exemption sunsets on Jan 1 2026 ({days} days). "
-                        f"Immediate actions: {action_text}."
+                        f"Estate tax exposure for {hh_result['household_name']}: gross estate on file "
+                        f"${gross_estate:,.0f} is above the ${exemption:,.0f} exclusion "
+                        f"({analysis.get('regulation')}); estimated federal estate tax ${estimated_tax:,.0f}. "
+                        f"Planning actions: {action_text}."
                     )
                     prompt = (
                         f"Write a concise adviser alert for '{hh_result['household_name']}'. "
-                        f"Gross estate: ${gross_estate/1e6:.1f}M. "
-                        f"Current combined exemption: ${figures.get('current_exemption', 0)/1e6:.1f}M. "
-                        f"Post-sunset exemption: ${figures.get('post_sunset_exemption', 0)/1e6:.1f}M. "
-                        f"Additional estate tax at risk: ${additional_tax/1e6:.2f}M. "
-                        f"Days until TCJA sunset: {days}. "
+                        f"Gross estate on file: ${gross_estate:,.0f}. "
+                        f"Federal exclusion in force: ${exemption:,.0f} ({analysis.get('regulation')}). "
+                        f"Estimated federal estate tax on the excess: ${estimated_tax:,.0f}. "
+                        f"Assumed: {'; '.join(analysis.get('assumed') or []) or 'nothing'}. "
                         f"Top planning actions: {action_text}. "
-                        "Write 2-3 sentences for the adviser — professional, urgent but not alarmist, "
-                        "cite the specific dollar figure and deadline. No hype."
+                        "Write 2-3 sentences for the adviser, citing the figures as given. There is no deadline: "
+                        "do not describe a sunset or a countdown. No hype."
                     )
 
                 else:  # uk_iht_pension_inclusion

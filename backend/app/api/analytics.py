@@ -208,7 +208,7 @@ async def get_maturity():
 async def get_tax_book(firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
     """Book-level tax intelligence: jurisdiction-dispatched, aggregated across all households."""
     from app.aurea_core import tax_intelligence
-    return await tax_intelligence.for_firm(db, firm.id, firm.jurisdiction or "NZ")
+    return await tax_intelligence.for_firm(db, firm.id, firm.jurisdiction)
 
 
 @router.get("/scorecards")

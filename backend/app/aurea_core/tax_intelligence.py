@@ -15,22 +15,26 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import markets, tax_india
+from app.aurea_core import law_figures, markets, tax_india
 from app.aurea_core.graph import household_brain, list_households
 from app.aurea_core.wash_sale import WINDOW_DAYS
 from app.models.portfolio import Holding, Instrument, TaxLot
 from app.models.tenant import Firm
 
 # ── NZ constants ──────────────────────────────────────────────────────────────
-_GOVT_TOPUP_MAX = 521.43
-_GOVT_TOPUP_RATE = 0.50
-_GOVT_TOPUP_OWN_MIN = 1042.86
+# The government contribution, from aurea_core/law_figures.py with its source and date (B-120). It was 50c per $1 up
+# to $521.43 until 30 June 2025.
+_GOVT_TOPUP_MAX = law_figures.value("nz_ks_govt_max")
+_GOVT_TOPUP_RATE = law_figures.value("nz_ks_govt_rate")
+_GOVT_TOPUP_INCOME_LIMIT = law_figures.value("nz_ks_govt_income_limit")
 _BRIGHT_LINE_SHORT = 2
 _BRIGHT_LINE_LONG = 10
 _HARVEST_THRESHOLD = -5_000
 _WASH_SALE_WINDOW = WINDOW_DAYS
 _KIWISAVER_RATES = [0.03, 0.04, 0.06, 0.08, 0.10]
-_ASSUMED_EMPLOYER_MATCH = 0.03
+# An employer's contribution rate is the employment contract's, read from profile.tax.employer_contribution_rate where a
+# person recorded it; with none on file it is not assumed (it was a fixed 3%, B-120). It does not change which
+# employee rate is best: it is the same at every rate.
 _ASSUMED_GROSS_RETURN = 0.07
 
 # ── US constants ──────────────────────────────────────────────────────────────
@@ -39,7 +43,7 @@ _US_LTCG_RATE_15_MFJ = 583_750        # 15% LTCG rate ceiling (MFJ, 2024)
 _US_NIIT_THRESHOLD_MFJ = 250_000      # NIIT ($200k single / $250k married)
 _US_NIIT_THRESHOLD_SINGLE = 200_000
 _US_NIIT_RATE = 0.038
-_US_ANNUAL_GIFT_EXCLUSION = 19_000    # per donor per recipient (2025)
+_US_ANNUAL_GIFT_EXCLUSION = law_figures.value("us_annual_gift_exclusion")   # per donor per recipient, with its source
 _US_RMD_FACTORS = {                   # IRS Uniform Lifetime Table (simplified)
     73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9,
     78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5,
@@ -189,12 +193,31 @@ async def household_wash_sale_calendar(
     if not brain:
         return None
 
+    # IRC §1091 binds a household taxed in the US and nobody else (aurea_core/wash_sale.applies), read as the
+    # rebalancer reads it: the household's own jurisdiction, else the firm's. Anyone else has no calendar (B-18).
+    from app.aurea_core import wash_sale
+
+    firm = await session.get(Firm, firm_id)
+    jurisdiction = markets.code((brain["household"].get("values") or {}).get("jurisdiction") or (firm.jurisdiction if firm else None))
+    if not wash_sale.applies(jurisdiction):
+        return {
+            "household_id": str(household_id),
+            "household_name": brain["household"]["name"],
+            "jurisdiction": jurisdiction,
+            "applies": False,
+            "lots_checked": 0,
+            "violations": [],
+            "total_disallowed_loss": 0,
+        }
+
     lots = await _load_lots(session, brain)
     flagged = [l for l in lots if l["wash_sale_risk"]]
 
     return {
         "household_id": str(household_id),
         "household_name": brain["household"]["name"],
+        "jurisdiction": jurisdiction,
+        "applies": True,
         "lots_checked": len(lots),
         "violations": sorted(flagged, key=lambda l: -l["wash_sale_disallowed_loss"]),
         "total_disallowed_loss": round(sum(l["wash_sale_disallowed_loss"] for l in flagged), 2),
@@ -291,24 +314,29 @@ def _kiwisaver_optimisation(brain: dict) -> dict:
 
         if not marginal or not current_rate or not annual_income:
             continue
+        employer_rate = tax.get("employer_contribution_rate")
+        eligible = annual_income <= _GOVT_TOPUP_INCOME_LIMIT
+
+        def govt_for(own: float) -> float:
+            return min(_GOVT_TOPUP_MAX, own * _GOVT_TOPUP_RATE) if eligible else 0.0
 
         rate_analysis = []
         for rate in _KIWISAVER_RATES:
             own = annual_income * rate
-            govt = min(_GOVT_TOPUP_MAX, own * _GOVT_TOPUP_RATE)
-            emp = annual_income * _ASSUMED_EMPLOYER_MATCH
-            net = govt + emp
+            govt = govt_for(own)
+            emp = annual_income * employer_rate if employer_rate is not None else None
             rate_analysis.append({
                 "rate_pct": int(rate * 100),
                 "own_contribution": round(own, 2),
-                "employer_match": round(emp, 2),
+                "employer_match": round(emp, 2) if emp is not None else None,
                 "govt_topup": round(govt, 2),
-                "net_annual_benefit": round(net, 2),
+                "net_annual_benefit": round(govt + (emp or 0), 2),
             })
 
-        best = max(rate_analysis, key=lambda x: x["net_annual_benefit"])
+        # The lowest rate that captures the most government contribution: the employer's share is the same at every rate.
+        best = max(rate_analysis, key=lambda x: (x["govt_topup"], -x["rate_pct"]))
         current_own = annual_income * current_rate
-        current_govt = min(_GOVT_TOPUP_MAX, current_own * _GOVT_TOPUP_RATE)
+        current_govt = govt_for(current_own)
 
         recommendations.append({
             "person_name": person.get("preferred_name") or person["full_name"],
@@ -316,14 +344,17 @@ def _kiwisaver_optimisation(brain: dict) -> dict:
             "current_rate_pct": int(current_rate * 100),
             "recommended_rate_pct": best["rate_pct"],
             "current_govt_topup": round(current_govt, 2),
-            "max_govt_topup": _GOVT_TOPUP_MAX,
-            "employer_match_annual": round(annual_income * _ASSUMED_EMPLOYER_MATCH, 2),
+            "max_govt_topup": _GOVT_TOPUP_MAX if eligible else 0,
+            "govt_topup_eligible": eligible,
+            "employer_rate_pct": round(employer_rate * 100, 2) if employer_rate is not None else None,
+            "employer_match_annual": round(annual_income * employer_rate, 2) if employer_rate is not None else None,
             "rate_analysis": rate_analysis,
+            "law": law_figures.cited(("nz_ks_govt_rate", "nz_ks_govt_max", "nz_ks_govt_income_limit"), date.today()),
+            "not_on_file": [] if employer_rate is not None else ["employer contribution rate"],
             "action": (
-                f"Increase KiwiSaver rate from {int(current_rate*100)}% to {best['rate_pct']}% "
-                f"to capture full government top-up of ${_GOVT_TOPUP_MAX:,.2f}/yr + "
-                f"employer match of ${annual_income * _ASSUMED_EMPLOYER_MATCH:,.0f}/yr."
-            ) if best["rate_pct"] != int(current_rate * 100) else "KiwiSaver rate appears optimal.",
+                f"Change KiwiSaver rate from {int(current_rate*100)}% to {best['rate_pct']}% "
+                f"to capture the full government contribution of ${_GOVT_TOPUP_MAX:,.2f}/yr."
+            ) if best["rate_pct"] != int(current_rate * 100) else "KiwiSaver rate captures the government contribution.",
         })
 
     return {"recommendations": recommendations, "count": len(recommendations)}
@@ -449,9 +480,9 @@ def _nz_tax_report(brain: dict, lots: list[dict]) -> dict:
         "summary": {
             "total_flags": loss_harvest["count"] + pie_opt["count"] + ks_opt["count"] + bright["count"],
             "harvestable_loss": loss_harvest["total_harvestable_loss"],
-            "estimated_tax_saving": round(
-                loss_harvest["estimated_tax_saving_at_top_pir"] + pie_opt["total_annual_saving"], 2
-            ),
+            # A harvest saves once and a PIE switch every year, so they are reported apart, not added (B-120).
+            "estimated_tax_saving": round(loss_harvest["estimated_tax_saving_at_top_pir"], 2),
+            "annual_pie_saving": round(pie_opt["total_annual_saving"], 2),
             "bright_line_flags": bright["count"],
         },
     }
@@ -588,16 +619,16 @@ def _us_gift_tracker(brain: dict) -> dict:
     heirs = [p for p in persons if p.get("is_next_gen")]
     married = len(adults) >= 2
 
-    # Estimate maximum annual exclusion gifts
-    external_recipients = 4  # conservative assumption: 4 outside beneficiaries
-    total_recipients = len(heirs) + external_recipients
+    # The recipients are the next generation on file. Anyone outside the household is not on file and is not
+    # counted: it used to assume four (B-120).
+    total_recipients = len(heirs)
     max_annual = len(adults) * total_recipients * _US_ANNUAL_GIFT_EXCLUSION
 
-    # Estate tax exemption (post-TCJA sunset, effective Jan 2026)
-    post_sunset_exemption = 7_000_000 * (2 if married else 1)
+    # The federal exclusion in force, from aurea_core/law_figures.py (P.L. 119-21), not a "post-sunset" guess.
+    exemption = law_figures.value("us_basic_exclusion") * (2 if married else 1)
     totals = brain.get("totals", {})
     gross_estate = totals.get("total_value", 0) or 0
-    estate_exposed = gross_estate > post_sunset_exemption
+    estate_exposed = gross_estate > exemption
 
     superfunding = None
     if heirs:
@@ -606,8 +637,8 @@ def _us_gift_tracker(brain: dict) -> dict:
             "max_per_recipient": _US_ANNUAL_GIFT_EXCLUSION * 5,
             "max_total": _US_ANNUAL_GIFT_EXCLUSION * 5 * (2 if married else 1) * len(heirs),
             "action": (
-                f"529 superfunding: up to ${_US_ANNUAL_GIFT_EXCLUSION * 5:,}/beneficiary "
-                + (f"(${_US_ANNUAL_GIFT_EXCLUSION * 10:,} with gift-splitting for a married couple) " if married else "")
+                f"529 superfunding: up to ${_US_ANNUAL_GIFT_EXCLUSION * 5:,.0f}/beneficiary "
+                + (f"(${_US_ANNUAL_GIFT_EXCLUSION * 10:,.0f} with gift-splitting for a married couple) " if married else "")
                 + "removes the full amount from the taxable estate immediately while treating it as 5 years of annual exclusion gifts."
             ),
         }
@@ -619,13 +650,17 @@ def _us_gift_tracker(brain: dict) -> dict:
         "gift_splitting_available": married,
         "effective_annual_per_recipient": _US_ANNUAL_GIFT_EXCLUSION * (2 if married else 1),
         "max_annual_exclusion_gifts": round(max_annual, 0),
+        "recipients_on_file": total_recipients,
+        "not_on_file": ["recipients outside the household"],
+        "estate_exclusion": exemption,
         "estate_exposed": estate_exposed,
+        "law": law_figures.cited(("us_annual_gift_exclusion", "us_basic_exclusion"), date.today()),
         "529_superfunding": superfunding,
         "action": (
-            f"Annual exclusion: each donor may give ${_US_ANNUAL_GIFT_EXCLUSION:,}/recipient tax-free (2025). "
-            + (f"With gift-splitting, a married couple can give ${_US_ANNUAL_GIFT_EXCLUSION * 2:,}/recipient — "
-               f"effectively ${max_annual:,.0f} total across ~{total_recipients} recipients this year." if married else "")
-            + (" Systematic gifting now reduces an estate exposed to the post-sunset exemption." if estate_exposed else "")
+            f"Annual exclusion: each donor may give ${_US_ANNUAL_GIFT_EXCLUSION:,.0f}/recipient tax-free. "
+            + (f"With gift-splitting, a married couple can give ${_US_ANNUAL_GIFT_EXCLUSION * 2:,.0f}/recipient: "
+               f"${max_annual:,.0f} across the {total_recipients} next-generation member(s) on file this year." if married else "")
+            + (" Gifting reduces an estate above the federal exclusion." if estate_exposed else "")
         ),
         "qualified_exclusions": {
             "tuition": "Direct payment to educational institutions: unlimited, not a taxable gift.",
@@ -996,9 +1031,11 @@ def _uk_dividend_allowance(brain: dict) -> dict:
     adults = [p for p in persons if not p.get("is_next_gen")]
     accounts = brain.get("accounts", [])
 
-    # Estimate dividend income from portfolio (equity holdings at assumed yield)
+    # Dividend income from the household's own equity on file, at a yield that is assumed and named as such: no
+    # dividend history is held. It used to take 60% of every portfolio as equity (B-120).
     total_portfolio = sum(acc.get("total_value", 0) or 0 for acc in accounts)
-    estimated_dividends = total_portfolio * 0.60 * _UK_ESTIMATED_EQUITY_YIELD  # 60% equity × 2.5% yield
+    equity_value = float(((brain.get("totals") or {}).get("by_asset_class") or {}).get("equity", 0) or 0)
+    estimated_dividends = equity_value * _UK_ESTIMATED_EQUITY_YIELD
     per_person = estimated_dividends / max(1, len(adults))
 
     total_allowance = _UK_DIVIDEND_ALLOWANCE * len(adults)
@@ -1011,6 +1048,9 @@ def _uk_dividend_allowance(brain: dict) -> dict:
         "persons": len(adults),
         "total_allowance": total_allowance,
         "estimated_annual_dividends": round(estimated_dividends, 2),
+        "equity_value": round(equity_value, 2),
+        "portfolio_value": round(total_portfolio, 2),
+        "assumed": {"equity_dividend_yield": _UK_ESTIMATED_EQUITY_YIELD, "tax_band": "higher rate"},
         "estimated_per_person": round(per_person, 2),
         "flag": flag,
         "estimated_excess": round(estimated_excess, 2),
@@ -1134,7 +1174,7 @@ def _uk_tax_report(brain: dict, lots: list[dict]) -> dict:
 async def for_household(
     session: AsyncSession,
     household_id: uuid.UUID,
-    firm_jurisdiction: str = "NZ",
+    firm_jurisdiction: str | None,
     *,
     firm_id: uuid.UUID,
 ) -> dict | None:
@@ -1166,7 +1206,7 @@ async def for_household(
     return result
 
 
-async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction: str = "NZ") -> dict:
+async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction: str | None) -> dict:
     households = await list_households(session, firm_id)
 
     # Per-jurisdiction aggregates

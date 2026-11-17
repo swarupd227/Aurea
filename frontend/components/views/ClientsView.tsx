@@ -13,6 +13,7 @@ import { ViewHeader, chip } from "./ViewHeader";
 type SortKey = "name" | "value" | "segment";
 type SortDir = "asc" | "desc";
 const SORT_LABEL: Record<SortKey, string> = { name: "Name", value: "AUM", segment: "Segment" };
+const INVESTOR_CLASS_LABEL: Record<string, string> = { accredited: "Accredited investor", qualified_purchaser: "Qualified purchaser" };
 
 /** Every household, entity and trust the caller's firm holds. A row opens that client - in the
  * work pane when the view is in the pane, as its page otherwise. */
@@ -143,9 +144,9 @@ export function ClientsView() {
                   <span className="mt-1 flex flex-wrap items-center gap-1.5">
                     {h.segment && <Segment>{h.segment}</Segment>}
                     <span className={`${chip} text-[10px] ${h.adviser ? "" : "text-warn"}`} data-testid="client-adviser">{h.adviser ?? "No adviser"}</span>
-                    {h.total_value >= 5_000_000 && <span className={`${chip} text-[10px]`}>Qualified Purchaser</span>}
-                    {h.total_value >= 1_000_000 && h.total_value < 5_000_000 && (
-                      <span className={`${chip} text-[10px]`}>Accredited Investor</span>
+                    {/* A certification on file (aurea_core/shelf.py), never the managed value (B-125). */}
+                    {h.investor_class && (
+                      <span className={`${chip} text-[10px]`} data-testid="client-investor-class">{INVESTOR_CLASS_LABEL[h.investor_class] ?? h.investor_class}</span>
                     )}
                   </span>
                 </span>

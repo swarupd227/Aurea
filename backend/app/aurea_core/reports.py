@@ -7,7 +7,9 @@ to it next. Everything is firm-scoped: a report from another firm reads as not f
 """
 from __future__ import annotations
 
+import re
 import uuid
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +24,35 @@ LIST_LIMIT = 200
 _AGENT = AgentKey.RESEARCH_REPORTING.value
 _PUBLISHED = (RecommendationStatus.APPROVED.value, RecommendationStatus.MODIFIED.value,
               RecommendationStatus.EXECUTED.value)
+
+
+# A draft whose figures are older than this is flagged on the card that would put it in front of the client (B-55).
+# Thirty days is one monthly valuation cycle: past it the figures have missed at least one month-end valuation and a
+# month of markets, and a firm reports monthly at the most often, so a client would be reading last period's numbers.
+# A redraft (run research_reporting) refreshes the same draft and its date.
+STALE_AFTER_DAYS = 30
+_AS_AT = re.compile(r"As at (\d{4}-\d{2}-\d{2})")
+
+
+def figures_as_of(report: ClientReport) -> date | None:
+    """The day a draft's figures were taken: recorded on the draft by Research & Reporting, else read from the period
+    it was drafted with ("As at YYYY-MM-DD"). None when neither says, and then no age is given, not a guess."""
+    raw = (report.data or {}).get("as_of")
+    if not raw:
+        m = _AS_AT.search(report.period or "")
+        raw = m.group(1) if m else None
+    try:
+        return date.fromisoformat(str(raw)) if raw else None
+    except ValueError:
+        return None
+
+
+def age(report: ClientReport, today: date) -> dict:
+    """How old a draft's figures are on `today`, and whether that is past STALE_AFTER_DAYS."""
+    taken = figures_as_of(report)
+    days = (today - taken).days if taken else None
+    return {"as_of": taken.isoformat() if taken else None, "days": days,
+            "stale": days is not None and days > STALE_AFTER_DAYS, "stale_after_days": STALE_AFTER_DAYS}
 
 
 class ReportError(Exception):

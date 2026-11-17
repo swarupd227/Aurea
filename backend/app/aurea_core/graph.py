@@ -167,8 +167,13 @@ async def list_households(session: AsyncSession, firm_id: uuid.UUID) -> list[dic
     ).scalars().all()
     from app.aurea_core.advisers import of_households
 
+    from app.aurea_core import firm_time, shelf
+    from app.models.tenant import Firm
+
     held = await of_households(session, firm_id)
     names = {u.id: u.full_name for u in (await session.execute(select(User).where(User.id.in_(set(held.values()))))).scalars().all()} if held else {}
+    # An investor class is a certification a person recorded from a document (aurea_core/shelf.py), never AUM (B-125).
+    classes = await shelf.household_classes(session, firm_id, today=firm_time.today(await session.get(Firm, firm_id)))
     out = []
     for h in households:
         # Lightweight total via holdings sum.
@@ -199,6 +204,6 @@ async def list_households(session: AsyncSession, firm_id: uuid.UUID) -> list[dic
                 total += sum(float(hh.market_value or 0) for hh in holdings)
         out.append({"id": str(h.id), "name": h.name, "segment": h.segment,
                     "adviser_id": str(held[h.id]) if h.id in held else None, "adviser": names.get(held.get(h.id)),
-                    "total_value": round(total, 2)})
+                    "total_value": round(total, 2), "investor_class": classes.get(h.id)})
     out.sort(key=lambda x: x["total_value"], reverse=True)
     return out

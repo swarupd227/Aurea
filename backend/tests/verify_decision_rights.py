@@ -82,6 +82,22 @@ def rights() -> None:
     check("names who may", "adviser or the portfolio team" in msg, True)
     check("says why", "moves money" in msg, True)
 
+    print("\n=== committing an acquired book is operations' alone (B-119) ===")
+    book = AgentKey.BOOK_INTEGRATION.value
+    for decision in ("approve", "modify", "revise", "dismiss", "rollback"):
+        for role in R:
+            check(f"{role.value} may {decision} a book integration", may(role, book, decision),
+                  role == R.OPERATIONS)
+    check("an unknown decision on a book is refused", may(R.OPERATIONS, book, "escalate"), False)
+    try:
+        dr.check(R.ADVISER, book, "approve")
+        msg = ""
+    except dr.DecisionForbidden as exc:
+        msg = str(exc)
+    check("the refusal names operations", "only operations" in msg, True)
+    check("operations is asked to decide it", dr.queue_action(R.OPERATIONS, book), "decide")
+    check("compliance is not chased for it", dr.queue_action(R.COMPLIANCE, book), None)
+
     print("\n=== only book-moving agents are restricted ===")
     check("drift moves the book", dr.moves_the_book(drift), True)
     check("an enum key is understood", dr.moves_the_book(AgentKey.DRIFT_REBALANCING), True)
@@ -98,6 +114,21 @@ def starting_is_not_deciding() -> None:
     for key in dr.BOOK_MOVING_AGENTS | dr.CASH_MOVING_AGENTS:
         check(f"{key} is held to a proposal when started from a conversation", runs.forced_to_proposal(key), True)
         check(f"{key} never 'acts on its own' from a conversation, even at Tier 3", runs.acts_on_its_own(key, "tier_3"), False)
+
+    book = AgentKey.BOOK_INTEGRATION.value
+    check("book integration is held to a proposal whatever its tier", runs.forced_to_proposal(book), True)
+    check("book integration never acts on its own at Tier 3", runs.acts_on_its_own(book, "tier_3"), False)
+    check("only operations starts book integration", runs.run_roles(AgentKey.BOOK_INTEGRATION),
+          frozenset({R.OPERATIONS}))
+
+    print("\n=== the acquired-book routes are operations' (B-119) ===")
+    import inspect
+    from app.api import onboarding as onb
+    for fn in (onb.create_batch, onb.run_batch):
+        dep = inspect.signature(fn).parameters["user"].default.dependency
+        roles = [c.cell_contents for c in (dep.__closure__ or []) if isinstance(c.cell_contents, tuple)]
+        check(f"{fn.__name__} admits operations alone (the admin passes require_roles anyway)",
+              roles, [(R.OPERATIONS,)])
 
     print("\n=== nobody who may only start a trade agent can thereby approve its trade ===")
     drift = AgentKey.DRIFT_REBALANCING.value

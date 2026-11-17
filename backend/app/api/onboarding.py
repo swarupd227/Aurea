@@ -21,7 +21,7 @@ from app.aurea_core import tracks as tracks_core
 from app.aurea_core import transfer_controls
 from app.core.db import get_db, utcnow
 from app.core.security import STAFF_ROLES, get_current_user, staff_user, require_roles
-from app.models.enums import AgentKey, PartyRole
+from app.models.enums import AgentKey, PartyRole, UserRole
 from app.models.governance import Recommendation
 from app.models.identity import User
 from app.models.onboarding import (
@@ -1347,7 +1347,7 @@ async def list_batches(firm: Firm = Depends(current_firm), db: AsyncSession = De
 
 @router.post("/book-batches")
 async def create_batch(
-    body: BatchCreate, user: User = Depends(require_roles(*STAFF_ROLES)),
+    body: BatchCreate, user: User = Depends(require_roles(UserRole.OPERATIONS)),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
     """A new batch. With no feed it loads the sample book and is marked as one (aurea_core/book_batches.py)."""
@@ -1368,7 +1368,9 @@ async def get_batch(batch_id: uuid.UUID, firm: Firm = Depends(current_firm), db:
 
 
 @router.post("/book-batches/{batch_id}/run")
-async def run_batch(batch_id: uuid.UUID, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+async def run_batch(batch_id: uuid.UUID, user: User = Depends(require_roles(UserRole.OPERATIONS)),
+                    firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """An acquired book is operations' (B-119): its page, its tools, starting its agent and deciding its proposal."""
     b = await db.get(BookIntegrationBatch, batch_id)
     if not b or b.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Batch not found")

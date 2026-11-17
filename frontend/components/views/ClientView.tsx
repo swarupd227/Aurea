@@ -179,11 +179,11 @@ function HouseholdPerformance({ householdId }: { householdId: string }) {
   );
 }
 
-function WalletShareTile({ heldAway, totalValue }: { heldAway: number; totalValue: number }) {
+const INVESTOR_CLASS_LABEL: Record<string, string> = { accredited: "Accredited investor", qualified_purchaser: "Qualified purchaser" };
+
+function WalletShareTile({ heldAway, totalValue, investorClass }: { heldAway: number; totalValue: number; investorClass?: string | null }) {
   const total = totalValue + heldAway;
   const share = total > 0 ? totalValue / total : 1;
-  const isQP = totalValue >= 5_000_000;
-  const isAI = totalValue >= 1_000_000;
   return (
     <div className="card p-4">
       <div className="tile-label">Wallet share</div>
@@ -192,8 +192,8 @@ function WalletShareTile({ heldAway, totalValue }: { heldAway: number; totalValu
       <div className="mt-0.5 text-[11px] text-ink-muted tabular-nums">
         {heldAway > 0 ? `${money(heldAway)} declared held away` : "None declared held away"}
       </div>
-      {isQP && <div className={`${chip} mt-1 text-[10px]`}>Qualified Purchaser</div>}
-      {isAI && !isQP && <div className={`${chip} mt-1 text-[10px]`}>Accredited Investor</div>}
+      {/* A certification a person recorded from its document (aurea_core/shelf.py), never the managed value (B-125). */}
+      {investorClass && <div className={`${chip} mt-1 text-[10px]`}>{INVESTOR_CLASS_LABEL[investorClass] ?? investorClass}</div>}
     </div>
   );
 }
@@ -317,7 +317,7 @@ export function ClientView({ id }: { id: string }) {
         <StatTile label="Accounts" value={brain.accounts.length} />
         <StatTile label="Entities & trusts" value={brain.entities.length} />
         <StatTile label="Goals" value={brain.goals.length} />
-        <WalletShareTile heldAway={t.held_away ?? 0} totalValue={t.total_value} />
+        <WalletShareTile heldAway={t.held_away ?? 0} totalValue={t.total_value} investorClass={brain.investor_class} />
       </div>
 
       <div className="grid gap-5 cq-lg:grid-cols-3">

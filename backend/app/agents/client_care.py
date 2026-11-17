@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
-
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import markets
@@ -16,7 +14,6 @@ from app.aurea_core.graph import household_brain, list_households
 from app.aurea_core.planning import stress_test
 from app.models.client_experience import Message
 from app.models.enums import AgentKey, AutonomyTier, MessageAuthor
-from app.models.identity import User
 
 
 def _age(dob: str | None) -> int | None:
@@ -127,10 +124,17 @@ class ClientCareAgent(BaseAgent):
         household_id = recommendation.subject_id
         if not household_id:
             return {"executed": True, "note": "No household; outreach not delivered."}
-        adviser = (
-            await s.execute(select(User).where(User.firm_id == ctx.firm.id, User.role == "adviser"))
-        ).scalars().first()
-        author = adviser.full_name if adviser else f"{ctx.firm.name} Advice Team"
+        # In that household's adviser's name, as a person recorded it (aurea_core/advisers.py) - not the first adviser
+        # the firm happens to have (B-54). With none on record it is unassigned, and nothing goes out: a message to a
+        # client goes out in a person's name, and picking one would put words in the wrong person's mouth.
+        from app.aurea_core import advisers
+
+        adviser = await advisers.adviser_of(s, ctx.firm.id, household_id)
+        if adviser is None or adviser.firm_id != ctx.firm.id:
+            return {"executed": False, "unassigned": True,
+                    "note": "Not sent: this household has no adviser on record (unassigned), and outreach goes out "
+                            "in its adviser's name. Assign one with assign_adviser, then send it from Messages."}
+        author = adviser.full_name
         body = (recommendation.modified_payload or recommendation.payload or {}).get("message") \
             or recommendation.rationale or recommendation.summary
         msg = Message(firm_id=ctx.firm.id, household_id=household_id, author_role=MessageAuthor.ADVISER,

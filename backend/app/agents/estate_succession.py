@@ -55,7 +55,7 @@ def _trust_review_recommendation(jurisdiction: str) -> str:
     elif jurisdiction == "US":
         return (
             "Schedule a trust review with the estate attorney. Revocable living trusts should be "
-            "reviewed following major life events, tax law changes (TCJA sunset 2026), or changes in "
+            "reviewed following major life events, tax law changes, or changes in "
             "state of domicile. Ensure pour-over will and beneficiary designations are current."
         )
     elif jurisdiction == "IN":
@@ -91,8 +91,11 @@ def _jurisdiction_specific_gaps(brain: dict, entities_gov: list[dict], jurisdict
     married = len(adults) >= 2
 
     if jurisdiction == "US":
-        # US: check estate vs post-sunset exemption
-        _US_EXEMPTION = 7_000_000
+        # US: the estate against the federal exclusion in force, from aurea_core/law_figures.py with its source. The
+        # $7M "post-sunset" figure this used had none, and the sunset never took effect (P.L. 119-21; B-120).
+        from app.aurea_core import law_figures
+
+        _US_EXEMPTION = law_figures.value("us_basic_exclusion")
         multiplier = 2 if married else 1
         threshold = _US_EXEMPTION * multiplier
         retirement = sum(
@@ -105,10 +108,10 @@ def _jurisdiction_specific_gaps(brain: dict, entities_gov: list[dict], jurisdict
             gaps.append({
                 "type": "us_estate_tax_exposure",
                 "severity": "high",
-                "title": "Federal estate tax exposure — reduced exemption",
+                "title": "Federal estate tax exposure",
                 "detail": (
                     f"Gross estate (~${total_value + retirement:,.0f}) exceeds the "
-                    f"post-sunset exemption (${threshold:,.0f}). "
+                    f"federal exclusion (${threshold:,.0f}, {law_figures.get('us_basic_exclusion').source}). "
                     f"Estimated federal estate tax: ~${exposure:,.0f} at 40%."
                 ),
                 "recommendation": (
@@ -357,7 +360,7 @@ class EstateSucessionAgent(FollowUpOnApproval, BaseAgent):
 
             # Jurisdiction-aware regulatory context
             reg_context = {
-                "US": "relevant US estate tax rules (post-TCJA sunset, Reg BI, step-up in basis, SECURE 2.0 RMDs)",
+                "US": "relevant US estate tax rules (the exclusion as set by P.L. 119-21, Reg BI, step-up in basis, SECURE 2.0 RMDs)",
                 "UK": "relevant UK regulatory context (IHT nil-rate bands, Trustee Act 2000, TRS registration, LPA obligations)",
                 "NZ": "relevant NZ regulatory context (Trusts Act 2019, FMC Act)",
                 "IN": "relevant Indian context (the personal law that governs the family, the nominee "

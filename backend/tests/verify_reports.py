@@ -266,9 +266,38 @@ async def behaviour() -> None:
             await client_refused("a client cannot read a draft", drafted, client_wei, 404)
             approve = {"recommendation_id": str(live.id), "action": "approve"}
             t1, ev = await ask("decide_recommendation", approve)
-            check("the card names the report and what approving does", rows(ev), {
+            check("the card names the report, its figures' age and what approving does", rows(ev), {
                 "Report": f"Portfolio review — {chen.name}", "Client": chen.name, "Period": f"As at {today.isoformat()}",
-                "Decision": "Approve, and the client can read it"})
+                "Figures as of": f"{today.isoformat()} · 0 day(s) old", "Decision": "Approve, and the client can read it"})
+            check("the draft records the day its figures were taken (B-55)", drafted.data.get("as_of"), today.isoformat())
+
+            print("\n=== a draft's age at the moment of approval (B-55) ===")
+            from datetime import timedelta as _td
+            kept = (dict(drafted.data), drafted.period)
+            taken = today - _td(days=reports.STALE_AFTER_DAYS + 49)
+            drafted.data = {**drafted.data, "as_of": taken.isoformat()}
+            await s.commit()
+            old_rows = {r["label"]: r["value"] for r in (await ex().preview_change("decide_recommendation", approve))["rows"]}
+            check("an old draft's card gives its age and a warning",
+                  (old_rows["Figures as of"], old_rows.get("Stale")),
+                  (f"{taken.isoformat()} · {reports.STALE_AFTER_DAYS + 49} day(s) old", f"{reports.STALE_AFTER_DAYS + 49} days old · over 30 · redraft first"))
+            edge = today - _td(days=reports.STALE_AFTER_DAYS)
+            drafted.data = {**kept[0], "as_of": edge.isoformat()}
+            await s.commit()
+            check("at exactly 30 days there is no warning yet", {r["label"] for r in (await ex().preview_change(
+                "decide_recommendation", approve))["rows"]} >= {"Stale"}, False)
+            drafted.data = {k: v for k, v in kept[0].items() if k != "as_of"}
+            drafted.period = f"As at {taken.isoformat()}"
+            await s.commit()
+            check("a draft from before the date was recorded is read from its period",
+                  reports.age(drafted, today), {"as_of": taken.isoformat(), "days": 79, "stale": True, "stale_after_days": 30})
+            drafted.period = "Q3"
+            await s.commit()
+            check("one that says neither has no age given, not a guess",
+                  ({r["label"]: r["value"] for r in (await ex().preview_change("decide_recommendation", approve))["rows"]}["Figures as of"],
+                   reports.age(drafted, today)["stale"]), ("Not recorded", False))
+            drafted.data, drafted.period = kept
+            await s.commit()
             await s.refresh(drafted)
             check("nothing changed yet", str(drafted.status), "draft")
             await settle(t1, False)

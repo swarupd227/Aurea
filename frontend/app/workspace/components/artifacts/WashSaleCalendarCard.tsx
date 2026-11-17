@@ -17,6 +17,9 @@ interface Violation {
 }
 
 interface WashSalePayload {
+  /** False outside the US: IRC §1091 binds a household taxed there and nobody else (B-18). */
+  applies?: boolean;
+  jurisdiction?: string;
   lots_checked: number;
   violations: Violation[];
   total_disallowed_loss: number;
@@ -28,6 +31,19 @@ function money(n: number) {
 
 export function WashSaleCalendarCard({ result }: { result: WashSalePayload }) {
   const clean = result.violations.length === 0;
+  if (result.applies === false) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-border bg-surface" data-testid="wash-sale-not-applicable">
+        <div className="flex items-center justify-between border-b border-border-soft px-3 py-2">
+          <div className="text-sm font-medium text-ink">Wash-sale calendar</div>
+          <div className="flex items-center gap-1.5 font-mono text-xs text-ink-muted">
+            <span className="chip bg-border-soft">{result.jurisdiction}</span>
+            <span className="chip bg-border-soft">does not apply · US only</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface">

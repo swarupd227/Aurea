@@ -113,6 +113,73 @@ RESERVED_SETTINGS = {"compliance", "foundation", "cmas", "pii"}
 MODEL_TASKS = ("advice", "narrative", "classify")
 
 
+# ── Where the firm's settings may send data (B-146) ──────────────────────────────────────────────
+# A custom connector posts the firm's events to its webhook or polls its base URL, and a branding logo is fetched by
+# every client who opens their page. An administrator lists the firm's own domains in settings.allowed_domains, and
+# every such address must be https on one of them, or a subdomain of one. With none listed, no outbound address is
+# accepted: an empty list means nothing is allowed yet, not everything.
+OUTBOUND_URL_KEYS = ("webhook_url", "base_url")
+_DOMAIN = re.compile(r"(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+")
+
+
+def clean_domains(value: Any) -> list[str]:
+    """The allowed domains as stored: bare lower-case host names, each once, in the order given. A list or a
+    comma-separated string; a scheme, path, port or wildcard is refused rather than guessed at."""
+    items = value.split(",") if isinstance(value, str) else value
+    if not isinstance(items, (list, tuple)):
+        raise AdminError("The allowed domains are a list of host names, e.g. tuiwealth.co.nz.")
+    out: list[str] = []
+    for item in items:
+        d = str(item or "").strip().lower().rstrip(".")
+        if not d:
+            continue
+        if not _DOMAIN.fullmatch(d):
+            raise AdminError(f"'{d}' is not a domain: give a bare host name such as tuiwealth.co.nz, with no "
+                             "https://, path, port or wildcard.")
+        if d not in out:
+            out.append(d)
+    return out
+
+
+def allowed_domains(firm: Firm) -> list[str]:
+    try:
+        return clean_domains((firm.settings or {}).get("allowed_domains") or [])
+    except AdminError:
+        return []
+
+
+def outbound_url_refusal(url: Any, domains: list[str], what: str) -> str | None:
+    """Why `url` may not be where `what` sends or loads from, or None. https, on one of `domains` (or a subdomain of
+    one), with no user name or password in it."""
+    from urllib.parse import urlsplit
+
+    text = str(url or "").strip()
+    try:
+        parts = urlsplit(text)
+        host = (parts.hostname or "").rstrip(".")
+        parts.port  # noqa: B018 - a malformed port raises here
+    except ValueError:
+        return f"The {what} '{text}' is not an address."
+    if parts.scheme.lower() != "https" or not host:
+        return f"The {what} must be an https address; '{text}' is not."
+    if parts.username or parts.password:
+        return f"The {what} may not carry a user name or password; give credentials in their own field."
+    if not domains:
+        return (f"This firm lists no allowed domains, so no {what} is accepted: an administrator adds the firm's own "
+                "domains (allowed_domains) first.")
+    if not any(host == d or host.endswith("." + d) for d in domains):
+        return f"The {what} is on {host}, which is not one of the firm's allowed domains ({', '.join(domains)})."
+    return None
+
+
+def check_outbound_url(firm: Firm, url: Any, what: str, *, domains: list[str] | None = None) -> str:
+    """The address, stripped, or AdminError (422) saying why it is refused. The one check every route and tool uses."""
+    refusal = outbound_url_refusal(url, allowed_domains(firm) if domains is None else domains, what)
+    if refusal:
+        raise AdminError(refusal)
+    return str(url).strip()
+
+
 def model_gate_refusal(firm: Firm) -> str | None:
     """Why a model change is blocked now, or None: when the firm enforces the eval gate, a model or config
     change waits until the golden gates are green."""
@@ -130,11 +197,20 @@ def prepare_firm(firm: Firm, *, fields: dict | None = None, branding: dict | Non
     for name in FIRM_FIELDS:
         _diff(changes, name, getattr(firm, name), (fields or {}).get(name))
     now = firm.branding or {}
-    for key, value in (branding or {}).items():
-        _diff(changes, BRANDING_NAMES.get(key, f"branding.{key}"), now.get(key), value)
     if settings is not None:
         if reserved := sorted(set(settings) & RESERVED_SETTINGS):
             raise AdminError(f"{', '.join(reserved)} are set through their own controls, not here.")
+        if "allowed_domains" in settings:
+            settings = {**settings, "allowed_domains": clean_domains(settings["allowed_domains"] or [])}
+    domains = (settings or {}).get("allowed_domains", allowed_domains(firm)) if settings is not None else allowed_domains(firm)
+    branding = dict(branding) if branding is not None else None
+    for key, value in (branding or {}).items():
+        # A logo every client's page loads, so it is held to the firm's domains when it changes (B-146). Clearing it is
+        # always allowed, and one already on file is not re-judged by an unrelated save.
+        if key == "logo_url" and value and value != now.get(key):
+            branding[key] = value = check_outbound_url(firm, value, "logo URL", domains=domains)
+        _diff(changes, BRANDING_NAMES.get(key, f"branding.{key}"), now.get(key), value)
+    if settings is not None:
         for key, value in settings.items():
             _diff(changes, f"settings.{key}", (firm.settings or {}).get(key), value)
     if model_config is not None:
@@ -151,6 +227,7 @@ async def update_firm(session: AsyncSession, firm: Firm, actor: User, *, fields:
                       reason: str | None = None) -> Outcome:
     """The firm's profile, branding, generic settings and model routing (PATCH /api/admin/firm)."""
     plan = prepare_firm(firm, fields=fields, branding=branding, settings=settings, model_config=model_config)
+    branding, settings = plan.values["branding"], plan.values["settings"]   # as checked: domains cleaned, URLs stripped
     given = {k: v for k, v in (fields or {}).items() if v is not None}
     for name, value in given.items():
         setattr(firm, name, value)
@@ -739,57 +816,44 @@ async def household_of_mandate(session: AsyncSession, mandate: Mandate) -> House
 
 
 SUITABILITY_FIELDS = ("risk_tolerance", "investment_horizon", "max_equity", "esg_preference")
+# A mandate's suitability is the adviser's (B-153). The questionnaire indicates and an adviser adopts it or keeps what is
+# on file with a reason (aurea_core/risk_profile.decide, the decide_risk_profile tool); the IPS an adviser records from
+# the client's document sets its limits (aurea_core/ips.py). An administrator configures the platform, not a client's
+# risk, so this changes a mandate's type and whether it is active, and refuses a suitability field rather than drop it.
+SUITABILITY_REFUSAL = ("A mandate's risk tolerance, horizon, maximum equity and ESG preference are its adviser's, not an "
+                       "administrator's: the adviser adopts a questionnaire's profile (decide_risk_profile) or records an "
+                       "IPS. An administrator changes a mandate's type and whether it is active.")
+MANDATE_TYPES = ("advisory", "discretionary", "execution_only")
 
 
 async def prepare_mandate(session: AsyncSession, firm: Firm, mandate_id: Any, *, mandate_type: str | None = None,
-                          risk_tolerance: str | None = None, investment_horizon: str | None = None,
-                          max_equity: float | None = None, esg_preference: str | None = None,
-                          is_active: bool | None = None) -> Plan:
-    from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX, on_file
-
+                          is_active: bool | None = None, **suitability: Any) -> Plan:
+    unknown = set(suitability) - set(SUITABILITY_FIELDS)
+    if unknown:
+        raise TypeError(f"prepare_mandate() got unexpected keyword arguments {sorted(unknown)}")
+    if any(v is not None for v in suitability.values()):
+        raise AdminError(SUITABILITY_REFUSAL, 403)
+    if mandate_type is not None and mandate_type not in MANDATE_TYPES:
+        raise AdminError(f"A mandate type is one of {', '.join(MANDATE_TYPES)}.")
     m = await _owned(session, Mandate, firm, mandate_id, "Mandate")
-    suit = m.suitability or {}
-    given = {"risk_tolerance": risk_tolerance, "investment_horizon": investment_horizon, "max_equity": max_equity,
-             "esg_preference": esg_preference}
     changes: list[dict] = []
     _diff(changes, "mandate_type", str(m.mandate_type), mandate_type)
-    for name, value in given.items():
-        _diff(changes, name, suit.get(name), value)
     _diff(changes, "active", bool(m.is_active), is_active)
-    notes: list[tuple[str, str]] = []
-    if max_equity is not None and max_equity != suit.get("max_equity"):
-        if not 0 <= max_equity <= 1:
-            raise AdminError("A maximum equity is a fraction between 0 and 1 (0.6 for 60%).")
-        # Neither an IPS nor a risk profile may put a mandate's equity over its capacity ceiling, and neither may this:
-        # a mandate over its ceiling breaches on the next rebalance (aurea_core/risk_profile.CAPACITY_EQUITY_MAX).
-        _, capacity = on_file(suit)
-        ceiling = CAPACITY_EQUITY_MAX.get(capacity or "")
-        if ceiling is not None and max_equity > ceiling:
-            raise AdminError(f"A maximum equity of {max_equity:.0%} is above the {ceiling:.0%} ceiling for {capacity} capacity.")
-        if ceiling is not None:
-            notes.append(("Capacity ceiling", f"{ceiling:.0%}"))
     household = await household_of_mandate(session, m)
     label = f"{household.name} · {m.name}" if household else m.name
-    return Plan("mandates", m, label, changes, notes, values={"household": household})
+    return Plan("mandates", m, label, changes, [], values={"household": household})
 
 
 async def update_mandate(session: AsyncSession, firm: Firm, actor: User, mandate_id: Any, *, mandate_type: str | None = None,
-                         risk_tolerance: str | None = None, investment_horizon: str | None = None,
-                         max_equity: float | None = None, esg_preference: str | None = None, is_active: bool | None = None,
-                         reason: str | None = None) -> Outcome:
-    """A mandate's type, suitability and whether it is active (PATCH /api/admin/mandates/{id})."""
-    plan = await prepare_mandate(session, firm, mandate_id, mandate_type=mandate_type, risk_tolerance=risk_tolerance,
-                                 investment_horizon=investment_horizon, max_equity=max_equity, esg_preference=esg_preference,
-                                 is_active=is_active)
+                         is_active: bool | None = None, reason: str | None = None, **suitability: Any) -> Outcome:
+    """A mandate's type and whether it is active (PATCH /api/admin/mandates/{id}). Its suitability is refused: it is
+    the adviser's (B-153)."""
+    plan = await prepare_mandate(session, firm, mandate_id, mandate_type=mandate_type, is_active=is_active, **suitability)
     m = plan.record
     if mandate_type is not None:
         m.mandate_type = mandate_type
     if is_active is not None:
         m.is_active = is_active
-    given = {k: v for k, v in (("risk_tolerance", risk_tolerance), ("investment_horizon", investment_horizon),
-                                ("max_equity", max_equity), ("esg_preference", esg_preference)) if v is not None}
-    if given:
-        m.suitability = {**(m.suitability or {}), **given}
     detail = {"mandate_type": m.mandate_type}
     if reason:
         detail["changed"] = {c["field"]: [c["from"], c["to"]] for c in plan.changes}
@@ -1271,6 +1335,10 @@ async def prepare_connector(session: AsyncSession, firm: Firm, connector_id: Any
     _diff(changes, "sync_cron", c.sync_cron, sync_cron)
     _diff(changes, "display_name", c.display_name, display_name)
     if config:
+        # An address the connector sends to or polls is held to the firm's domains (B-146).
+        for key in OUTBOUND_URL_KEYS:
+            if config.get(key) and config[key] != REDACTED and config[key] != (c.config or {}).get(key):
+                check_outbound_url(firm, config[key], key.replace("_", " ").replace("url", "URL"))
         # Which settings changed, never their values.
         changes.append({"field": "config", "from": None, "to": sorted(k for k, v in config.items() if v != REDACTED)})
     notes: list[tuple[str, str]] = []

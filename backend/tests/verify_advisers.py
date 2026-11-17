@@ -125,6 +125,30 @@ async def main() -> int:
             s.add(run)
             await s.flush()
 
+            print("\n=== Approved outreach goes out in that household's adviser's name (B-54) ===")
+            from app.agents.client_care import ClientCareAgent
+            from app.atlas.base import AgentContext, Subject
+            from app.models.client_experience import Message
+
+            care = ClientCareAgent()
+
+            async def outreach(h):
+                rec = Recommendation(id=uuid.uuid4(), firm_id=firm.id, run_id=run.id, agent_key="client_care", tier="tier_2",
+                                     status=RecommendationStatus.APPROVED, title=f"Call {h.name}", summary="x",
+                                     subject_type="household", subject_id=h.id, subject_label=h.name, payload={"message": "Hello"})
+                ctx = AgentContext(session=s, firm=firm, run=run, tier="tier_2", guardrails={}, config={},
+                                   subject=Subject("household", h.id, h.name))
+                return await care.act(ctx, rec)
+
+            sent = await outreach(hs["Cole"])
+            msg = await s.get(Message, uuid.UUID(sent["message_id"]))
+            check("Cole's outreach is signed by Ben, Cole's adviser, not Ann, the first adviser at the firm",
+                  (sent["executed"], msg.author_name), (True, "Ben Adviser"))
+            unsent = await outreach(hs["Dunn"])
+            check("Dunn has no adviser: unassigned, nothing sent, no adviser picked",
+                  (unsent["executed"], unsent.get("unassigned"), "unassigned" in unsent["note"]), (False, True, True))
+            check("and no message was written for Dunn", (await s.execute(select(Message).where(Message.household_id == hs["Dunn"].id))).scalars().all(), [])
+
             def proposal(agent, subject_type, subject_id, title, status=RecommendationStatus.PROPOSED):
                 s.add(Recommendation(firm_id=firm.id, run_id=run.id, agent_key=agent, tier="tier_2", status=status, title=title, summary="x",
                                      subject_type=subject_type, subject_id=subject_id, subject_label=title))

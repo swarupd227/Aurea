@@ -98,6 +98,81 @@ def gating() -> None:
         check(f"the {page} page is the view, not a copy of it", len(src.splitlines()) < 30 and "View" in src, True)
 
 
+def figures_in_code() -> None:
+    """B-120: what the Studio pages state comes from a cited figure, a record, or is named as assumed."""
+    from datetime import date
+
+    from app.aurea_core import behavioural, law_figures, regulatory_countdown as rc, tax_intelligence as ti
+
+    today = date(2026, 11, 17)
+    print("\n=== Every figure fixed in law carries its source and the day it was taken (B-120) ===")
+    for f in law_figures.FIGURES.values():
+        check(f"{f.key} cites a source and an as-of date", bool(f.source.strip()) and f.as_of <= today, True)
+    check("a figure past its window reports itself expired", law_figures.get("us_tcja_sunset").status(today), "expired")
+    check("one still to come is upcoming", law_figures.get("uk_pension_iht").status(today), "upcoming")
+    check("one whose date has passed is in force", law_figures.get("uk_bpr_apr_cap").status(today), "in_force")
+    check("this year's gift exclusion expires with the year", law_figures.get("us_annual_gift_exclusion").status(date(2027, 1, 1)), "expired")
+
+    couple = {"totals": {"total_value": 40_000_000, "by_asset_class": {"equity": 10_000_000, "alternatives": 5_000_000}},
+              "persons": [{"full_name": "A One", "profile": {}}, {"full_name": "B One", "profile": {}},
+                          {"full_name": "C One", "is_next_gen": True, "profile": {}}],
+              "accounts": [{"total_value": 40_000_000}], "household": {"name": "One", "values": {}}, "goals": []}
+
+    print("\n=== The regulatory countdown (B-120) ===")
+    us = rc._us_estate_exemption(couple, today)
+    check("the US sunset that passed is expired: no countdown, not critical", (us["status"], us["days_remaining"], us["urgency"]),
+          ("expired", 0, "expired"))
+    check("the exclusion is P.L. 119-21's, doubled for a couple and named as assumed",
+          (us["figures"]["exemption"], any("portability" in a for a in us["assumed"])), (30_000_000, True))
+    check("exposure and tax are worked from it", (us["figures"]["exposure"], us["figures"]["estimated_tax"]), (10_000_000, 4_000_000.0))
+    check("no gift action assumes four recipients", any("* 4" in a["estimated_benefit"] or "76,000" in a["estimated_benefit"] for a in us["actions"]), False)
+    check("no §7520 rate is made up", any("~5%" in a["detail"] for a in us["actions"]), False)
+    check("its law lists every figure it used", sorted(l["key"] for l in us["law"]),
+          ["us_annual_gift_exclusion", "us_basic_exclusion", "us_estate_tax_rate", "us_tcja_sunset"])
+    pension = rc._uk_iht_pension(couple, today)
+    check("the UK pension change counts down from the firm's today", (pension["status"], pension["days_remaining"]),
+          ("upcoming", (date(2027, 4, 6) - today).days))
+    bpr = rc._uk_bpr_apr_cap(couple, today)
+    check("BPR/APR in force since 6 Apr 2026, not counted down to 2027", (bpr["status"], bpr["deadline"]), ("in_force", "2026-04-06"))
+    check("its qualifying assets are not on file, so not assessed: no alternatives proxy",
+          (bpr["figures"]["assessed"], bpr["figures"]["estimated_qualifying_assets"], bpr["figures"]["estimated_additional_iht"]), (False, None, None))
+    check("the FCA date nobody sourced is gone", hasattr(rc, "_uk_fca_targeted_support"), False)
+
+    print("\n=== The tax view (B-120) ===")
+    gift = ti._us_gift_tracker(couple)
+    check("gifts count only the recipients on file", (gift["recipients_on_file"], gift["max_annual_exclusion_gifts"]), (1, 2 * 1 * 19_000))
+    check("and say who is not", gift["not_on_file"], ["recipients outside the household"])
+    check("the estate is read against the exclusion in force", gift["estate_exclusion"], 30_000_000)
+    div = ti._uk_dividend_allowance(couple)
+    check("dividends from the equity on file, not 60% of everything", (div["equity_value"], div["estimated_annual_dividends"]),
+          (10_000_000, 250_000.0))
+    check("the yield is named as assumed", div["assumed"]["equity_dividend_yield"], 0.025)
+    saver = {"persons": [{"full_name": "Kai", "profile": {"tax": {"marginal_rate": 0.33, "kiwisaver_rate": 0.03, "annual_income": 80_000}}}]}
+    ks = ti._kiwisaver_optimisation(saver)["recommendations"][0]
+    check("no employer rate is assumed", (ks["employer_match_annual"], ks["not_on_file"]), (None, ["employer contribution rate"]))
+    check("the government contribution is Budget 2025's, with its source", (ks["max_govt_topup"], ks["law"][1]["source"].startswith("Budget 2025")),
+          (260.72, True))
+    saver["persons"][0]["profile"]["tax"]["employer_contribution_rate"] = 0.035
+    check("a recorded employer rate is used", ti._kiwisaver_optimisation(saver)["recommendations"][0]["employer_match_annual"], 2800.0)
+    saver["persons"][0]["profile"]["tax"]["annual_income"] = 200_000
+    check("above the income limit there is no government contribution",
+          ti._kiwisaver_optimisation(saver)["recommendations"][0]["max_govt_topup"], 0)
+
+    print("\n=== The behavioural draft claims nothing no tool established (B-120) ===")
+    stressed = {"is_stressed": True, "drawdown_pct": -12.5}
+    for bias in (behavioural.LOSS_AVERSION, behavioural.OVERCONFIDENCE, None):
+        body = behavioural._draft_stress_message(couple, stressed, {"dominant_bias": bias})["draft_message"]
+        check(f"{bias or 'no bias'}: no claim about the strategy, a stress test or agreed parameters",
+              any(w in body for w in ("no changes to the strategy", "stress-tested", "within the parameters", "remains unchanged",
+                                      "has not changed", "no adjustments are needed")), False)
+        check(f"{bias or 'no bias'}: states the drawdown on file", "12.5% below cost" in body, True)
+    undated = {**couple, "goals": [{"kind": "retirement", "assumptions": {}}]}
+    check("a goal with no horizon gets none: no 10-year fallback",
+          "10-year" in behavioural._draft_stress_message(undated, stressed, {})["draft_message"], False)
+    dated = {**couple, "goals": [{"kind": "retirement", "assumptions": {"years": 14}}]}
+    check("a recorded horizon is used", "14-year retirement goal" in behavioural._draft_stress_message(dated, stressed, {})["draft_message"], True)
+
+
 async def behaviour() -> None:
     db = create_async_engine("sqlite+aiosqlite:///:memory:")
     try:
@@ -193,6 +268,12 @@ async def behaviour() -> None:
             check("the regulatory countdown, firm-wide", (isinstance(reg["results"], list), reg["total"] == len(reg["results"])), (True, True))
             one = await ex(ann).execute("read_regulatory_countdown", {"household_id": str(lee.id)})
             check("and for one household on its market", one["jurisdiction"], "US")
+            us = one["analyses"][0]
+            check("B-120: the passed sunset is expired, not a countdown at zero and critical",
+                  (us["status"], us["days_remaining"], us["urgency"]), ("expired", 0, "expired"))
+            check("B-120: its exclusion is the one in force, with its source",
+                  (us["figures"]["exemption_per_person"], any("119-21" in l["source"] for l in us["law"])), (15_000_000, True))
+            check("B-120: no post-sunset guess survives", "post_sunset_exemption" in us["figures"], False)
             book = await ex(ann).execute("read_tax_book", {})
             check("the tax book scans the firm's households", book["total_households_scanned"], 2)
 
@@ -305,6 +386,7 @@ async def behaviour() -> None:
 
 def main() -> int:
     gating()
+    figures_in_code()
     asyncio.run(behaviour())
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     for f in FAIL:
