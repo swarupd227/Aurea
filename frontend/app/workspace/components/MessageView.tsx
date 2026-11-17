@@ -5,6 +5,7 @@ import { matchPaneView, paneRouteForArtifact } from "@/lib/paneViews";
 import { readable } from "@/lib/refs";
 import { Markdown } from "./Markdown";
 import { ConfirmationCard } from "./ConfirmationCard";
+import { ListenButton } from "./ListenButton";
 import { ProofStrip } from "./ProofStrip";
 import { artifactCard, MessageCardRenderer } from "./artifacts/ArtifactRenderer";
 import type { Message } from "../types";
@@ -33,7 +34,7 @@ function OpenView({ route, onOpenView }: { route: string; onOpenView?: (route: s
       data-testid="card-open-view"
       data-route={route}
       onClick={() => (onOpenView ? onOpenView(route) : router.push(route))}
-      className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-0.5 text-xs text-ink-soft transition-colors hover:border-accent/60 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-0.5 text-xs text-ink-soft transition-colors hover:border-ink-faint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       title={onOpenView ? `Open ${label} beside the conversation` : `Open ${label}`}
     >
       <PanelRight className="h-3 w-3 text-ink-muted" aria-hidden /> Open {label}
@@ -56,7 +57,7 @@ export function MessageView({
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent/15 border border-accent/20 px-3.5 py-2 text-sm text-ink">
+        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-border-soft border border-border px-3.5 py-2 text-sm text-ink">
           {readable(message.text)}
         </div>
       </div>
@@ -101,6 +102,7 @@ export function MessageView({
           <div className="font-mono text-[11px] uppercase tracking-wider text-ink-muted">{agentName}</div>
         )}
         {message.text && <Markdown text={message.text} className="text-sm text-ink" />}
+        {message.text && !working && <ListenButton text={message.text} />}
 
         {message.card && (
           <div className="space-y-1.5">

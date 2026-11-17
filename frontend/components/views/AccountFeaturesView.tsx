@@ -7,7 +7,7 @@ import { ViewHeader } from "./ViewHeader";
 
 const th = "px-4 py-2 font-medium";
 const tone: Record<string, string> = { requested: "text-warn", approved: "text-ok", declined: "text-ink-muted", removed: "text-ink-muted",
-  active: "text-critical", released: "text-ink-muted", expired: "text-ink-muted" };
+  active: "text-crit", released: "text-ink-muted", expired: "text-ink-muted" };
 
 /** Margin, options and checkwriting asked for and decided; and temporary holds on suspected exploitation. */
 export function AccountFeaturesView() {
@@ -37,7 +37,7 @@ export function AccountFeaturesView() {
                   <td className="px-4 py-2 font-mono text-xs text-ink-muted">{reviewDay(h.placed_on)}</td>
                   <td className="px-4 py-2 font-mono text-xs text-ink-muted">{reviewDay(h.expires_on)}</td>
                   <td className="px-4 py-2">{h.notified ? <span className="chip text-ok">told {reviewDay(h.notified.on)}</span>
-                    : <span className={`chip ${h.notice_late ? "text-critical" : "text-warn"}`}>due {reviewDay(h.notify_by)}</span>}</td>
+                    : <span className={`chip ${h.notice_late ? "text-crit" : "text-warn"}`}>due {reviewDay(h.notify_by)}</span>}</td>
                   <td className="px-4 py-2 text-xs text-ink-muted">{h.trusted_contacts.join(", ") || "none on file"}</td>
                 </tr>
               ))}

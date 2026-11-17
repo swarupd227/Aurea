@@ -130,7 +130,7 @@ export function UsersTab() {
   return (
     <div className="max-w-5xl space-y-4" data-testid="admin-users">
       {tokenResult && (
-        <div className="card flex items-start gap-3 border-ok/30 bg-ok-bg p-4">
+        <div className="card flex items-start gap-3 border-ok-soft bg-ok-bg p-4">
           <Check size={16} className="mt-0.5 shrink-0 text-ok" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">

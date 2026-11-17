@@ -96,7 +96,7 @@ function Journey({ path, own }: { path: string; own: boolean }) {
         <div className="flex flex-wrap items-center gap-3">
           <Sprout size={18} className="shrink-0 text-ok" aria-hidden />
           <span className="min-w-0 truncate text-sm font-medium text-ink">{j.person?.name}</span>
-          <span className={`chip ${j.status === "completed" ? "bg-ok/10 text-ok" : "text-ink-muted"}`}>{titleCase(j.status ?? "")}</span>
+          <span className={`chip ${j.status === "completed" ? "bg-ok-bg text-ok" : "text-ink-muted"}`}>{titleCase(j.status ?? "")}</span>
           <span className="ml-auto font-mono text-lg tabular-nums text-ink">{progress}%</span>
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-border-soft">
@@ -108,7 +108,7 @@ function Journey({ path, own }: { path: string; own: boolean }) {
         </div>
       </Card>
 
-      {stepError && <div role="alert" className="mb-3 rounded-lg border border-crit/35 bg-crit-bg px-3 py-2 text-sm text-ink">{stepError}</div>}
+      {stepError && <div role="alert" className="mb-3 rounded-lg border border-crit-soft bg-crit-bg px-3 py-2 text-sm text-ink">{stepError}</div>}
 
       <div className="space-y-3" data-testid="next-gen-steps">
         {steps.map((s: any, i: number) => {
@@ -152,7 +152,7 @@ function Journey({ path, own }: { path: string; own: boolean }) {
 
                   {s.done && s.key === "values" && j.captured?.values_themes?.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {j.captured.values_themes.map((t: string) => <span key={t} className="chip bg-ok/10 text-ok"><Leaf size={11} aria-hidden /> {titleCase(t)}</span>)}
+                      {j.captured.values_themes.map((t: string) => <span key={t} className="chip bg-ok-bg text-ok"><Leaf size={11} aria-hidden /> {titleCase(t)}</span>)}
                     </div>
                   )}
                 </div>

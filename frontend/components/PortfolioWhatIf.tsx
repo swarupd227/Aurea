@@ -86,8 +86,8 @@ export default function PortfolioWhatIf({ allocation }: { allocation: Record<str
       {/* Stress scenarios */}
       <div className="tile-label mb-2 flex flex-wrap items-center gap-2">
         Market shock
-        <span className="inline-flex items-center gap-1 normal-case tracking-normal font-normal"><span className="h-2 w-2 rounded-sm bg-crit/70" /> proposed</span>
-        <span className="inline-flex items-center gap-1 normal-case tracking-normal font-normal"><span className="h-2 w-2 rounded-sm bg-ink-faint/60" /> current</span>
+        <span className="inline-flex items-center gap-1 normal-case tracking-normal font-normal"><span className="h-2 w-2 rounded-sm bg-crit" /> proposed</span>
+        <span className="inline-flex items-center gap-1 normal-case tracking-normal font-normal"><span className="h-2 w-2 rounded-sm bg-ink-faint" /> current</span>
       </div>
       <div className="space-y-2">
         {Object.keys(SCENARIOS).map((k) => {
@@ -99,10 +99,10 @@ export default function PortfolioWhatIf({ allocation }: { allocation: Record<str
             <div key={k} className="grid grid-cols-[96px_1fr_auto] items-center gap-3 text-sm">
               <span className="text-ink-soft">{SCENARIOS[k]}</span>
               <div className="relative h-5 rounded bg-border-soft overflow-hidden">
-                <div className="absolute inset-y-0 left-0 bg-ink-faint/60" style={{ width: w(c) }} />
-                <div className="absolute inset-y-0 left-0 bg-critical/70" style={{ width: w(pr) }} />
+                <div className="absolute inset-y-0 left-0 bg-ink-faint" style={{ width: w(c) }} />
+                <div className="absolute inset-y-0 left-0 bg-crit" style={{ width: w(pr) }} />
               </div>
-              <span className={`tabular-nums text-xs ${pr < c ? "text-critical" : "text-positive"}`}>{money(pr)}</span>
+              <span className={`tabular-nums text-xs ${pr < c ? "text-crit" : "text-ok"}`}>{money(pr)}</span>
             </div>
           );
         })}
@@ -113,14 +113,14 @@ export default function PortfolioWhatIf({ allocation }: { allocation: Record<str
 
 function Compare({ icon: Icon, label, cur, prop, delta, good }: any) {
   return (
-    <div className="rounded-lg border border-border bg-paper/40 p-3">
+    <div className="rounded-lg border border-border bg-paper p-3">
       <div className="flex items-center gap-1.5 text-xs text-ink-muted mb-1.5"><Icon size={13} /> {label}</div>
       <div className="flex items-center gap-2">
         <span className="text-sm text-ink-muted tabular-nums">{cur}</span>
         <ArrowRight size={13} className="text-ink-muted" />
         <span className="text-lg font-semibold text-ink tabular-nums">{prop}</span>
       </div>
-      <div className={`text-xs mt-0.5 ${good ? "text-positive" : "text-caution"}`}>{delta}</div>
+      <div className={`text-xs mt-0.5 ${good ? "text-ok" : "text-warn"}`}>{delta}</div>
     </div>
   );
 }

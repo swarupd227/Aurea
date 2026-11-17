@@ -214,7 +214,7 @@ export function NetWorthView({ household = null }: { household?: string | null }
                       </tr>
                       {showing && (
                         <tr>
-                          <td colSpan={7} className="bg-border-soft/30 px-4 py-3">
+                          <td colSpan={7} className="bg-border-soft px-4 py-3">
                             <table className="w-full text-xs" data-testid="balance-item-rows">
                               <tbody className="divide-y divide-border-soft">
                                 {b.items.map((i) => (
@@ -252,7 +252,7 @@ export function NetWorthView({ household = null }: { household?: string | null }
                       )}
                       {open && (
                         <tr>
-                          <td colSpan={7} className="bg-border-soft/30 px-4 py-3">
+                          <td colSpan={7} className="bg-border-soft px-4 py-3">
                             <div className="flex flex-wrap items-center gap-2" data-testid="balance-confirm">
                               <select className="input text-xs" aria-label="Kind" value={open.kind} disabled={!!open.replaces}
                                 onChange={(e) => setPanel({ ...open, kind: e.target.value })}>

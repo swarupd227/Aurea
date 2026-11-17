@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Mic } from "lucide-react";
+import { listenOnce, voiceSupported } from "@/lib/voice";
 import {
   applyMention,
   duplicateNames,
@@ -38,6 +39,14 @@ export function Composer({
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const pendingCaret = useRef<number | null>(null);
+  // Asking by voice: shown only where the browser can turn speech into text, decided after mounting.
+  const [voice, setVoice] = useState(false);
+  const [listening, setListening] = useState(false);
+  const stopListening = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    setVoice(voiceSupported());
+    return () => stopListening.current?.();
+  }, []);
 
   // Empty, the box is one line: the browser counts a wrapped placeholder in its height, so measuring an
   // empty box on a narrow first layout left it 200px tall. With words it grows with them, and measures
@@ -104,6 +113,32 @@ export function Composer({
     onSend(t);
     setText("");
     setDismissedAt(null);
+  };
+
+  // The question heard is put in the box and sent, as if typed; anything already typed goes first.
+  const listen = () => {
+    if (listening) {
+      stopListening.current?.();
+      return;
+    }
+    setListening(true);
+    stopListening.current = listenOnce(
+      (heard) => {
+        const t = `${text.trim()} ${heard.trim()}`.trim();
+        if (!t) return;
+        if (disabled) {
+          setText(t);
+          return;
+        }
+        onSend(t);
+        setText("");
+        setDismissedAt(null);
+      },
+      () => {
+        stopListening.current = null;
+        setListening(false);
+      }
+    );
   };
 
   const syncCaret = (el: HTMLTextAreaElement) => setCaret(el.selectionStart ?? el.value.length);
@@ -185,6 +220,24 @@ export function Composer({
         disabled={disabled}
         className="max-h-[200px] min-h-[36px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-ink outline-none placeholder:text-ink-muted disabled:opacity-50"
       />
+      {voice && (
+        <button
+          type="button"
+          onClick={listen}
+          disabled={disabled && !listening}
+          aria-label={listening ? "Stop listening" : "Ask by voice"}
+          title={listening ? "Stop listening" : "Ask by voice"}
+          data-testid={testId ? `${testId}-voice` : "composer-voice"}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40 ${
+            listening ? "agent-working text-accent" : "text-ink-muted hover:bg-border-soft hover:text-ink"
+          }`}
+        >
+          <Mic className="h-4 w-4" aria-hidden />
+        </button>
+      )}
+      <span role="status" className="sr-only">
+        {listening ? "Listening" : ""}
+      </span>
       <button
         type="submit"
         disabled={disabled || !text.trim()}

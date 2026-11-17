@@ -44,9 +44,9 @@ export function MoneyInView() {
                   <td className="px-4 py-2 text-right font-mono text-xs">{money(d.amount)}</td>
                   <td className="px-4 py-2 font-mono text-xs text-ink-muted">{reviewDay(d.received_on)}</td>
                   <td className="px-4 py-2"><div className="flex flex-wrap gap-1">
-                    {d.returned_on ? <span className="chip text-critical">{d.return_code} {d.return_reason}</span>
+                    {d.returned_on ? <span className="chip text-crit">{d.return_code} {d.return_reason}</span>
                       : d.on_hold ? <span className="chip text-warn">held to {reviewDay(d.hold_until)}</span> : <span className="chip text-ok">available</span>}
-                    {d.may_have_been_invested && <span className="chip text-critical">may have been invested</span>}
+                    {d.may_have_been_invested && <span className="chip text-crit">may have been invested</span>}
                   </div></td>
                 </tr>
               ))}
@@ -66,7 +66,7 @@ export function MoneyInView() {
                   <td className="px-4 py-2 text-xs text-ink-muted">{r.payee}{r.third_party ? " · third party" : ""}</td>
                   <td className="px-4 py-2 text-right font-mono text-xs">{money(r.amount)} {r.frequency}</td>
                   <td className="px-4 py-2 font-mono text-xs text-ink-muted">{r.last_checked ? reviewDay(r.last_checked) : "never"}</td>
-                  <td className="px-4 py-2"><span className={`chip ${r.overdue ? "text-critical" : ""}`}>{reviewDay(r.due)}</span></td>
+                  <td className="px-4 py-2"><span className={`chip ${r.overdue ? "text-crit" : ""}`}>{reviewDay(r.due)}</span></td>
                 </tr>
               ))}
             </tbody>

@@ -8,7 +8,7 @@ export function MoneyInCard({ result }: { result: any }) {
         <div className="text-sm font-medium text-ink">Money in</div>
         <div className="flex gap-1.5">
           {s.on_hold > 0 && <span className="chip text-warn">{money(s.on_hold)} on hold</span>}
-          {s.returned > 0 && <span className="chip text-critical">{s.returned} returned</span>}
+          {s.returned > 0 && <span className="chip text-crit">{s.returned} returned</span>}
           {s.instructions_overdue > 0 && <span className="chip text-warn">{s.instructions_overdue} to revalidate</span>}
         </div>
       </div>
@@ -19,7 +19,7 @@ export function MoneyInCard({ result }: { result: any }) {
               <td className="px-3 py-1.5 text-ink">{d.client}</td>
               <td className="px-3 py-1.5 font-mono uppercase text-ink-muted">{d.method}</td>
               <td className="px-3 py-1.5 text-right font-mono">{money(d.amount)}</td>
-              <td className="px-3 py-1.5">{d.returned_on ? <span className="chip text-critical">{d.return_code}</span> : d.on_hold ? <span className="chip text-warn">held</span> : <span className="chip text-ok">available</span>}</td>
+              <td className="px-3 py-1.5">{d.returned_on ? <span className="chip text-crit">{d.return_code}</span> : d.on_hold ? <span className="chip text-warn">held</span> : <span className="chip text-ok">available</span>}</td>
             </tr>
           ))}
         </tbody></table>

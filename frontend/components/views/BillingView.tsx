@@ -53,7 +53,7 @@ function InvoiceTable({ rows, onOpen, openId, testId }: { rows: any[]; onOpen: (
         <tbody className="divide-y divide-border-soft">
           {rows.map((i) => (
             <tr key={i.id} aria-selected={openId === i.id}
-              className={`cursor-pointer hover:bg-border-soft/40 ${openId === i.id ? "bg-border-soft/60" : ""}`}
+              className={`cursor-pointer hover:bg-border-soft ${openId === i.id ? "bg-border-soft" : ""}`}
               onClick={() => onOpen(i.id)}>
               <td className="py-1.5 pr-3">
                 <div className="text-ink">{i.number ?? "Draft"}{i.kind === "credit_note" ? " · credit note" : ""}</div>

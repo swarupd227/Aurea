@@ -1,7 +1,7 @@
 import { FileText, ShieldAlert } from "lucide-react";
 import { money } from "@/lib/format";
 
-const tile = "rounded-lg bg-border-soft/60 p-2.5";
+const tile = "rounded-lg bg-border-soft p-2.5";
 const chip = "chip bg-border-soft text-ink-soft";
 const pct = (v: number | null | undefined) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
 const day = (iso: string | null | undefined) =>

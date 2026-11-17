@@ -26,16 +26,16 @@ const NIGO_LABELS: Record<string, string> = {
 };
 
 const AML_TIER_STYLE: Record<string, string> = {
-  low: "bg-positive/10 text-positive border-positive/20",
-  medium: "bg-caution/10 text-caution border-caution/20",
-  high: "bg-critical/10 text-critical border-critical/20",
+  low: "bg-ok-bg text-ok border-ok-soft",
+  medium: "bg-warn-bg text-warn border-warn-soft",
+  high: "bg-crit-bg text-crit border-crit-soft",
 };
 
 const EDD_LABELS: Record<string, { label: string; cls: string }> = {
   none: { label: "No CDD/EDD required", cls: "text-ink-muted" },
-  cdd: { label: "CDD — standard", cls: "text-positive" },
-  edd_pending: { label: "EDD — pending review", cls: "text-caution" },
-  edd_complete: { label: "EDD — complete", cls: "text-positive" },
+  cdd: { label: "CDD — standard", cls: "text-ok" },
+  edd_pending: { label: "EDD — pending review", cls: "text-warn" },
+  edd_complete: { label: "EDD — complete", cls: "text-ok" },
 };
 
 // The conversation's run_agent names an agent by its key; the case page's endpoint by its slug.
@@ -147,11 +147,11 @@ export function OnboardingCaseView({ id }: { id: string }) {
         }
       />
 
-      {err && <div className="card p-3 mb-4 text-sm text-critical border-critical/30" role="alert">{err}</div>}
+      {err && <div className="card p-3 mb-4 text-sm text-crit border-crit-soft" role="alert">{err}</div>}
 
       {/* Tier 1/2 agents stop at a checkpoint. Without this the run looks like it did nothing. */}
       {pending.length > 0 && (
-        <div className="card p-4 mb-4 border-warn/40">
+        <div className="card p-4 mb-4 border-warn-soft">
           <div className="flex items-center gap-2 mb-3">
             <ClipboardList size={16} className="text-warn" />
             <span className="text-sm font-semibold text-ink">
@@ -176,8 +176,8 @@ export function OnboardingCaseView({ id }: { id: string }) {
       )}
 
       {c.status === "approved" && (
-        <div className="card p-4 mb-5 border-positive/30 flex flex-wrap items-center gap-2">
-          <CheckCircle2 className="text-positive" aria-hidden />
+        <div className="card p-4 mb-5 border-ok-soft flex flex-wrap items-center gap-2">
+          <CheckCircle2 className="text-ok" aria-hidden />
           <span className="font-semibold text-ink text-sm">Activated</span>
           {["Person / entity", "Mandate", "Account", "KYC verified"].map((x) => (
             <span key={x} className="chip bg-ok-bg text-ok">{x}</span>
@@ -190,12 +190,12 @@ export function OnboardingCaseView({ id }: { id: string }) {
 
       {/* Readiness / NIGO banner */}
       {(c.nigo_flag || c.readiness_score != null) && (
-        <div className={`card p-3 mb-4 flex items-center gap-3 ${c.nigo_flag ? "border-caution/30" : "border-positive/20"}`}>
-          {c.nigo_flag ? <AlertTriangle className="text-caution flex-shrink-0" size={18} /> : <CheckCircle2 className="text-positive flex-shrink-0" size={18} />}
+        <div className={`card p-3 mb-4 flex items-center gap-3 ${c.nigo_flag ? "border-warn-soft" : "border-ok-soft"}`}>
+          {c.nigo_flag ? <AlertTriangle className="text-warn flex-shrink-0" size={18} /> : <CheckCircle2 className="text-ok flex-shrink-0" size={18} />}
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-ink">
               Pre-submission readiness: {c.readiness_score ?? "—"}/100
-              {c.nigo_flag && <span className="ml-2 chip bg-caution/10 text-caution">NIGO</span>}
+              {c.nigo_flag && <span className="ml-2 chip bg-warn-bg text-warn">NIGO</span>}
               {c.nigo_root_cause && <span className="ml-1 chip bg-border-soft text-ink-muted">{NIGO_LABELS[c.nigo_root_cause] || titleCase(c.nigo_root_cause)}</span>}
             </div>
             {c.nigo_reason && <div className="text-xs text-ink-muted mt-0.5 truncate">{c.nigo_reason}</div>}
@@ -218,7 +218,7 @@ export function OnboardingCaseView({ id }: { id: string }) {
                     <div className="flex items-center justify-between">
                       <div className="text-sm font-medium text-ink">{titleCase(d.doc_type)}</div>
                       <div className="flex items-center gap-2">
-                        {d.verified ? <span className="chip bg-positive/10 text-positive">Verified</span> : <span className="chip bg-caution/10 text-caution">Needs check</span>}
+                        {d.verified ? <span className="chip bg-ok-bg text-ok">Verified</span> : <span className="chip bg-warn-bg text-warn">Needs check</span>}
                         <ConfidenceBar value={d.confidence} />
                       </div>
                     </div>
@@ -272,13 +272,13 @@ export function OnboardingCaseView({ id }: { id: string }) {
               <div className="font-semibold text-ink mb-2 flex items-center gap-2">
                 <ClipboardList size={16} className="text-ink-muted" />
                 DOL PTE 2020-02 — Rollover rationale memo
-                <span className="chip bg-positive/10 text-positive ml-auto">Generated</span>
+                <span className="chip bg-ok-bg text-ok ml-auto">Generated</span>
               </div>
               {proposal.pte_fee_comparison && (
                 <div className="flex gap-6 text-xs mb-3">
                   <div><div className="text-ink-muted">Leaving plan (bps)</div><div className="font-semibold text-ink">{proposal.pte_fee_comparison.plan_expense_ratio_bps ?? "—"}</div></div>
                   <div><div className="text-ink-muted">Proposed IRA advisory (bps)</div><div className="font-semibold text-ink">{proposal.pte_fee_comparison.advisory_fee_bps ?? "—"}</div></div>
-                  <div><div className="text-ink-muted">Net change</div><div className={`font-semibold ${(proposal.pte_fee_comparison.net_difference_bps ?? 0) <= 0 ? "text-positive" : "text-caution"}`}>{(proposal.pte_fee_comparison.net_difference_bps ?? 0) > 0 ? "+" : ""}{proposal.pte_fee_comparison.net_difference_bps ?? "—"} bps</div></div>
+                  <div><div className="text-ink-muted">Net change</div><div className={`font-semibold ${(proposal.pte_fee_comparison.net_difference_bps ?? 0) <= 0 ? "text-ok" : "text-warn"}`}>{(proposal.pte_fee_comparison.net_difference_bps ?? 0) > 0 ? "+" : ""}{proposal.pte_fee_comparison.net_difference_bps ?? "—"} bps</div></div>
                 </div>
               )}
               <p className="text-xs text-ink-muted line-clamp-4">{proposal.pte_2020_02_memo}</p>
@@ -289,16 +289,16 @@ export function OnboardingCaseView({ id }: { id: string }) {
           {proposal.edd_memo && (
             <Card>
               <div className="font-semibold text-ink mb-2 flex items-center gap-2">
-                <Activity size={16} className="text-caution" />
+                <Activity size={16} className="text-warn" />
                 EDD Source-of-Wealth memorandum
-                <span className="chip bg-caution/10 text-caution ml-auto">{titleCase(c.edd_status || "edd_pending").replace("_", " ")}</span>
+                <span className="chip bg-warn-bg text-warn ml-auto">{titleCase(c.edd_status || "edd_pending").replace("_", " ")}</span>
               </div>
               {proposal.edd_gaps?.length > 0 && (
                 <div className="mb-2">
                   <div className="text-xs font-medium text-ink mb-1">Corroboration gaps ({proposal.edd_gaps.length})</div>
                   <ul className="space-y-0.5">
                     {proposal.edd_gaps.map((g: string, i: number) => (
-                      <li key={i} className="text-xs text-caution flex gap-1.5"><span>•</span>{g}</li>
+                      <li key={i} className="text-xs text-warn flex gap-1.5"><span>•</span>{g}</li>
                     ))}
                   </ul>
                 </div>
@@ -345,7 +345,7 @@ export function OnboardingCaseView({ id }: { id: string }) {
                 <Activity size={16} /> AML customer risk rating
               </div>
               <div className="flex items-center gap-3">
-                <span className={`text-lg font-bold uppercase tracking-wide ${c.aml_risk_tier === "high" ? "text-critical" : c.aml_risk_tier === "medium" ? "text-caution" : "text-positive"}`}>
+                <span className={`text-lg font-bold uppercase tracking-wide ${c.aml_risk_tier === "high" ? "text-crit" : c.aml_risk_tier === "medium" ? "text-warn" : "text-ok"}`}>
                   {c.aml_risk_tier}
                 </span>
                 {c.aml_risk_score != null && <span className="text-xs text-ink-muted">Score: {c.aml_risk_score}/100</span>}
@@ -361,13 +361,13 @@ export function OnboardingCaseView({ id }: { id: string }) {
           {/* AML / CFT screening — disposition log */}
           <Card>
             <div className="font-semibold text-ink mb-3 flex items-center gap-2">
-              {screening.status === "clear" ? <ShieldCheck size={17} className="text-positive" /> : <ShieldAlert size={17} className="text-caution" />}
+              {screening.status === "clear" ? <ShieldCheck size={17} className="text-ok" /> : <ShieldAlert size={17} className="text-warn" />}
               AML / CFT screening
             </div>
             {screening.status && (
               <>
                 <div className="text-sm mb-2">
-                  Status: <span className={screening.status === "clear" ? "text-positive font-medium" : screening.status === "blocked" ? "text-critical font-medium" : "text-caution font-medium"}>{titleCase(screening.status)}</span>
+                  Status: <span className={screening.status === "clear" ? "text-ok font-medium" : screening.status === "blocked" ? "text-crit font-medium" : "text-warn font-medium"}>{titleCase(screening.status)}</span>
                   <span className="text-ink-muted"> · {screening.provider}</span>
                 </div>
                 {allHits.length ? (
@@ -384,7 +384,7 @@ export function OnboardingCaseView({ id }: { id: string }) {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-sm text-positive">No watchlist hits.</div>
+                  <div className="text-sm text-ok">No watchlist hits.</div>
                 )}
               </>
             )}
@@ -402,10 +402,10 @@ export function OnboardingCaseView({ id }: { id: string }) {
                     <div key={i} className="rounded-lg bg-paper p-2 text-xs">
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-ink">{entry.party}</span>
-                        <span className={entry.status === "clear" ? "text-positive" : entry.status === "blocked" ? "text-critical" : "text-caution"}>{titleCase(entry.status)}</span>
+                        <span className={entry.status === "clear" ? "text-ok" : entry.status === "blocked" ? "text-crit" : "text-warn"}>{titleCase(entry.status)}</span>
                       </div>
                       {entry.hits?.length > 0 && (
-                        <div className="text-caution mt-0.5">
+                        <div className="text-warn mt-0.5">
                           {entry.hits.length} {entry.hits.length === 1 ? "hit" : "hits"} · {entry.hits.map((h: any) => titleCase(h.category)).join(", ")}
                         </div>
                       )}
@@ -424,11 +424,11 @@ export function OnboardingCaseView({ id }: { id: string }) {
 
           {/* Exceptions */}
           {c.exceptions?.length > 0 && (
-            <Card className="border-caution/30">
+            <Card className="border-warn-soft">
               <div className="font-semibold text-ink mb-2">Exceptions for compliance</div>
               <ul className="space-y-1.5">
                 {c.exceptions.map((e: string, i: number) => (
-                  <li key={i} className="text-sm text-ink-soft flex gap-2"><span className="text-caution">⚠</span> {e}</li>
+                  <li key={i} className="text-sm text-ink-soft flex gap-2"><span className="text-warn">⚠</span> {e}</li>
                 ))}
               </ul>
             </Card>
@@ -476,8 +476,8 @@ function TrackAPanel({ c, caseId, onChanged }: { c: any; caseId: string; onChang
   const step = (done: boolean, label: string, detail: string, action?: React.ReactNode) => (
     <div className="flex items-start gap-2 py-2 border-b border-border-soft last:border-0">
       {done
-        ? <CheckCircle2 size={14} className="text-positive mt-0.5 shrink-0" aria-hidden="true" />
-        : <AlertTriangle size={14} className="text-caution mt-0.5 shrink-0" aria-hidden="true" />}
+        ? <CheckCircle2 size={14} className="text-ok mt-0.5 shrink-0" aria-hidden="true" />
+        : <AlertTriangle size={14} className="text-warn mt-0.5 shrink-0" aria-hidden="true" />}
       <div className="min-w-0 flex-1">
         <div className="text-xs text-ink">{label}</div>
         <div className="text-[11px] text-ink-muted leading-snug">{detail}</div>
@@ -492,7 +492,7 @@ function TrackAPanel({ c, caseId, onChanged }: { c: any; caseId: string; onChang
         <ClipboardList size={16} className="text-ink-muted" /> Agreements
         <span className="text-[10px] text-ink-muted font-normal">Track A</span>
       </div>
-      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+      {err && <div className="text-xs text-crit bg-crit-bg rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
 
       {step(
         !!c.engagement_type,
@@ -578,16 +578,16 @@ function HeldAwayPanel({ caseId, status }: { caseId: string; status: string }) {
   }
 
   return (
-    <Card className={!captured ? "border-caution/30" : undefined}>
+    <Card className={!captured ? "border-warn-soft" : undefined}>
       <div className="font-semibold text-ink mb-1 flex items-center gap-2 flex-wrap">
         <Building2 size={16} className="text-ink-muted" /> Off-platform assets
         {data && (
-          <span className={`chip ml-auto ${captured ? "bg-positive/10 text-positive" : "bg-caution/10 text-caution"}`}>
+          <span className={`chip ml-auto ${captured ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn"}`}>
             {data.assets.length ? `${data.assets.length} held away` : data.none_declared ? "None declared" : "Not asked"}
           </span>
         )}
       </div>
-      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+      {err && <div className="text-xs text-crit bg-crit-bg rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
 
       {loading ? <Spinner label="Loading…" />
         : error ? <ErrorState what="held-away assets" message={error} onRetry={refetch} />
@@ -606,7 +606,7 @@ function HeldAwayPanel({ caseId, status }: { caseId: string; status: string }) {
                       </div>
                     </div>
                     {!isClosed && (
-                      <button className="text-ink-faint hover:text-critical text-xs shrink-0"
+                      <button className="text-ink-faint hover:text-crit text-xs shrink-0"
                               aria-label={`Remove ${a.institution}`}
                               onClick={async () => { await api(`/api/onboarding/cases/${caseId}/held-away/${a.id}`, { method: "DELETE" }); refetch(); }}>×</button>
                     )}
@@ -721,18 +721,18 @@ function FeeSchedulePanel({ caseId, status }: { caseId: string; status: string }
 
   const calc = data?.calculation;
   return (
-    <Card className={data && !data.confirmed ? "border-caution/30" : undefined}>
+    <Card className={data && !data.confirmed ? "border-warn-soft" : undefined}>
       <div className="font-semibold text-ink mb-1 flex items-center gap-2 flex-wrap">
         <Wallet size={16} className="text-ink-muted" /> Fee schedule
         <span className="text-[10px] text-ink-muted font-normal">maker / checker</span>
         {data && (
-          <span className={`chip ml-auto ${data.confirmed ? "bg-positive/10 text-positive" : "bg-caution/10 text-caution"}`}>
+          <span className={`chip ml-auto ${data.confirmed ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn"}`}>
             {data.confirmed ? "Confirmed" : data.assigned ? "Awaiting check" : "Not set"}
           </span>
         )}
       </div>
 
-      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+      {err && <div className="text-xs text-crit bg-crit-bg rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
 
       {loading ? (
         <Spinner label="Loading fee schedule…" />
@@ -774,7 +774,7 @@ function FeeSchedulePanel({ caseId, status }: { caseId: string; status: string }
               {data.problems?.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {data.problems.map((p: string, i: number) => (
-                    <div key={i} className="text-[11px] text-caution flex gap-1.5">
+                    <div key={i} className="text-[11px] text-warn flex gap-1.5">
                       <AlertTriangle size={11} className="mt-0.5 shrink-0" />{p}
                     </div>
                   ))}
@@ -861,9 +861,9 @@ function FeeSchedulePanel({ caseId, status }: { caseId: string; status: string }
 }
 
 const GATE_MARK: Record<string, { icon: any; cls: string }> = {
-  pass: { icon: CheckCircle2, cls: "text-positive" },
-  fail: { icon: AlertTriangle, cls: "text-critical" },
-  warn: { icon: AlertTriangle, cls: "text-caution" },
+  pass: { icon: CheckCircle2, cls: "text-ok" },
+  fail: { icon: AlertTriangle, cls: "text-crit" },
+  warn: { icon: AlertTriangle, cls: "text-warn" },
   "n/a": { icon: CheckCircle2, cls: "text-ink-faint" },
 };
 
@@ -889,12 +889,12 @@ function ActivationGates({
   const blocked = data?.blocks_activation;
 
   return (
-    <Card className={blocked ? "border-critical/25" : "border-positive/25"}>
+    <Card className={blocked ? "border-crit-soft" : "border-ok-soft"}>
       <div className="font-semibold text-ink mb-1 flex items-center gap-2 flex-wrap">
-        <ShieldCheck size={16} className={blocked ? "text-critical" : "text-positive"} />
+        <ShieldCheck size={16} className={blocked ? "text-crit" : "text-ok"} />
         Activation gates
         {data && (
-          <span className={`chip ml-auto ${blocked ? "bg-critical/10 text-critical" : "bg-positive/10 text-positive"}`}>
+          <span className={`chip ml-auto ${blocked ? "bg-crit-bg text-crit" : "bg-ok-bg text-ok"}`}>
             {data.passed}/{data.total}
           </span>
         )}
@@ -917,7 +917,7 @@ function ActivationGates({
                   <div className="min-w-0">
                     <div className={`text-xs ${g.state === "n/a" ? "text-ink-faint" : "text-ink"}`}>
                       {g.label}
-                      {g.blocks && <span className="chip bg-critical/10 text-critical ml-1.5 text-[9px]">Blocks</span>}
+                      {g.blocks && <span className="chip bg-crit-bg text-crit ml-1.5 text-[9px]">Blocks</span>}
                     </div>
                     <div className="text-[11px] text-ink-muted leading-snug">{g.detail}</div>
                   </div>
@@ -937,7 +937,7 @@ function ActivationGates({
                 <Check size={15} /> Approve &amp; materialise
               </button>
               {blocked && (
-                <p className="text-[11px] text-critical text-center">
+                <p className="text-[11px] text-crit text-center">
                   Clear the blocking gates first.
                 </p>
               )}
@@ -957,9 +957,9 @@ function ActivationGates({
 }
 
 const TRACK_STATE_STYLE: Record<string, { bar: string; chip: string; label: string }> = {
-  complete:         { bar: "bg-positive", chip: "bg-positive/10 text-positive", label: "Complete" },
+  complete:         { bar: "bg-ok", chip: "bg-ok-bg text-ok", label: "Complete" },
   in_progress:      { bar: "bg-info", chip: "bg-border-soft text-ink", label: "In progress" },
-  blocked:          { bar: "bg-critical", chip: "bg-critical/10 text-critical", label: "Blocked" },
+  blocked:          { bar: "bg-crit", chip: "bg-crit-bg text-crit", label: "Blocked" },
   waiting_external: { bar: "bg-warn", chip: "bg-warn-bg text-warn", label: "Waiting" },
   not_started:      { bar: "bg-border", chip: "bg-border-soft text-ink-muted", label: "Not started" },
 };
@@ -973,12 +973,12 @@ const TRACK_STATE_STYLE: Record<string, { bar: string; chip: string; label: stri
  */
 function TrackStrip({ t }: { t: any }) {
   return (
-    <Card className={`mb-5 ${t.blocked_tracks?.length ? "border-critical/25" : ""}`}>
+    <Card className={`mb-5 ${t.blocked_tracks?.length ? "border-crit-soft" : ""}`}>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <span className="text-sm font-semibold text-ink">{t.position}</span>
         {t.owner && <span className="chip bg-border-soft text-ink-muted">Owner: {titleCase(t.owner)}</span>}
         {t.ready_to_activate && (
-          <span className="chip bg-positive/10 text-positive flex items-center gap-1">
+          <span className="chip bg-ok-bg text-ok flex items-center gap-1">
             <CheckCircle2 size={11} /> Ready to activate
           </span>
         )}
@@ -1078,11 +1078,11 @@ function CaseAgents({
                 <div className="text-sm font-medium text-ink flex items-center gap-2 flex-wrap" title={a.blurb}>
                   {a.name}
                   {a.done && a.doneLabel && (
-                    <span className="chip bg-positive/10 text-positive">{a.doneLabel}</span>
+                    <span className="chip bg-ok-bg text-ok">{a.doneLabel}</span>
                   )}
                 </div>
                 {a.note && (
-                  <div className="text-xs text-caution mt-1 flex items-center gap-1">
+                  <div className="text-xs text-warn mt-1 flex items-center gap-1">
                     <AlertTriangle size={10} /> {a.note}
                   </div>
                 )}
@@ -1105,9 +1105,9 @@ function CaseAgents({
 }
 
 const SCREEN_STYLE: Record<string, string> = {
-  clear: "bg-positive/10 text-positive",
-  review: "bg-caution/10 text-caution",
-  blocked: "bg-critical/10 text-critical",
+  clear: "bg-ok-bg text-ok",
+  review: "bg-warn-bg text-warn",
+  blocked: "bg-crit-bg text-crit",
   not_screened: "bg-border-soft text-ink-muted",
 };
 
@@ -1154,18 +1154,18 @@ function Parties({ caseId, status }: { caseId: string; status: string }) {
   }
 
   return (
-    <Card className={gate?.blocks_activation ? "border-caution/30" : undefined}>
+    <Card className={gate?.blocks_activation ? "border-warn-soft" : undefined}>
       <div className="font-semibold text-ink mb-1 flex items-center gap-2 flex-wrap">
         <Users size={16} className="text-ink-muted" /> Parties
         <span className="text-[10px] text-ink-muted font-normal">every role must be screened</span>
         {gate && (
-          <span className={`chip ml-auto ${gate.blocks_activation ? "bg-caution/10 text-caution" : "bg-positive/10 text-positive"}`}>
+          <span className={`chip ml-auto ${gate.blocks_activation ? "bg-warn-bg text-warn" : "bg-ok-bg text-ok"}`}>
             {gate.screened_count}/{data.parties.length} screened
           </span>
         )}
       </div>
 
-      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+      {err && <div className="text-xs text-crit bg-crit-bg rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
 
       {loading ? (
         <Spinner label="Loading parties…" />
@@ -1197,7 +1197,7 @@ function Parties({ caseId, status }: { caseId: string; status: string }) {
                 </div>
                 {!isClosed && (
                   <button
-                    className="text-ink-faint hover:text-critical text-xs shrink-0"
+                    className="text-ink-faint hover:text-crit text-xs shrink-0"
                     aria-label={`Remove ${p.legal_name} from this case`}
                     disabled={busy === p.id}
                     onClick={() => remove(p.id, p.legal_name)}
@@ -1212,20 +1212,20 @@ function Parties({ caseId, status }: { caseId: string; status: string }) {
 
           {/* The gate — what still stands between this case and activation. */}
           {gate?.blocks_activation && (
-            <div className="rounded-lg bg-caution/5 border border-caution/20 p-2.5 space-y-1.5 mb-3">
+            <div className="rounded-lg bg-warn-bg border border-warn-soft p-2.5 space-y-1.5 mb-3">
               {gate.role_gaps.map((g: any) => (
-                <div key={g.role} className="text-xs text-caution flex gap-1.5">
+                <div key={g.role} className="text-xs text-warn flex gap-1.5">
                   <AlertTriangle size={11} className="mt-0.5 shrink-0" />
                   <span><strong>{g.label}</strong> required ({g.have}/{g.need}) — {g.why}</span>
                 </div>
               ))}
               {gate.ownership_issues.map((o: any, i: number) => (
-                <div key={i} className="text-xs text-caution flex gap-1.5">
+                <div key={i} className="text-xs text-warn flex gap-1.5">
                   <AlertTriangle size={11} className="mt-0.5 shrink-0" /><span>{o.detail}</span>
                 </div>
               ))}
               {gate.unscreened.length > 0 && (
-                <div className="text-xs text-caution flex gap-1.5">
+                <div className="text-xs text-warn flex gap-1.5">
                   <AlertTriangle size={11} className="mt-0.5 shrink-0" />
                   <span>
                     {gate.unscreened.length} party(ies) not screened — run the Adverse Media &amp; PEP Screener.
@@ -1320,13 +1320,13 @@ function BeneficialOwners({ caseId, registrationType, status }: { caseId: string
         <Users size={16} className="text-ink-muted" /> Beneficial owners
         <span className="text-[10px] text-ink-muted font-normal ml-1">CDD Rule — 25%+ owners + control person</span>
         {totalPct > 0 && (
-          <span className={`chip ml-auto ${Math.abs(totalPct - 100) < 1 ? "bg-positive/10 text-positive" : "bg-caution/10 text-caution"}`}>
+          <span className={`chip ml-auto ${Math.abs(totalPct - 100) < 1 ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn"}`}>
             {totalPct.toFixed(0)}% total
           </span>
         )}
       </div>
       {!hasControl && (bos?.length ?? 0) > 0 && (
-        <div className="text-xs text-caution mb-2 flex items-center gap-1"><AlertTriangle size={11} /> No control person designated yet.</div>
+        <div className="text-xs text-warn mb-2 flex items-center gap-1"><AlertTriangle size={11} /> No control person designated yet.</div>
       )}
       <div className="space-y-2 mb-3">
         {(bos || []).map((b: any) => (
@@ -1339,7 +1339,7 @@ function BeneficialOwners({ caseId, registrationType, status }: { caseId: string
               </div>
             </div>
             {!isClosed && (
-              <button className="text-ink-faint hover:text-critical text-xs" onClick={() => removeBO(b.id)}>×</button>
+              <button className="text-ink-faint hover:text-crit text-xs" onClick={() => removeBO(b.id)}>×</button>
             )}
           </div>
         ))}
@@ -1408,18 +1408,18 @@ function DisclosureTracker({ caseId, status }: { caseId: string; status: string 
   }
 
   return (
-    <Card className={data?.blocks_activation ? "border-caution/30" : undefined}>
+    <Card className={data?.blocks_activation ? "border-warn-soft" : undefined}>
       <div className="font-semibold text-ink mb-1 flex items-center gap-2">
         <FileText size={16} className="text-ink-muted" /> Disclosure delivery
         {data && (
-          <span className={`chip ml-auto ${data.blocks_activation ? "bg-caution/10 text-caution" : "bg-positive/10 text-positive"}`}>
+          <span className={`chip ml-auto ${data.blocks_activation ? "bg-warn-bg text-warn" : "bg-ok-bg text-ok"}`}>
             {data.delivered_count}/{data.required_count}
           </span>
         )}
       </div>
       {data?.jurisdiction && <div className="mb-3"><span className={chip}>{data.jurisdiction}</span></div>}
 
-      {err && <div className="text-xs text-critical bg-critical/5 rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
+      {err && <div className="text-xs text-crit bg-crit-bg rounded-lg px-2.5 py-1.5 mb-2" role="alert">{err}</div>}
 
       {loading ? (
         <Spinner label="Loading disclosures…" />
@@ -1431,8 +1431,8 @@ function DisclosureTracker({ caseId, status }: { caseId: string; status: string 
             <div key={d.doc_type} className="rounded-lg border border-border-soft p-2.5">
               <div className="flex items-start gap-2">
                 {d.delivered
-                  ? <CheckCircle2 size={14} className="text-positive mt-0.5 shrink-0" aria-hidden="true" />
-                  : <AlertTriangle size={14} className="text-caution mt-0.5 shrink-0" aria-hidden="true" />}
+                  ? <CheckCircle2 size={14} className="text-ok mt-0.5 shrink-0" aria-hidden="true" />
+                  : <AlertTriangle size={14} className="text-warn mt-0.5 shrink-0" aria-hidden="true" />}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-ink leading-snug">
                     {d.label}
@@ -1447,13 +1447,13 @@ function DisclosureTracker({ caseId, status }: { caseId: string; status: string 
                       {d.evidence_ref && <div className="font-mono text-ink-faint truncate">Ref: {d.evidence_ref}</div>}
                     </div>
                   ) : (
-                    <div className="text-[11px] text-caution mt-0.5">Not yet delivered</div>
+                    <div className="text-[11px] text-warn mt-0.5">Not yet delivered</div>
                   )}
                 </div>
                 {!isClosed && (
                   d.delivered ? (
                     <button
-                      className="text-[10px] text-ink-faint hover:text-critical shrink-0"
+                      className="text-[10px] text-ink-faint hover:text-crit shrink-0"
                       aria-label={`Remove delivery record for ${d.label}`}
                       disabled={busy === d.delivery_id}
                       onClick={() => undo(d.delivery_id)}
@@ -1508,7 +1508,7 @@ function DisclosureTracker({ caseId, status }: { caseId: string; status: string 
             </div>
           ))}
           {data?.blocks_activation && (
-            <div className="text-[11px] text-caution flex items-start gap-1.5 pt-1">
+            <div className="text-[11px] text-warn flex items-start gap-1.5 pt-1">
               <AlertTriangle size={11} className="mt-0.5 shrink-0" />
               {data.outstanding.length} outstanding — blocks account activation.
             </div>
@@ -1520,9 +1520,9 @@ function DisclosureTracker({ caseId, status }: { caseId: string; status: string 
 }
 
 const CIP_STATUS_STYLE: Record<string, string> = {
-  verified: "bg-positive/10 text-positive border-positive/20",
-  review:   "bg-caution/10 text-caution border-caution/20",
-  failed:   "bg-critical/10 text-critical border-critical/20",
+  verified: "bg-ok-bg text-ok border-ok-soft",
+  review:   "bg-warn-bg text-warn border-warn-soft",
+  failed:   "bg-crit-bg text-crit border-crit-soft",
 };
 
 function CipCard({ cip, onRun, busy }: { cip: any; onRun: () => void; busy: boolean }) {
@@ -1577,7 +1577,7 @@ function CustodianCard({ c, onPush, busy }: { c: any; onPush: () => void; busy: 
   const canPush = c.status === "approved" && !hasCustodian;
   if (!hasCustodian && c.status !== "approved") return null;
   return (
-    <Card className={hasCustodian ? "border-positive/20" : ""}>
+    <Card className={hasCustodian ? "border-ok-soft" : ""}>
       <div className="font-semibold text-ink mb-2 flex items-center gap-2">
         <Building2 size={16} /> Custodian account
         <span className="text-[10px] text-ink-faint font-normal ml-auto">Simulated custodian</span>
@@ -1585,7 +1585,7 @@ function CustodianCard({ c, onPush, busy }: { c: any; onPush: () => void; busy: 
       {hasCustodian ? (
         <>
           <div className="flex items-center gap-2 mb-1">
-            <span className="chip bg-positive/10 text-positive">{c.custodian_push_status || "active"}</span>
+            <span className="chip bg-ok-bg text-ok">{c.custodian_push_status || "active"}</span>
             <span className="text-xs text-ink-muted capitalize">{c.custodian_name}</span>
           </div>
           <div className="font-mono text-sm text-ink font-semibold">{c.custodian_account_id}</div>
@@ -1598,7 +1598,7 @@ function CustodianCard({ c, onPush, busy }: { c: any; onPush: () => void; busy: 
           <div className="text-sm text-ink-muted mb-3">
             Account approved — single-key to custodian to open the account and receive an account number.
             {c.cip_status !== "verified" && (
-              <span className="text-caution"> CIP must be verified first.</span>
+              <span className="text-warn"> CIP must be verified first.</span>
             )}
           </div>
           <button className="btn-primary text-xs w-full" disabled={busy || c.cip_status !== "verified"} onClick={onPush}>
@@ -1612,10 +1612,10 @@ function CustodianCard({ c, onPush, busy }: { c: any; onPush: () => void; busy: 
 
 const TRANSFER_STATUS_STYLE: Record<string, string> = {
   initiated:      "bg-border-soft text-ink-muted",
-  pending_review: "bg-caution/10 text-caution",
+  pending_review: "bg-warn-bg text-warn",
   in_transit:     "bg-warn-bg text-warn",
-  settled:        "bg-positive/10 text-positive",
-  failed:         "bg-critical/10 text-critical",
+  settled:        "bg-ok-bg text-ok",
+  failed:         "bg-crit-bg text-crit",
 };
 const TRANSFER_STATUS_ORDER = ["initiated", "pending_review", "in_transit", "settled"];
 
@@ -1741,9 +1741,9 @@ function TransfersPanel({ caseId }: { caseId: string }) {
                 {/* L200 §5 pre-submission controls: ACAT title, third-party callback. */}
                 {(t.transfer_type === "acat" && t.direction === "in") && (
                   <div className={`text-[11px] rounded-lg px-2 py-1.5 mb-2 ${
-                    t.title_match_status === "match" ? "bg-positive/5 text-positive"
-                    : t.title_match_status === "mismatch" ? "bg-critical/5 text-critical"
-                    : "bg-caution/5 text-caution"}`}>
+                    t.title_match_status === "match" ? "bg-ok-bg text-ok"
+                    : t.title_match_status === "mismatch" ? "bg-crit-bg text-crit"
+                    : "bg-warn-bg text-warn"}`}>
                     <span className="font-medium">
                       Title {t.title_match_status === "match" ? "verified"
                         : t.title_match_status === "mismatch" ? "MISMATCH"
@@ -1755,7 +1755,7 @@ function TransfersPanel({ caseId }: { caseId: string }) {
                 )}
                 {t.is_third_party && (
                   <div className={`text-[11px] rounded-lg px-2 py-1.5 mb-2 flex items-center gap-2 ${
-                    t.callback_verified_at ? "bg-positive/5 text-positive" : "bg-critical/5 text-critical"}`}>
+                    t.callback_verified_at ? "bg-ok-bg text-ok" : "bg-crit-bg text-crit"}`}>
                     <span className="flex-1">
                       {t.callback_verified_at
                         ? `Third party · callback verified ${t.callback_number ? `on ${t.callback_number} ` : ""}by ${t.callback_verified_by}`

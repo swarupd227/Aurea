@@ -9,7 +9,7 @@ import { ViewHeader } from "./ViewHeader";
 const th = "px-4 py-2 font-medium";
 export const stageTone: Record<string, string> = {
   complete: "text-ok", received: "text-ok", in_transit: "text-ink-muted", submitted: "text-ink-muted", requested: "text-ink-muted",
-  rejected: "text-critical", debit_open: "text-warn",
+  rejected: "text-crit", debit_open: "text-warn",
 };
 
 /** Transfers into the firm: where each stands, whose move it is, rejects by code, and what is late. */
@@ -50,14 +50,14 @@ export function TransfersView() {
                   {t.debit_open && <span className="chip text-warn">debit {money(t.debit_amount)}</span>}
                   {t.exchanges.length > 0 && <span className="chip">1035</span>}
                   {(t.private?.assignments ?? []).map((a: any) => <span key={a.fund} className="chip">{a.fund} · {a.stage.replace(/_/g, " ")}</span>)}
-                  {(t.private?.capital_calls ?? []).filter((c: any) => c.open).map((c: any, i: number) => <span key={i} className="chip text-critical">call {money(c.amount)} due {reviewDay(c.due_on)}</span>)}
+                  {(t.private?.capital_calls ?? []).filter((c: any) => c.open).map((c: any, i: number) => <span key={i} className="chip text-crit">call {money(c.amount)} due {reviewDay(c.due_on)}</span>)}
                   {(t.private?.restricted ?? []).map((r: any) => <span key={r.security} className={`chip ${r.legend === "on" ? "text-warn" : ""}`}>{r.security} · 144 {r.holding_period_met ? "met" : `to ${reviewDay(r.holding_period_ends)}`} · legend {r.legend}</span>)}
                 </div></td>
                 <td className="px-4 py-2 text-xs text-ink-muted">{t.owner ?? "—"}</td>
                 <td className="px-4 py-2 font-mono text-xs text-ink-muted">{t.days_to_receive ?? "—"}</td>
                 <td className="px-4 py-2 text-xs">
                   {t.cost_basis_on ? <span className="chip text-ok">{reviewDay(t.cost_basis_on)}</span>
-                    : t.late.length ? <span className="chip text-critical">due {reviewDay(t.cost_basis_due)} · {t.late[0].days_late}d late</span>
+                    : t.late.length ? <span className="chip text-crit">due {reviewDay(t.cost_basis_due)} · {t.late[0].days_late}d late</span>
                     : t.cost_basis_due ? <span className="chip">due {reviewDay(t.cost_basis_due)}</span> : <span className="text-ink-muted">—</span>}
                 </td>
               </tr>

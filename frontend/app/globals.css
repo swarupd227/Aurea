@@ -187,6 +187,16 @@ html, body {
   }
 }
 
+/* A status-tinted border, for a card that carries a state. border-ok/30 cannot exist (the status colours
+   are CSS variables), so the tint is mixed here. */
+@layer utilities {
+  .border-ok-soft { border-color: color-mix(in srgb, var(--color-ok) 30%, transparent); }
+  .border-warn-soft { border-color: color-mix(in srgb, var(--color-warn) 30%, transparent); }
+  .border-crit-soft { border-color: color-mix(in srgb, var(--color-crit) 30%, transparent); }
+  /* A card waiting on the person's Confirm: the agent's yellow, softened. */
+  .border-accent-soft { border-color: color-mix(in srgb, var(--color-accent) 60%, transparent); }
+}
+
 /* Scrollbar styling responsive to theme */
 ::-webkit-scrollbar {
   width: 10px;

@@ -435,7 +435,7 @@ export function AnalyticsView() {
                 </thead>
                 <tbody className="divide-y divide-border-soft">
                   {scorecardData.scorecards.map((s: any) => (
-                    <tr key={s.adviser_id} className="hover:bg-border-soft/40">
+                    <tr key={s.adviser_id} className="hover:bg-border-soft">
                       <td className="px-4 py-3">
                         <div className="font-medium text-ink">{s.adviser_name}</div>
                         <div className="text-[11px] text-ink-muted">{s.adviser_email}</div>
@@ -612,7 +612,7 @@ export function AnalyticsView() {
                       <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-ink-muted">No rollover cases yet.</td></tr>
                     ) : (
                       pteData.cases?.map((r: any) => (
-                        <tr key={r.case_id} className="hover:bg-border-soft/40">
+                        <tr key={r.case_id} className="hover:bg-border-soft">
                           <td className="px-4 py-3 font-medium text-ink">{r.prospect_name}</td>
                           <td className="px-4 py-3 text-ink-soft">{titleCase((r.registration_type || "").replace(/_/g, " "))}</td>
                           <td className="px-4 py-3"><span className={muted}>{r.status}</span></td>

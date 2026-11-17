@@ -14,7 +14,30 @@ def _a(text) -> str:
     return str(text if text is not None else "").encode("latin-1", "replace").decode("latin-1")
 
 
-def render_invoice_pdf(view: dict, *, firm_name: str, accent: str = "#c8a35e", base_currency: str = "NZD") -> bytes:
+# A firm with no branding accent of its own gets the product's slate (the light theme's ink-soft,
+# frontend/app/globals.css), not the retired gold.
+DEFAULT_ACCENT = "#26384a"
+
+
+def accent_rgb(branding: dict | None) -> tuple[int, int, int]:
+    """The firm's branding accent as RGB, or the neutral default when it has none or it is not #rrggbb."""
+    accent = str((branding or {}).get("accent") or "").strip()
+    for candidate in (accent, DEFAULT_ACCENT):
+        if len(candidate) == 7 and candidate.startswith("#"):
+            try:
+                return int(candidate[1:3], 16), int(candidate[3:5], 16), int(candidate[5:7], 16)
+            except ValueError:
+                continue
+    return 38, 56, 74
+
+
+def header_text_rgb(fill: tuple[int, int, int]) -> tuple[int, int, int]:
+    """White on a dark band, near-black on a light one, so a pale accent still reads."""
+    r, g, b = fill
+    return (15, 29, 41) if (0.299 * r + 0.587 * g + 0.114 * b) > 170 else (255, 255, 255)
+
+
+def render_invoice_pdf(view: dict, *, firm_name: str, branding: dict | None = None, base_currency: str = "NZD") -> bytes:
     from fpdf import FPDF
 
     calc = view.get("calculation") or {}
@@ -24,13 +47,10 @@ def render_invoice_pdf(view: dict, *, firm_name: str, accent: str = "#c8a35e", b
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    try:
-        r, g, b = int(accent[1:3], 16), int(accent[3:5], 16), int(accent[5:7], 16)
-    except (ValueError, IndexError):
-        r, g, b = 200, 163, 94
-    pdf.set_fill_color(r, g, b)
+    fill = accent_rgb(branding)
+    pdf.set_fill_color(*fill)
     pdf.rect(0, 0, 210, 18, "F")
-    pdf.set_text_color(255, 255, 255)
+    pdf.set_text_color(*header_text_rgb(fill))
     pdf.set_font("Helvetica", "B", 14)
     pdf.set_xy(10, 4)
     pdf.cell(0, 10, _a(f"{firm_name}  -  {'Credit note' if credit else 'Fee invoice'}"), ln=True)

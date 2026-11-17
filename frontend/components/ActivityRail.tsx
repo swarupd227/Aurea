@@ -22,18 +22,30 @@ export default function ActivityRail() {
   const lastAt = useRef<string | null>(null);
   const [pulse, setPulse] = useState(false);
 
+  // One read at a time: two first reads at once (React mounts an effect twice in development) each
+  // brought the latest thirty, and every event was listed twice under one key (B-100).
+  const inFlight = useRef(false);
+
   async function poll() {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
       const since = lastAt.current ? `?since=${encodeURIComponent(lastAt.current)}` : "?limit=30";
       const fresh = await api<any[]>(`/api/atlas/activity${since}`);
       if (fresh.length) {
         if (lastAt.current) { setPulse(true); setTimeout(() => setPulse(false), 1200); }
-        setEvents((prev) => [...fresh, ...prev].slice(0, 60));
+        // An event on the boundary of "since" can come back again: it is listed once.
+        setEvents((prev) => {
+          const seen = new Set(prev.map((e) => e.id));
+          const added = fresh.filter((e) => !seen.has(e.id) && (seen.add(e.id), true));
+          return added.length ? [...added, ...prev].slice(0, 60) : prev;
+        });
         lastAt.current = fresh[0].created_at;
-      } else if (!lastAt.current && events.length === 0) {
-        // nothing yet
       }
-    } catch {}
+    } catch {
+    } finally {
+      inFlight.current = false;
+    }
   }
 
   useEffect(() => {
@@ -61,7 +73,7 @@ export default function ActivityRail() {
           const m = META[e.kind] || META.watching;
           const Icon = m.icon;
           return (
-            <div key={e.id} className="px-4 py-2.5 flex items-start gap-2.5 fade-in hover:bg-border-soft/60">
+            <div key={e.id} className="px-4 py-2.5 flex items-start gap-2.5 fade-in hover:bg-border-soft">
               <Icon size={15} className={`mt-0.5 shrink-0 ${m.color}`} />
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-ink-soft leading-snug">{e.summary}</div>

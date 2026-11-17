@@ -95,7 +95,7 @@ export default function SuperadminPage() {
       />
 
       {result && (
-        <Card className="mb-5 border-ok/30 bg-ok-bg" data-testid="superadmin-created">
+        <Card className="mb-5 border-ok-soft bg-ok-bg" data-testid="superadmin-created">
           <div className="flex items-start gap-3">
             <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-ok" />
             <div className="min-w-0 flex-1">

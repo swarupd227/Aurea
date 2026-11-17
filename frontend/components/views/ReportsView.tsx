@@ -57,7 +57,7 @@ export function ReportsView() {
           {rows.map((r) => (
             <li key={r.id}>
               <ViewLink href={`/studio/reports/${r.id}`} data-testid="report-row"
-                className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-border-soft/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
+                className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-border-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
                 <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-border-soft text-ink-soft"><FileText size={16} /></span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-ink">{r.title}</span>

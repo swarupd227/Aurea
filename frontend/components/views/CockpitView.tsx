@@ -121,7 +121,7 @@ export function CockpitView() {
               onClick={() => delegate(s)}
               disabled={delegating}
               data-testid="cockpit-suggestion"
-              className="rounded-full border border-border px-3 py-1 text-xs text-ink-soft transition-colors hover:border-accent/60 hover:text-ink disabled:opacity-50"
+              className="rounded-full border border-border px-3 py-1 text-xs text-ink-soft transition-colors hover:border-ink-faint hover:text-ink disabled:opacity-50"
             >
               {s}
             </button>

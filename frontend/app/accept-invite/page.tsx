@@ -55,7 +55,7 @@ function AcceptInviteInner() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface p-4">
         <div className="card p-8 max-w-md w-full text-center space-y-3">
-          <CheckCircle size={40} className="text-positive mx-auto" />
+          <CheckCircle size={40} className="text-ok mx-auto" />
           <p className="font-semibold text-ink">Password set — signing you in…</p>
         </div>
       </div>
@@ -66,15 +66,15 @@ function AcceptInviteInner() {
     <div className="min-h-screen flex items-center justify-center bg-surface p-4">
       <div className="card p-8 max-w-md w-full space-y-6">
         <div className="text-center space-y-1">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-navy-100 mb-2">
-            <KeyRound size={22} className="text-navy-800" />
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-border-soft mb-2">
+            <KeyRound size={22} className="text-ink" aria-hidden />
           </div>
           <h1 className="text-xl font-semibold text-ink">Set your password</h1>
           <p className="text-sm text-ink-muted">Choose a password of at least 8 characters to activate your account.</p>
         </div>
 
         {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
+          <div className="rounded-lg bg-crit-bg border border-crit-soft px-4 py-3 text-sm text-crit">{error}</div>
         )}
 
         <form onSubmit={submit} className="space-y-4">

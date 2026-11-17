@@ -102,7 +102,7 @@ export function ConfirmationCard({
   return (
     <div
       className={`rounded-lg border bg-surface p-4 ${
-        !decided ? "border-accent/60" : "border-border"
+        !decided ? "border-accent-soft" : "border-border"
       }`}
       data-testid={action.tool_key === "run_agent" ? "run-confirmation" : undefined}
     >
@@ -122,7 +122,7 @@ export function ConfirmationCard({
         </dl>
       )}
       {unavailable && (
-        <div role="alert" className="mt-3 rounded border border-warn/40 px-3 py-2 text-sm text-ink" data-testid="run-unavailable">
+        <div role="alert" className="mt-3 rounded border border-warn-soft px-3 py-2 text-sm text-ink" data-testid="run-unavailable">
           {unavailable}
         </div>
       )}

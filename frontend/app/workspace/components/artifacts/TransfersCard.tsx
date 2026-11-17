@@ -12,7 +12,7 @@ export function TransfersCard({ result }: { result: any }) {
         <div className="text-sm font-medium text-ink">Transfers in</div>
         <div className="flex gap-1.5">
           <span className="chip">{result.transfers.length}</span>
-          {result.late > 0 && <span className="chip text-critical">{result.late} late</span>}
+          {result.late > 0 && <span className="chip text-crit">{result.late} late</span>}
         </div>
       </div>
       {result.transfers.length > 0 && (

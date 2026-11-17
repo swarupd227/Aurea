@@ -77,7 +77,7 @@ async def get_invoice_pdf(invoice_id: uuid.UUID, user: User = StaffDep, firm: Fi
     view = await billing_views.invoice_detail(db, firm.id, invoice_id)
     if view is None:
         raise HTTPException(status_code=404, detail="Invoice not found.")
-    pdf = render_invoice_pdf(view, firm_name=firm.name, accent=(firm.branding or {}).get("accent", "#c8a35e"),
+    pdf = render_invoice_pdf(view, firm_name=firm.name, branding=firm.branding,
                              base_currency=firm.base_currency or "NZD")
     name = (view["number"] or "invoice-draft").replace(" ", "_")
     return Response(content=pdf, media_type="application/pdf",

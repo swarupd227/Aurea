@@ -181,7 +181,7 @@ export function ReviewsView({ household = null }: { household?: string | null })
                       </tr>
                       {open && (
                         <tr>
-                          <td colSpan={8} className="bg-border-soft/30 px-4 py-3">
+                          <td colSpan={8} className="bg-border-soft px-4 py-3">
                             <div className="flex flex-wrap items-center gap-2" data-testid="review-confirm">
                               {open.kind === "record" && (
                                 <>

@@ -18,9 +18,9 @@ const REGISTRATION_LABELS: Record<string, string> = {
 };
 
 const AML_TIER_STYLE: Record<string, string> = {
-  low: "bg-positive/10 text-positive",
-  medium: "bg-caution/10 text-caution",
-  high: "bg-critical/10 text-critical",
+  low: "bg-ok-bg text-ok",
+  medium: "bg-warn-bg text-warn",
+  high: "bg-crit-bg text-crit",
 };
 
 /**
@@ -39,24 +39,24 @@ const OWNER_COLUMNS = [
 ];
 
 const TRACK_PIP: Record<string, string> = {
-  complete: "bg-positive",
+  complete: "bg-ok",
   in_progress: "bg-info",
-  blocked: "bg-critical",
+  blocked: "bg-crit",
   waiting_external: "bg-warn",
   not_started: "bg-border",
 };
 
 const SLA_STYLE: Record<string, string> = {
-  breached: "text-critical font-semibold",
-  at_risk: "text-caution font-medium",
+  breached: "text-crit font-semibold",
+  at_risk: "text-warn font-medium",
   on_track: "text-ink-muted",
   "n/a": "text-ink-faint",
 };
 
 function amlChip(status?: string) {
-  if (status === "blocked") return <span className="chip bg-critical/10 text-critical"><ShieldAlert size={11} /> AML blocked</span>;
-  if (status === "review") return <span className="chip bg-caution/10 text-caution"><ShieldAlert size={11} /> AML review</span>;
-  if (status === "clear") return <span className="chip bg-positive/10 text-positive"><ShieldCheck size={11} /> AML clear</span>;
+  if (status === "blocked") return <span className="chip bg-crit-bg text-crit"><ShieldAlert size={11} /> AML blocked</span>;
+  if (status === "review") return <span className="chip bg-warn-bg text-warn"><ShieldAlert size={11} /> AML review</span>;
+  if (status === "clear") return <span className="chip bg-ok-bg text-ok"><ShieldCheck size={11} /> AML clear</span>;
   return null;
 }
 
@@ -172,14 +172,14 @@ function MetricsStrip() {
           <Metric label="First-pass yield"
                   value={data.quality.first_pass_yield_pct != null ? `${data.quality.first_pass_yield_pct}%` : "—"}
                   sub={`${data.quality.nigo_cases} NIGO`}
-                  tone={data.quality.first_pass_yield_pct != null && data.quality.first_pass_yield_pct < 80 ? "text-caution" : undefined} />
+                  tone={data.quality.first_pass_yield_pct != null && data.quality.first_pass_yield_pct < 80 ? "text-warn" : undefined} />
           <Metric label="Screened"
                   value={data.screening.coverage_pct != null ? `${data.screening.coverage_pct}%` : "—"}
                   sub={`${data.screening.parties_screened}/${data.screening.parties_total} parties`}
-                  tone={data.screening.coverage_pct != null && data.screening.coverage_pct < 100 ? "text-caution" : "text-positive"} />
+                  tone={data.screening.coverage_pct != null && data.screening.coverage_pct < 100 ? "text-warn" : "text-ok"} />
           <Metric label="SLA breached" value={data.sla.breached}
                   sub={`${data.sla.at_risk} at risk · avg age ${age.p50 ?? "—"}d`}
-                  tone={data.sla.breached > 0 ? "text-critical" : "text-positive"} />
+                  tone={data.sla.breached > 0 ? "text-crit" : "text-ok"} />
         </div>
 
         {(blockers.length > 0 || data.screening.edd_backlog > 0) && (
@@ -196,7 +196,7 @@ function MetricsStrip() {
               </div>
             )}
             {data.screening.edd_backlog > 0 && (
-              <div className="text-[11px] text-caution">
+              <div className="text-[11px] text-warn">
                 EDD backlog {data.screening.edd_backlog} · oldest{" "}
                 {data.screening.edd_backlog_age_days.p90 ?? "—"}d
               </div>
@@ -235,14 +235,14 @@ function CaseCard({ c }: { c: any }) {
         {c.aml_risk_tier && (
           <span className={`chip ${AML_TIER_STYLE[c.aml_risk_tier] || "bg-border-soft text-ink-muted"}`}>AML {c.aml_risk_tier}</span>
         )}
-        {c.nigo_flag && <span className="chip bg-caution/10 text-caution flex items-center gap-1"><AlertTriangle size={10} /> NIGO</span>}
+        {c.nigo_flag && <span className="chip bg-warn-bg text-warn flex items-center gap-1"><AlertTriangle size={10} /> NIGO</span>}
       </div>
 
       <div className="flex items-center justify-between gap-2 mt-2 text-[10px]">
         <span className={SLA_STYLE[c.sla_status] || "text-ink-muted"}>
           {c.sla_status === "breached" ? "SLA breached" : c.sla_status === "at_risk" ? "SLA at risk" : `SLA ${c.sla_days}d`}
         </span>
-        {t?.ready_to_activate && <span className="chip bg-positive/10 text-positive">Ready to activate</span>}
+        {t?.ready_to_activate && <span className="chip bg-ok-bg text-ok">Ready to activate</span>}
       </div>
 
       {t?.next_action && (
@@ -310,7 +310,7 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
   }
 
   return (
-    <div className="fixed inset-0 bg-ink/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="card p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-ink mb-4">New prospect</h3>
         <div className="space-y-3">
@@ -353,7 +353,7 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
             <input className="input" value={form.source_of_wealth} onChange={(e) => setForm({ ...form, source_of_wealth: e.target.value })} placeholder="e.g. Business sale proceeds" />
           </div>
           {isRollover && (
-            <div className="rounded-lg bg-caution/8 border border-caution/20 px-3 py-2 text-xs text-caution">
+            <div className="rounded-lg bg-warn-bg border border-warn-soft px-3 py-2 text-xs text-warn">
               Rollover account — DOL PTE 2020-02 rationale memo will be required. Run the Rollover PTE Documenter agent after creation.
             </div>
           )}

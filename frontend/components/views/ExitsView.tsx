@@ -191,7 +191,7 @@ export function ExitsView({ household = null }: { household?: string | null }) {
                 </div>
                 <div className="px-4 py-2"><ExitChips exit={e} /></div>
                 {form && "exit" in form && form.exit.id === e.id && form.kind !== "transfer" && (
-                  <div className="flex flex-wrap items-center gap-2 border-t border-border-soft bg-border-soft/30 px-4 py-2.5" data-testid="exit-form">
+                  <div className="flex flex-wrap items-center gap-2 border-t border-border-soft bg-border-soft px-4 py-2.5" data-testid="exit-form">
                     {form.kind === "executor" ? (
                       <>
                         <input className="input min-w-40 flex-1 text-xs" aria-label="Executor" placeholder="Executor" value={form.executor} onChange={(ev) => set({ executor: ev.target.value })} />

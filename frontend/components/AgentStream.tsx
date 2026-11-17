@@ -104,14 +104,14 @@ export default function AgentStream({
     <div className="card overflow-hidden">
       <div className="p-4">
         <div className="flex items-center gap-2">
-          <span className="h-8 w-8 rounded-lg bg-navy-800 text-white flex items-center justify-center">
-            {running ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+          <span className="h-8 w-8 rounded-lg bg-border-soft text-ink flex items-center justify-center">
+            {running ? <Loader2 size={16} className="animate-spin text-accent" /> : <Sparkles size={16} />}
           </span>
           <div>
             <div className="font-semibold text-ink text-sm flex items-center gap-2">
               {agentName}
-              {running && <span className="inline-flex items-center gap-1 text-xs text-navy-500"><span className="h-1.5 w-1.5 rounded-full bg-positive animate-pulse" /> working</span>}
-              {autonomous && <span className="chip bg-[#efe2f0] text-[#6b4b78]"><Zap size={11} /> acted autonomously</span>}
+              {running && <span className="inline-flex items-center gap-1 text-xs text-ink-muted"><span className="h-1.5 w-1.5 rounded-full bg-accent agent-working" /> working</span>}
+              {autonomous && <span className="chip bg-info-bg text-info"><Zap size={11} /> acted autonomously</span>}
             </div>
             {label && <div className="text-xs text-ink-muted">{label}</div>}
           </div>
@@ -127,20 +127,20 @@ export default function AgentStream({
         </div>
 
         {rationale && (
-          <div className="mt-3 rounded-lg bg-navy-50/60 border border-navy-100 p-3">
+          <div className="mt-3 rounded-lg bg-border-soft border border-border p-3">
             <div className="tile-label mb-1">Reasoning</div>
             <p className="text-sm text-ink-soft whitespace-pre-line leading-relaxed">
-              {rationale}{running && reason !== "done" && <span className="inline-block w-1.5 h-4 bg-navy-400 ml-0.5 animate-pulse align-middle" />}
+              {rationale}{running && reason !== "done" && <span className="inline-block w-1.5 h-4 bg-accent ml-0.5 agent-working align-middle" />}
             </p>
           </div>
         )}
         {loadingRec && <div className="mt-2 text-xs text-ink-muted flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Recording to the ledger…</div>}
         {empty && <div className="mt-2 text-sm text-ink-muted">{empty}</div>}
-        {error && <div className="mt-2 text-sm text-critical">{error}</div>}
+        {error && <div className="mt-2 text-sm text-crit">{error}</div>}
       </div>
 
       {rec && (
-        <div className="border-t border-navy-100/70 p-2">
+        <div className="border-t border-border p-2">
           <RecommendationCard rec={rec} defaultOpen onDecided={(u) => {
             setRec(u); onDecided?.();
             if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("aurea:decided"));
@@ -153,10 +153,10 @@ export default function AgentStream({
 
 function Step({ icon: Icon, state, label, detail, flagged }: { icon: any; state: Phase; label: string; detail: string; flagged?: boolean }) {
   const circle =
-    state === "done" ? (flagged ? "bg-caution/10 text-caution" : "bg-positive/10 text-positive")
-    : state === "active" ? "bg-navy-100 text-navy-700"
-    : state === "await" ? "bg-caution/10 text-caution"
-    : "bg-navy-50 text-navy-400";
+    state === "done" ? (flagged ? "bg-warn-bg text-warn" : "bg-ok-bg text-ok")
+    : state === "active" ? "bg-border-soft text-accent"
+    : state === "await" ? "bg-warn-bg text-warn"
+    : "bg-border-soft text-ink-faint";
   return (
     <div className={`flex items-center gap-2.5 ${state === "idle" ? "opacity-45" : ""}`}>
       <span className={`h-6 w-6 rounded-md flex items-center justify-center ${circle}`}>
@@ -165,7 +165,7 @@ function Step({ icon: Icon, state, label, detail, flagged }: { icon: any; state:
           : <Icon size={13} />}
       </span>
       <span className="text-sm font-medium text-ink w-14">{label}</span>
-      <span className={`text-xs flex-1 ${state === "await" ? "text-caution" : "text-ink-muted"}`}>{detail}</span>
+      <span className={`text-xs flex-1 ${state === "await" ? "text-warn" : "text-ink-muted"}`}>{detail}</span>
     </div>
   );
 }

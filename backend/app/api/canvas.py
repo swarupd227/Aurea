@@ -385,18 +385,18 @@ async def download_summary_pdf(
         text = markets.money(amount, ccy)
         return text if text.isascii() else f"{ccy} {text.translate({ord(c): None for c in '₹€£'})}"
 
+    from app.aurea_core.invoice_pdf import accent_rgb, header_text_rgb
     branding = firm.branding or {}
-    accent = branding.get("accent", "#c8a35e")
+    fill = accent_rgb(branding)
 
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
 
     # Header bar
-    r, g, b = int(accent[1:3], 16), int(accent[3:5], 16), int(accent[5:7], 16)
-    pdf.set_fill_color(r, g, b)
+    pdf.set_fill_color(*fill)
     pdf.rect(0, 0, 210, 18, "F")
-    pdf.set_text_color(255, 255, 255)
+    pdf.set_text_color(*header_text_rgb(fill))
     pdf.set_font("Helvetica", "B", 14)
     pdf.set_xy(10, 4)
     pdf.cell(0, 10, f"{firm.name}  -  Wealth Summary", ln=True)
@@ -524,7 +524,7 @@ async def download_invoice_pdf(
         raise HTTPException(status_code=404, detail="Invoice not found.")
     original = await db.get(Invoice, inv.credit_of_id) if inv.credit_of_id else None
     view = billing_views.invoice_view(inv, detail=True, credit_of_number=original.invoice_number if original else None)
-    pdf = render_invoice_pdf(view, firm_name=firm.name, accent=(firm.branding or {}).get("accent", "#c8a35e"),
+    pdf = render_invoice_pdf(view, firm_name=firm.name, branding=firm.branding,
                              base_currency=firm.base_currency or "NZD")
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{inv.invoice_number}.pdf"'})

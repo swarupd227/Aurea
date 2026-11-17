@@ -178,7 +178,7 @@ export function IpsView({ household = null }: { household?: string | null }) {
                       </tr>
                       {open && (
                         <tr>
-                          <td colSpan={7} className="bg-border-soft/30 px-4 py-3">
+                          <td colSpan={7} className="bg-border-soft px-4 py-3">
                             <div className="space-y-2" data-testid="ips-confirm">
                               <div className="flex flex-wrap items-center gap-2">
                                 <input type="date" className="input text-xs" aria-label="Accepted on" value={open.accepted_on} max={data.as_of}
