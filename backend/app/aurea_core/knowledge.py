@@ -82,8 +82,10 @@ async def retrieve(
             )
         ).scalars().all()
         results = [(c, 0.0) for c in rows]
-    else:
-        # Lexical fallback.
+    if not results:
+        # Lexical fallback: with no embedding model, and also when the vector lookup finds nothing, which is what
+        # research ingested before embeddings were on (chunks with no vector) looks like - B-128 read "None"
+        # on almost every live proposal though the library held the seeded house views.
         terms = [t for t in query.lower().split() if len(t) > 3][:6]
         cond = or_(*[ResearchChunk.text.ilike(f"%{t}%") for t in terms]) if terms else None
         stmt = (select(ResearchChunk).join(ResearchDocument, ResearchDocument.id == ResearchChunk.document_id)

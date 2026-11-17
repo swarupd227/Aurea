@@ -227,18 +227,28 @@ async def revise_recommendation(
 @router.post("/scan")
 async def book_scan(
     agent: str = "next_best_action",
-    user: User = Depends(require_roles(*STAFF_ROLES)),
+    user: User = Depends(staff_user),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
 ):
-    """Run a monitoring agent across the whole book (firm subject) and surface new items."""
-    key = (
-        AgentKey.CLIENT_CARE if agent == "client_care"
-        else AgentKey.ESTATE_SUCCESSION if agent == "estate_succession"
-        else AgentKey.NEXT_BEST_ACTION
-    )
+    """Run any agent that works across the whole book (firm subject) and surface new items (B-15). It used to
+    know three agents and quietly ran next-best-action for any other name. An agent that needs a client, a
+    mandate, a meeting or a case is named as such; who may start one is agent_runs' rule, the conversation's;
+    and an agent that moves a book stops at a proposal, as a run a person starts there does."""
+    from app.core import agent_runs
+
     try:
-        run = await run_agent(db, firm=firm, agent_key=key,
-                              subject=Subject("firm", firm.id, firm.name), trigger="book_scan")
+        key = AgentKey(agent)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"There is no agent called '{agent}'.")
+    if key in agent_runs.SUBJECT_REQUIRED:
+        raise HTTPException(status_code=422, detail=f"{key.value} works on one {agent_runs.SUBJECT_REQUIRED[key].replace('_', ' ')}, "
+                                                    "not the whole book.")
+    if not agent_runs.may_run(user.role, key):
+        raise HTTPException(status_code=403, detail=agent_runs.NOT_FROM_CONVERSATION.get(key)
+                            or f"Your role does not start {key.value}.")
+    try:
+        run = await run_agent(db, firm=firm, agent_key=key, subject=Subject("firm", firm.id, firm.name), trigger="book_scan",
+                              require_human=agent_runs.forced_to_proposal(key))
     except AgentPausedError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     n = (
