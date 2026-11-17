@@ -451,6 +451,10 @@ class ToolExecutors(AdminToolExecutors):
                     "message": "India has no wash-sale rule, so there is no calendar to check. What applies is "
                                "the harvest guard on each proposal; read_tax_position has the tax position."}
 
+        if not result.get("applies", True):
+            return {**result, "message": f"The wash-sale rule binds households taxed in the US; {result['household_name']} "
+                                         f"is taxed in {result['jurisdiction']}, so there is no wash-sale calendar."}
+
         n = len(result["violations"])
         result["message"] = (
             f"No wash-sale conflicts right now — {result['lots_checked']} lot(s) checked."
@@ -4438,8 +4442,15 @@ class ToolExecutors(AdminToolExecutors):
             raise ExecutorError(f"Already {rec.status}")
         household = await self.session.get(Household, report.household_id)
         action = str(inputs.get("action") or "")
+        # How old its figures are at the moment of approval, and a warning past a month (B-55): approving puts them in
+        # front of the client as they were taken. A draft that does not say when has no age given.
+        from app.aurea_core import firm_time
+
+        old = reports.age(report, firm_time.today(await self._firm()))
         return {"rows": [{"label": k, "value": str(v)} for k, v in (
             ("Report", report.title), ("Client", household.name if household else None), ("Period", report.period),
+            ("Figures as of", f"{old['as_of']} · {old['days']} day(s) old" if old["as_of"] else "Not recorded"),
+            ("Stale", f"{old['days']} days old · over {old['stale_after_days']} · redraft first" if old["stale"] else None),
             ("Decision", "Approve, and the client can read it" if action == "approve" else action.title()),
         ) if v]}
 

@@ -154,6 +154,16 @@ async def main() -> int:
             await refused("an unknown class", research.preview_change("record_product_decision", {**gate, "minimum_class": "rich"}), "minimum class")
             await research.record_product_decision(gate)
             await refused("no certification on file", ex.preview_change("execute_orders", buy("PVT")), "accredited investor", "no such certification")
+            from app.aurea_core.graph import list_households
+
+            async def listed_class(firm_id=firm.id):
+                return {r["name"]: r["investor_class"] for r in await list_households(s, firm_id)}.get("Ann")
+
+            account.cash_balance = 6_000_000
+            await s.flush()
+            check("B-125: the client list labels no class from AUM alone, at 6M", await listed_class(), None)
+            account.cash_balance = 50000
+            await s.flush()
             cert = {"person_id": str(ann.id), "investor_class": "accredited", "document": "Accountant's letter, Oct 2026", "expires_on": (today + timedelta(days=30)).isoformat()}
             shown = await card(ex, "record_investor_status", cert)
             check("the card names the person and class", (shown["Person"], shown["Class"], shown["Replaces"]), ("Ann Lee", "Accredited", "Nothing on file"))
@@ -164,10 +174,15 @@ async def main() -> int:
             check("showing it records nothing", (await s.execute(select(func.count()).select_from(InvestorCertification))).scalar(), 0)
             await ex.record_investor_status(cert)
             check("certified, it may be bought", "Order 1" in await card(ex, "execute_orders", buy("PVT")), True)
+            check("B-125: the client list reads the certification on file", await listed_class(), "accredited")
+            check("and the client page's detail reads the same", (await __import__("app.api.core", fromlist=["x"]).household_detail(
+                h.id, firm=firm, db=s))["investor_class"], "accredited")
             await research.record_product_decision({**gate, "minimum_class": "qualified_purchaser", "document": "Research note 51"})
             await refused("a higher gate still stops it", ex.preview_change("execute_orders", buy("PVT")), "qualified purchaser")
             await ex.record_investor_status({**cert, "investor_class": "qualified_purchaser", "as_of": (today - timedelta(days=40)).isoformat(), "expires_on": (today - timedelta(days=1)).isoformat()})
             await refused("one that has run out does not count, and the latest by date stands", ex.preview_change("execute_orders", buy("PVT")), "qualified purchaser")
+            check("B-125: the list shows the latest in date, not the expired higher class", await listed_class(), "accredited")
+            check("B-125: another firm's certification labels nothing here", await shelf.household_classes(s, other.id, today=today), {})
 
             print("\n=== Approved products only ===")
             await refused("off is off already", research.preview_change("set_approved_products_only", {"on": "false"}), "already off")

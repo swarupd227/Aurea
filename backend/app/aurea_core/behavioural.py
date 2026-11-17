@@ -178,7 +178,13 @@ def _stress_level(brain: dict) -> dict:
 
 
 def _draft_stress_message(brain: dict, stress: dict, profile: dict) -> dict | None:
-    """Draft a reassurance message when the portfolio is under stress."""
+    """Draft a message to the client when the portfolio is under stress, for the adviser to edit and send.
+
+    It states only what is on file - how far the portfolio is below cost, and a goal's horizon where one is recorded -
+    and claims nothing no tool established (B-120). It used to tell the client that no change to the strategy was
+    needed, that the portfolio had been stress-tested for this and that the downside was within agreed parameters,
+    none of which anything here had checked, and to put a 10-year horizon on a goal that had none. Whether anything
+    should change is the adviser's to decide on the call it asks for."""
     if not stress.get("is_stressed"):
         return None
 
@@ -187,27 +193,33 @@ def _draft_stress_message(brain: dict, stress: dict, profile: dict) -> dict | No
     goals = brain.get("goals", [])
     values = (brain["household"].get("values") or {}).get("themes", [])
 
-    longest_goal = max(
-        goals, key=lambda g: int((g.get("assumptions") or {}).get("years", 0))
-    ) if goals else None
-    horizon = f"{(longest_goal.get('assumptions') or {}).get('years', 10)}-year {longest_goal['kind']} plan" if longest_goal else "your long-term plan"
-    values_text = f" — anchored to {', '.join(values[:2])}" if values else ""
+    def _years(g: dict) -> int | None:
+        raw = (g.get("assumptions") or {}).get("years")
+        try:
+            return int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    dated = [g for g in goals if _years(g)]
+    longest_goal = max(dated, key=_years) if dated else None
+    horizon = f"your {_years(longest_goal)}-year {longest_goal['kind']} goal" if longest_goal else None
+    values_text = f", and to {', '.join(values[:2])}" if values else ""
 
     dominant = profile.get("dominant_bias")
     if dominant == LOSS_AVERSION:
-        opener = "The portfolio was stress-tested for exactly this kind of environment, and the downside is within the parameters we discussed when we set your investment policy."
+        opener = "Falls like this are uncomfortable, and I would rather we look at them together than leave you watching the numbers alone."
     elif dominant == OVERCONFIDENCE:
-        opener = "Short-term drawdowns are a normal and expected feature of a growth-oriented strategy — the long-term return target remains unchanged."
+        opener = "Before any change is made, I would like us to look at the figures together."
     else:
-        opener = "Your portfolio is responding as expected to current market conditions, and no changes to the strategy are required at this stage."
+        opener = "I would like to walk you through where the portfolio stands."
 
+    anchor = f" I want to look at it against {horizon}{values_text}." if horizon else ""
     body = (
         f"Hi {hh_name.split()[0] if hh_name else 'there'}, I wanted to reach out given recent market movements. "
         f"The portfolio is currently {drawdown:.1f}% below cost. "
-        f"{opener} "
-        f"Your {horizon}{values_text} has not changed. "
-        f"I'd like to schedule a brief call to walk through where we stand and confirm no adjustments are needed. "
-        f"In the meantime, please don't hesitate to reach out — that's what I'm here for."
+        f"{opener}{anchor} "
+        f"Could we find time for a short call? "
+        f"In the meantime, please don't hesitate to reach out."
     )
 
     return {
@@ -215,6 +227,8 @@ def _draft_stress_message(brain: dict, stress: dict, profile: dict) -> dict | No
         "is_draft": True,
         "trigger": f"{drawdown:.1f}% portfolio drawdown",
         "tone": "reassuring",
+        # What the draft rests on: a figure from the book, and a horizon only where one is recorded on a goal.
+        "states": ["drawdown_from_cost"] + (["goal_horizon"] if longest_goal else []),
         "action_required": "Review and personalise before sending via Messages.",
     }
 

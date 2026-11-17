@@ -33,6 +33,11 @@ function profileSentence(before: Record<string, any>, after: Record<string, any>
   return parts.length ? `Update the firm profile: ${parts.join("; ")}` : null;
 }
 
+/** The firm's allowed domains as typed: bare host names, comma separated (B-146). */
+function domainList(text: string): string[] {
+  return text.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
+}
+
 export function FirmTab() {
   const ask = useAsk();
   const { data, loading, error, refetch } = useApi<any>("/api/admin/firm");
@@ -54,11 +59,16 @@ export function FirmTab() {
     setForm({ ...f, jurisdiction: jur, regulator: defaults.regulator, base_currency: defaults.base_currency });
   }
 
-  const sentence = profileSentence(
+  const domainsBefore: string[] = data.settings?.allowed_domains || [];
+  const domainsAfter: string[] | undefined = f.domains_text === undefined ? undefined : domainList(f.domains_text);
+  const domainsChanged = domainsAfter !== undefined && domainsAfter.join(",") !== domainsBefore.join(",");
+  const profile = profileSentence(
     { name: data.name, legal_name: data.legal_name, regulator: data.regulator, ...(data.branding || {}) },
     { name: f.name, legal_name: f.legal_name, regulator: f.regulator, logo_text: f.branding?.logo_text, tagline: f.branding?.tagline,
       primary: f.branding?.primary, accent: f.branding?.accent },
   );
+  const domainWords = domainsChanged ? (domainsAfter!.length ? `allowed domains ${domainsAfter!.join(", ")}` : "clear the allowed domains") : null;
+  const sentence = profile && domainWords ? `${profile}; ${domainWords}` : profile || (domainWords ? `Update the firm profile: ${domainWords}` : null);
 
   async function save() {
     if (ask) {
@@ -66,7 +76,9 @@ export function FirmTab() {
       setForm(null);
       return;
     }
-    await api("/api/admin/firm", { method: "PATCH", body: f });
+    const { domains_text, ...body } = f;
+    if (domainsAfter !== undefined) body.settings = { ...(body.settings || {}), allowed_domains: domainsAfter };
+    await api("/api/admin/firm", { method: "PATCH", body });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
     refetch();
@@ -135,6 +147,10 @@ export function FirmTab() {
             ) : (
               <textarea className="input" rows={3} value={f.settings?.ai_usage_policy || ""} onChange={(e) => setForm({ ...f, settings: { ...f.settings, ai_usage_policy: e.target.value } })} />
             )}
+          </div>
+          <div><label className="label">Allowed domains</label>
+            <input className="input font-mono text-xs" data-testid="admin-firm-allowed-domains" placeholder="example.com, mail.example.com"
+              value={f.domains_text ?? domainsBefore.join(", ")} onChange={(e) => set({ domains_text: e.target.value })} />
           </div>
         </div>
       </Card>

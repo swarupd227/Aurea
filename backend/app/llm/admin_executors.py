@@ -38,8 +38,6 @@ NEEDS_REASON = {"set_agent_switches", "save_segment", "save_mandate_type", "set_
 # Writes that always make something, so "already so" does not apply.
 ALWAYS_CHANGES = {"invite_user", "add_research", "add_connector", "sync_connector"}
 
-RISK_TOLERANCES = ("conservative", "balanced", "growth", "aggressive")
-HORIZONS = ("short", "medium", "long")
 # Fields a card shows as a percentage, and as basis points.
 _PCT = {"max_equity", "drift_band", "expected_return", "volatility", *(a.value for a in AssetClass)}
 _BPS = {"fee_tier_bps"}
@@ -251,9 +249,12 @@ class AdminToolExecutors:
                     raise _refuse(f"A colour is six hex digits after #, e.g. #1A2B3C; '{branding[key]}' is not.")
             fields = {k: v for k, v in fields.items() if v is not None}
             branding = {k: v for k, v in branding.items() if v is not None}
-            if not fields and not branding:
-                raise _refuse("Give what changes: the name, legal name, regulator, colours, tagline or logo text.")
-            return {"fields": fields, "branding": branding}
+            domains = g("allowed_domains")
+            settings = None if domains is None else {"allowed_domains": domains}
+            if not fields and not branding and settings is None:
+                raise _refuse("Give what changes: the name, legal name, regulator, colours, tagline, logo text "
+                              "or allowed domains.")
+            return {"fields": fields, "branding": branding, "settings": settings}
         if tool_key == "set_agent_switches":
             args = {"agent_key": _text(g("agent_key")), "enabled": _flag(g("enabled"), "enabled"),
                     "default_tier": _text(g("tier")), "paused": _flag(g("paused"), "paused"),
@@ -283,17 +284,15 @@ class AdminToolExecutors:
                     "slug": _text(g("slug")), "label": _text(g("label")),
                     "default_autonomy_tier": _text(g("default_autonomy_tier")), "description": _text(g("description"))}
         if tool_key == "set_mandate_suitability":
-            tolerance, horizon, kind = (_text(g(k)) for k in ("risk_tolerance", "investment_horizon", "mandate_type"))
-            if tolerance and tolerance.lower() not in RISK_TOLERANCES:
-                raise _refuse(f"A risk tolerance is one of {', '.join(RISK_TOLERANCES)}.")
-            if horizon and horizon.lower() not in HORIZONS:
-                raise _refuse(f"An investment horizon is one of {', '.join(HORIZONS)}.")
+            from app.aurea_core import platform_admin as pa
+
+            # Suitability is the adviser's (B-153): an administrator's tool changes the type and whether it is active.
+            if any(g(k) not in (None, "") for k in pa.SUITABILITY_FIELDS):
+                raise _refuse(pa.SUITABILITY_REFUSAL)
+            kind = _text(g("mandate_type"))
             if kind and kind.lower() not in {m.value for m in MandateType}:
                 raise _refuse(f"A mandate type is one of {', '.join(m.value for m in MandateType)}.")
             return {"mandate_id": self._admin_id(g("mandate_id"), "mandate_id"),
-                    "risk_tolerance": tolerance.lower() if tolerance else None,
-                    "investment_horizon": horizon.lower() if horizon else None,
-                    "max_equity": _number(g("max_equity"), "max_equity"), "esg_preference": _text(g("esg_preference")),
                     "mandate_type": kind.lower() if kind else None, "is_active": _flag(g("active"), "active")}
         if tool_key == "set_notification":
             return {"event_type": _text(g("event_type")) or "", "enabled": _flag(g("enabled"), "enabled"),
@@ -383,7 +382,7 @@ class AdminToolExecutors:
 
         s = self.session
         if tool_key == "update_firm_profile":
-            return pa.prepare_firm(firm, fields=a["fields"], branding=a["branding"])
+            return pa.prepare_firm(firm, fields=a["fields"], branding=a["branding"], settings=a["settings"])
         if tool_key == "set_agent_switches":
             return await pa.prepare_agent_switches(s, firm, a["agent_key"], enabled=a["enabled"], default_tier=a["default_tier"],
                                                    paused=a["paused"], schedule_cron=a["schedule_cron"],
@@ -451,7 +450,8 @@ class AdminToolExecutors:
 
         s = self.session
         if tool_key == "update_firm_profile":
-            return await pa.update_firm(s, firm, me, fields=a["fields"], branding=a["branding"], reason=reason)
+            return await pa.update_firm(s, firm, me, fields=a["fields"], branding=a["branding"], settings=a["settings"],
+                                        reason=reason)
         if tool_key == "set_agent_switches":
             return await pa.set_agent_switches(s, firm, me, a["agent_key"], enabled=a["enabled"], default_tier=a["default_tier"],
                                                paused=a["paused"], paused_reason=reason if a["paused"] else None,

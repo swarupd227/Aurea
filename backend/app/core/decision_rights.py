@@ -48,6 +48,12 @@ BILLING_VETO: frozenset[UserRole] = frozenset({UserRole.COMPLIANCE})
 RECON_AGENTS: frozenset[str] = frozenset({AgentKey.RECONCILIATION.value})
 RECON_DECIDERS: frozenset[UserRole] = frozenset({UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM})
 
+# Agents whose approved proposals commit an acquired book: approving writes the inbound clients, accounts and
+# holdings into the client brain as golden records. The book's page and its routes are operations' (B-119), so
+# the decision is too - and nobody else's, including the adviser whose clients they may become.
+BOOK_INTEGRATION_AGENTS: frozenset[str] = frozenset({AgentKey.BOOK_INTEGRATION.value})
+BOOK_INTEGRATION_DECIDERS: frozenset[UserRole] = frozenset({UserRole.OPERATIONS})
+
 # Agents whose approved proposals accept a breach of a client's IPS. No money moves, but it sets aside
 # the client's own terms, so it takes the people who may trade on them, and compliance keeps its veto.
 IPS_AGENTS: frozenset[str] = frozenset({AgentKey.IPS_MONITORING.value})
@@ -88,6 +94,10 @@ def moves_client_cash(agent_key: str | AgentKey) -> bool:
     return str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in CASH_MOVING_AGENTS
 
 
+def commits_a_book(agent_key: str | AgentKey) -> bool:
+    return str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in BOOK_INTEGRATION_AGENTS
+
+
 def _sets_aside_an_ips(agent_key: str | AgentKey) -> bool:
     return str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in IPS_AGENTS
 
@@ -113,6 +123,11 @@ def roles_for(agent_key: str | AgentKey, decision: str) -> frozenset[UserRole]:
         if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, HumanAction.DISMISS.value,
                         "revise", "rollback"):
             return SUPERVISORS
+        return frozenset()
+    if commits_a_book(agent_key):
+        if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, HumanAction.DISMISS.value,
+                        "revise", "rollback"):
+            return BOOK_INTEGRATION_DECIDERS
         return frozenset()
     if not moves_the_book(agent_key) and not _sets_aside_an_ips(agent_key):
         return STAFF
@@ -162,6 +177,10 @@ def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> Non
         )
     if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in SUPERVISION_AGENTS:
         raise DecisionForbidden(f"This proposal is about supervising the agents and their users, so only compliance or a branch leader may {decision} it.")
+    if commits_a_book(agent_key):
+        raise DecisionForbidden(
+            f"This proposal commits an acquired book's clients and holdings, so only operations may {decision} it."
+        )
     if _sets_aside_an_ips(agent_key):
         who = ("an adviser, the portfolio team or compliance" if decision in ("dismiss", "rollback")
                else "an adviser or the portfolio team")

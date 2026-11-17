@@ -20,7 +20,7 @@ from types import SimpleNamespace as N
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  - registers every table on Base.metadata
-from app.aurea_core import disclosures, firm_time, markets, tax_intelligence
+from app.aurea_core import disclosures, firm_time, markets, regulatory_countdown, tax_intelligence
 from app.compliance import engine, ontology
 from app.compliance.rules import CheckContext
 from app.core.db import Base
@@ -129,6 +129,24 @@ async def main() -> int:
             book = await tax_intelligence.for_firm(s, firm.id, "SG")
             check("the book counts it apart from New Zealand",
                   (book["jurisdictions"]["NZ"], book["jurisdictions"]["not_supported"]), (0, 1))
+
+            print("\n=== The routes read it as the tools do (B-121) ===")
+            import inspect
+            from app.api import analytics as analytics_api, core as core_api
+            for mod in (core_api, analytics_api):
+                check(f"{mod.__name__} reads no firm as New Zealand", 'jurisdiction or "NZ"' in inspect.getsource(mod), False)
+            check("the module asks for the market, with no default", [
+                inspect.signature(f).parameters["firm_jurisdiction"].default is inspect.Parameter.empty
+                for f in (tax_intelligence.for_household, tax_intelligence.for_firm,
+                          regulatory_countdown.for_household, regulatory_countdown.for_firm)], [True] * 4)
+            route = await core_api.household_tax_intel(h.id, firm=firm, db=s)
+            check("the tax-intel route: no report", (route["jurisdiction"], route["supported"], "pie_optimisation" in route), ("SG", False, False))
+            book_route = await analytics_api.get_tax_book(firm=firm, db=s)
+            check("the tax-book route: counted apart", (book_route["jurisdictions"]["NZ"], book_route["jurisdictions"]["not_supported"]), (0, 1))
+            countdown = await core_api.household_regulatory_countdown(h.id, firm=firm, db=s)
+            check("the countdown route: nothing tracked, and no regime", (countdown["jurisdiction"], countdown["analyses"], countdown["supported"]),
+                  ("SG", [], False))
+            check("the firm countdown route: nothing", (await core_api.firm_regulatory_countdown(firm=firm, db=s))["total"], 0)
     finally:
         await db.dispose()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")

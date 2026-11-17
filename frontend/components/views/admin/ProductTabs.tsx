@@ -312,16 +312,13 @@ function MandateTypesConfig() {
   );
 }
 
+// A mandate's suitability (risk, horizon, maximum equity) is its adviser's, through the questionnaire and the IPS
+// (B-153): this tab changes only its type and whether it is active, and shows the rest as it is on file.
 function mandateChange(m: any, e: any): string | null {
   const parts: string[] = [];
-  const s = m.suitability || {};
-  const t = e.suitability || {};
   if (e.mandate_type !== m.mandate_type) parts.push(`type ${titleCase(e.mandate_type).toLowerCase()}`);
-  if ((t.risk_tolerance || "balanced") !== (s.risk_tolerance || "balanced")) parts.push(`risk tolerance ${t.risk_tolerance}`);
-  if ((t.investment_horizon || "medium") !== (s.investment_horizon || "medium")) parts.push(`horizon ${t.investment_horizon}`);
-  if (t.max_equity != null && Math.round(t.max_equity * 100) !== Math.round((s.max_equity ?? 0.6) * 100)) parts.push(`max equity ${Math.round(t.max_equity * 100)}%`);
   if (!!e.is_active !== !!m.is_active) parts.push(e.is_active ? "reactivate it" : "deactivate it");
-  return parts.length ? `Change the suitability of the mandate ${q(m.name)}${m.client_name ? ` for ${m.client_name}` : ""}: ${parts.join("; ")}` : null;
+  return parts.length ? `Change the mandate ${q(m.name)}${m.client_name ? ` for ${m.client_name}` : ""}: ${parts.join("; ")}` : null;
 }
 
 export function MandatesTab() {
@@ -346,9 +343,6 @@ export function MandatesTab() {
         method: "PATCH",
         body: {
           mandate_type: editing.mandate_type,
-          risk_tolerance: editing.suitability?.risk_tolerance,
-          investment_horizon: editing.suitability?.investment_horizon,
-          max_equity: editing.suitability?.max_equity != null ? parseFloat(editing.suitability.max_equity) : undefined,
           is_active: editing.is_active,
         },
       });
@@ -357,10 +351,6 @@ export function MandatesTab() {
     } finally {
       setSaving(false);
     }
-  }
-
-  function setSuit(field: string, val: any) {
-    setEditing((prev: any) => ({ ...prev, suitability: { ...prev.suitability, [field]: val } }));
   }
 
   return (
@@ -375,20 +365,6 @@ export function MandatesTab() {
                 onChange={(e) => setEditing({ ...editing, mandate_type: e.target.value })}>
                 {["advisory", "discretionary", "execution_only"].map((t) => <option key={t} value={t}>{titleCase(t)}</option>)}
               </select></div>
-            <div><label className="label">Risk tolerance</label>
-              <select className="input" value={editing.suitability?.risk_tolerance || "balanced"}
-                onChange={(e) => setSuit("risk_tolerance", e.target.value)}>
-                {["conservative", "balanced", "growth", "aggressive"].map((r) => <option key={r} value={r}>{titleCase(r)}</option>)}
-              </select></div>
-            <div><label className="label">Investment horizon</label>
-              <select className="input" value={editing.suitability?.investment_horizon || "medium"}
-                onChange={(e) => setSuit("investment_horizon", e.target.value)}>
-                {["short", "medium", "long"].map((h) => <option key={h} value={h}>{HORIZON_LABELS[h]}</option>)}
-              </select></div>
-            <div><label className="label">Max equity %</label>
-              <input className="input" type="number" min="0" max="100" step="5"
-                value={Math.round((editing.suitability?.max_equity ?? 0.6) * 100)}
-                onChange={(e) => setSuit("max_equity", parseFloat(e.target.value) / 100)} /></div>
             <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
               <input type="checkbox" className="h-4 w-4 rounded" checked={editing.is_active}
                 onChange={(e) => setEditing({ ...editing, is_active: e.target.checked })} />
@@ -430,7 +406,7 @@ export function MandatesTab() {
                 <td className={`${TD} text-xs text-ink-soft`}>{m.client_name || "—"}</td>
                 <td className={`${TD} text-xs font-medium text-ink`}>{m.name}</td>
                 <td className={`${TD} text-xs capitalize text-ink-soft`}>{m.mandate_type?.replace(/_/g, " ")}</td>
-                <td className={TD}><span className={chip}>{titleCase(m.suitability?.risk_tolerance || "—")}</span></td>
+                <td className={TD}><span className={chip}>{titleCase(m.suitability?.risk_tolerance || m.suitability?.risk_profile || "—")}</span></td>
                 <td className={`${TD} text-right font-mono text-xs tabular-nums text-ink-soft`}>{m.suitability?.max_equity != null ? `${Math.round(m.suitability.max_equity * 100)}%` : "—"}</td>
                 <td className={`${TD} text-xs text-ink-soft`}>{HORIZON_LABELS[m.suitability?.investment_horizon] || "—"}</td>
                 <td className={TD}><ActiveChip active={!!m.is_active} /></td>

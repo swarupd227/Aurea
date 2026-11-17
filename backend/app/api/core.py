@@ -31,7 +31,11 @@ async def household_detail(
     brain = await household_brain(db, household_id, firm_id=firm.id)
     if not brain:
         raise HTTPException(status_code=404, detail="Household not found")
-    return brain
+    # The investor class a member is certified as, from the document on file, never from AUM (B-125).
+    from app.aurea_core import firm_time, shelf
+
+    classes = await shelf.household_classes(db, firm.id, today=firm_time.today(firm))
+    return {**brain, "investor_class": classes.get(household_id)}
 
 
 @router.get("/households/{household_id}/planning")
@@ -144,7 +148,7 @@ async def household_tax_intel(
 ):
     """Tax intelligence: jurisdiction-dispatched modules (NZ / US / UK)."""
     result = await tax_intelligence.for_household(
-        db, household_id, firm.jurisdiction or "NZ", firm_id=firm.id)
+        db, household_id, firm.jurisdiction, firm_id=firm.id)
     if not result:
         raise HTTPException(status_code=404, detail="Household not found")
     return result
@@ -184,7 +188,7 @@ async def household_regulatory_countdown(
 ):
     """Jurisdiction-aware regulatory deadline analysis: US estate tax sunset, UK IHT pension inclusion."""
     result = await regulatory_countdown.for_household(
-        db, household_id, firm.jurisdiction or "NZ", firm_id=firm.id)
+        db, household_id, firm.jurisdiction, firm_id=firm.id)
     if not result:
         raise HTTPException(status_code=404, detail="Household not found")
     return result
@@ -195,7 +199,7 @@ async def firm_regulatory_countdown(
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
     """Firm-wide regulatory countdown — all US and UK households with active countdown analyses."""
-    results = await regulatory_countdown.for_firm(db, firm.id, firm.jurisdiction or "NZ")
+    results = await regulatory_countdown.for_firm(db, firm.id, firm.jurisdiction)
     return {"results": results, "total": len(results)}
 
 

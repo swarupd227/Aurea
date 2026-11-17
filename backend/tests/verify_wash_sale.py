@@ -47,7 +47,7 @@ async def main() -> int:
     Session = async_sessionmaker(db, expire_on_commit=False)
 
     async with Session() as s:
-        firm = Firm(id=uuid.uuid4(), name="Test", slug="test")
+        firm = Firm(id=uuid.uuid4(), name="Test", slug="test", jurisdiction="US")
         household = Household(id=uuid.uuid4(), firm_id=firm.id, name="The Test Family")
         # Two spouses, each with their own mandate/account — the case a single-account
         # check cannot see across.
@@ -133,6 +133,29 @@ async def main() -> int:
               loss_violation["wash_sale_conflicts"][0]["account_name"], "Wife IRA A/C")
         check("account_name on the flagged lot itself is the husband's (where the loss sits)",
               loss_violation["account_name"], "Husband Taxable A/C")
+        check("a US household's calendar says it applies", (result["applies"], result["jurisdiction"]), (True, "US"))
+
+        print("\n=== outside the US there is no calendar (B-18) ===")
+        household.values = {"jurisdiction": "NZ"}
+        await s.flush()
+        nz = await tax_intelligence.household_wash_sale_calendar(s, household.id, firm_id=firm.id)
+        check("a household taxed in NZ: the rule does not apply, and nothing is flagged",
+              (nz["applies"], nz["jurisdiction"], nz["violations"], nz["total_disallowed_loss"], nz["lots_checked"]),
+              (False, "NZ", [], 0, 0))
+        household.values = {}
+        firm.jurisdiction = "UK"
+        await s.flush()
+        uk = await tax_intelligence.household_wash_sale_calendar(s, household.id, firm_id=firm.id)
+        check("a household on a UK firm's rules: does not apply", (uk["applies"], uk["jurisdiction"]), (False, "UK"))
+        household.values = {"jurisdiction": "US"}
+        await s.flush()
+        back = await tax_intelligence.household_wash_sale_calendar(s, household.id, firm_id=firm.id)
+        check("a US household on a UK firm: its own jurisdiction binds it", (back["applies"], len(back["violations"])), (True, 1))
+        from app.api import core as core_api
+        household.values = {"jurisdiction": "NZ"}
+        await s.flush()
+        route = await core_api.household_wash_sale_calendar(household.id, firm=firm, db=s)
+        check("the route answers the same", route["applies"], False)
 
         print(f"\n{'=' * 64}\n{len(PASS)} passed, {len(FAIL)} failed")
         for f in FAIL:

@@ -95,10 +95,9 @@ class TaxIntelligenceAgent(FollowUpOnApproval, BaseAgent):
         results = []
         for h in households:
             import uuid
-            # The firm's own jurisdiction, as the /tax route already passes. Omitting it
-            # defaulted every firm to NZ tax rules.
+            # The firm's own jurisdiction, as the /tax route passes it: a firm with no market gets no report (B-121).
             result = await tax_intelligence.for_household(
-                ctx.session, uuid.UUID(h["id"]), ctx.firm.jurisdiction or "NZ",
+                ctx.session, uuid.UUID(h["id"]), ctx.firm.jurisdiction,
                 firm_id=ctx.firm.id)
             if result:
                 results.append(result)

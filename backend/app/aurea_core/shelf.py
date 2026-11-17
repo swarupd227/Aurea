@@ -57,6 +57,28 @@ async def standing_of(session: AsyncSession, person_id: uuid.UUID, *, today: dat
     return row if row is not None and (row.expires_on is None or row.expires_on >= today) else None
 
 
+async def household_classes(session: AsyncSession, firm_id: uuid.UUID, *, today: date) -> dict[uuid.UUID, str]:
+    """The highest gated class (accredited or qualified purchaser) a member of each household is certified as, from
+    the certifications on file and in date, for the client list's chip (B-125). A household's wealth decides nothing
+    here: no certification on file means no chip, not that the client does not qualify."""
+    rows = (await session.execute(
+        select(InvestorCertification, Person.household_id).join(Person, Person.id == InvestorCertification.person_id)
+        .where(InvestorCertification.firm_id == firm_id, Person.household_id.is_not(None))
+        .order_by(InvestorCertification.as_of.desc(), InvestorCertification.created_at.desc()))).all()
+    latest: dict[uuid.UUID, tuple[InvestorCertification, uuid.UUID]] = {}
+    for cert, household_id in rows:
+        latest.setdefault(cert.person_id, (cert, household_id))   # newest first, as standing_of reads it
+    out: dict[uuid.UUID, str] = {}
+    for cert, household_id in latest.values():
+        if cert.expires_on is not None and cert.expires_on < today:
+            continue
+        if cert.investor_class not in INVESTOR_CLASSES[1:]:
+            continue
+        if household_id not in out or INVESTOR_CLASSES.index(cert.investor_class) > INVESTOR_CLASSES.index(out[household_id]):
+            out[household_id] = cert.investor_class
+    return out
+
+
 async def barred(session: AsyncSession, firm: Firm, mandate: Mandate) -> dict[uuid.UUID, str]:
     """Each product this mandate may not buy, and why. Empty until someone decides something."""
     today = firm_time.today(firm)

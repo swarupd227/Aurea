@@ -14,11 +14,26 @@ export interface CountdownAction {
   estimated_benefit: string;
 }
 
+/** A figure fixed in law, with where it comes from and when it was taken (aurea_core/law_figures.py). */
+export interface LawFigure {
+  key: string;
+  label: string;
+  value: number | null;
+  unit: string;
+  source: string;
+  as_of: string;
+  applies_from: string | null;
+  applies_to: string | null;
+  status: "in_force" | "upcoming" | "expired" | string;
+}
+
 export interface CountdownAnalysis {
   type: CountdownType | string;
   title: string;
   subtitle: string;
   deadline: string;
+  /** upcoming: a countdown; in_force or expired: the date has passed and is not counted down. */
+  status?: "upcoming" | "in_force" | "expired" | string;
   days_remaining: number;
   urgency: "critical" | "high" | "medium" | string;
   summary: string;
@@ -27,6 +42,8 @@ export interface CountdownAnalysis {
   currency: string;
   regulation: string;
   legislative_note?: string;
+  law?: LawFigure[];
+  assumed?: string[];
 }
 
 export interface CountdownHousehold {
@@ -49,21 +66,22 @@ export const COUNTDOWN_LABEL: Record<string, string> = {
   uk_fca_targeted_support: "FCA targeted support",
 };
 
-export const URGENCY_TONE: Record<string, string> = { critical: "text-crit", high: "text-warn", medium: "text-ink-muted" };
-export const URGENCY_LABEL: Record<string, string> = { critical: "critical", high: "high", medium: "monitor" };
+export const URGENCY_TONE: Record<string, string> = { critical: "text-crit", high: "text-warn", medium: "text-ink-muted", in_force: "text-ink-muted", expired: "text-ink-muted" };
+export const URGENCY_LABEL: Record<string, string> = { critical: "critical", high: "high", medium: "monitor", in_force: "in force", expired: "expired" };
 
 /** The extra tax an analysis puts a figure on, where it has one. */
 export function extraTax(a: CountdownAnalysis): number | null {
   const f = a.figures ?? {};
-  const v = a.type === "us_estate_tax_sunset" ? f.additional_tax_at_risk
-    : a.type === "uk_iht_pension_inclusion" ? f.additional_iht
+  // The US exemption has no change pending (its sunset was superseded), so it has no extra tax to show.
+  const v = a.type === "uk_iht_pension_inclusion" ? f.additional_iht
     : a.type === "uk_bpr_apr_cap" ? f.estimated_additional_iht
     : null;
   return typeof v === "number" && !isNaN(v) ? v : null;
 }
 
-/** Days to the deadline, or in force once it has passed. */
-export const countdown = (a: CountdownAnalysis) => (a.days_remaining > 0 ? `${a.days_remaining}d` : "in force");
+/** Days to the deadline while it is still to come; once it has passed, in force or expired, never a countdown. */
+export const countdown = (a: CountdownAnalysis) =>
+  a.status === "expired" ? "expired" : a.days_remaining > 0 && a.status !== "in_force" ? `${a.days_remaining}d` : "in force";
 
 function isAnalysis(a: any): boolean {
   return !!a

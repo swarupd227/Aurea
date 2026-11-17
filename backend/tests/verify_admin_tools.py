@@ -216,6 +216,61 @@ async def main() -> None:
             check("and names what moved", (done["record"]["label"], done["changes"]), ("Tui", [{"field": "name", "from": "Tui", "to": "Tui Wealth"}]))
             check("the jurisdiction stays as it is", (firm.name, firm.jurisdiction, firm.base_currency), ("Tui Wealth", "NZ", "NZD"))
 
+            print("\n=== Where the firm's settings may send data (B-146) ===")
+            logo = "https://tuiwealth.co.nz/logo.png"
+            check("no domain listed: the branding route refuses a logo", await outcome(admin.update_branding(
+                admin.BrandingIn(logo_url=logo), user=ada, firm=firm, db=s)), "refused 422")
+            try:
+                platform_admin.prepare_firm(firm, branding={"logo_url": logo})
+                why = ""
+            except platform_admin.AdminError as exc:
+                why = str(exc)
+            check("and says why", "lists no allowed domains" in why, True)
+            hook = admin.CustomConnectorCreate(display_name="Hook", domain="open_api_events",
+                                               webhook_url="https://hooks.tuiwealth.co.nz/in")
+            check("no domain listed: a custom webhook is refused, not allowed everywhere", await outcome(
+                admin.create_custom_connector(hook, actor=ola, firm=firm, db=s)), "refused 422")
+            await refused("a domain with a scheme is not a domain", ex(ada).preview_change(
+                "update_firm_profile", {"allowed_domains": ["https://tuiwealth.co.nz"]}), "not a domain")
+            await refused("a wildcard is not a domain", ex(ada).preview_change(
+                "update_firm_profile", {"allowed_domains": ["*.tuiwealth.co.nz"]}), "not a domain")
+            shown = await card(ada, "update_firm_profile", {"allowed_domains": ["TuiWealth.co.nz", "tuiwealth.co.nz"]})
+            check("the card names the domains", "tuiwealth.co.nz" in str(shown.get("settings.allowed_domains")), True)
+            await ex(ada).execute("update_firm_profile", {"allowed_domains": ["TuiWealth.co.nz", "tuiwealth.co.nz"]})
+            check("stored bare, lower case and once", firm.settings["allowed_domains"], ["tuiwealth.co.nz"])
+            for url, why in (("http://tuiwealth.co.nz/logo.png", "https"),
+                             ("https://evil.example/logo.png", "not one of the firm's allowed domains"),
+                             ("https://tuiwealth.co.nz.evil.example/x.png", "not one of"),
+                             ("https://eviltuiwealth.co.nz/x.png", "not one of"),
+                             ("https://me:pw@tuiwealth.co.nz/x.png", "user name"),
+                             ("javascript:alert(1)", "https")):
+                said = platform_admin.outbound_url_refusal(url, platform_admin.allowed_domains(firm), "logo URL") or ""
+                check(f"a logo at {url} is refused ({why})", why.lower() in said.lower(), True)
+                check(f"and the branding route refuses it", await outcome(admin.update_branding(
+                    admin.BrandingIn(logo_url=url), user=ada, firm=firm, db=s)), "refused 422")
+            check("PATCH firm refuses a logo off the domains", await outcome(admin.update_firm(
+                admin.FirmUpdate(branding={"logo_url": "https://evil.example/l.png"}), user=ada, firm=firm, db=s)), "refused 422")
+            check("a logo on a subdomain of one is kept", (await admin.update_branding(
+                admin.BrandingIn(logo_url="https://cdn.tuiwealth.co.nz/logo.png"), user=ada, firm=firm, db=s))["branding"]["logo_url"],
+                "https://cdn.tuiwealth.co.nz/logo.png")
+            check("an unrelated save does not re-judge it", await outcome(admin.update_branding(
+                admin.BrandingIn(tagline="Kia ora"), user=ada, firm=firm, db=s)), "allowed")
+            check("a custom webhook off the domains is refused", await outcome(admin.create_custom_connector(
+                hook.model_copy(update={"webhook_url": "https://evil.example/in"}), actor=ola, firm=firm, db=s)), "refused 422")
+            check("a custom REST API over http is refused", await outcome(admin.create_custom_connector(
+                admin.CustomConnectorCreate(display_name="Feed", domain="open_api_events", connector_type="custom.rest",
+                                            base_url="http://api.tuiwealth.co.nz"), actor=ola, firm=firm, db=s)), "refused 422")
+            made_hook = await admin.create_custom_connector(hook, actor=ola, firm=firm, db=s)
+            check("a custom webhook on the firm's domain is made", made_hook["config"]["webhook_url"], "https://hooks.tuiwealth.co.nz/in")
+            try:
+                await platform_admin.set_connector(s, firm, ola, made_hook["id"], config={"webhook_url": "https://evil.example/in"})
+                moved = "allowed"
+            except platform_admin.AdminError as exc:
+                moved = "refused: " + str(exc)[:40]
+            check("its address cannot be moved off the domains afterwards", moved.startswith("refused"), True)
+            check("the check lives in one place", platform_admin.outbound_url_refusal(
+                "https://a.tuiwealth.co.nz/x", ["tuiwealth.co.nz"], "webhook URL"), None)
+
             print("\n=== An agent's switches ===")
             agent = {"agent_key": "drift_rebalancing", "tier": "tier_2", "reason": "Ready for proposals"}
             shown = await card(ada, "set_agent_switches", agent)
@@ -300,18 +355,30 @@ async def main() -> None:
             shown = await card(ada, "save_mandate_type", mt)
             check("a new type names its tier", shown["default_autonomy_tier"], "— → tier_3")
 
-            suit = {"mandate_id": str(mandate.id), "risk_tolerance": "growth", "reason": "Client review"}
+            # B-153: a mandate's suitability is its adviser's. The administrator's tool changes its type and whether it
+            # is active; risk tolerance, horizon, maximum equity and ESG are refused, pointing at the adviser's paths.
+            on_file = dict(mandate.suitability)
+            for field, value in (("risk_tolerance", "growth"), ("risk_tolerance", "aggressive"), ("investment_horizon", "long"),
+                                 ("max_equity", 0.3), ("esg_preference", "exclude tobacco")):
+                await refused(f"an administrator does not set {field}", ex(ada).preview_change(
+                    "set_mandate_suitability", {"mandate_id": str(mandate.id), field: value, "reason": "Client review"}),
+                    "decide_risk_profile")
+            check("the route refuses a suitability change too", await outcome(admin.update_mandate(
+                mandate.id, admin.MandateUpdate(risk_tolerance="growth"), actor=ada, firm=firm, db=s)), "refused 403")
+            check("nothing on the suitability changed", mandate.suitability, on_file)
+
+            check("the tool offers no suitability input", sorted(i.name for i in TOOLS["set_mandate_suitability"].inputs),
+                  ["active", "mandate_id", "mandate_type", "reason"])
+            suit = {"mandate_id": str(mandate.id), "mandate_type": "discretionary", "reason": "Signed discretionary agreement"}
             shown = await card(ada, "set_mandate_suitability", suit)
-            check("names the client and the mandate, from and to", (shown["Record"], shown["risk_tolerance"]),
-                  ("Chen Family · Chen Balanced", "balanced → growth"))
-            await refused("max equity over the capacity ceiling", ex(ada).preview_change("set_mandate_suitability", {**suit, "max_equity": 0.7}),
-                          "above the 40% ceiling")
-            await refused("an unknown tolerance", ex(ada).preview_change("set_mandate_suitability", {**suit, "risk_tolerance": "reckless"}), "risk tolerance")
-            await refused("a suitability change needs its reason", ex(ada).preview_change("set_mandate_suitability", {**suit, "reason": " "}), "say why")
+            check("names the client and the mandate, from and to", (shown["Record"], shown["mandate_type"]),
+                  ("Chen Family · Chen Balanced", f"{mandate.mandate_type} → discretionary"))
+            await refused("an unknown mandate type", ex(ada).preview_change("set_mandate_suitability", {**suit, "mandate_type": "yolo"}), "mandate type")
+            await refused("a mandate change needs its reason", ex(ada).preview_change("set_mandate_suitability", {**suit, "reason": " "}), "say why")
             await refused("another firm's mandate", ex(zed).preview_change("set_mandate_suitability", suit), "not found or access denied")
             await ex(ada).execute("set_mandate_suitability", suit)
-            check("the suitability is changed and the rest kept", mandate.suitability,
-                  {"risk_tolerance": "growth", "max_equity": 0.4, "capacity_for_loss": "low"})
+            check("the type is changed and the suitability kept", (str(mandate.mandate_type), mandate.suitability),
+                  ("discretionary", on_file))
 
             print("\n=== Alerts ===")
             alert = {"event_type": "agent_paused", "enabled": "true", "recipients": ["ada@t.test", "compliance"]}
@@ -476,10 +543,10 @@ async def main() -> None:
             check("GET users", sorted((await admin.list_users(actor=ada, firm=firm, db=s))[0]), ["created_at", "email", "full_name", "id", "is_active", "role", "title"])
             seg_out = await admin.create_segment(admin.SegmentCreate(slug="core", label="Core", fee_tier_bps=90), actor=ada, firm=firm, db=s)
             check("POST segments", (seg_out["slug"], seg_out["fee_tier_bps"]), ("core", 90))
-            check("PATCH mandates", (await admin.update_mandate(mandate.id, admin.MandateUpdate(investment_horizon="long"), actor=ada, firm=firm, db=s))
-                  ["suitability"]["investment_horizon"], "long")
-            check("PATCH mandates over the ceiling", await outcome(admin.update_mandate(mandate.id, admin.MandateUpdate(max_equity=0.9), actor=ada, firm=firm, db=s)),
-                  "refused 422")
+            check("PATCH mandates", (await admin.update_mandate(mandate.id, admin.MandateUpdate(is_active=True), actor=ada, firm=firm, db=s))
+                  ["is_active"], True)
+            check("PATCH mandates refuses a horizon (B-153)", await outcome(admin.update_mandate(
+                mandate.id, admin.MandateUpdate(investment_horizon="long"), actor=ada, firm=firm, db=s)), "refused 403")
             check("PUT cmas", (await admin.set_cmas(admin.CmaIn(cmas={"equity": [0.07, 0.15], "bogus": [1, 1]}), user=ada, firm=firm, db=s)),
                   {"cmas": {"equity": [0.07, 0.15]}})
             check("PATCH notifications", await admin.update_notifications(

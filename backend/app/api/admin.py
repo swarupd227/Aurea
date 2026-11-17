@@ -278,8 +278,11 @@ async def update_branding(
     firm: Firm = Depends(current_firm),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update the firm's Canvas/Studio branding — colors, logo text, tagline."""
-    await platform_admin.update_branding(db, firm, user, body.model_dump())
+    """Update the firm's Canvas/Studio branding — colors, logo text, tagline and a logo held to the firm's domains."""
+    try:
+        await platform_admin.update_branding(db, firm, user, body.model_dump())
+    except AdminError as exc:
+        raise _refused(exc)
     return {"ok": True, "branding": firm.branding}
 
 
@@ -812,8 +815,8 @@ async def update_mandate(
     mandate_id: uuid.UUID, body: MandateUpdate,
     actor: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    """A mandate's type and suitability. A maximum equity is held to the client's capacity ceiling, as an IPS and a
-    risk profile are (aurea_core/platform_admin.prepare_mandate)."""
+    """A mandate's type and whether it is active. Its suitability is the adviser's and is refused here (B-153,
+    aurea_core/platform_admin.prepare_mandate)."""
     try:
         done = await platform_admin.update_mandate(
             db, firm, actor, mandate_id, mandate_type=body.mandate_type, risk_tolerance=body.risk_tolerance,
@@ -1278,10 +1281,18 @@ async def create_custom_connector(
         raise HTTPException(400, f"Unknown domain '{body.domain}'.")
 
     cfg: dict = {}
+    # Where it sends or polls is held to the firm's allowed domains, https only (B-146, platform_admin.check_outbound_url).
+    try:
+        url = body.webhook_url if body.connector_type == "custom.webhook" else body.base_url
+        if url:
+            url = platform_admin.check_outbound_url(
+                firm, url, "webhook URL" if body.connector_type == "custom.webhook" else "base URL")
+    except AdminError as exc:
+        raise _refused(exc)
     if body.connector_type == "custom.webhook":
         if not body.webhook_url:
             raise HTTPException(400, "webhook_url is required for custom.webhook.")
-        cfg["webhook_url"] = body.webhook_url
+        cfg["webhook_url"] = url
         if body.auth_header:
             cfg["auth_header"] = body.auth_header
         if body.auth_value:
@@ -1289,7 +1300,7 @@ async def create_custom_connector(
     else:
         if not body.base_url:
             raise HTTPException(400, "base_url is required for custom.rest.")
-        cfg["base_url"] = body.base_url
+        cfg["base_url"] = url
         if body.auth_value:
             cfg["api_key"] = body.auth_value
 
