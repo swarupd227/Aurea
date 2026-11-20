@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  - registers every table on Base.metadata
 from app.agents import asset_location, client_care, estate_succession, glide_path
+from app.aurea_core import exits
 from app.aurea_core import disclosures, estate, firm_time, markets, protection, registration, tax_intelligence
 from app.compliance import ontology
 from app.core.db import Base
@@ -130,6 +131,10 @@ def pure() -> None:
     check("an individual account named like an IRA is taxable", [f["account"] for f in found], ["KiwiSaver IRA pension"])
     check("an IRA named 'Brokerage' is sheltered, so bonds in it raise nothing",
           any(f["account"] == "Brokerage" for f in found), False)
+    brain = {"accounts": [{"id": "s", "name": "SEP", "positions": pos}, {"id": "m", "name": "SIMPLE", "positions": pos}]}
+    found = asset_location._analyze_location(brain, {"s": "sep_ira", "m": "simple_ira"})
+    check("a SEP IRA and a SIMPLE IRA are sheltered too", [f["account"] for f in found], [])
+    check("and neither steps up at death", {"sep_ira", "simple_ira"} <= exits._RETIREMENT, True)
 
 
 async def db_checks() -> None:

@@ -42,7 +42,8 @@ LEAVING, DECEASED, EXECUTOR = "leaving", "deceased", "executor"
 NOT_MODELLED = ["estate_tax", "community_property", "spousal_half_step_up", "final_part_period_fee"]
 SHOWN_CLOSED = 10
 # What passes as a retirement wrapper keeps its basis wherever it goes.
-_RETIREMENT = {"traditional_ira", "roth_ira", "employer_rollover", "inherited_ira", "estate_inherited", "hsa", "plan_529"}
+_RETIREMENT = {"traditional_ira", "roth_ira", "sep_ira", "simple_ira", "employer_rollover", "inherited_ira",
+               "estate_inherited", "hsa", "plan_529"}
 _JOINT = {"joint_jtwros", "joint_tic"}
 _DUST = Decimal("0.005")
 

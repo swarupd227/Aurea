@@ -6,7 +6,12 @@ here, once, with its source and the day it was read from that source, and the wi
 figure without being able to say where it came from; one whose window has closed reports itself as expired rather than
 being used as if it were current; and a date that has passed is in force, not a countdown at zero.
 
-Adding or updating a figure is a code change with its citation, as a rule is in aurea_core/rulebook.py.
+A figure that is set year by year (the US exclusions) keeps one version per year under the same key, and is read with
+the firm's today (`firm_time.today`), which picks the version in force. Reading one of those without a date is refused,
+so a new year can never silently be answered with last year's figure.
+
+Adding or updating a figure is a code change with its citation, as a rule is in aurea_core/rulebook.py. The figures
+below were checked against their sources on 20 Nov 2026 (B-197).
 """
 from __future__ import annotations
 
@@ -40,7 +45,7 @@ class LawFigure:
                 "status": self.status(today)}
 
 
-FIGURES: dict[str, LawFigure] = {f.key: f for f in (
+ALL: tuple[LawFigure, ...] = (
     # ── United States ────────────────────────────────────────────────────────────────────────────────
     # The TCJA's higher exemption was due to fall back on 1 Jan 2026. It did not: P.L. 119-21 set the basic
     # exclusion amount at $15M a person from 2026, indexed after. The sunset this module used to count down to
@@ -49,45 +54,73 @@ FIGURES: dict[str, LawFigure] = {f.key: f for f in (
               "Tax Cuts and Jobs Act 2017 (P.L. 115-97) §11061; superseded by P.L. 119-21 §70106",
               date(2025, 7, 4), applies_to=date(2025, 12, 31)),
     LawFigure("us_basic_exclusion", "Federal estate and gift basic exclusion, per person", 15_000_000, "USD",
-              "P.L. 119-21 (4 Jul 2025) §70106, amending IRC §2010(c)(3)", date(2025, 7, 4),
+              "P.L. 119-21 (4 Jul 2025) §70106, amending IRC §2010(c)(3); IRS Rev. Proc. 2025-32 §2.14", date(2025, 10, 9),
               applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_basic_exclusion", "Federal estate and gift basic exclusion, per person", 15_480_000, "USD",
+              "IRS Rev. Proc. 2026-35 §3.44 (IR-2026-133, 5 Nov 2026), indexing P.L. 119-21 §70106", date(2026, 11, 5),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
     LawFigure("us_estate_tax_rate", "Federal estate tax top rate", 0.40, "rate", "IRC §2001(c)", date(2025, 7, 4)),
     LawFigure("us_annual_gift_exclusion", "Annual gift exclusion, per donor per recipient", 19_000, "USD",
-              "IRS Rev. Proc. 2025-32 (2026 inflation adjustments)", date(2025, 10, 9),
+              "IRS Rev. Proc. 2025-32 §4.42(1) (2026 inflation adjustments)", date(2025, 10, 9),
               applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_annual_gift_exclusion", "Annual gift exclusion, per donor per recipient", 20_000, "USD",
+              "IRS Rev. Proc. 2026-35 §3.46(1) (2027 inflation adjustments; IR-2026-133, 5 Nov 2026)", date(2026, 11, 5),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
     # ── United Kingdom ───────────────────────────────────────────────────────────────────────────────
+    # Autumn Budget 2025 (26 Nov 2025) extended the freeze of both nil-rate bands and the taper by a year, to 5 Apr 2031.
     LawFigure("uk_nrb", "IHT nil-rate band, per person", 325_000, "GBP",
-              "IHTA 1984 Sch 1; frozen to 5 Apr 2030 (Autumn Budget 2024)", date(2024, 10, 30),
-              applies_to=date(2030, 4, 5)),
+              "IHTA 1984 Sch 1; frozen to 5 Apr 2031 (HMRC policy paper 'Inheritance Tax thresholds', 26 Nov 2025; "
+              "Finance Act 2026)", date(2025, 11, 26), applies_to=date(2031, 4, 5)),
     LawFigure("uk_rnrb", "IHT residence nil-rate band, per person", 175_000, "GBP",
-              "IHTA 1984 s 8D; frozen to 5 Apr 2030 (Autumn Budget 2024)", date(2024, 10, 30),
-              applies_to=date(2030, 4, 5)),
+              "IHTA 1984 s 8D; frozen to 5 Apr 2031 (HMRC policy paper 'Inheritance Tax thresholds', 26 Nov 2025; "
+              "Finance Act 2026)", date(2025, 11, 26), applies_to=date(2031, 4, 5)),
     LawFigure("uk_rnrb_taper", "RNRB taper threshold (£1 per £2 above)", 2_000_000, "GBP",
-              "IHTA 1984 s 8D(5); frozen to 5 Apr 2030 (Autumn Budget 2024)", date(2024, 10, 30),
-              applies_to=date(2030, 4, 5)),
+              "IHTA 1984 s 8D(5); frozen to 5 Apr 2031 (HMRC policy paper 'Inheritance Tax thresholds', 26 Nov 2025; "
+              "Finance Act 2026)", date(2025, 11, 26), applies_to=date(2031, 4, 5)),
     LawFigure("uk_iht_rate", "IHT rate", 0.40, "rate", "IHTA 1984 Sch 1", date(2024, 10, 30)),
     LawFigure("uk_pension_iht", "Unused pension funds enter the IHT estate", None, "date",
-              "Autumn Budget 2024 (30 Oct 2024): pensions in IHT from 6 Apr 2027", date(2024, 10, 30),
-              applies_from=date(2027, 4, 6)),
-    LawFigure("uk_bpr_apr_cap", "BPR/APR 100% relief allowance, per person", 1_000_000, "GBP",
-              "Autumn Budget 2024 (30 Oct 2024): 100% relief on the first £1M from 6 Apr 2026", date(2024, 10, 30),
-              applies_from=date(2026, 4, 6)),
+              "Finance Act 2026 (HMRC 'Inheritance Tax on pensions' technical note 2, 27 Aug 2026): deaths on or after "
+              "6 Apr 2027", date(2026, 8, 27), applies_from=date(2027, 4, 6)),
+    # Announced at £1M in the Autumn Budget 2024; raised to £2.5M on 23 Dec 2025 before it was enacted.
+    LawFigure("uk_bpr_apr_cap", "BPR/APR 100% relief allowance, per person (unused part transfers to a spouse or civil partner)",
+              2_500_000, "GBP",
+              "IHTA 1984 ss 124D-124E, inserted by Finance Act 2026 Sch 12 (HMRC manual IHTM25520); fixed to 5 Apr 2031",
+              date(2026, 4, 7), applies_from=date(2026, 4, 6), applies_to=date(2031, 4, 5)),
     # ── New Zealand ──────────────────────────────────────────────────────────────────────────────────
     LawFigure("nz_ks_govt_rate", "KiwiSaver government contribution per $1 contributed", 0.25, "rate",
-              "Budget 2025 (22 May 2025): from 1 Jul 2025", date(2025, 5, 22), applies_from=date(2025, 7, 1)),
+              "Income Tax Act 2007 s MK 4, as amended by the Taxation (Budget Measures) Act 2025 (2025 No 26): from 1 Jul 2025",
+              date(2025, 5, 29), applies_from=date(2025, 7, 1)),
     LawFigure("nz_ks_govt_max", "KiwiSaver government contribution, yearly maximum", 260.72, "NZD",
-              "Budget 2025 (22 May 2025): from 1 Jul 2025", date(2025, 5, 22), applies_from=date(2025, 7, 1)),
-    LawFigure("nz_ks_govt_income_limit", "KiwiSaver government contribution: no contribution above this income", 180_000, "NZD",
-              "Budget 2025 (22 May 2025): from 1 Jul 2025", date(2025, 5, 22), applies_from=date(2025, 7, 1)),
-)}
+              "Income Tax Act 2007 s MK 4, as amended by the Taxation (Budget Measures) Act 2025 (2025 No 26): from 1 Jul 2025",
+              date(2025, 5, 29), applies_from=date(2025, 7, 1)),
+    LawFigure("nz_ks_govt_income_limit", "KiwiSaver government contribution: none for taxable income above this", 180_000, "NZD",
+              "Income Tax Act 2007 ss MK 1-MK 3, as amended by the Taxation (Budget Measures) Act 2025 (2025 No 26): "
+              "from 1 Jul 2025", date(2025, 5, 29), applies_from=date(2025, 7, 1)),
+)
+
+VERSIONS: dict[str, tuple[LawFigure, ...]] = {}
+for _f in ALL:
+    VERSIONS[_f.key] = tuple(sorted((*VERSIONS.get(_f.key, ()), _f), key=lambda f: f.applies_from or date.min))
+del _f
 
 
-def get(key: str) -> LawFigure:
-    return FIGURES[key]
+def get(key: str, today: date | None = None) -> LawFigure:
+    """The figure, and for one set year by year, the version in force on `today` (the firm's date). Past every window
+    it is the latest, which reports itself expired; before every window, the first, which reports itself upcoming."""
+    versions = VERSIONS[key]
+    if len(versions) == 1:
+        return versions[0]
+    if today is None:
+        raise ValueError(f"{key} is set year by year: read it with the firm's today")
+    for f in versions:
+        if f.status(today) == "in_force":
+            return f
+    started = [f for f in versions if f.applies_from is None or f.applies_from <= today]
+    return started[-1] if started else versions[0]
 
 
-def value(key: str) -> float:
-    figure = FIGURES[key]
+def value(key: str, today: date | None = None) -> float:
+    figure = get(key, today)
     if figure.value is None:
         raise ValueError(f"{key} is a date, not an amount")
     return figure.value
@@ -95,4 +128,4 @@ def value(key: str) -> float:
 
 def cited(keys: list[str] | tuple[str, ...], today: date) -> list[dict]:
     """The figures an answer used, each with its source, as-of date and whether it is in force on `today`."""
-    return [FIGURES[k].view(today) for k in keys]
+    return [get(k, today).view(today) for k in keys]

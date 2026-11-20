@@ -252,8 +252,13 @@ pages are artifact views the agents open. Full guideline, including what is buil
 
 ## Azure deployment
 
-`az` is not available locally. Give the user copy-pasteable commands for a **brand-new** Cloud Shell,
-every time, starting with the subscription:
+`az` is installed and signed in on the user's laptop, so on their go-ahead the deploy can be run from here. Deploy
+a clean copy (`git worktree add --detach <dir> origin/main`), never the working checkout, because `az acr build`
+uploads the folder it runs in. Windows `az.cmd` starts Python isolated and crashes printing the build log
+(`charmap`), so put first on PATH a wrapper `az` that runs `"<CLI2>/python.exe" -X utf8 -Bm azure.cli "$@"`. A
+command inside a container runs as `az containerapp exec ... --command "python -m seed.<name>" < /dev/null`.
+
+Commands handed to the user are for a **brand-new** Cloud Shell, every time, starting with the subscription:
 
 ```bash
 az account set --subscription b017b8b9-0911-43e7-96e9-4e38dd4c06f7

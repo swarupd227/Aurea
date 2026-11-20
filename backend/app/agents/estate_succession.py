@@ -84,7 +84,7 @@ def _trust_governance_recommendation(jurisdiction: str) -> str:
     return "Complete the trust's governance record with the trust's solicitor."
 
 
-def _jurisdiction_specific_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str) -> list[dict]:
+def _jurisdiction_specific_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str, *, today: date) -> list[dict]:
     """Add jurisdiction-specific estate planning gaps."""
     gaps: list[dict] = []
     totals = brain.get("totals", {})
@@ -98,7 +98,7 @@ def _jurisdiction_specific_gaps(brain: dict, entities_gov: list[dict], jurisdict
         # $7M "post-sunset" figure this used had none, and the sunset never took effect (P.L. 119-21; B-120).
         from app.aurea_core import law_figures
 
-        _US_EXEMPTION = law_figures.value("us_basic_exclusion")
+        _US_EXEMPTION = law_figures.value("us_basic_exclusion", today)
         multiplier = 2 if married else 1
         threshold = _US_EXEMPTION * multiplier
         retirement = sum(
@@ -114,7 +114,7 @@ def _jurisdiction_specific_gaps(brain: dict, entities_gov: list[dict], jurisdict
                 "title": "Federal estate tax exposure",
                 "detail": (
                     f"Gross estate (~${total_value + retirement:,.0f}) exceeds the "
-                    f"federal exclusion (${threshold:,.0f}, {law_figures.get('us_basic_exclusion').source}). "
+                    f"federal exclusion (${threshold:,.0f}, {law_figures.get('us_basic_exclusion', today).source}). "
                     f"Estimated federal estate tax: ~${exposure:,.0f} at 40%."
                 ),
                 "recommendation": (
@@ -288,7 +288,7 @@ def _succession_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str | 
             break
 
     # 7. Jurisdiction-specific gaps
-    gaps.extend(_jurisdiction_specific_gaps(brain, entities_gov, jurisdiction))
+    gaps.extend(_jurisdiction_specific_gaps(brain, entities_gov, jurisdiction, today=today))
 
     return gaps
 

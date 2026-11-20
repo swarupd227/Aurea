@@ -38,40 +38,42 @@ _KIWISAVER_RATES = [0.03, 0.04, 0.06, 0.08, 0.10]
 _ASSUMED_GROSS_RETURN = 0.07
 
 # ── US constants ──────────────────────────────────────────────────────────────
-_US_LTCG_RATE_ZERO_MFJ = 94_050       # 0% LTCG rate ceiling (married filing jointly, 2024)
-_US_LTCG_RATE_15_MFJ = 583_750        # 15% LTCG rate ceiling (MFJ, 2024)
+# LTCG ceilings, MFJ, 2026: Rev. Proc. 2025-32 §4.03 (checked 20 Nov 2026, B-197)
+_US_LTCG_RATE_ZERO_MFJ = 98_900       # 0% LTCG rate ceiling
+_US_LTCG_RATE_15_MFJ = 613_700        # 15% LTCG rate ceiling
 _US_NIIT_THRESHOLD_MFJ = 250_000      # NIIT ($200k single / $250k married)
 _US_NIIT_THRESHOLD_SINGLE = 200_000
 _US_NIIT_RATE = 0.038
-_US_ANNUAL_GIFT_EXCLUSION = law_figures.value("us_annual_gift_exclusion")   # per donor per recipient, with its source
 _US_RMD_FACTORS = {                   # IRS Uniform Lifetime Table (simplified)
     73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9,
     78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5,
     83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4,
     88: 13.7, 89: 12.9, 90: 12.2,
 }
-# 2025 tax brackets MFJ
+# 2026 ordinary income brackets: Rev. Proc. 2025-32 §4.01 Tables 1 and 3 (checked 20 Nov 2026, B-197)
 _US_BRACKETS_MFJ = [
-    (23_850, 0.10), (96_950, 0.12), (206_700, 0.22),
-    (394_600, 0.24), (501_050, 0.32), (751_600, 0.35), (float("inf"), 0.37)
+    (24_800, 0.10), (100_800, 0.12), (211_400, 0.22),
+    (403_550, 0.24), (512_450, 0.32), (768_700, 0.35), (float("inf"), 0.37)
 ]
 _US_BRACKETS_SINGLE = [
-    (11_925, 0.10), (48_475, 0.12), (103_350, 0.22),
-    (197_300, 0.24), (250_525, 0.32), (626_350, 0.35), (float("inf"), 0.37)
+    (12_400, 0.10), (50_400, 0.12), (105_700, 0.22),
+    (201_775, 0.24), (256_225, 0.32), (640_600, 0.35), (float("inf"), 0.37)
 ]
 
 # ── UK constants ──────────────────────────────────────────────────────────────
-_UK_CGT_EXEMPT = 3_000               # annual exempt amount 2024/25
+# UK figures for 2026/27, checked against Budget 2025 OOTLAR Annex A on 20 Nov 2026 (B-197)
+_UK_CGT_EXEMPT = 3_000               # annual exempt amount
 _UK_CGT_RATE_BASIC = 0.18            # investments (basic rate taxpayer)
 _UK_CGT_RATE_HIGHER = 0.24           # investments (higher / additional rate)
 _UK_ISA_ALLOWANCE = 20_000           # per person per year
-_UK_PENSION_AA = 60_000              # annual allowance 2024/25
+_UK_PENSION_AA = 60_000              # annual allowance
 _UK_PENSION_TAPER_THRESHOLD = 260_000  # adjusted income above this → taper
 _UK_PENSION_MIN_AA = 10_000          # minimum tapered allowance
 _UK_PENSION_LSA = 268_275            # Lump Sum Allowance (tax-free cash cap)
-_UK_DIVIDEND_ALLOWANCE = 500         # 2024/25 annual dividend allowance
-_UK_DIVIDEND_RATE_BASIC = 0.0875
-_UK_DIVIDEND_RATE_HIGHER = 0.3375
+_UK_DIVIDEND_ALLOWANCE = 500         # annual dividend allowance
+_UK_DIVIDEND_RATE_BASIC = 0.1075     # from 6 Apr 2026 (ITA 2007 s 8, as amended by Finance Act 2026)
+_UK_DIVIDEND_RATE_HIGHER = 0.3575
+_UK_DIVIDEND_RATE_ADDITIONAL = 0.3935
 _UK_ESTIMATED_EQUITY_YIELD = 0.025   # used to estimate dividend income from portfolio
 
 
@@ -613,6 +615,7 @@ def _us_rmd_planning(brain: dict, *, today: date) -> dict:
 
 def _us_gift_tracker(brain: dict, *, today: date) -> dict:
     """Annual gift exclusion utilisation and 529 superfunding opportunity."""
+    annual = law_figures.value("us_annual_gift_exclusion", today)
     persons = brain.get("persons", [])
     adults = [p for p in persons if not p.get("is_next_gen")]
     heirs = [p for p in persons if p.get("is_next_gen")]
@@ -621,10 +624,10 @@ def _us_gift_tracker(brain: dict, *, today: date) -> dict:
     # The recipients are the next generation on file. Anyone outside the household is not on file and is not
     # counted: it used to assume four (B-120).
     total_recipients = len(heirs)
-    max_annual = len(adults) * total_recipients * _US_ANNUAL_GIFT_EXCLUSION
+    max_annual = len(adults) * total_recipients * annual
 
     # The federal exclusion in force, from aurea_core/law_figures.py (P.L. 119-21), not a "post-sunset" guess.
-    exemption = law_figures.value("us_basic_exclusion") * (2 if married else 1)
+    exemption = law_figures.value("us_basic_exclusion", today) * (2 if married else 1)
     totals = brain.get("totals", {})
     gross_estate = totals.get("total_value", 0) or 0
     estate_exposed = gross_estate > exemption
@@ -633,21 +636,21 @@ def _us_gift_tracker(brain: dict, *, today: date) -> dict:
     if heirs:
         superfunding = {
             "available": True,
-            "max_per_recipient": _US_ANNUAL_GIFT_EXCLUSION * 5,
-            "max_total": _US_ANNUAL_GIFT_EXCLUSION * 5 * (2 if married else 1) * len(heirs),
+            "max_per_recipient": annual * 5,
+            "max_total": annual * 5 * (2 if married else 1) * len(heirs),
             "action": (
-                f"529 superfunding: up to ${_US_ANNUAL_GIFT_EXCLUSION * 5:,.0f}/beneficiary "
-                + (f"(${_US_ANNUAL_GIFT_EXCLUSION * 10:,.0f} with gift-splitting for a married couple) " if married else "")
+                f"529 superfunding: up to ${annual * 5:,.0f}/beneficiary "
+                + (f"(${annual * 10:,.0f} with gift-splitting for a married couple) " if married else "")
                 + "removes the full amount from the taxable estate immediately while treating it as 5 years of annual exclusion gifts."
             ),
         }
 
     return {
-        "annual_exclusion_per_donor": _US_ANNUAL_GIFT_EXCLUSION,
+        "annual_exclusion_per_donor": annual,
         "donors": len(adults),
         "married": married,
         "gift_splitting_available": married,
-        "effective_annual_per_recipient": _US_ANNUAL_GIFT_EXCLUSION * (2 if married else 1),
+        "effective_annual_per_recipient": annual * (2 if married else 1),
         "max_annual_exclusion_gifts": round(max_annual, 0),
         "recipients_on_file": total_recipients,
         "not_on_file": ["recipients outside the household"],
@@ -656,8 +659,8 @@ def _us_gift_tracker(brain: dict, *, today: date) -> dict:
         "law": law_figures.cited(("us_annual_gift_exclusion", "us_basic_exclusion"), today),
         "529_superfunding": superfunding,
         "action": (
-            f"Annual exclusion: each donor may give ${_US_ANNUAL_GIFT_EXCLUSION:,.0f}/recipient tax-free. "
-            + (f"With gift-splitting, a married couple can give ${_US_ANNUAL_GIFT_EXCLUSION * 2:,.0f}/recipient: "
+            f"Annual exclusion: each donor may give ${annual:,.0f}/recipient tax-free. "
+            + (f"With gift-splitting, a married couple can give ${annual * 2:,.0f}/recipient: "
                f"${max_annual:,.0f} across the {total_recipients} next-generation member(s) on file this year." if married else "")
             + (" Gifting reduces an estate above the federal exclusion." if estate_exposed else "")
         ),
@@ -979,7 +982,7 @@ def _uk_pension_allowance(brain: dict) -> dict:
         "annual_allowance": _UK_PENSION_AA,
         "persons": person_flags,
         "guidance": (
-            "Pension annual allowance: £60,000/year (2024/25). Tax relief at marginal rate — "
+            "Pension annual allowance: £60,000/year (2026/27). Tax relief at marginal rate — "
             "a higher-rate taxpayer effectively contributes £60k for a net £36k cost. "
             "High earners (adjusted income >£260k): tapered allowance applies, reducing to £10k minimum. "
             "Carry-forward: unused allowance from the past 3 tax years can be added to this year's allowance. "
@@ -1062,8 +1065,9 @@ def _uk_dividend_allowance(brain: dict) -> dict:
             f"Estimated dividend income (£{per_person:,.0f}/person) appears within the £{_UK_DIVIDEND_ALLOWANCE:,} annual allowance."
         ),
         "key_changes": (
-            f"Dividend allowance: £{_UK_DIVIDEND_ALLOWANCE:,} (2024/25, down from £2,000 in 2023/24 and £5,000 in 2017/18). "
-            "Rates: Basic 8.75%, Higher 33.75%, Additional 39.35%. Dividends within ISA: completely tax-free."
+            f"Dividend allowance: £{_UK_DIVIDEND_ALLOWANCE:,} (2026/27; £1,000 in 2023/24 and £2,000 before that). "
+            f"Rates from 6 April 2026: basic {_UK_DIVIDEND_RATE_BASIC*100:.2f}%, higher {_UK_DIVIDEND_RATE_HIGHER*100:.2f}%, "
+            f"additional {_UK_DIVIDEND_RATE_ADDITIONAL*100:.2f}%. Dividends within ISA: completely tax-free."
         ),
     }
 

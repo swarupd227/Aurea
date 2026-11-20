@@ -106,12 +106,40 @@ def figures_in_code() -> None:
 
     today = date(2026, 11, 17)
     print("\n=== Every figure fixed in law carries its source and the day it was taken (B-120) ===")
-    for f in law_figures.FIGURES.values():
-        check(f"{f.key} cites a source and an as-of date", bool(f.source.strip()) and f.as_of <= today, True)
+    for f in law_figures.ALL:
+        check(f"{f.key} ({f.applies_from}) cites a source and an as-of date", bool(f.source.strip()) and f.as_of <= today, True)
     check("a figure past its window reports itself expired", law_figures.get("us_tcja_sunset").status(today), "expired")
     check("one still to come is upcoming", law_figures.get("uk_pension_iht").status(today), "upcoming")
     check("one whose date has passed is in force", law_figures.get("uk_bpr_apr_cap").status(today), "in_force")
-    check("this year's gift exclusion expires with the year", law_figures.get("us_annual_gift_exclusion").status(date(2027, 1, 1)), "expired")
+    check("this year's gift exclusion expires with the year",
+          law_figures.get("us_annual_gift_exclusion", today).status(date(2027, 1, 1)), "expired")
+
+    print("\n=== A yearly figure is read on the firm's date, and the figures match their sources (B-197) ===")
+    new_year = date(2027, 1, 1)
+    check("2026's exclusions on the firm's 2026 date",
+          (law_figures.value("us_basic_exclusion", today), law_figures.value("us_annual_gift_exclusion", today)), (15_000_000, 19_000))
+    check("and 2027's from its first day (Rev. Proc. 2026-35)",
+          (law_figures.value("us_basic_exclusion", new_year), law_figures.value("us_annual_gift_exclusion", new_year)), (15_480_000, 20_000))
+    check("past every window it is the latest, reading expired",
+          (law_figures.value("us_basic_exclusion", date(2028, 6, 1)), law_figures.get("us_basic_exclusion", date(2028, 6, 1)).status(date(2028, 6, 1))),
+          (15_480_000, "expired"))
+    try:
+        law_figures.value("us_basic_exclusion")
+        refused = False
+    except ValueError:
+        refused = True
+    check("a yearly figure read without a date is refused", refused, True)
+    check("BPR/APR allowance is £2.5M (Finance Act 2026 Sch 12)", law_figures.value("uk_bpr_apr_cap"), 2_500_000)
+    check("the nil-rate bands are frozen to 5 Apr 2031", {law_figures.get(k).applies_to for k in ("uk_nrb", "uk_rnrb", "uk_rnrb_taper")},
+          {date(2031, 4, 5)})
+    check("UK dividend rates for 2026/27", (ti._UK_DIVIDEND_RATE_BASIC, ti._UK_DIVIDEND_RATE_HIGHER, ti._UK_DIVIDEND_RATE_ADDITIONAL),
+          (0.1075, 0.3575, 0.3935))
+    check("US brackets and LTCG ceilings are 2026's", (ti._US_BRACKETS_MFJ[0][0], ti._US_BRACKETS_SINGLE[0][0], ti._US_LTCG_RATE_ZERO_MFJ),
+          (24_800, 12_400, 98_900))
+    check("the countdown's law cites 2027's exclusion once the year turns",
+          [l["value"] for l in rc._us_estate_exemption({"totals": {"total_value": 1}, "persons": [], "accounts": [],
+                                                       "household": {"values": {}}, "goals": []}, new_year)["law"]
+           if l["key"] == "us_basic_exclusion"], [15_480_000])
 
     couple = {"totals": {"total_value": 40_000_000, "by_asset_class": {"equity": 10_000_000, "alternatives": 5_000_000}},
               "persons": [{"full_name": "A One", "profile": {}}, {"full_name": "B One", "profile": {}},
@@ -150,7 +178,7 @@ def figures_in_code() -> None:
     saver = {"persons": [{"full_name": "Kai", "profile": {"tax": {"marginal_rate": 0.33, "kiwisaver_rate": 0.03, "annual_income": 80_000}}}]}
     ks = ti._kiwisaver_optimisation(saver, today=today)["recommendations"][0]
     check("no employer rate is assumed", (ks["employer_match_annual"], ks["not_on_file"]), (None, ["employer contribution rate"]))
-    check("the government contribution is Budget 2025's, with its source", (ks["max_govt_topup"], ks["law"][1]["source"].startswith("Budget 2025")),
+    check("the government contribution is Budget 2025's, with its source", (ks["max_govt_topup"], "Taxation (Budget Measures) Act 2025" in ks["law"][1]["source"]),
           (260.72, True))
     saver["persons"][0]["profile"]["tax"]["employer_contribution_rate"] = 0.035
     check("a recorded employer rate is used", ti._kiwisaver_optimisation(saver, today=today)["recommendations"][0]["employer_match_annual"], 2800.0)

@@ -28,7 +28,7 @@ L = law_figures
 
 def _timing(key: str, today: date) -> dict:
     """When a dated change falls, read from its law figure: a countdown only while it is still to come."""
-    fig = L.get(key)
+    fig = L.get(key, today)
     day = fig.applies_from or fig.applies_to
     status = fig.status(today)
     if status == "upcoming":
@@ -42,7 +42,7 @@ def _timing(key: str, today: date) -> dict:
 
 # ── US federal estate exemption ───────────────────────────────────────────────
 
-def _estimate_us_estate(brain: dict) -> dict:
+def _estimate_us_estate(brain: dict, today: date) -> dict:
     totals = brain.get("totals", {})
     portfolio = totals.get("total_value", 0) or 0
     persons = brain.get("persons", [])
@@ -59,7 +59,7 @@ def _estimate_us_estate(brain: dict) -> dict:
 
     adults = [p for p in persons if not p.get("is_next_gen")]
     married = len(adults) >= 2
-    per_person = L.value("us_basic_exclusion")
+    per_person = L.value("us_basic_exclusion", today)
     exemption = per_person * (2 if married else 1)
     exposure = max(0, gross_estate - exemption)
 
@@ -79,8 +79,8 @@ def _estimate_us_estate(brain: dict) -> dict:
 
 
 def _us_estate_exemption(brain: dict, today: date) -> dict:
-    figures = _estimate_us_estate(brain)
-    gift = L.value("us_annual_gift_exclusion")
+    figures = _estimate_us_estate(brain, today)
+    gift = L.value("us_annual_gift_exclusion", today)
 
     actions = []
     if figures["affected"]:
@@ -268,7 +268,7 @@ def _uk_bpr_apr_cap(brain: dict, today: date) -> dict:
     return {
         "type": "uk_bpr_apr_cap",
         "title": "UK BPR/APR — 100% Relief Allowance",
-        "subtitle": "£1M per person from 6 April 2026",
+        "subtitle": f"£{L.value('uk_bpr_apr_cap') / 1e6:g}M per person from 6 April 2026, the unused part transferable to a spouse",
         **_timing("uk_bpr_apr_cap", today),
         "summary": "BPR/APR-qualifying assets are not on file, so the allowance is not assessed for this household.",
         "figures": {
@@ -286,7 +286,7 @@ def _uk_bpr_apr_cap(brain: dict, today: date) -> dict:
             "estimated_benefit": "Lets the allowance be measured.",
         }],
         "currency": "GBP",
-        "regulation": "BPR/APR 100% relief allowance (Autumn Budget 2024)",
+        "regulation": "BPR/APR 100% relief allowance (Finance Act 2026 Sch 12)",
         "law": L.cited(("uk_bpr_apr_cap",), today),
         "assumed": [],
     }

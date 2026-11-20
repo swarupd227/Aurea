@@ -6,15 +6,19 @@ export function useApi<T = any>(path: string | null, deps: any[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The refusal's HTTP status, so a page can tell "nothing on file for you" (404) from a fault.
+  const [status, setStatus] = useState<number | null>(null);
 
   const refetch = useCallback(async () => {
     if (!path) return;
     setLoading(true);
     setError(null);
+    setStatus(null);
     try {
       setData(await api<T>(path));
     } catch (e: any) {
       setError(e.message || "Failed to load");
+      setStatus(typeof e?.status === "number" ? e.status : null);
     } finally {
       setLoading(false);
     }
@@ -33,5 +37,5 @@ export function useApi<T = any>(path: string | null, deps: any[] = []) {
     return () => window.removeEventListener("astra:changed", refetch);
   }, [refetch]);
 
-  return { data, loading, error, refetch, setData };
+  return { data, loading, error, status, refetch, setData };
 }

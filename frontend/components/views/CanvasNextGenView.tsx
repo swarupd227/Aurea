@@ -58,12 +58,14 @@ function Members({ householdId }: { householdId: string }) {
 
 /** One journey. `own` is the member's own sign-in: only then are the steps taken here. */
 function Journey({ path, own }: { path: string; own: boolean }) {
-  const { data: j, loading, error, refetch } = useApi<any>(path, [path]);
+  const { data: j, loading, error, status, refetch } = useApi<any>(path, [path]);
   const [valuesInput, setValuesInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
 
   const wrap = (body: ReactNode) => (own ? <div className="view-container" data-testid="canvas-next-gen-view">{body}</div> : <>{body}</>);
+  // A client who is not a next-gen member has no journey: the server says so with a 404, which is not a fault.
+  if (own && status === 404) return wrap(<Card><Empty>No next-gen journey on file</Empty></Card>);
   if (error) return wrap(<Card><ErrorState what="the journey" message={error} onRetry={refetch} /></Card>);
   if (loading || !j) return wrap(<SkeletonList count={4} />);
 
