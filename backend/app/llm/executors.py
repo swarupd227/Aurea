@@ -3441,6 +3441,15 @@ class ToolExecutors(AdminToolExecutors):
             "cgt_budget": payload.get("cgt_budget"),
         }
 
+    def _why_not(self, agent_key) -> str:
+        from app.core import decision_rights
+
+        try:
+            decision_rights.check(self.role, agent_key, "approve")
+        except decision_rights.DecisionForbidden as exc:
+            return str(exc)
+        return "Your role may not approve this proposal."
+
     async def read_recommendations(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """The proposals waiting for a decision, firm-scoped, with whether this role may decide
         each one. The answer comes from decision_rights, the same source decide_recommendation
@@ -3457,11 +3466,25 @@ class ToolExecutors(AdminToolExecutors):
         except (TypeError, ValueError):
             limit = 20
         subject = str(inputs.get("subject") or "").strip()
+        # A day's decisions are read by when they were decided, on the firm's calendar. Open-first ordering
+        # would bury them: live on 20 Nov, "what was decided today?" read fifty open proposals and said none.
+        day = self._review_day(inputs.get("decided_on"), "decided_on")
+        if day:
+            status = "decided"
 
         from app.core.decision_rights import unseen_agents
 
         stmt = select(Recommendation).where(Recommendation.firm_id == self.firm_id, Recommendation.agent_key.notin_(unseen_agents(self.role)))
-        if status != "all":
+        if status == "decided":
+            stmt = stmt.where(Recommendation.status != RecommendationStatus.PROPOSED, Recommendation.decided_at.is_not(None))
+            if day:
+                from datetime import datetime as _dt, time as _time, timedelta as _td, timezone as _tz
+
+                from app.aurea_core import firm_time
+
+                start = _dt.combine(day, _time.min, tzinfo=firm_time.zone(await self._firm())).astimezone(_tz.utc)
+                stmt = stmt.where(Recommendation.decided_at >= start, Recommendation.decided_at < start + _td(days=1))
+        elif status != "all":
             stmt = stmt.where(Recommendation.status == RecommendationStatus.PROPOSED)
         if subject:
             # A person names a proposal by its title as often as by its client, and a firm-wide one's
@@ -3474,11 +3497,16 @@ class ToolExecutors(AdminToolExecutors):
                 stmt = stmt.where(or_(Recommendation.subject_label.ilike(f"%{w}%"), Recommendation.title.ilike(f"%{w}%"),
                                       Recommendation.agent_key.ilike(f"%{w}%")))
         total = (await self.session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
-        # What can still be decided comes first, so history never buries it.
-        recs = (await self.session.execute(
-            stmt.order_by(case((Recommendation.status == RecommendationStatus.PROPOSED, 0), else_=1),
-                          Recommendation.priority.asc(), Recommendation.created_at.desc()).limit(limit)
-        )).scalars().all()
+        # What can still be decided comes first, so history never buries it; decisions come newest first.
+        order = ((Recommendation.decided_at.desc(),) if status == "decided" else
+                 (case((Recommendation.status == RecommendationStatus.PROPOSED, 0), else_=1),
+                  Recommendation.priority.asc(), Recommendation.created_at.desc()))
+        recs = (await self.session.execute(stmt.order_by(*order).limit(limit))).scalars().all()
+        from app.models.identity import User
+
+        who = {r.decided_by for r in recs if r.decided_by}
+        deciders = {u.id: u.full_name for u in (await self.session.execute(
+            select(User).where(User.id.in_(who)))).scalars()} if who else {}
 
         role = UserRole(self.role)
         rows = [
@@ -3492,17 +3520,24 @@ class ToolExecutors(AdminToolExecutors):
                 "confidence": r.confidence,
                 "tier": str(r.tier),
                 "can_decide": role in decision_rights.roles_for(r.agent_key, "approve"),
+                # The server's own reason, in words, so a person is told who may rather than shown a flag.
+                **({"who_may_approve": self._why_not(r.agent_key)} if role not in decision_rights.roles_for(r.agent_key, "approve") else {}),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                **({"decided_at": r.decided_at.isoformat(), "decided_by": deciders.get(r.decided_by), "decision_note": r.decision_note}
+                   if r.decided_at else {}),
                 "summary": r.summary,
                 **({"rationale": r.rationale} if len(recs) <= 3 else {}),
                 **self._proposed_trades(r),
             }
             for r in recs
         ]
-        waiting = "waiting for a decision" if status != "all" else "on file"
+        from app.aurea_core import firm_time
+
+        waiting = ("on file" if status == "all" else f"decided on {firm_time.spoken(day)}" if day
+                   else "decided" if status == "decided" else "waiting for a decision")
         shown = f" (showing {len(rows)})" if total > len(rows) else ""
         return {
-            "status": "all" if status == "all" else "open",
+            "status": status if status in ("all", "decided") else "open",
             "total": total,
             "recommendations": rows,
             "message": f"{total} proposal(s) {waiting}{shown}.",

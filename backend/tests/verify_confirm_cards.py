@@ -571,6 +571,31 @@ async def main() -> int:
             await s.flush()
             everything = (await ex.read_recommendations({"status": "all"}))["recommendations"]
             check("asked for everything, what is still open comes first", [r["status"] for r in everything][:1], ["proposed"])
+            from app.aurea_core import firm_time
+            now = utcnow()
+            rebalance.decided_at, rebalance.decided_by, rebalance.decision_note = now, adviser.id, "Not this quarter"
+            earlier = Recommendation(firm_id=firm.id, run_id=rebalance_run.id, agent_key="client_care", tier="tier_1", status=RecommendationStatus.APPROVED,
+                                     title="Call Ann last week", summary="s", decided_at=now - timedelta(days=7), decided_by=adviser.id)
+            s.add(earlier)
+            await s.flush()
+            today = firm_time.today(firm).isoformat()
+            decided = await ex.read_recommendations({"decided_on": today})
+            check("a day's decisions are read by when they were decided", [r["title"] for r in decided["recommendations"]], [rebalance.title])
+            check("  with who decided and what they said", (decided["recommendations"][0]["decided_by"], decided["recommendations"][0]["decision_note"]), ("A", "Not this quarter"))
+            check("  and say whose day it is", decided["message"].endswith(f"decided on {firm_time.spoken(firm_time.today(firm))}."), True)
+            history = (await ex.read_recommendations({"status": "decided"}))["recommendations"]
+            check("decisions come newest first, with nothing still open among them", [r["title"] for r in history], [rebalance.title, "Call Ann last week"])
+            check("a day nobody decided anything says none", (await ex.read_recommendations({"decided_on": "2020-01-01"}))["total"], 0)
+            await refused("a day that is not a date", ex.read_recommendations({"decided_on": "today"}), "YYYY-MM-DD")
+            rebalance.status = RecommendationStatus.PROPOSED
+            await s.flush()
+            seen_by = {r["id"]: r for r in (await ToolExecutors(s, adviser.id, UserRole.COMPLIANCE, firm.id).read_recommendations({"subject": "Ann rebalance"}))["recommendations"]}
+            check("compliance is told in words who may approve a trade",
+                  seen_by[str(rebalance.id)].get("who_may_approve"), "This proposal moves money on a client's book, so only an adviser or the portfolio team may approve it.")
+            mine = {r["id"]: r for r in (await ex.read_recommendations({"subject": "Ann rebalance"}))["recommendations"]}
+            check("  and someone who may approve is told nothing", "who_may_approve" in mine[str(rebalance.id)], False)
+            rebalance.status = RecommendationStatus.DISMISSED
+            await s.flush()
 
             print("\n=== Every card names its change ===")
             source = Path(executors.__file__).read_text(encoding="utf-8")
