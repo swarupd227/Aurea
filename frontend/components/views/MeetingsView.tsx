@@ -7,6 +7,7 @@ import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { ViewLink } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
+import { BriefProfilePanel } from "./BriefProfilePanel";
 
 /** Client meetings, newest first. A meeting opens in the work pane when the list is there. */
 export function MeetingsView() {
@@ -28,6 +29,7 @@ export function MeetingsView() {
         actions={<button className="btn-primary" data-testid="meeting-new" onClick={() => setShowNew(true)}><Plus size={16} /> New meeting</button>}
       />
       {showNew && <NewMeeting onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); refetch(); }} />}
+      <BriefProfilePanel />
       {loading ? (
         <SkeletonList count={4} />
       ) : error ? (

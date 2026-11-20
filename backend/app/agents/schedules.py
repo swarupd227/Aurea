@@ -82,6 +82,11 @@ DEFAULT_SCHEDULES: dict[str, tuple[str, str]] = {
         "A prospect's silence is measured in weeks, and the follow-up is a person's morning call, so "
         "a weekday look before the day starts is enough and a weekend one is noise.",
     ),
+    AgentKey.WARM_INTRODUCTION: (
+        "30 7 * * 1",
+        "Who knows a prospect changes when someone records a link, which is weekly at most; a Monday look "
+        "puts the asks in front of the week's calls.",
+    ),
     AgentKey.CONDUCT_SURVEILLANCE: (
         "0 3 * * *",
         "Supervises the recommendations made that day — surveillance that lags is not supervision.",

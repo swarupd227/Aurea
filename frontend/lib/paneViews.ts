@@ -412,7 +412,12 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "create_crm_opportunity":
     case "log_crm_activity":
     case "update_crm_opportunity_stage":
+    case "find_introductions":
+    case "record_relationship":
       return "/studio/pipeline";
+    case "read_brief_profile":
+    case "set_brief_profile":
+      return "/studio/meetings";
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";

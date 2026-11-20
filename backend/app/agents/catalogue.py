@@ -78,6 +78,15 @@ CATALOGUE: dict[str, dict] = {
                 "for the contact's owner, due today.",
         "checkpoint": "A person decides whether to chase; no stage moves and nothing is sent to the prospect.",
     },
+    AgentKey.WARM_INTRODUCTION: {
+        "name": "Warm Introduction", "stage": "Acquire & onboard",
+        "default_tier": AutonomyTier.TIER_1, "subject": "firm",
+        "senses": "Prospects at lead or qualified not yet met, and the links people recorded between clients, contacts "
+                  "and staff, with the family, households, advisers and CRM touches the platform already holds.",
+        "acts": "Raises the best way in to each prospect: the chain, the introducer's standing and who should ask; "
+                "approving adds a task for that person, due in a week.",
+        "checkpoint": "A person decides whether and how to ask; nobody is contacted and nothing is logged on the prospect.",
+    },
     AgentKey.CIP_IDENTITY_VERIFIER: {
         "name": "CIP Identity Verifier", "stage": "Acquire & onboard",
         "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",

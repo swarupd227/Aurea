@@ -69,6 +69,17 @@ class MeetingPrepAgent(BaseAgent):
             "agenda": agenda,
             **record,
         }
+        # Laid out for the RM who holds the meeting: the household's adviser as recorded (B-203).
+        from app.aurea_core import advisers, brief_profile
+
+        adviser = await advisers.adviser_of(ctx.session, ctx.firm.id, uuid.UUID(str(sensed["household_id"])))
+        present = [k for k, v in (("agenda", agenda), ("mandates", record.get("mandates")), ("goals", goals),
+                                  ("history", record.get("history")), ("review", record.get("review")),
+                                  ("tax", record.get("tax")), ("open_proposals", record.get("open_proposals")),
+                                  ("watch_items", signals), ("life_events", events), ("house_views", cites)) if v]
+        brief["shaped_for"] = await brief_profile.for_user(ctx.session, ctx.firm.id, adviser.id if adviser else None,
+                                                           "meeting", present)
+        strengths = brief["shaped_for"]["strengths"]
 
         # Persist the brief on the meeting.
         if sensed.get("meeting_id"):
@@ -86,13 +97,21 @@ class MeetingPrepAgent(BaseAgent):
             + "; ".join(agenda) + "."
         )
         outside = [m["mandate"] for m in record.get("mandates", []) if m["outside"]]
+        history = record.get("history") or {}
+        last_meeting = (history.get("meetings") or [{}])[0].get("at")
+        lead = [brief_profile.LABEL[k] for k in brief["shaped_for"]["lead"]]
         prompt = (
             f"Write a 2-3 sentence opening summary for an adviser's pre-meeting brief for household "
             f"'{hh['name']}'. Use only these facts and add none. Portfolio {markets.money_for(ctx.firm)(totals['total_value'])}; "
             f"{on_track}/{len(goals)} goals on track; mandates outside their band or IPS: {outside or 'none'}; "
             f"review on record: {(record.get('review') or {}).get('status', 'unknown')}; "
             f"open proposals: {len(record.get('open_proposals', []))}; watch-items {[s['title'] for s in signals]}; "
+            f"last meeting held: {last_meeting or 'none recorded'}; open items for the household: {history.get('open_count', 0)}, "
+            f"{sum(1 for t in history.get('open_items', []) if t['overdue'])} overdue; "
             f"house views {[c['title'] for c in cites]}. Be warm, concise and specific."
+            + (f" Order what you say to lead with {', '.join(lead)}." if lead else "")
+            + (f" The adviser leads conversations with: {', '.join(strengths)}; let the summary suit that, adding no fact."
+               if strengths else "")
         )
         rationale = await narrate(ctx, task="narrative", system=firm_voice(ctx), prompt=prompt, fallback=fallback)
 
@@ -145,7 +164,68 @@ class MeetingPrepAgent(BaseAgent):
             ((Recommendation.subject_type == "household") & (Recommendation.subject_id == hid))
             | ((Recommendation.subject_type == "mandate") & (Recommendation.subject_id.in_(mandate_ids)))))).scalars().all()
         out["open_proposals"] = [{"id": str(r.id), "title": r.title, "agent_key": str(r.agent_key)} for r in recs]
+        out["history"] = await self._history(ctx, hid)
         return out
+
+    async def _history(self, ctx: AgentContext, hid: uuid.UUID) -> dict:
+        """What has happened with the client, each item dated and named by where it is recorded (B-199): the last
+        touches logged in the CRM against the client's contacts, the messages exchanged, the meetings held and what
+        they agreed, the decisions taken on proposals with their reasons, and what is still open. There is no
+        complaints register here, and the brief says so rather than reading its absence as none."""
+        from datetime import datetime, timezone
+
+        from app.core.db import utcnow
+        from app.models.client_experience import Message
+        from app.models.crm import CrmActivity, CrmContact
+        from app.models.engagement import Task
+        from app.models.enums import RecommendationStatus, TaskStatus
+        from app.models.governance import Recommendation
+        from app.models.identity import User
+
+        now = utcnow()
+        today = firm_time.today(ctx.firm)
+        aware = lambda t: t if t is None or t.tzinfo else t.replace(tzinfo=timezone.utc)
+        users = {u.id: u.full_name for u in (await ctx.session.execute(
+            select(User).where(User.firm_id == ctx.firm.id))).scalars().all()}
+
+        contact_ids = [c.id for c in (await ctx.session.execute(select(CrmContact).where(
+            CrmContact.firm_id == ctx.firm.id, CrmContact.household_id == hid))).scalars().all()]
+        touches = []
+        if contact_ids:
+            for a in (await ctx.session.execute(select(CrmActivity).where(
+                    CrmActivity.contact_id.in_(contact_ids)).order_by(CrmActivity.occurred_at.desc()).limit(10))).scalars().all():
+                if aware(a.occurred_at) <= now:
+                    touches.append({"at": aware(a.occurred_at).date().isoformat(), "type": a.activity_type,
+                                    "detail": (a.detail or "")[:140], "by": users.get(a.logged_by_user_id), "source": "CRM"})
+        messages = (await ctx.session.execute(select(Message).where(
+            Message.firm_id == ctx.firm.id, Message.household_id == hid).order_by(Message.created_at.desc()).limit(5))).scalars().all()
+        meetings = (await ctx.session.execute(select(Meeting).where(
+            Meeting.firm_id == ctx.firm.id, Meeting.household_id == hid, Meeting.status == MeetingStatus.COMPLETED)
+            .order_by(Meeting.scheduled_at.desc()).limit(3))).scalars().all()
+        decided = (await ctx.session.execute(select(Recommendation).where(
+            Recommendation.firm_id == ctx.firm.id, Recommendation.subject_type == "household", Recommendation.subject_id == hid,
+            Recommendation.decided_at.is_not(None), Recommendation.agent_key != self.key.value,
+            Recommendation.status.in_([s.value for s in RecommendationStatus if s.value not in ("proposed", "expired")]))
+            .order_by(Recommendation.decided_at.desc()).limit(5))).scalars().all()
+        open_tasks = (await ctx.session.execute(select(Task).where(
+            Task.firm_id == ctx.firm.id, Task.household_id == hid, Task.status == TaskStatus.OPEN)
+            .order_by(Task.due_date))).scalars().all()
+        return {
+            "touches": touches[:5],
+            "messages": [{"at": aware(m.created_at).date().isoformat(), "from": m.author_name, "role": str(m.author_role),
+                          "unread": not m.read_by_adviser and str(m.author_role) == "client", "source": "Messages"}
+                         for m in messages],
+            "meetings": [{"at": aware(m.scheduled_at).date().isoformat() if m.scheduled_at else None, "title": m.title,
+                          "agreed": len((m.notes or {}).get("action_items") or []),
+                          "decisions": len((m.notes or {}).get("decisions") or []), "source": "Meetings"} for m in meetings],
+            "decisions": [{"at": aware(r.decided_at).date().isoformat(), "title": r.title, "decision": str(r.status),
+                           "by": users.get(r.decided_by), "note": r.decision_note, "source": "Ledger"} for r in decided],
+            "open_items": [{"title": t.title, "due": t.due_date.isoformat() if t.due_date else None,
+                            "overdue": bool(t.due_date and t.due_date < today), "owner": users.get(t.assigned_to),
+                            "source": "Tasks"} for t in open_tasks[:6]],
+            "open_count": len(open_tasks),
+            "not_kept_here": ["Complaints"],
+        }
 
     def _agenda(self, goals, signals, events, record: dict | None = None) -> list[str]:
         record = record or {}
@@ -171,6 +251,9 @@ class MeetingPrepAgent(BaseAgent):
             from app.aurea_core import firm_time
             held = firm_time.spoken(date.fromisoformat(review["unrecorded"]["held_on"]))
             agenda.append(f"Record whether the {held} meeting was a review")
+        overdue = [t for t in (record.get("history") or {}).get("open_items", []) if t["overdue"]]
+        if overdue:
+            agenda.append(f"Overdue: {overdue[0]['title']}" + (f" and {len(overdue) - 1} more" if len(overdue) > 1 else ""))
         if events:
             agenda.append("Life events & next-gen engagement")
         return agenda

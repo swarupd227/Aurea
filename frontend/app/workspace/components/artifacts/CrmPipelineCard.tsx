@@ -1,4 +1,5 @@
 import { money } from "@/lib/format";
+import { IntroPathRow, type IntroPath } from "./IntroductionsCard";
 
 const STAGE_COLOR: Record<string, string> = {
   lead: "bg-ink-muted", qualified: "bg-info", proposal: "bg-warn", won: "bg-ok", lost: "bg-crit",
@@ -134,6 +135,8 @@ export interface ProspectBriefPayload {
   activity_count: number;
   booked: { at: string; detail: string; by: string | null }[];
   not_on_file: string[];
+  introductions?: { paths: IntroPath[]; in_touch: { user: { name: string }; last: string | null }[]; recorded_links_to_target: number };
+  shaped_for?: { for: string | null; set: boolean; order: string[]; length: string; strengths: string[] };
 }
 
 const when = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
@@ -142,6 +145,10 @@ const whenTime = (iso: string) => new Date(iso).toLocaleString(undefined, { day:
 /** A prospect's file before a meeting: what was recorded, and what is not on file. */
 export function ProspectBriefCard({ result }: { result: ProspectBriefPayload }) {
   const c = result.contact;
+  const sections = prospectSections(result);
+  // In the order the person preparing keeps (B-203); booked and not on file sit in the chips above.
+  const order = (result.shaped_for?.order || ["deals", "introductions", "activity"]).filter((k) => k in sections);
+  for (const k of ["deals", "introductions", "activity"]) if (!order.includes(k)) order.push(k);
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface" data-testid="prospect-brief-card">
       <div className="flex flex-wrap items-center gap-2 border-b border-border-soft px-3 py-2">
@@ -158,8 +165,17 @@ export function ProspectBriefCard({ result }: { result: ProspectBriefPayload }) 
           : <Chip testid="prospect-brief-booked">no meeting booked</Chip>}
         <Chip>{result.activity_count} logged</Chip>
         {result.not_on_file.map((m) => <Chip key={m} tone="text-warn" testid="prospect-brief-missing">not on file: {m.toLowerCase()}</Chip>)}
+        {result.shaped_for?.set && <Chip testid="prospect-brief-shaped">laid out for {result.shaped_for.for}</Chip>}
       </div>
-      {result.opportunities.length > 0 && (
+      {order.map((key) => <div key={key}>{sections[key] || null}</div>)}
+    </div>
+  );
+}
+
+function prospectSections(result: ProspectBriefPayload): Record<string, React.ReactNode> {
+  const intro = result.introductions;
+  return {
+    deals: result.opportunities.length > 0 && (
         <table className="w-full border-b border-border-soft text-sm">
           <tbody className="divide-y divide-border-soft">
             {result.opportunities.map((o) => (
@@ -186,8 +202,17 @@ export function ProspectBriefCard({ result }: { result: ProspectBriefPayload }) 
             ))}
           </tbody>
         </table>
-      )}
-      {result.activity.length > 0 && (
+    ),
+    introductions: intro && (intro.paths.length > 0 || intro.in_touch.length > 0) && (
+      <div className="border-b border-border-soft" data-testid="prospect-brief-ways-in">
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2">
+          <span className="tile-label">Ways in</span>
+          {intro.in_touch.slice(0, 3).map((t, i) => <Chip key={i} tone="text-ok">in touch: {t.user.name}</Chip>)}
+        </div>
+        <div className="divide-y divide-border-soft">{intro.paths.slice(0, 3).map((p, i) => <IntroPathRow key={i} path={p} />)}</div>
+      </div>
+    ),
+    activity: result.activity.length > 0 && (
         <ul className="divide-y divide-border-soft text-xs">
           {result.activity.slice(0, 6).map((a, i) => (
             <li key={i} className="flex gap-3 px-3 py-1.5" data-testid="prospect-brief-activity">
@@ -197,7 +222,6 @@ export function ProspectBriefCard({ result }: { result: ProspectBriefPayload }) 
             </li>
           ))}
         </ul>
-      )}
-    </div>
-  );
+    ),
+  };
 }

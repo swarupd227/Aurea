@@ -2712,6 +2712,73 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
     ),
 
+    "find_introductions": Tool(
+        key="find_introductions",
+        name="Find Introductions",
+        speaking_agent="warm_introduction",
+        description="The ways in to a prospect or client through people the firm already knows (aurea_core/introductions.py): each path from a member of staff through clients, contacts or their families to the target, scored 0-100 by how close each link is, how recent, and the introducer's standing (a client, referred before, a centre of influence), with who should ask whom and the evidence for every recorded link; and any staff already in touch directly. Links come only from what a person recorded (record_relationship) and what the client graph and CRM hold as fact: a contact's notes are not read as links. It introduces nobody and sends nothing. Give contact_id (read_crm_pipeline), person_id, or a name.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("contact_id", "uuid", "The pipeline contact", required=False),
+            ToolInput("person_id", "uuid", "A client person", required=False),
+            ToolInput("name", "string", "The contact's or client's name, if no id", required=False),
+        ],
+        output=ToolOutput("object", "The paths, best first, with who should ask, and staff already in touch"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_relationship": Tool(
+        key="record_relationship",
+        name="Record Relationship",
+        speaking_agent="warm_introduction",
+        description="Record that two people know each other, as a person was told or saw it: a client, a legal entity, a pipeline contact or a member of staff at each end (type person|entity|contact|user, with its id or exact name). kind is knows, referred (from the one who referred to the one referred), colleague or professional. closeness is close, known or met, only if someone said; never filled in. evidence says where it comes from (who said it, when, or the document) and is required: a link is never worked out from notes or activity. It is added to the relationship graph in the recorder's name and introduces nobody.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will record a relationship between these two, in your name. Continue?",
+        inputs=[
+            ToolInput("from_type", "string", "person|entity|contact|user", required=True),
+            ToolInput("from_id", "uuid", "The first one's id", required=False),
+            ToolInput("from_name", "string", "Or their exact name", required=False),
+            ToolInput("to_type", "string", "person|entity|contact|user", required=True),
+            ToolInput("to_id", "uuid", "The second one's id", required=False),
+            ToolInput("to_name", "string", "Or their exact name", required=False),
+            ToolInput("kind", "string", "knows|referred|colleague|professional", required=False),
+            ToolInput("closeness", "string", "close|known|met, only if someone said", required=False),
+            ToolInput("how", "string", "How they know each other, in a few words", required=False),
+            ToolInput("evidence", "string", "Where this comes from: who said it and when, or the document", required=True),
+        ],
+        output=ToolOutput("object", "The link as recorded"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
+    "read_brief_profile": Tool(
+        key="read_brief_profile",
+        name="Read Brief Profile",
+        speaking_agent="meeting_prep",
+        description="The signed-in person's own brief profile (aurea_core/brief_profile.py): which sections of a meeting or prospect brief lead, how much opens at first (short, standard, full), and the strengths they lead a conversation with; the sections there are; and suggestions from what they opened or closed on their briefs over the last 60 days (a section opened on three separate days that does not lead, or a lead section closed on three). A suggestion changes nothing until they accept it with set_brief_profile. Only one's own profile is read.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The profile, the sections, and suggestions"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
+    "set_brief_profile": Tool(
+        key="set_brief_profile",
+        name="Set Brief Profile",
+        speaking_agent="meeting_prep",
+        description="Set the signed-in person's own brief profile: lead (section keys in the order they should lead, from read_brief_profile's sections; a meeting's are agenda, mandates, goals, history, review, tax, open_proposals, watch_items, life_events, house_views; a prospect's deals, introductions, activity, booked, not_on_file), length (short, standard or full: how many sections open at first) and strengths (up to five, a few words each, in the person's own words). Anything left out stays as it is. It changes the order and emphasis of their briefs, never a fact in them, and nobody else's.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will change how your briefs are laid out. Continue?",
+        inputs=[
+            ToolInput("lead", "list[string]", "Section keys, in the order they lead", required=False),
+            ToolInput("length", "string", "short|standard|full", required=False),
+            ToolInput("strengths", "list[string]", "Up to five, a few words each, as the person said them", required=False),
+        ],
+        output=ToolOutput("object", "The profile as set"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
     "create_crm_contact": Tool(
         key="create_crm_contact",
         name="Create CRM Contact",

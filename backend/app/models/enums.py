@@ -120,6 +120,7 @@ class AgentKey(StrEnum):
     NIGO_PREVENTION = "nigo_prevention"
     ABANDONMENT_RECOVERY = "abandonment_recovery"
     PIPELINE_FOLLOW_UP = "pipeline_follow_up"
+    WARM_INTRODUCTION = "warm_introduction"
     # Phase 3 mock integrations
     CIP_IDENTITY_VERIFIER = "cip_identity_verifier"
     CUSTODIAN_ACCOUNT_OPENER = "custodian_account_opener"

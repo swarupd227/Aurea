@@ -6,6 +6,7 @@ from app.models import (  # noqa: F401
     aml_monitoring,
     balance_sheet,
     billing,
+    brief_profile,
     cash_movement,
     sip,
     client_file,

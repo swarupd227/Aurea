@@ -232,6 +232,10 @@ class ToolExecutors(AdminToolExecutors):
             "log_wsp_evidence": self.log_wsp_evidence,
             "read_crm_pipeline": self.read_crm_pipeline,
             "prepare_prospect_meeting": self.prepare_prospect_meeting,
+            "find_introductions": self.find_introductions,
+            "record_relationship": self.record_relationship,
+            "read_brief_profile": self.read_brief_profile,
+            "set_brief_profile": self.set_brief_profile,
             "create_crm_contact": self.create_crm_contact,
             "create_crm_opportunity": self.create_crm_opportunity,
             "log_crm_activity": self.log_crm_activity,
@@ -4551,6 +4555,10 @@ class ToolExecutors(AdminToolExecutors):
             return rows(*await self._exit_preview(tool_key, inputs))
         if tool_key in ("create_crm_contact", "create_crm_opportunity", "log_crm_activity", "update_crm_opportunity_stage"):
             return rows(*await self._crm_preview(tool_key, inputs))
+        if tool_key == "record_relationship":
+            return rows(*await self._relationship_preview(inputs))
+        if tool_key == "set_brief_profile":
+            return rows(*await self._brief_profile_preview(inputs))
         if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):
             return rows(*await self._corporate_preview(tool_key, inputs))
         if tool_key == "record_consent":
@@ -5684,15 +5692,135 @@ class ToolExecutors(AdminToolExecutors):
         """What is on file about a prospect before meeting them (aurea_core/pipeline.prospect_brief)."""
         from app.aurea_core import pipeline
 
+        from app.aurea_core import brief_profile, introductions
+
         firm = await self._firm()
         try:
             out = await pipeline.prospect_brief(self.session, firm, inputs.get("contact_id") or "")
         except pipeline.PipelineError as exc:
             raise ExecutorError(str(exc))
+        # The ways in, so a prospect meeting is prepared with who the firm already knows (B-200).
+        ways = await introductions.paths(self.session, firm, contact_id=out["contact"]["id"], limit=3)
+        out["introductions"] = {"paths": ways["paths"], "in_touch": ways["in_touch"],
+                                "recorded_links_to_target": ways["recorded_links_to_target"]}
+        present = ["deals", "activity", "not_on_file"] + (["introductions"] if ways["paths"] or ways["in_touch"] else []) \
+            + (["booked"] if out["booked"] else [])
+        # Laid out for whoever is preparing (B-203).
+        out["shaped_for"] = await brief_profile.for_user(self.session, firm.id, self.user_id, "prospect", present)
         out["currency"] = firm.base_currency
+        best = ways["paths"][0] if ways["paths"] else None
         out["message"] = (f"{out['contact']['name']}: {len(out['opportunities'])} deal(s), {out['activity_count']} logged touch(es)"
                           + (f", next meeting booked {out['booked'][0]['at'][:10]}" if out["booked"] else ", no meeting booked")
+                          + (f"; best way in: {best['introducer']['name']}, asked by {best['ask']['name']} (score {best['score']})"
+                             if best else "; no way in recorded")
                           + (f"; not on file: {', '.join(out['not_on_file'])}" if out["not_on_file"] else "") + ".")
+        return out
+
+    # ── Introductions (B-200) ────────────────────────────────────────────────────────────────
+
+    async def find_introductions(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.agents.warm_introduction import path_words
+        from app.aurea_core import introductions
+
+        try:
+            out = await introductions.paths(self.session, await self._firm(), contact_id=inputs.get("contact_id"),
+                                            person_id=inputs.get("person_id"), name=inputs.get("name"))
+        except introductions.IntroductionError as exc:
+            raise ExecutorError(str(exc))
+        who = out["target"]["name"]
+        if out["paths"]:
+            best = out["paths"][0]
+            said = (f"{len(out['paths'])} way(s) in to {who}. Best, {best['score']}/100: {path_words(best)}; "
+                    f"{best['ask']['name']} to ask {best['introducer']['name']}.")
+        else:
+            said = f"No way in to {who} from what is recorded."
+        if out["in_touch"]:
+            said += " Already in touch: " + ", ".join(f"{t['user']['name']} ({t['label']})" for t in out["in_touch"][:3]) + "."
+        if not out["recorded_links_to_target"]:
+            said += " Nobody is recorded as knowing them; record_relationship adds what someone was told."
+        out["message"] = said
+        return out
+
+    async def _relationship_terms(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {k: inputs.get(k) for k in ("from_type", "from_id", "from_name", "to_type", "to_id", "to_name", "kind",
+                                           "closeness", "how", "evidence")}
+
+    async def _relationship_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import introductions
+
+        try:
+            p = await introductions.prepare_link(self.session, await self._firm(), **await self._relationship_terms(inputs))
+        except introductions.IntroductionError as exc:
+            raise ExecutorError(str(exc))
+        me = await self._me()
+        return [("Link", f"{p['from'].name} {introductions.KIND_LABEL[p['kind']]} {p['to'].name}"),
+                ("From", f"{p['from'].name} · {p['from'].type}"), ("To", f"{p['to'].name} · {p['to'].type}"),
+                ("Closeness", p["closeness"] or "Not said"), ("How", p["how"]), ("Evidence", p["evidence"]),
+                ("Recorded by", me.full_name if me else None), ("Introduces", "Nobody; nothing is sent")]
+
+    async def record_relationship(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import introductions
+
+        try:
+            out = await introductions.record_link(self.session, await self._firm(), await self._me(),
+                                                  **await self._relationship_terms(inputs))
+        except introductions.IntroductionError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = f"Recorded: {out['from']['name']} {out['label']} {out['to']['name']}, in {out['recorded_by']}'s name."
+        return out
+
+    # ── The RM's brief profile (B-203) ───────────────────────────────────────────────────────
+
+    async def read_brief_profile(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import brief_profile
+
+        out = await brief_profile.get(self.session, self.firm_id, self.user_id)
+        out["suggestions"] = await brief_profile.suggestions(self.session, self.firm_id, self.user_id, out)
+        out["sections"] = {kind: [{"key": k, "label": label} for k, label in s] for kind, s in brief_profile.SECTIONS.items()}
+        out["lengths"] = list(brief_profile.LENGTHS)
+        lead = ", ".join(out["lead_labels"]) or "the default order"
+        out["message"] = (f"{'Your' if out['set'] else 'No'} brief profile{'' if out['set'] else ' yet; briefs use the default order'}"
+                          + (f": leads with {lead}, {out['length']}" if out["set"] else "")
+                          + (f"; strengths {', '.join(out['strengths'])}" if out["strengths"] else "")
+                          + (f". {len(out['suggestions'])} suggestion(s) from what you open: "
+                             + "; ".join(f"{s['label']} {s['move']} ({s['days']} days)" for s in out["suggestions"])
+                             if out["suggestions"] else "") + ".")
+        return out
+
+    def _brief_terms(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        def as_list(v):
+            if v is None:
+                return None
+            if isinstance(v, str):
+                return [x.strip() for x in v.split(",") if x.strip()]
+            return list(v)
+        return {"lead": as_list(inputs.get("lead")), "length": inputs.get("length"), "strengths": as_list(inputs.get("strengths"))}
+
+    async def _brief_profile_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import brief_profile
+
+        try:
+            p = await brief_profile.prepare(self.session, self.firm_id, self.user_id, **self._brief_terms(inputs))
+        except brief_profile.BriefProfileError as exc:
+            raise ExecutorError(str(exc))
+        b, a = p["before"], p["after"]
+        label = lambda keys: ", ".join(brief_profile.LABEL[k] for k in keys) or "Default order"
+        return [("Whose", f"{b['user']} · your own"),
+                ("Leads with", f"{label(b['lead'])} becomes {label(a['lead'])}" if b["lead"] != a["lead"] else label(a["lead"])),
+                ("Opens at first", f"{b['length']} becomes {a['length']}" if b["length"] != a["length"] else a["length"]),
+                ("Strengths", ", ".join(a["strengths"]) or "None"),
+                ("Changes", "Order and emphasis of your briefs; no fact in them")]
+
+    async def set_brief_profile(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import brief_profile
+
+        me = await self._me()
+        try:
+            out = await brief_profile.save(self.session, self.firm_id, me, **self._brief_terms(inputs))
+        except brief_profile.BriefProfileError as exc:
+            raise ExecutorError(str(exc))
+        out["suggestions"] = await brief_profile.suggestions(self.session, self.firm_id, me.id, out)
+        out["message"] = f"Your briefs now lead with {', '.join(out['lead_labels']) or 'the default order'}, {out['length']}."
         return out
 
     @staticmethod

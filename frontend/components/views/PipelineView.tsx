@@ -11,6 +11,7 @@ import { useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 import { REGISTRATION_OPTIONS } from "./OnboardingView";
 import { CrmPipelineCard, ProspectBriefCard } from "@/app/workspace/components/artifacts/CrmPipelineCard";
+import { WaysInPanel } from "./WaysInPanel";
 
 const STAGE_COLOR: Record<string, string> = {
   lead: "bg-ink-muted", qualified: "bg-info", proposal: "bg-warn", won: "bg-ok", lost: "bg-crit",
@@ -376,6 +377,7 @@ export function PipelineView() {
         </div>
 
         <div className="space-y-5">
+          <WaysInPanel />
           <Card>
             <div className="font-semibold text-ink mb-3 flex items-center gap-2"><UserPlus size={17} /> Contacts</div>
             {contactsLoading && <SkeletonCard rows={3} />}

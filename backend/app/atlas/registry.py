@@ -33,6 +33,7 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
     from app.agents.nigo_prevention import NIGOPreventionAgent
     from app.agents.abandonment_recovery import AbandonmentRecoveryAgent
     from app.agents.pipeline_follow_up import PipelineFollowUpAgent
+    from app.agents.warm_introduction import WarmIntroductionAgent
     # Phase 3 mock integrations
     from app.agents.cip_identity_verifier import CIPIdentityVerifierAgent
     from app.agents.custodian_account_opener import CustodianAccountOpenerAgent
@@ -70,6 +71,7 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
         NIGOPreventionAgent(),
         AbandonmentRecoveryAgent(),
         PipelineFollowUpAgent(),
+        WarmIntroductionAgent(),
         # Phase 3 mock integrations
         CIPIdentityVerifierAgent(),
         CustodianAccountOpenerAgent(),
