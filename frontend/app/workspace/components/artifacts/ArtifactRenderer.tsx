@@ -68,6 +68,7 @@ import { BehaviouralCard, isBehavioural } from "./BehaviouralCard";
 import { RegulatoryCountdownCard, isRegulatoryCountdown } from "./RegulatoryCountdownCard";
 import { SkillsCard, isSkills } from "./SkillsCard";
 import { BookBatchCard, isBookBatch } from "./BookBatchCard";
+import { FoundationSourcesCard, isFoundationSources } from "./FoundationSourcesCard";
 import {
   AgentHistoryCard, AnalyticsCard, CapacityCard, MessagesCard, OnboardingCasesCard, ProvenanceCard, ReportsCard, TasksCard,
 } from "./PageReadCards";
@@ -406,6 +407,12 @@ export function artifactCard(artifact: Artifact) {
       case "sync_connector":
       case "set_cmas":
       case "set_model_routing":
+        return isAdminChange(artifact.result) ? <AdminChangeCard result={artifact.result as any} /> : null;
+      // The Foundation layer (B-161 to B-163): where each domain comes from; its two writes are admin changes.
+      case "read_foundation_sources":
+        return isFoundationSources(artifact.result) ? <FoundationSourcesCard result={artifact.result as any} /> : null;
+      case "set_foundation_owner":
+      case "sync_foundation_source":
         return isAdminChange(artifact.result) ? <AdminChangeCard result={artifact.result as any} /> : null;
       case "record_questionnaire":
         return isQuestionnaireRecorded(artifact.result) ? <QuestionnaireRecordedCard result={artifact.result as any} /> : null;

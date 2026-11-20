@@ -18,6 +18,10 @@ log = get_logger("aurea.bootstrap")
 
 SUPERADMIN_MIN_LENGTH = 12
 
+# The tables a Foundation system may own (app/models/foundation.Sourced), each given its three columns below.
+FOUNDATION_SOURCED_TABLES = ("household", "person", "legal_entity", "mandate", "account", "holding", "tax_lot", "txn",
+                             "crm_contact", "crm_opportunity", "crm_activity")
+
 
 _DEFAULT_SEGMENTS = [
     ("private_wealth",  "Private Wealth",  75,  500_000,  "High-net-worth individuals and families"),
@@ -232,6 +236,13 @@ async def bootstrap() -> None:
         # to it and silently fell back to a segment-based estimate for every household, even
         # one with a firm-confirmed schedule on file.
         await conn.execute(text("ALTER TABLE mandate ADD COLUMN IF NOT EXISTS fee_schedule_id UUID REFERENCES fee_schedule(id) ON DELETE SET NULL"))
+
+        # B-161: where each Foundation-owned row came from. Empty on every row Astra made itself, so a native firm
+        # reads exactly as before; a row a sync brought in carries its connector, its id there and when it was read.
+        for table in FOUNDATION_SOURCED_TABLES:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS source_system VARCHAR(64)"))
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS external_id VARCHAR(128)"))
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS as_of TIMESTAMPTZ"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

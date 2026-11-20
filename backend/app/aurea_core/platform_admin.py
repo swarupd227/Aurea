@@ -1406,6 +1406,112 @@ async def sync_connector(session: AsyncSession, firm: Firm, actor: User, connect
     return _done(plan), sync
 
 
+# ── The Foundation: which system owns each domain, and its syncs (B-161 to B-163) ─────────────────
+# Owners are the firm's settings, so the administrator's (api/admin.AdminOnly), with a reason on the audit log; a sync
+# runs a connector, so it is operations' (api/conduit.SetUp). app/foundation/ does the work; this is the one place the
+# route and the conversation's tools change it.
+
+def _foundation_domain(domain: Any) -> str:
+    from app.foundation.owners import DOMAINS
+
+    d = str(domain or "").strip().lower()
+    if d not in DOMAINS:
+        raise AdminError(f"There is no domain '{d}'. Domains: {', '.join(DOMAINS)}.")
+    return d
+
+
+async def prepare_foundation_owner(session: AsyncSession, firm: Firm, *, domain: Any, owner: Any) -> Plan:
+    from app.foundation import owners as fo
+    from app.foundation.adapters import for_domain, get_adapter
+    from app.foundation.commands import connector_for
+
+    d = _foundation_domain(domain)
+    key = str(owner or "").strip()
+    key = fo.NATIVE if key.lower() in ("native", "astra") else key
+    adapter = get_adapter(key)
+    if adapter is None or not adapter.serves(d):
+        raise AdminError(f"Nothing built here can own {fo.DOMAIN_LABEL[d]}. It can be: "
+                         f"{', '.join(a.key for a in for_domain(d))}.")
+    now = fo.owner(firm, d)
+    if now == key:
+        raise AdminError(f"Already so: {adapter.name} owns {fo.DOMAIN_LABEL[d]}.")
+    notes: list[tuple[str, str]] = []
+    if key != fo.NATIVE:
+        connector = await connector_for(session, firm, key)
+        if connector is None:
+            raise AdminError(f"This firm has no {adapter.name} connector switched on. Operations adds it on the "
+                             "Connectors page first.")
+        notes += [("Connector", f"{connector.display_name} · {'mock' if connector.use_mock else 'live'}"),
+                  ("Records", f"Come from {adapter.name} on each sync"),
+                  ("Differences", "Reported as breaks, nothing overwritten"),
+                  ("Writes", "Activities go to " + adapter.name if adapter.commands else "Refused, naming " + adapter.name)]
+        if adapter.capabilities.get("tax_lots") is False and d == "positions":
+            notes.append(("Tax lots", "None supplied: tax and rebalancing read not assessed"))
+    else:
+        notes += [("Records", "Astra's own tables"), ("Writes", "Recorded in Astra")]
+    return Plan("foundation", firm, f"{fo.DOMAIN_LABEL[d]} source",
+                [{"field": "owner", "from": fo.owner_name(now), "to": adapter.name}], notes,
+                values={"domain": d, "owner": key, "before": now})
+
+
+async def set_foundation_owner(session: AsyncSession, firm: Firm, actor: User, *, domain: Any, owner: Any,
+                               reason: str | None) -> Outcome:
+    """Which system owns a domain (PUT /api/admin/foundation-sources/{domain}), with the reason on the audit log."""
+    from app.foundation import owners as fo
+
+    reason = (reason or "").strip()
+    if not reason:
+        raise AdminError("Give the reason for the change; it goes on the audit log.")
+    plan = await prepare_foundation_owner(session, firm, domain=domain, owner=owner)
+    v = plan.values
+    firm.settings = fo.with_owner(firm.settings, v["domain"], v["owner"])
+    audit(session, firm.id, actor, "foundation.owner_set", subject=plan.label,
+          detail={"domain": v["domain"], "before": v["before"], "after": v["owner"], "reason": reason})
+    await session.flush()
+    return _done(plan)
+
+
+async def prepare_foundation_sync(session: AsyncSession, firm: Firm, *, domain: Any) -> Plan:
+    from app.foundation import owners as fo
+    from app.foundation.adapters import get_adapter
+    from app.foundation.commands import connector_for
+
+    d = _foundation_domain(domain)
+    key = fo.owner(firm, d)
+    if key == fo.NATIVE:
+        raise AdminError(f"Astra's own tables are the source of {fo.DOMAIN_LABEL[d]}: there is nothing to pull.")
+    adapter = get_adapter(key)
+    if adapter is None:
+        raise AdminError(f"{key} owns {fo.DOMAIN_LABEL[d]}, and no adapter for it is built here.")
+    connector = await connector_for(session, firm, key)
+    if connector is None:
+        raise AdminError(f"No {adapter.name} connector is switched on. Switch it on on the Connectors page first.")
+    others = [fo.DOMAIN_LABEL[x] for x, o in fo.owners(firm).items() if o == key and x != d]
+    return Plan("foundation", connector, f"{fo.DOMAIN_LABEL[d]} from {adapter.name}", [],
+                [("Mode", "Mock" if connector.use_mock else "Live"), ("Also pulls", ", ".join(others) or None),
+                 ("Writes", "New and changed records; a record changed here and there is a break, nothing overwritten")],
+                values={"domain": d})
+
+
+async def sync_foundation_source(session: AsyncSession, firm: Firm, actor: User, *, domain: Any):
+    """Pull a domain from its owner now (POST /api/conduit/foundation/{domain}/sync). The connector's sync runs it,
+    so a scheduled run, "Sync now" on the connector and this leave the same record."""
+    from app.conduit.service import run_sync
+
+    plan = await prepare_foundation_sync(session, firm, domain=domain)
+    c = plan.record
+    sync = await run_sync(session, c)
+    found = (sync.detail or {}).get("foundation") or {}
+    plan.changes = [{"field": k, "from": None, "to": int(found.get(k) or 0)}
+                    for k in ("created", "updated", "unchanged", "breaks", "confirmed")]
+    plan.changes.append({"field": "status", "from": None, "to": sync.status})
+    audit(session, firm.id, actor, "foundation.synced", subject=plan.label,
+          detail={"domain": plan.values["domain"], "status": sync.status,
+                  **{k: found.get(k) for k in ("created", "updated", "breaks", "confirmed")}})
+    await session.flush()
+    return _done(plan), sync
+
+
 # ── Assignments and the audit log (reads) ───────────────────────────────────────────────────────
 
 async def list_assignments(session: AsyncSession, firm: Firm) -> list[dict]:

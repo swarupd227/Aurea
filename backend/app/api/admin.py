@@ -157,6 +157,25 @@ async def set_foundation(body: FoundationIn, user: User = Depends(require_roles(
     return foundation_policy(firm)
 
 
+class FoundationOwnerIn(BaseModel):
+    owner: str
+    reason: str | None = None
+
+
+@router.put("/foundation-sources/{domain}")
+async def set_foundation_owner(domain: str, body: FoundationOwnerIn, user: User = AdminOnly,
+                               firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """Which system owns one domain of the firm's data (B-161 to B-163): a firm setting, so the admin's, with the reason
+    on the audit log. The conversation's set_foundation_owner runs the same write (aurea_core/platform_admin.py)."""
+    try:
+        await platform_admin.set_foundation_owner(db, firm, user, domain=domain, owner=body.owner, reason=body.reason)
+    except AdminError as exc:
+        raise _refused(exc)
+    from app.foundation import owners
+
+    return {"owners": owners.owners(firm)}
+
+
 class CmaIn(BaseModel):
     cmas: dict  # {"equity": [0.08, 0.17], "fixed_income": [0.04, 0.07], ...}
 

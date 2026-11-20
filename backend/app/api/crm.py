@@ -29,6 +29,14 @@ router = APIRouter(prefix="/api/crm", tags=["crm"])
 CrmDep = Depends(require_roles(*STAFF))
 
 
+def _owned_elsewhere(firm: Firm, what: str) -> None:
+    """B-163: when a product owns the firm's CRM, Astra does not write to its records (app/foundation/owners.py)."""
+    from app.foundation import owners
+
+    if refusal := owners.write_refusal(firm, "crm", what):
+        raise HTTPException(status_code=409, detail=refusal)
+
+
 def _contact_out(c: CrmContact) -> dict:
     return {
         "id": str(c.id), "full_name": c.full_name, "email": c.email, "phone": c.phone,
@@ -83,6 +91,7 @@ async def list_contacts(user: User = CrmDep, firm: Firm = Depends(current_firm),
 @router.post("/contacts")
 async def create_contact(body: ContactIn, user: User = CrmDep, firm: Firm = Depends(current_firm),
                           db: AsyncSession = Depends(get_db)):
+    _owned_elsewhere(firm, "add the contact")
     if body.contact_type not in CONTACT_TYPES:
         raise HTTPException(status_code=422, detail=f"contact_type must be one of {CONTACT_TYPES}.")
     row = CrmContact(firm_id=firm.id, owner_user_id=user.id, is_active=True, **body.model_dump())
@@ -144,6 +153,7 @@ async def list_opportunities(user: User = CrmDep, firm: Firm = Depends(current_f
 @router.post("/opportunities")
 async def create_opportunity(body: OpportunityIn, user: User = CrmDep, firm: Firm = Depends(current_firm),
                               db: AsyncSession = Depends(get_db)):
+    _owned_elsewhere(firm, "open the deal")
     contact = (await db.execute(
         select(CrmContact).where(CrmContact.id == body.contact_id, CrmContact.firm_id == firm.id)
     )).scalar_one_or_none()
@@ -160,6 +170,7 @@ async def create_opportunity(body: OpportunityIn, user: User = CrmDep, firm: Fir
 @router.patch("/opportunities/{opportunity_id}")
 async def update_opportunity(opportunity_id: uuid.UUID, body: OpportunityUpdate, user: User = CrmDep,
                               firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    _owned_elsewhere(firm, "change the deal")
     row = (await db.execute(
         select(CrmOpportunity).where(CrmOpportunity.id == opportunity_id, CrmOpportunity.firm_id == firm.id)
     )).scalar_one_or_none()
@@ -215,6 +226,24 @@ async def log_activity(body: ActivityIn, user: User = CrmDep, firm: Firm = Depen
         raise HTTPException(status_code=404, detail="Contact not found.")
     data = body.model_dump()
     data["occurred_at"] = data["occurred_at"] or utcnow()
+    from app.foundation import commands, owners
+
+    if not owners.is_native(firm, "crm"):
+        # B-163: the CRM's owner records it; it appears here when a sync brings it back (app/foundation/commands.py).
+        opp = None
+        if body.opportunity_id:
+            opp = (await db.execute(select(CrmOpportunity).where(
+                CrmOpportunity.id == body.opportunity_id, CrmOpportunity.firm_id == firm.id,
+                CrmOpportunity.contact_id == contact.id))).scalar_one_or_none()
+            if opp is None:
+                raise HTTPException(status_code=404, detail="Opportunity not found.")
+        at = data["occurred_at"]
+        try:
+            cmd = await commands.crm_activity(db, firm, user, contact=contact, opportunity=opp, activity_type=body.activity_type,
+                                              at=at, detail=body.detail)
+        except commands.CommandRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return {"command_id": str(cmd.id), "status": cmd.status, "error": cmd.error, "contact_id": str(contact.id)}
     row = CrmActivity(firm_id=firm.id, logged_by_user_id=user.id, **data)
     db.add(row)
     await db.flush()

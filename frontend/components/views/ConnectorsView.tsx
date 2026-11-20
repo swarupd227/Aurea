@@ -8,7 +8,10 @@ import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { titleCase, timeAgo } from "@/lib/format";
 import { ViewHeader, chip } from "./ViewHeader";
-import { CONNECTOR_STATUS_TONE, PageOnly, connectorEnabled, connectorSay, useAsk } from "./admin/shared";
+import { CONNECTOR_STATUS_TONE, PageOnly, ReasonInput, because, connectorEnabled, connectorSay, useAsk } from "./admin/shared";
+import {
+  FoundationBreaksTable, FoundationCommandsTable, FoundationDomainsTable, type FoundationDomain, type FoundationPayload,
+} from "@/app/workspace/components/artifacts/FoundationSourcesCard";
 
 const CONNECTOR_DOMAINS = [
   "custody", "portfolio_accounting", "oms_execution", "market_research_data",
@@ -96,6 +99,8 @@ export function ConnectorsView() {
       {showCustom && !ask && (
         <CustomConnectorForm onSaved={() => { setShowCustom(false); refetch(); }} />
       )}
+
+      <FoundationSection />
 
       {loading && !connectors ? (
         <SkeletonList count={3} />
@@ -361,5 +366,109 @@ function ConnectorCard({ c, schema, onChange }: { c: any; schema: any; onChange:
         {syncMsg && <span className="chip bg-ok-bg text-ok"><CheckCircle2 size={12} /> {syncMsg}</span>}
       </div>
     </Card>
+  );
+}
+
+// ── The Foundation layer (B-161 to B-163): where each domain of the firm's data comes from ──
+
+const foundationSay = {
+  sync: (d: FoundationDomain) => `Sync the ${d.label} data from ${d.adapter} now`,
+  owner: (d: FoundationDomain, key: string, reason: string) =>
+    `Make ${key === "native" ? "Astra's own tables" : key} the owner of the ${d.label} data${because(reason)}`,
+};
+
+/** Each domain's owner, what it supplies, its sync, freshness, records, breaks and waiting commands. Beside the
+ * conversation a sync and an owner change are its tools, behind their Confirm cards. */
+function FoundationSection() {
+  const ask = useAsk();
+  const { data, error, refetch } = useApi<FoundationPayload>("/api/conduit/foundation");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [owner, setOwner] = useState<Record<string, string>>({});
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  if (error && !data) return null;   // a role that does not read the sources sees the connectors only
+  if (!data) return null;
+
+  async function sync(d: FoundationDomain) {
+    if (ask) return ask(foundationSay.sync(d));
+    setBusy(d.domain);
+    setErr(null);
+    try {
+      await api(`/api/conduit/foundation/${d.domain}/sync`, { body: {} });
+    } catch (e: any) {
+      setErr(e.message || "Sync failed.");
+    }
+    setBusy(null);
+    refetch();
+  }
+  async function save(d: FoundationDomain) {
+    const key = owner[d.domain];
+    if (!key || key === d.owner) return;
+    if (ask) return ask(foundationSay.owner(d, key, reason));
+    setBusy(`owner-${d.domain}`);
+    setErr(null);
+    try {
+      await api(`/api/admin/foundation-sources/${d.domain}`, { method: "PUT", body: { owner: key, reason } });
+      setReason("");
+    } catch (e: any) {
+      setErr(e.message || "Not changed.");
+    }
+    setBusy(null);
+    refetch();
+  }
+
+  return (
+    <div className="mb-6" data-testid="foundation-section">
+      <div className="tile-label mb-2 flex flex-wrap items-center gap-2">
+        Foundation sources
+        <span className={`${chip} text-[10px]`}>{data.native ? "all native" : `${data.domains.filter((d) => !d.native).length} connected`}</span>
+      </div>
+      <Card className="overflow-hidden p-0">
+        <FoundationDomainsTable
+          domains={data.domains}
+          action={(d) => (
+            <span className="flex flex-wrap items-center justify-end gap-1">
+              {d.owners_available.length > 1 && (
+                <>
+                  <select className="input w-36 py-1 text-xs" aria-label={`Owner of ${d.label}`} data-testid="foundation-owner-select"
+                    value={owner[d.domain] ?? d.owner} onChange={(e) => setOwner({ ...owner, [d.domain]: e.target.value })}>
+                    {d.owners_available.map((k) => <option key={k} value={k}>{k}</option>)}
+                  </select>
+                  {(owner[d.domain] ?? d.owner) !== d.owner && (
+                    <button className="btn-outline px-2 py-1 text-xs" onClick={() => save(d)} disabled={busy === `owner-${d.domain}`}
+                      data-testid="foundation-owner-save">
+                      {ask ? "Ask Astra" : "Set owner"}
+                    </button>
+                  )}
+                </>
+              )}
+              {!d.native && (
+                <button className="btn-ghost px-2 py-1 text-xs" onClick={() => sync(d)} disabled={busy === d.domain} data-testid="foundation-sync">
+                  <RefreshCw size={12} className={busy === d.domain ? "animate-spin" : ""} /> {ask ? "Ask Astra to sync" : "Sync"}
+                </button>
+              )}
+            </span>
+          )}
+        />
+        {Object.entries(owner).some(([k, v]) => v !== data.domains.find((d) => d.domain === k)?.owner) && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border-soft px-3 py-2">
+            <ReasonInput value={reason} onChange={setReason} className="w-72" />
+          </div>
+        )}
+        {err && <div className="border-t border-border-soft px-3 py-2"><span className="chip bg-crit-bg text-crit" role="alert">{err}</span></div>}
+      </Card>
+      {data.breaks.length > 0 && (
+        <Card className="mt-3 overflow-hidden p-0" data-testid="foundation-breaks-card">
+          <div className="tile-label px-3 pt-2">Breaks</div>
+          <FoundationBreaksTable rows={data.breaks} />
+        </Card>
+      )}
+      {data.commands.length > 0 && (
+        <Card className="mt-3 overflow-hidden p-0" data-testid="foundation-commands-card">
+          <div className="tile-label px-3 pt-2">Commands</div>
+          <FoundationCommandsTable rows={data.commands} />
+        </Card>
+      )}
+    </div>
   );
 }

@@ -29,14 +29,16 @@ WRITE_ROLES: dict[str, frozenset] = {
     "add_research": _ADMIN, "research_action": _ADMIN, "set_cmas": _ADMIN, "set_model_routing": _ADMIN,
     "save_model_portfolio": _MODELS, "set_model_targets": _MODELS, "delete_model_portfolio": _MODELS,
     "add_connector": _SETUP, "set_connector": _SETUP, "sync_connector": _SYNC,
+    # The Foundation (B-161 to B-163): an owner is a firm setting, so the admin's; a sync runs a connector, operations'.
+    "set_foundation_owner": _ADMIN, "sync_foundation_source": _SETUP,
 }
 OWNERS = {_ADMIN: "an administrator", _MODELS: "the portfolio team, research or an administrator",
           _SETUP: "operations or an administrator", _SYNC: "operations, the portfolio team or an administrator"}
 # A change whose reason goes on the audit log, and is asked for.
 NEEDS_REASON = {"set_agent_switches", "save_segment", "save_mandate_type", "set_mandate_suitability", "set_cmas",
-                "set_model_routing"}
+                "set_model_routing", "set_foundation_owner"}
 # Writes that always make something, so "already so" does not apply.
-ALWAYS_CHANGES = {"invite_user", "add_research", "add_connector", "sync_connector"}
+ALWAYS_CHANGES = {"invite_user", "add_research", "add_connector", "sync_connector", "sync_foundation_source"}
 
 # Fields a card shows as a percentage, and as basis points.
 _PCT = {"max_equity", "drift_band", "expected_return", "volatility", *(a.value for a in AssetClass)}
@@ -183,6 +185,27 @@ class AdminToolExecutors:
 
     async def set_model_routing(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return await self._admin_write("set_model_routing", inputs)
+
+    # ─── The Foundation (B-161 to B-163) ──────────────────────────────────────────────────────
+
+    async def read_foundation_sources(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Where each domain comes from, as app/foundation/sources.py reads it for the Connectors page."""
+        from app.foundation import sources
+
+        out = await sources.overview(self.session, await self._firm())
+        owned = [d for d in out["domains"] if not d["native"]]
+        breaks = sum(d["open_breaks"] for d in out["domains"])
+        waiting = sum(d["pending_commands"] for d in out["domains"])
+        out["message"] = ("Every domain is native: Astra's own tables." if not owned else
+                          "; ".join(f"{d['label']} from {d['adapter']}" for d in owned) + ", the rest native") + (
+            f"; {breaks} open break(s)" if breaks else "") + (f"; {waiting} command(s) waiting" if waiting else "") + "."
+        return out
+
+    async def set_foundation_owner(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return await self._admin_write("set_foundation_owner", inputs)
+
+    async def sync_foundation_source(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return await self._admin_write("sync_foundation_source", inputs)
 
     # ─── The card and the write share their checks ─────────────────────────────────────────
 
@@ -366,6 +389,10 @@ class AdminToolExecutors:
                     "volatility": _number(g("volatility"), "volatility")}
         if tool_key == "set_model_routing":
             return {"task": _text(g("task")) or "", "model": _text(g("model")) or ""}
+        if tool_key == "set_foundation_owner":
+            return {"domain": _text(g("domain")) or "", "owner": _text(g("owner")) or ""}
+        if tool_key == "sync_foundation_source":
+            return {"domain": _text(g("domain")) or ""}
         raise _refuse(f"No admin tool called '{tool_key}'.")
 
     @staticmethod
@@ -435,6 +462,10 @@ class AdminToolExecutors:
             return pa.prepare_cma(firm, **a)
         if tool_key == "set_model_routing":
             return pa.prepare_model_routing(firm, a["task"], a["model"])
+        if tool_key == "set_foundation_owner":
+            return await pa.prepare_foundation_owner(s, firm, domain=a["domain"], owner=a["owner"])
+        if tool_key == "sync_foundation_source":
+            return await pa.prepare_foundation_sync(s, firm, domain=a["domain"])
         raise pa.AdminError(f"No admin tool called '{tool_key}'.")
 
     @staticmethod
@@ -498,6 +529,11 @@ class AdminToolExecutors:
             return await pa.set_cma(s, firm, me, **a, reason=reason)
         if tool_key == "set_model_routing":
             return await pa.set_model_routing(s, firm, me, task=a["task"], model=a["model"], reason=reason)
+        if tool_key == "set_foundation_owner":
+            return await pa.set_foundation_owner(s, firm, me, domain=a["domain"], owner=a["owner"], reason=reason)
+        if tool_key == "sync_foundation_source":
+            done, _sync = await pa.sync_foundation_source(s, firm, me, domain=a["domain"])
+            return done
         raise pa.AdminError(f"No admin tool called '{tool_key}'.")
 
     @staticmethod
@@ -510,6 +546,10 @@ class AdminToolExecutors:
             return f"Added {done.label} as a draft."
         if tool_key == "add_connector":
             return f"Added {done.label}, running on mock data."
+        if tool_key == "sync_foundation_source":
+            got = {c["field"]: c["to"] for c in done.changes}
+            return (f"Synced {done.label}: {got.get('status')}, {got.get('created', 0)} new, {got.get('updated', 0)} changed, "
+                    f"{got.get('breaks', 0)} break(s), {got.get('confirmed', 0)} command(s) confirmed.")
         if tool_key == "sync_connector":
             status = next((c["to"] for c in done.changes if c["field"] == "status"), None)
             count = next((c["to"] for c in done.changes if c["field"] == "records_ingested"), 0)

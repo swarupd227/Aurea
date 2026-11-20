@@ -95,6 +95,30 @@ async def _refresh_market_data() -> None:
                 log.warning("market_refresh_failed", firm=firm.slug, error=str(exc))
 
 
+async def _sync_foundation_sources() -> None:
+    """Pull each domain a Foundation product owns (B-162), through its connector's sync, so a scheduled pull and
+    "Sync now" leave the same record. A firm whose every domain is native has nothing to pull and is skipped."""
+    from app.conduit.service import run_sync
+    from app.foundation.commands import connector_for
+    from app.foundation.owners import NATIVE, owners
+
+    async with SessionLocal() as s:
+        for firm in (await s.execute(select(Firm))).scalars().all():
+            keys = sorted({o for o in owners(firm).values() if o != NATIVE})
+            for key in keys:
+                try:
+                    connector = await connector_for(s, firm, key)
+                    if connector is None:
+                        continue
+                    sync = await run_sync(s, connector)
+                    await s.commit()
+                    log.info("foundation_sync", firm=firm.slug, source=key, status=sync.status,
+                             records=sync.records_ingested)
+                except Exception as exc:  # pragma: no cover
+                    await s.rollback()
+                    log.warning("foundation_sync_failed", firm=firm.slug, source=key, error=str(exc))
+
+
 async def _refresh_tax_after_trades() -> None:
     """Rewrite an open tax memo once its household's book has traded (atlas/tax_refresh.py)."""
     from app.atlas.tax_refresh import refresh_after_trades
@@ -408,6 +432,8 @@ async def main() -> None:
     scheduler.add_job(_refresh_tax_after_trades, "interval", minutes=2, id="tax_after_trades")
     # SIP instalments, hourly: each SIP is tried once a month, on or after its day on its firm's calendar.
     scheduler.add_job(_run_sips, "interval", hours=1, id="sip_instalments")
+    # The Foundation layer: what a connected product owns, pulled every six hours (native firms are skipped).
+    scheduler.add_job(_sync_foundation_sources, "interval", hours=6, id="foundation_sync")
     # Pick up cadence changes made in Admin without needing a worker restart.
     scheduler.add_job(_sync_agent_schedules, "interval", minutes=15, id="schedule_sync",
                       args=[scheduler])

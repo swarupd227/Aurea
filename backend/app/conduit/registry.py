@@ -140,10 +140,19 @@ CONNECTOR_REGISTRY: list[ProviderDef] = [
         "Third-party financial-planning / projection engine (mock).", config_schema=_api(),
     ),
     # ── CRM ───────────────────────────────────────────────────────────────────
+    # The CRM adapter of the Foundation layer (app/foundation/adapters/dynamics.py, B-163): contacts, opportunities
+    # and activities through the Dataverse Web API with an OAuth client-credentials token. It syncs records only for a
+    # firm whose CRM an administrator has set to Dynamics 365; for every other firm its sync is the no-op it was.
     ProviderDef(
         "crm.dynamics", ConnectorDomain.CRM, "Microsoft Dynamics 365",
-        "Relationships, interactions and tasks.", config_schema=_api(
-            ConfigField("tenant_id", "Tenant ID")),
+        "Contacts, opportunities and activities from Dataverse; activities go back as commands.",
+        supports_live=True,
+        config_schema=[
+            ConfigField("base_url", "Environment URL", required=True, help="https://<org>.crm.dynamics.com"),
+            ConfigField("tenant_id", "Tenant ID", required=True),
+            ConfigField("client_id", "Client ID", required=True),
+            ConfigField("client_secret", "Client secret", "password", secret=True, required=True),
+        ],
     ),
     ProviderDef(
         "crm.salesforce", ConnectorDomain.CRM, "Salesforce Financial Services Cloud",

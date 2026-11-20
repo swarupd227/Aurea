@@ -17,6 +17,7 @@ from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+from app.models.foundation import Sourced  # where a row came from (B-161)
 
 CONTACT_TYPES = ("prospect", "referral_source", "centre_of_influence", "client_contact")
 PIPELINE_STAGES = ("lead", "qualified", "proposal", "won", "lost")
@@ -24,7 +25,7 @@ OPEN_STAGES = ("lead", "qualified", "proposal")
 ACTIVITY_TYPES = ("call", "email", "meeting", "note", "task")
 
 
-class CrmContact(Base):
+class CrmContact(Sourced, Base):
     """A person the firm has a relationship with who is not (yet, or ever) a client."""
 
     __tablename__ = "crm_contact"
@@ -47,7 +48,7 @@ class CrmContact(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
 
 
-class CrmOpportunity(Base):
+class CrmOpportunity(Sourced, Base):
     """One pipeline deal against a contact — lead through won/lost."""
 
     __tablename__ = "crm_opportunity"
@@ -76,7 +77,7 @@ class CrmOpportunity(Base):
     )
 
 
-class CrmActivity(Base):
+class CrmActivity(Sourced, Base):
     """The activity log: every call, email, meeting or note against a contact/opportunity."""
 
     __tablename__ = "crm_activity"

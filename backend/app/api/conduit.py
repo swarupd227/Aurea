@@ -127,3 +127,28 @@ async def connector_syncs(
          "finished_at": s.finished_at.isoformat() if s.finished_at else None}
         for s in rows
     ]
+
+
+# ── The Foundation layer (B-161 to B-163): which system owns each domain, and its syncs ───────────────
+# Read by operations (the Connectors page), and by compliance, a branch leader and the admin, as the conversation's
+# read_foundation_sources is. A sync runs a connector, so it is operations'.
+FoundationReaders = Depends(require_roles(UserRole.OPERATIONS, UserRole.COMPLIANCE, UserRole.BRANCH_LEADER))
+
+
+@router.get("/foundation")
+async def foundation_sources(user: User = FoundationReaders, firm: Firm = Depends(current_firm),
+                             db: AsyncSession = Depends(get_db)):
+    from app.foundation import sources
+
+    return await sources.overview(db, firm)
+
+
+@router.post("/foundation/{domain}/sync")
+async def sync_foundation_source(domain: str, user: User = SetUp, firm: Firm = Depends(current_firm),
+                                 db: AsyncSession = Depends(get_db)):
+    try:
+        done, sync = await platform_admin.sync_foundation_source(db, firm, user, domain=domain)
+    except AdminError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    return {"status": sync.status, "records_ingested": sync.records_ingested,
+            "foundation": (sync.detail or {}).get("foundation"), "changes": done.changes}

@@ -47,3 +47,5 @@ from app.models import (  # noqa: F401
     trading,
     vault,
 )
+# The Foundation layer (B-161 to B-163): external ids, breaks and outbound commands.
+from app.models import foundation  # noqa: F401,E402
