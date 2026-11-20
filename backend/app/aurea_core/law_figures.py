@@ -23,8 +23,10 @@ from datetime import date
 class LawFigure:
     key: str
     label: str
-    value: float | None         # None for a figure that is only a date
-    unit: str                   # "USD", "GBP", "NZD", "rate" or "date"
+    # A number; None for a figure that is only a date; for unit "bands", a table of (upper bound, rate) with the top
+    # band's bound None (it has none), read through bands().
+    value: float | tuple[tuple[float | None, float], ...] | None
+    unit: str                   # "USD", "GBP", "NZD", "rate", "date" or "bands" (USD bounds)
     source: str                 # the instrument or the official publication it was read from
     as_of: date                 # the day the figure was taken from that source
     applies_from: date | None = None
@@ -60,6 +62,23 @@ ALL: tuple[LawFigure, ...] = (
               "IRS Rev. Proc. 2026-35 §3.44 (IR-2026-133, 5 Nov 2026), indexing P.L. 119-21 §70106", date(2026, 11, 5),
               applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
     LawFigure("us_estate_tax_rate", "Federal estate tax top rate", 0.40, "rate", "IRC §2001(c)", date(2025, 7, 4)),
+    # Ordinary income brackets, each band's upper bound of taxable income and its rate (IRC §1(j), indexed yearly).
+    LawFigure("us_brackets_mfj", "Federal income tax brackets, married filing jointly",
+              ((24_800, 0.10), (100_800, 0.12), (211_400, 0.22), (403_550, 0.24), (512_450, 0.32), (768_700, 0.35), (None, 0.37)),
+              "bands", "IRS Rev. Proc. 2025-32 §4.01, Table 1 (2026)", date(2025, 10, 9),
+              applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_brackets_mfj", "Federal income tax brackets, married filing jointly",
+              ((25_600, 0.10), (104_050, 0.12), (218_250, 0.22), (416_650, 0.24), (529_100, 0.32), (793_650, 0.35), (None, 0.37)),
+              "bands", "IRS Rev. Proc. 2026-35 §3.01, Table 1 (2027; IR-2026-133, 5 Nov 2026)", date(2026, 11, 5),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
+    LawFigure("us_brackets_single", "Federal income tax brackets, single",
+              ((12_400, 0.10), (50_400, 0.12), (105_700, 0.22), (201_775, 0.24), (256_225, 0.32), (640_600, 0.35), (None, 0.37)),
+              "bands", "IRS Rev. Proc. 2025-32 §4.01, Table 3 (2026)", date(2025, 10, 9),
+              applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_brackets_single", "Federal income tax brackets, single",
+              ((12_800, 0.10), (52_025, 0.12), (109_125, 0.22), (208_325, 0.24), (264_550, 0.32), (661_375, 0.35), (None, 0.37)),
+              "bands", "IRS Rev. Proc. 2026-35 §3.01, Table 3 (2027; IR-2026-133, 5 Nov 2026)", date(2026, 11, 5),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
     LawFigure("us_annual_gift_exclusion", "Annual gift exclusion, per donor per recipient", 19_000, "USD",
               "IRS Rev. Proc. 2025-32 §4.42(1) (2026 inflation adjustments)", date(2025, 10, 9),
               applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
@@ -123,7 +142,17 @@ def value(key: str, today: date | None = None) -> float:
     figure = get(key, today)
     if figure.value is None:
         raise ValueError(f"{key} is a date, not an amount")
+    if figure.unit == "bands":
+        raise ValueError(f"{key} is a table of bands: read it with bands()")
     return figure.value
+
+
+def bands(key: str, today: date | None = None) -> list[tuple[float, float]]:
+    """A table of (upper bound, rate), lowest band first; the top band's bound is infinity."""
+    figure = get(key, today)
+    if figure.unit != "bands":
+        raise ValueError(f"{key} is not a table of bands")
+    return [(float("inf") if bound is None else float(bound), rate) for bound, rate in figure.value]
 
 
 def cited(keys: list[str] | tuple[str, ...], today: date) -> list[dict]:

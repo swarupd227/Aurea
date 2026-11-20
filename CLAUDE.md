@@ -231,7 +231,8 @@ pages are artifact views the agents open. Full guideline, including what is buil
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
 - **A legal figure carries its law.** `aurea_core/law_figures.py` holds each exemption, allowance and rate with its
   source, as-of date and window; one past its window reads expired, never a countdown. A figure the code would assume
-  is named as assumed or not used. Check a new one against its source before a client relies on it.
+  is named as assumed or not used. Check a new one against its source before a client relies on it. A figure set
+  year by year (the US exclusions and brackets) keeps a version per year and is read with the firm's today.
 - **Today is the firm's day.** A date a person reads (an age, a tax year, a due date, a settlement) is
   `firm_time.today(firm)` or `today_of(session, firm_id)`; `utcnow()` is for stored instants only.
 - **The Foundation is native until an administrator says otherwise.** `app/foundation/`: each domain (parties,

@@ -7,6 +7,7 @@ import {
   BookOpen, Bot, Building, Cpu, Users, ClipboardList, UserSquare2, PlugZap, BarChart2, FileText,
   Database, Clock, Layers, Link2, Bell, Target, Paintbrush, Search,
 } from "lucide-react";
+import { getUser } from "@/lib/api";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 import { FirmTab, BrandingTab } from "./admin/FirmTabs";
@@ -70,6 +71,22 @@ export const ADMIN_GROUPS = [
 const TABS = ADMIN_GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })));
 const DEFAULT_TAB = "firm";
 
+/** Who may read each tab, as its routes allow: "governance" is the admin and compliance (`api/admin.AdminDep`);
+ * "staff" is any staff role (the agents catalogue, connectors and model portfolios). A role sees only the tabs it
+ * can read, so none opens on a refusal (B-209). `tests.verify_studio_views` holds this to the routes. */
+export const TAB_READERS: Record<string, "staff" | "governance"> = {
+  firm: "governance", branding: "governance", users: "governance", clients: "governance", assignments: "governance",
+  segments: "governance", mandates: "governance", "model-portfolios": "staff", connectors: "staff",
+  schedules: "governance", notifications: "governance", "data-quality": "governance", "rule-impact": "governance",
+  audit: "governance", agents: "staff", research: "governance", models: "governance", usage: "governance",
+};
+const GOVERNANCE_ROLES = ["admin", "compliance"];
+// The tab a role that cannot read Firm opens on: its own work first.
+const OPENS_ON: Record<string, string> = { operations: "connectors", portfolio_team: "model-portfolios", research_cio: "model-portfolios" };
+
+const canRead = (id: string, role: string | undefined) =>
+  TAB_READERS[id] === "staff" || GOVERNANCE_ROLES.includes(role ?? "");
+
 const CONTENT: Record<string, ComponentType> = {
   firm: FirmTab,
   branding: BrandingTab,
@@ -97,7 +114,14 @@ const CONTENT: Record<string, ComponentType> = {
 export function AdminView({ tab = null }: { tab?: string | null }) {
   const nav = useViewNav();
   const router = useRouter();
-  const wanted = tab && CONTENT[tab] ? tab : DEFAULT_TAB;
+  const role: string | undefined = getUser()?.role;
+  const groups = ADMIN_GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((i) => canRead(i.id, role)) }))
+    .filter((g) => g.items.length > 0);
+  const visible = groups.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })));
+  const hidden = TABS.length - visible.length;
+  const opensOn = visible.find((t) => t.id === (OPENS_ON[role ?? ""] ?? DEFAULT_TAB))?.id ?? visible[0]?.id ?? DEFAULT_TAB;
+  const wanted = tab && CONTENT[tab] && canRead(tab, role) ? tab : opensOn;
   const [active, setActive] = useState(wanted);
   useEffect(() => setActive(wanted), [wanted]);
 
@@ -108,15 +132,27 @@ export function AdminView({ tab = null }: { tab?: string | null }) {
     else router.replace(`/admin?tab=${id}`, { scroll: false });
   }
 
-  const current = TABS.find((t) => t.id === active) || TABS[0];
+  const current = visible.find((t) => t.id === active) || visible[0];
   const Content = CONTENT[current.id];
 
   return (
     <div className="view-container" data-testid="admin-view">
-      <ViewHeader title={current.label} meta={<span className={chip}>{current.group}</span>} />
+      <ViewHeader
+        title={current.label}
+        meta={
+          <>
+            <span className={chip}>{current.group}</span>
+            {hidden > 0 && (
+              <span className={chip} data-testid="admin-hidden-tabs" title="Firm settings the admin changes and compliance reads">
+                {hidden} more · admin & compliance
+              </span>
+            )}
+          </>
+        }
+      />
       <div className="grid gap-5 cq-lg:grid-cols-[12rem_minmax(0,1fr)]">
         <nav aria-label="Configuration" className="flex flex-wrap gap-x-5 gap-y-3 cq-lg:flex-col cq-lg:gap-4 cq-lg:border-r cq-lg:border-border-soft cq-lg:pr-3">
-          {ADMIN_GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group.label} className="min-w-0">
               <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{group.label}</div>
               <div className="flex flex-wrap gap-1 cq-lg:flex-col cq-lg:gap-0.5" role="tablist">

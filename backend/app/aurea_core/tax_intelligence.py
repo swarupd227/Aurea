@@ -38,9 +38,6 @@ _KIWISAVER_RATES = [0.03, 0.04, 0.06, 0.08, 0.10]
 _ASSUMED_GROSS_RETURN = 0.07
 
 # ── US constants ──────────────────────────────────────────────────────────────
-# LTCG ceilings, MFJ, 2026: Rev. Proc. 2025-32 §4.03 (checked 20 Nov 2026, B-197)
-_US_LTCG_RATE_ZERO_MFJ = 98_900       # 0% LTCG rate ceiling
-_US_LTCG_RATE_15_MFJ = 613_700        # 15% LTCG rate ceiling
 _US_NIIT_THRESHOLD_MFJ = 250_000      # NIIT ($200k single / $250k married)
 _US_NIIT_THRESHOLD_SINGLE = 200_000
 _US_NIIT_RATE = 0.038
@@ -50,15 +47,8 @@ _US_RMD_FACTORS = {                   # IRS Uniform Lifetime Table (simplified)
     83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4,
     88: 13.7, 89: 12.9, 90: 12.2,
 }
-# 2026 ordinary income brackets: Rev. Proc. 2025-32 §4.01 Tables 1 and 3 (checked 20 Nov 2026, B-197)
-_US_BRACKETS_MFJ = [
-    (24_800, 0.10), (100_800, 0.12), (211_400, 0.22),
-    (403_550, 0.24), (512_450, 0.32), (768_700, 0.35), (float("inf"), 0.37)
-]
-_US_BRACKETS_SINGLE = [
-    (12_400, 0.10), (50_400, 0.12), (105_700, 0.22),
-    (201_775, 0.24), (256_225, 0.32), (640_600, 0.35), (float("inf"), 0.37)
-]
+# The ordinary income brackets are law_figures' us_brackets_mfj / us_brackets_single, a version per tax year read on
+# the firm's date (B-210).
 
 # ── UK constants ──────────────────────────────────────────────────────────────
 # UK figures for 2026/27, checked against Budget 2025 OOTLAR Annex A on 20 Nov 2026 (B-197)
@@ -671,12 +661,15 @@ def _us_gift_tracker(brain: dict, *, today: date) -> dict:
     }
 
 
-def _us_roth_conversion(brain: dict) -> dict:
-    """Identify Roth conversion opportunities in low-marginal-rate years."""
+def _us_roth_conversion(brain: dict, *, today: date) -> dict:
+    """Identify Roth conversion opportunities in low-marginal-rate years, against the brackets of the tax year the
+    firm's `today` falls in."""
     persons = brain.get("persons", [])
     adults = [p for p in persons if not p.get("is_next_gen")]
     married = len(adults) >= 2
-    brackets = _US_BRACKETS_MFJ if married else _US_BRACKETS_SINGLE
+    bracket_key = "us_brackets_mfj" if married else "us_brackets_single"
+    brackets = law_figures.bands(bracket_key, today)
+    top_of_24 = next(bound for bound, rate in brackets if rate == 0.24)
 
     candidates = []
     for person in adults:
@@ -731,11 +724,13 @@ def _us_roth_conversion(brain: dict) -> dict:
         "count": len(candidates),
         "total_ira_balance": round(sum(p.get("profile", {}).get("tax", {}).get("ira_value", 0) or 0 for p in adults), 2),
         "guidance": (
-            "Optimal conversion window: years where marginal rate is ≤24% (MFJ income ≤$394,600). "
+            f"Optimal conversion window: years where marginal rate is ≤24% "
+            f"({'married filing jointly' if married else 'single'} taxable income ≤${top_of_24:,.0f}). "
             "Convert enough to fill the current bracket without pushing into the next one. "
             "Best years: early retirement before RMDs, years with large business losses, "
             "or after a market correction (convert more shares at lower value)."
         ),
+        "law": law_figures.cited((bracket_key,), today),
     }
 
 
@@ -812,7 +807,7 @@ def _us_tax_report(brain: dict, lots: list[dict], *, today: date) -> dict:
     cgt = _us_cgt_analysis(lots, brain)
     rmd = _us_rmd_planning(brain, today=today)
     gift = _us_gift_tracker(brain, today=today)
-    roth = _us_roth_conversion(brain)
+    roth = _us_roth_conversion(brain, today=today)
     withdrawal = _us_withdrawal_seq(brain)
 
     total_flags = (

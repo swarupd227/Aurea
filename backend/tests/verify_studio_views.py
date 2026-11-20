@@ -61,6 +61,14 @@ def check(label: str, got, want) -> None:
     print(f"  {'PASS' if ok else 'FAIL'}  {label}: got {got!r}, want {want!r}")
 
 
+def _raises(fn) -> bool:
+    try:
+        fn()
+    except ValueError:
+        return True
+    return False
+
+
 def nav_roles() -> dict[str, set[str]]:
     nav = (ROOT / "frontend" / "lib" / "nav.ts").read_text(encoding="utf-8")
     alias = {"A": "adviser", "P": "paraplanner", "PT": "portfolio_team", "R": "research_cio",
@@ -134,8 +142,26 @@ def figures_in_code() -> None:
           {date(2031, 4, 5)})
     check("UK dividend rates for 2026/27", (ti._UK_DIVIDEND_RATE_BASIC, ti._UK_DIVIDEND_RATE_HIGHER, ti._UK_DIVIDEND_RATE_ADDITIONAL),
           (0.1075, 0.3575, 0.3935))
-    check("US brackets and LTCG ceilings are 2026's", (ti._US_BRACKETS_MFJ[0][0], ti._US_BRACKETS_SINGLE[0][0], ti._US_LTCG_RATE_ZERO_MFJ),
-          (24_800, 12_400, 98_900))
+    print("\n=== The US brackets are a version per tax year, read on the firm's date (B-210) ===")
+    check("2026's brackets in 2026 (Rev. Proc. 2025-32 §4.01)",
+          (law_figures.bands("us_brackets_mfj", today)[0], law_figures.bands("us_brackets_single", today)[3]),
+          ((24_800.0, 0.10), (201_775.0, 0.24)))
+    check("2027's from 1 Jan (Rev. Proc. 2026-35 §3.01)",
+          (law_figures.bands("us_brackets_mfj", new_year)[0], law_figures.bands("us_brackets_single", new_year)[3]),
+          ((25_600.0, 0.10), (208_325.0, 0.24)))
+    check("the top band has no ceiling", law_figures.bands("us_brackets_mfj", today)[-1], (float("inf"), 0.37))
+    check("a table is not read as an amount", _raises(lambda: law_figures.value("us_brackets_mfj", today)), True)
+    check("the brackets cite their source, JSON-safe", law_figures.cited(("us_brackets_single",), today)[0]["value"][-1], (None, 0.37))
+    check("the unused capital-gains ceilings are gone", hasattr(ti, "_US_LTCG_RATE_ZERO_MFJ") or hasattr(ti, "_US_BRACKETS_MFJ"), False)
+    saver = {"persons": [{"full_name": "Sam Single", "profile": {"tax": {"annual_income": 100_000, "ira_value": 50_000}}}]}
+    in_2026 = ti._us_roth_conversion(saver, today=today)
+    in_2027 = ti._us_roth_conversion(saver, today=new_year)
+    check("the Roth view fills the 22% band to 2026's top", (in_2026["candidates"][0]["room_in_current_bracket"],
+                                                              in_2026["candidates"][0]["recommended_conversion"]), (5_700, 5_700))
+    check("and to 2027's once the year turns", in_2027["candidates"][0]["room_in_current_bracket"], 9_125)
+    check("its guidance names the year's 24% ceiling, not 2025's", ("$201,775" in in_2026["guidance"], "394,600" in in_2026["guidance"]),
+          (True, False))
+    check("and it cites the brackets it used", [l["source"][:24] for l in in_2027["law"]], ["IRS Rev. Proc. 2026-35 §"])
     check("the countdown's law cites 2027's exclusion once the year turns",
           [l["value"] for l in rc._us_estate_exemption({"totals": {"total_value": 1}, "persons": [], "accounts": [],
                                                        "household": {"values": {}}, "goals": []}, new_year)["law"]
@@ -412,9 +438,60 @@ async def behaviour() -> None:
         await db.dispose()
 
 
+def admin_tab_readers() -> None:
+    """Firm & agents shows a role only the tabs it can read (B-209). The page's TAB_READERS must say what each tab's
+    routes allow, read from the live routes' guards, or a tab opens on a refusal again."""
+    import inspect
+
+    from fastapi.routing import APIRoute
+
+    from app.core.security import staff_user
+    from app.main import app
+
+    print("\n=== Firm & agents shows each role the tabs it can read (B-209) ===")
+    view = (ROOT / "frontend/components/views/AdminView.tsx").read_text(encoding="utf-8")
+    block = view[view.index("TAB_READERS"):view.index("GOVERNANCE_ROLES")]
+    readers = dict(re.findall(r'"?([\w-]+)"?: "(staff|governance)"', block))
+    content = dict(re.findall(r'^\s+"?([\w-]+)"?: (\w+Tab),', view, re.M))
+    check("every tab says who reads it", sorted(readers), sorted(content))
+
+    reads: dict[str, list[str]] = {}
+    for f in (ROOT / "frontend/components/views/admin").glob("*.tsx"):
+        parts = re.split(r"export function (\w+Tab)\b", f.read_text(encoding="utf-8"))
+        for name, body in zip(parts[1::2], parts[2::2]):
+            reads[name] = re.findall(r"useApi(?:<[^>]*>)?\(\s*[`\"']([^`\"'?$]+)", body)
+
+    routes = {r.path: r for r in app.routes if isinstance(r, APIRoute) and "GET" in r.methods}
+    governance = {UserRole.ADMIN, UserRole.COMPLIANCE}
+
+    def readers_of(path: str) -> str:
+        route = routes.get(path)
+        if route is None:
+            return f"no GET route {path}"
+        roles, staff, stack = None, False, list(route.dependant.dependencies)
+        while stack:
+            dep = stack.pop()
+            if dep.call is staff_user:
+                staff = True
+            elif getattr(dep.call, "__name__", "") == "checker":
+                roles = set(inspect.getclosurevars(dep.call).nonlocals["roles"]) | {UserRole.ADMIN}
+            stack.extend(dep.dependencies)
+        if roles is not None:
+            return "governance" if roles == governance else f"roles {sorted(r.value for r in roles)}"
+        return "staff" if staff else "anyone signed in"
+
+    for tab, component in sorted(content.items()):
+        found = [readers_of(p) for p in reads.get(component, [])]
+        need = "governance" if "governance" in found else (found[0] if found else "no read found")
+        check(f"{tab}: the page's readers are its routes' ({', '.join(reads.get(component, []))})", readers.get(tab), need)
+    check("operations, the portfolio team and research each open on a tab of their own",
+          [readers.get(t) for t in ("connectors", "model-portfolios")], ["staff", "staff"])
+
+
 def main() -> int:
     gating()
     figures_in_code()
+    admin_tab_readers()
     asyncio.run(behaviour())
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     for f in FAIL:
