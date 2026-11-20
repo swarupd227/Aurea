@@ -3484,7 +3484,9 @@ class ToolExecutors(AdminToolExecutors):
 
         stmt = select(Recommendation).where(Recommendation.firm_id == self.firm_id, Recommendation.agent_key.notin_(unseen_agents(self.role)))
         if status == "decided":
-            stmt = stmt.where(Recommendation.status != RecommendationStatus.PROPOSED, Recommendation.decided_at.is_not(None))
+            # A decision is a person's: a proposal that lapsed on its own was decided by nobody.
+            stmt = stmt.where(Recommendation.status.notin_([RecommendationStatus.PROPOSED, RecommendationStatus.EXPIRED]),
+                              Recommendation.decided_at.is_not(None))
             if day:
                 from datetime import datetime as _dt, time as _time, timedelta as _td, timezone as _tz
 

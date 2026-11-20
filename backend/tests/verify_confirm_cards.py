@@ -576,7 +576,9 @@ async def main() -> int:
             rebalance.decided_at, rebalance.decided_by, rebalance.decision_note = now, adviser.id, "Not this quarter"
             earlier = Recommendation(firm_id=firm.id, run_id=rebalance_run.id, agent_key="client_care", tier="tier_1", status=RecommendationStatus.APPROVED,
                                      title="Call Ann last week", summary="s", decided_at=now - timedelta(days=7), decided_by=adviser.id)
-            s.add(earlier)
+            lapsed = Recommendation(firm_id=firm.id, run_id=rebalance_run.id, agent_key="client_care", tier="tier_1", status=RecommendationStatus.EXPIRED,
+                                    title="Lapsed on its own", summary="s", decided_at=now)
+            s.add_all([earlier, lapsed])
             await s.flush()
             today = firm_time.today(firm).isoformat()
             decided = await ex.read_recommendations({"decided_on": today})
@@ -584,7 +586,7 @@ async def main() -> int:
             check("  with who decided and what they said", (decided["recommendations"][0]["decided_by"], decided["recommendations"][0]["decision_note"]), ("A", "Not this quarter"))
             check("  and say whose day it is", decided["message"].endswith(f"decided on {firm_time.spoken(firm_time.today(firm))}."), True)
             history = (await ex.read_recommendations({"status": "decided"}))["recommendations"]
-            check("decisions come newest first, with nothing still open among them", [r["title"] for r in history], [rebalance.title, "Call Ann last week"])
+            check("decisions come newest first, with nothing still open or lapsed among them", [r["title"] for r in history], [rebalance.title, "Call Ann last week"])
             check("a day nobody decided anything says none", (await ex.read_recommendations({"decided_on": "2020-01-01"}))["total"], 0)
             await refused("a day that is not a date", ex.read_recommendations({"decided_on": "today"}), "YYYY-MM-DD")
             rebalance.status = RecommendationStatus.PROPOSED
