@@ -73,6 +73,16 @@ async def guard(session: AsyncSession, firm: Firm, mandate: Mandate, *, today: d
     out = {"applies": applies(jurisdiction), "jurisdiction": jurisdiction, "no_loss_sale": {}, "no_buy": {}}
     if not out["applies"]:
         return out
+    # What the book's sources cannot show is named, not read as nothing (B-162): lots bought in the window when the
+    # positions come with no lots, the window's trades when the activity source keeps less than the window.
+    from app.foundation import owners as foundation_owners
+
+    gaps = [g for g in (foundation_owners.lacks(firm, "tax_lots"), foundation_owners.lacks(firm, "transactions_days")) if g]
+    days = None if foundation_owners.is_native(firm, "activity") else foundation_owners.capability(firm, "transactions_days")
+    if isinstance(days, int) and not isinstance(days, bool) and days < WINDOW_DAYS:
+        gaps.append(f"Not assessed: the activity source keeps {days} days of trades, less than the {WINDOW_DAYS}-day window.")
+    if gaps:
+        out["not_assessed"] = gaps
 
     accounts = await _household_accounts(session, mandate, household_id)
     names = {a.id: a.name for a in accounts}

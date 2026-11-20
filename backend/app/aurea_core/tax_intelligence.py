@@ -1190,7 +1190,15 @@ async def for_household(
     jurisdiction = markets.code((brain["household"]["values"] or {}).get("jurisdiction") or firm_jurisdiction)
     market = markets.get(jurisdiction)
 
-    if market is None or not market.tax_report:
+    from app.foundation import owners as foundation_owners
+
+    # A book whose positions come from a product that keeps no tax lots: every figure here is worked from lots, so it
+    # is not assessed, never estimated (B-162). A native firm always has its lots.
+    lots_gap = foundation_owners.lacks(await session.get(Firm, firm_id), "tax_lots")
+    if lots_gap and market is not None and market.tax_report:
+        result = {"jurisdiction": jurisdiction, "supported": False, "not_assessed": lots_gap,
+                  "summary": {"total_flags": None, "harvestable_loss": None, "estimated_tax_saving": None}}
+    elif market is None or not market.tax_report:
         result = {"jurisdiction": jurisdiction, "supported": False,
                   "summary": {"total_flags": 0, "harvestable_loss": 0, "estimated_tax_saving": 0}}
     elif jurisdiction == "IN":
@@ -1223,11 +1231,16 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction:
     uk_results: list[dict] = []
     in_results: list[dict] = []
     not_supported = 0
+    not_assessed = 0
 
     for h in households:
         hh_id = uuid.UUID(h["id"])
         result = await for_household(session, hh_id, firm_jurisdiction, firm_id=firm_id)
         if not result:
+            continue
+        if result.get("not_assessed"):   # no tax lots from the positions source (B-162): counted, not read as nothing
+            not_assessed += 1
+            not_supported += 1
             continue
 
         jur = result.get("jurisdiction")   # every report names it; none is not New Zealand
@@ -1262,6 +1275,7 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, firm_jurisdiction:
             "UK": len(uk_results),
             "IN": len(in_results),
             "not_supported": not_supported,
+            "not_assessed": not_assessed,
         },
         # NZ aggregates (backward compat)
         "loss_harvest": {

@@ -149,6 +149,14 @@ async def sync_market_data(
     return report
 
 
+async def _foundation_sync(session: AsyncSession, connector: Connector) -> dict | None:
+    """A Foundation adapter's pull, when this connector's adapter owns one of the firm's domains; None otherwise, so
+    every connector of a firm on native data syncs exactly as before (B-162)."""
+    from app.foundation.sync import run_for_connector
+
+    return await run_for_connector(session, connector)
+
+
 async def run_sync(session: AsyncSession, connector: Connector) -> ConnectorSync:
     """Execute a connector sync. Market data hits a real feed; others record a mock sync."""
     started = utcnow()
@@ -167,6 +175,11 @@ async def run_sync(session: AsyncSession, connector: Connector) -> ConnectorSync
                     f"{s}: {r}" for s, r in list(report["failed"].items())[:3])
             elif report["failed"]:
                 status = "partial"
+        elif (found := await _foundation_sync(session, connector)) is not None:
+            # The connector's adapter owns a domain of the firm (app/foundation): its records into the local copy.
+            records = found["created"] + found["updated"]
+            detail = {"mode": found.get("mode") or ("mock" if connector.use_mock else "live"),
+                      "provider": connector.provider_key, "foundation": found}
         else:
             # Mock connectors: data already present from seed; record a successful no-op sync.
             pdef = get_provider_def(connector.provider_key)

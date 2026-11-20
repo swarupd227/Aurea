@@ -37,9 +37,11 @@ def policy(firm) -> dict:
     """The effective foundation policy for a firm (defaults ← stored overrides)."""
     settings = (getattr(firm, "settings", None) or {})
     out = dict(DEFAULTS)
-    out.update(settings.get("foundation") or {})
+    # "sources" beside the policy is which system owns each data domain (app/foundation/owners.py), not a control.
+    out.update({k: v for k, v in (settings.get("foundation") or {}).items() if k != "sources"})
+    only_sources = set(settings.get("foundation") or {}) == {"sources"}
     # Back-compat: an older top-level pii_redaction toggle.
-    if "foundation" not in settings and "pii_redaction" in settings:
+    if ("foundation" not in settings or only_sources) and "pii_redaction" in settings:
         out["pii_redaction"] = bool(settings["pii_redaction"])
     return out
 

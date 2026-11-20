@@ -159,3 +159,15 @@ Each step is safe on its own: no existing firm or test changes until a firm is c
 
 The agents the client asked for on top of this (meeting preparation, introductions, personas, learning) are B-198 to
 B-205 in the backlog's experience-layer section.
+
+## As built (20 Nov 2026, B-161 to B-163)
+
+- The connector column is `source_system` on every Foundation-owned table, not `source`: `crm_contact.source` already
+  says how a prospect came to the firm and `price.source` names the feed.
+- Owners live in `firm.settings["foundation"]["sources"]`, beside the agent policy the `foundation` key already held;
+  `core/foundation.policy` ignores `sources`.
+- The sync compares three values per field: here, the source, and what the last sync applied (`external_ref.synced`).
+  The copy follows the source only where it is untouched since the last sync; a field changed on both sides is a break.
+- Instruments and prices are matched by symbol and by (instrument, day); a model portfolio is named, not synced, because
+  it is the portfolio team's record here. Goals, adviser edges and beneficiaries are not in contract v1.
+- Code: `backend/app/foundation/`; suites `tests.verify_foundation_contract` and `tests.verify_foundation_dynamics`.

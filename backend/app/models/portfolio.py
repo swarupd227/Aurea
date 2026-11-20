@@ -11,6 +11,7 @@ from sqlalchemy import JSON, Boolean, Date, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+from app.models.foundation import Sourced  # where a row came from (B-161)
 from app.models.enums import AssetClass, MarketType
 
 
@@ -51,7 +52,7 @@ class Price(Base):
     is_real: Mapped[bool] = mapped_column(Boolean, default=False)  # real feed vs synthetic
 
 
-class Holding(Base):
+class Holding(Sourced, Base):
     """A position in an account. The golden-record holding is resolved across custodians."""
 
     __tablename__ = "holding"
@@ -78,7 +79,7 @@ class Holding(Base):
     )
 
 
-class TaxLot(Base):
+class TaxLot(Sourced, Base):
     """A tax lot underpinning a holding — drives tax-lot selection & loss harvesting."""
 
     __tablename__ = "tax_lot"
@@ -94,7 +95,7 @@ class TaxLot(Base):
     holding: Mapped["Holding"] = relationship(back_populates="tax_lots")
 
 
-class Transaction(Base):
+class Transaction(Sourced, Base):
     """A historical transaction (buy/sell/dividend/capital-call/distribution)."""
 
     __tablename__ = "txn"

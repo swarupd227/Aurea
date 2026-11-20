@@ -265,6 +265,10 @@ class ToolExecutors(AdminToolExecutors):
             "sync_connector": self.sync_connector,
             "set_cmas": self.set_cmas,
             "set_model_routing": self.set_model_routing,
+            # The Foundation layer (B-161 to B-163): which system owns each domain, and its syncs.
+            "read_foundation_sources": self.read_foundation_sources,
+            "set_foundation_owner": self.set_foundation_owner,
+            "sync_foundation_source": self.sync_foundation_source,
         }
 
         executor = executor_map.get(tool_key)
@@ -4610,6 +4614,8 @@ class ToolExecutors(AdminToolExecutors):
                         "save_model_portfolio", "set_model_targets", "delete_model_portfolio", "add_connector", "set_connector",
                         "sync_connector", "set_cmas", "set_model_routing"):
             return rows(*await self._admin_preview(tool_key, inputs))
+        if tool_key in ("set_foundation_owner", "sync_foundation_source"):   # the Foundation (B-161 to B-163)
+            return rows(*await self._admin_preview(tool_key, inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):
@@ -5912,10 +5918,46 @@ class ToolExecutors(AdminToolExecutors):
             raise ExecutorError(str(exc))
         return {"row": row, "move": move, "contact": await self.session.get(CrmContact, row.contact_id)}
 
+    async def _crm_owned_elsewhere(self, tool_key: str) -> str | None:
+        """B-163: when a product owns the firm's CRM, why Astra may not make this write here (the activity goes to the
+        product as a command instead); None on a native firm, which keeps today's behaviour exactly."""
+        from app.foundation import owners
+
+        firm = await self._firm()
+        if owners.is_native(firm, "crm") or tool_key == "log_crm_activity":
+            return None
+        return owners.write_refusal(firm, "crm", {"create_crm_contact": "add the contact",
+                                                  "create_crm_opportunity": "open the deal",
+                                                  "update_crm_opportunity_stage": "move the deal"}[tool_key])
+
+    async def _crm_command_rows(self, inputs: dict[str, Any]) -> list[tuple[str, Any]] | None:
+        """The Confirm card of an activity that goes to the CRM's owner, or None on a native firm."""
+        from app.foundation import commands, owners
+
+        firm = await self._firm()
+        if owners.is_native(firm, "crm"):
+            return None
+        a = await self._activity_args(inputs)
+        try:
+            ready = await commands.prepare_crm_activity(self.session, firm, contact=a["contact"], opportunity=a["opportunity"])
+        except commands.CommandRefused as exc:
+            raise ExecutorError(str(exc))
+        name = ready["adapter"].name
+        return [("Contact", a["contact"].full_name), ("Type", a["activity_type"].capitalize()), ("Detail", a["detail"]),
+                ("Booked for" if a["booked"] else "When",
+                 a["at"].strftime("%d %b %Y %H:%M") if (a["booked"] or inputs.get("occurred_at")) else "Now"),
+                ("Opportunity", a["opportunity"].title if a["opportunity"] else None),
+                ("Recorded in", f"{name} · {'mock' if ready['connector'].use_mock else 'live'}"),
+                ("Here", "Once the next sync brings it back")]
+
     async def _crm_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core import markets
         from app.aurea_core.pipeline import STAGE_LABEL
 
+        if refusal := await self._crm_owned_elsewhere(tool_key):
+            raise ExecutorError(refusal)
+        if tool_key == "log_crm_activity" and (sent := await self._crm_command_rows(inputs)) is not None:
+            return sent
         say = markets.money_for(await self._firm())
         if tool_key == "create_crm_contact":
             name, kind = self._contact_args(inputs)
@@ -5942,6 +5984,8 @@ class ToolExecutors(AdminToolExecutors):
     async def create_crm_contact(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.models.crm import CrmContact
 
+        if refusal := await self._crm_owned_elsewhere("create_crm_contact"):
+            raise ExecutorError(refusal)
         full_name, contact_type = self._contact_args(inputs)
         row = CrmContact(
             firm_id=self.firm_id, full_name=full_name, contact_type=contact_type,
@@ -5960,6 +6004,8 @@ class ToolExecutors(AdminToolExecutors):
         from app.core.db import utcnow
         from app.models.crm import CrmOpportunity
 
+        if refusal := await self._crm_owned_elsewhere("create_crm_opportunity"):
+            raise ExecutorError(refusal)
         a = await self._opportunity_args(inputs)
         contact, title = a["contact"], a["title"]
         row = CrmOpportunity(
@@ -5976,8 +6022,11 @@ class ToolExecutors(AdminToolExecutors):
         }
 
     async def log_crm_activity(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.foundation import owners
         from app.models.crm import CrmActivity
 
+        if not owners.is_native(await self._firm(), "crm"):
+            return await self._send_crm_activity(inputs)
         a = await self._activity_args(inputs)
         contact, activity_type = a["contact"], a["activity_type"]
         row = CrmActivity(
@@ -5996,10 +6045,36 @@ class ToolExecutors(AdminToolExecutors):
                         else f"Logged a {activity_type} with {contact.full_name}."),
         }
 
+    async def _send_crm_activity(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """B-163: the CRM's owner records the activity. It leaves as a command and appears here when a sync brings it
+        back; no crm_activity row is written now."""
+        from app.foundation import commands
+        from app.models.identity import User
+
+        a = await self._activity_args(inputs)
+        firm = await self._firm()
+        try:
+            cmd = await commands.crm_activity(self.session, firm, await self.session.get(User, self.user_id),
+                                              contact=a["contact"], opportunity=a["opportunity"],
+                                              activity_type=a["activity_type"], at=a["at"], detail=a["detail"])
+        except commands.CommandRefused as exc:
+            raise ExecutorError(str(exc))
+        if cmd.status == "failed":
+            raise ExecutorError(f"Not sent: {cmd.error}")
+        from app.foundation.owners import owner, owner_name
+
+        name = owner_name(owner(firm, "crm"))
+        return {"command_id": str(cmd.id), "status": cmd.status, "sent_to": name, "contact_name": a["contact"].full_name,
+                "activity_type": a["activity_type"], "booked": a["booked"],
+                "message": f"Sent the {a['activity_type']} with {a['contact'].full_name} to {name}. It appears on their "
+                           f"record here when the next sync brings it back."}
+
     async def update_crm_opportunity_stage(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import pipeline
         from app.models.identity import User
 
+        if refusal := await self._crm_owned_elsewhere("update_crm_opportunity_stage"):
+            raise ExecutorError(refusal)
         a = await self._stage_args(inputs)
         row = a["row"]
         try:

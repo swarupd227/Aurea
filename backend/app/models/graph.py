@@ -11,10 +11,11 @@ from sqlalchemy import JSON, Boolean, Date, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+from app.models.foundation import Sourced  # where a row came from (B-161)
 from app.models.enums import ClientSegment, EntityType, MandateType
 
 
-class Household(Base):
+class Household(Sourced, Base):
     """Links people who plan together (spec: 'advice is rarely about one account')."""
 
     __tablename__ = "household"
@@ -33,7 +34,7 @@ class Household(Base):
     persons: Mapped[list["Person"]] = relationship(back_populates="household")
 
 
-class Person(Base):
+class Person(Sourced, Base):
     """The unit of relationship and suitability (spec Table 7)."""
 
     __tablename__ = "person"
@@ -61,7 +62,7 @@ class Person(Base):
     household: Mapped["Household | None"] = relationship(back_populates="persons")
 
 
-class LegalEntity(Base):
+class LegalEntity(Sourced, Base):
     """Trusts, foundations, for-purpose & indigenous entities — first-class (spec §4)."""
 
     __tablename__ = "legal_entity"
@@ -80,7 +81,7 @@ class LegalEntity(Base):
     jurisdiction: Mapped[str] = mapped_column(String(8), default="NZ")
 
 
-class Mandate(Base):
+class Mandate(Sourced, Base):
     """Determines what an agent may do autonomously (spec Table 7).
 
     Owned by exactly one of person / entity (the holder of the advisory relationship)."""
@@ -118,7 +119,7 @@ class Mandate(Base):
     accounts: Mapped[list["Account"]] = relationship(back_populates="mandate")
 
 
-class Account(Base):
+class Account(Sourced, Base):
     """A portfolio/account holding positions at a custodian (spec Table 7)."""
 
     __tablename__ = "account"

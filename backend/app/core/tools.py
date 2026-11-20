@@ -3214,6 +3214,47 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM, UserRole.ADMIN},
     ),
 
+    # ─── The Foundation layer (B-161 to B-163): which system owns each domain of the firm's data, and its syncs.
+    # app/foundation/ does the work; the writes share aurea_core/platform_admin.py with their routes.
+
+    "read_foundation_sources": Tool(
+        key="read_foundation_sources",
+        name="Read Foundation Sources",
+        speaking_agent="astra",
+        description="Where each domain of the firm's data comes from: parties, accounts (and mandates), positions, activity, prices and crm. For each: its owner (native is Astra's own tables, the default; or a connected product such as Dynamics 365 for the CRM), what that owner can supply (tax lots, how many days of transactions, events), its last sync, how fresh the copy is (as of), how many records it holds and how many came from the owner, the open breaks (a record that differs here and there, reported and never overwritten, with each field's values as evidence) and the commands still waiting (an activity sent to the CRM, which appears here once a sync brings it back).",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Each domain's owner, capabilities, sync, freshness, records, breaks and commands"),
+        roles_required={UserRole.OPERATIONS, UserRole.ADMIN, UserRole.COMPLIANCE, UserRole.BRANCH_LEADER},
+    ),
+
+    "sync_foundation_source": Tool(
+        key="sync_foundation_source",
+        name="Sync Foundation Source",
+        speaking_agent="astra",
+        description="Pulls one domain (parties, accounts, positions, activity, prices or crm) from the product that owns it now, through its connector: new and changed records come in, a record changed both here and there is reported as a break and neither side is overwritten, and an activity sent to the CRM is confirmed once it comes back. A domain Astra owns (native) has nothing to pull and is refused.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Sync this source now?",
+        inputs=[ToolInput("domain", "string", "parties, accounts, positions, activity, prices or crm", required=True)],
+        output=ToolOutput("object", "The record and what the sync did"),
+        roles_required={UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
+    "set_foundation_owner": Tool(
+        key="set_foundation_owner",
+        name="Set Foundation Owner",
+        speaking_agent="astra",
+        description="Sets which system owns one domain of the firm's data: native (Astra's own tables) or a product whose adapter is built here and whose connector is switched on (crm.dynamics for the crm domain). Once a product owns a domain its records come in on each sync, differences are reported as breaks and never overwritten, and Astra's own writes in that domain go to the product or are refused naming it. An administrator's alone; reason is the administrator's own words and goes on the audit log.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Change who owns this data?",
+        inputs=[ToolInput("domain", "string", "parties, accounts, positions, activity, prices or crm", required=True),
+                ToolInput("owner", "string", "native, or the product's key (crm.dynamics)", required=True),
+                ToolInput("reason", "string", "Why", required=True)],
+        output=ToolOutput("object", "The record and its changes"),
+        roles_required={UserRole.ADMIN},
+    ),
+
     "set_cmas": Tool(
         key="set_cmas",
         name="Set Capital Market Assumptions",

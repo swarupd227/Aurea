@@ -38,6 +38,12 @@ class DriftRebalancingAgent(BaseAgent):
             return {"applicable": False, "reason": "No mandate or target model."}
         if mandate.exit_hold:
             return {"applicable": False, "reason": "This mandate is on hold while its client leaves or an estate settles."}
+        # A book whose positions come from a product that keeps no tax lots: the gain on a sale cannot be worked out,
+        # so nothing is proposed rather than a sale on a guessed gain (B-162). A native firm always has its lots.
+        from app.foundation import owners as foundation_owners
+
+        if lots_gap := foundation_owners.lacks(ctx.firm, "tax_lots"):
+            return {"applicable": False, "reason": lots_gap + " A rebalance is worked from the lots it would sell."}
         # Orders already approved and waiting for the client: a second set would race the first.
         if await consent.waiting_on_mandate(s, mandate.id):
             return {"applicable": False, "reason": "An approved proposal is waiting for the client's consent."}

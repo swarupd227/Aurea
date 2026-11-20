@@ -239,6 +239,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "set_cmas":
     case "set_model_routing":
       return typeof r.section === "string" ? `/admin?tab=${ADMIN_TAB[r.section] ?? "firm"}` : "/admin";
+    // The Foundation layer (B-161 to B-163): its section is on the Connectors page.
+    case "read_foundation_sources":
+    case "set_foundation_owner":
+    case "sync_foundation_source":
+      return "/admin/connectors";
     case "read_book_batches":
     case "start_book_batch":
       return r.batch && typeof r.batch.id === "string" ? `/studio/book-integration/${r.batch.id}` : "/studio/book-integration";
