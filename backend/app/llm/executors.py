@@ -5717,7 +5717,8 @@ class ToolExecutors(AdminToolExecutors):
         best = ways["paths"][0] if ways["paths"] else None
         out["message"] = (f"{out['contact']['name']}: {len(out['opportunities'])} deal(s), {out['activity_count']} logged touch(es)"
                           + (f", next meeting booked {out['booked'][0]['at'][:10]}" if out["booked"] else ", no meeting booked")
-                          + (f"; best way in: {best['introducer']['name']}, asked by {best['ask']['name']} (score {best['score']})"
+                          + (f"; best way in: {best['introducer']['name']}, asked by "
+                             f"{'you' if best['ask']['id'] == str(self.user_id) else best['ask']['name']} (score {best['score']})"
                              if best else "; no way in recorded")
                           + (f"; not on file: {', '.join(out['not_on_file'])}" if out["not_on_file"] else "") + ".")
         return out
@@ -5733,15 +5734,21 @@ class ToolExecutors(AdminToolExecutors):
                                             person_id=inputs.get("person_id"), name=inputs.get("name"))
         except introductions.IntroductionError as exc:
             raise ExecutorError(str(exc))
+        me = str(self.user_id)
+        name = lambda n: f"you ({n['name']})" if n.get("id") == me else n["name"]  # noqa: E731
+        for p in out["paths"]:
+            p["ask"]["you"] = p["ask"]["id"] == me
+        for t in out["in_touch"]:
+            t["user"]["you"] = t["user"]["id"] == me
         who = out["target"]["name"]
         if out["paths"]:
             best = out["paths"][0]
             said = (f"{len(out['paths'])} way(s) in to {who}. Best, {best['score']}/100: {path_words(best)}; "
-                    f"{best['ask']['name']} to ask {best['introducer']['name']}.")
+                    f"{name(best['ask'])} to ask {best['introducer']['name']}.")
         else:
             said = f"No way in to {who} from what is recorded."
         if out["in_touch"]:
-            said += " Already in touch: " + ", ".join(f"{t['user']['name']} ({t['label']})" for t in out["in_touch"][:3]) + "."
+            said += " Already in touch: " + ", ".join(f"{name(t['user'])} ({t['label']})" for t in out["in_touch"][:3]) + "."
         if not out["recorded_links_to_target"]:
             said += " Nobody is recorded as knowing them; record_relationship adds what someone was told."
         out["message"] = said

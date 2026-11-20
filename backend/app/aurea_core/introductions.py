@@ -89,6 +89,13 @@ class Graph:
     users: dict = field(default_factory=dict)
 
 
+def plain(name: str) -> str:
+    """A name as typed matches it as recorded: case and accents aside ("Anders Muller" is Anders Müller)."""
+    import unicodedata
+
+    return "".join(ch for ch in unicodedata.normalize("NFKD", name or "") if not unicodedata.combining(ch)).strip().lower()
+
+
 def _aware(at: datetime) -> datetime:
     return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
 
@@ -296,10 +303,10 @@ async def _target(session: AsyncSession, firm: Firm, g: Graph, *, contact_id=Non
             raise IntroductionError("That person is not one of this firm's clients.")
         return n
     if name:
-        want = name.strip().lower()
-        hits = [n for n in g.nodes.values() if n.type in ("contact", "person") and n.name.lower() == want]
+        want = plain(name)
+        hits = [n for n in g.nodes.values() if n.type in ("contact", "person") and plain(n.name) == want]
         if not hits:
-            hits = [n for n in g.nodes.values() if n.type in ("contact", "person") and want in n.name.lower()]
+            hits = [n for n in g.nodes.values() if n.type in ("contact", "person") and want in plain(n.name)]
         if len(hits) == 1:
             return hits[0]
         if not hits:
@@ -384,8 +391,8 @@ async def _node(session: AsyncSession, firm: Firm, kind: str | None, ref: str | 
         return Node(kind, row.id, label, getattr(row, "household_id", None), contact_type=getattr(row, "contact_type", None))
     if name:
         g = await _graph(session, firm, today)
-        want = name.strip().lower()
-        hits = [n for n in g.nodes.values() if n.type == kind and n.name.lower() == want]
+        want = plain(name)
+        hits = [n for n in g.nodes.values() if n.type == kind and plain(n.name) == want]
         if len(hits) == 1:
             return hits[0]
         raise IntroductionError(f"{'No' if not hits else len(hits)} {kind} named {name!r}" + ("" if not hits else "; give the id") + ".")

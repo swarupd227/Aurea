@@ -157,7 +157,11 @@ async def main() -> int:
             check("the recorded hop carries its evidence and who recorded it",
                   (best["hops"][1]["recorded"], best["hops"][1]["evidence"], best["hops"][1]["recorded_by"]),
                   (True, "Wei said so at his review on 12 Oct", "Sophie Tran"))
-            check("the message names the best path", "Sophie Tran to ask Wei Chen" in found["message"], True)
+            check("the message names the best path, and Sophie, asking, as you",
+                  ("you (Sophie Tran) to ask Wei Chen" in found["message"], best["ask"]["you"]), (True, True))
+            check("to Tom the same asker is Sophie, not him", (await ex(tom).execute("find_introductions", {"contact_id": str(james.id)}))["paths"][0]["ask"]["you"], False)
+            found = await ex(sophie).execute("find_introductions", {"name": "wei chen"})
+            check("a name is matched whatever its case", found["target"]["name"], "Wei Chen")
 
             found = await ex(sophie).execute("find_introductions", {"name": "Rohan Mehta"})
             best = found["paths"][0]
@@ -181,7 +185,8 @@ async def main() -> int:
             check("it carries the ways in", brief["introductions"]["paths"][0]["introducer"]["name"], "Wei Chen")
             check("and is laid out the default way for Sophie, who has no profile",
                   (brief["shaped_for"]["set"], brief["shaped_for"]["order"][:2]), (False, ["deals", "introductions"]))
-            check("the message names the best way in", "best way in: Wei Chen, asked by Sophie Tran" in brief["message"], True)
+            check("the message names the best way in, asked by you", "best way in: Wei Chen, asked by you" in brief["message"], True)
+            check("an accent need not be typed", introductions.plain("Anders Muller") == introductions.plain("Anders Müller"), True)
 
             print("\n=== The agent ===")
             from app.agents.warm_introduction import WarmIntroductionAgent
