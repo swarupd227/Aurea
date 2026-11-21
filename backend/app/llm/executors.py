@@ -164,6 +164,10 @@ class ToolExecutors(AdminToolExecutors):
             "read_balance_sheet": self.read_balance_sheet,
             "record_balance_item": self.record_balance_item,
             "end_balance_item": self.end_balance_item,
+            # Held away, line by line, and how it is doing (B-198).
+            "read_held_away": self.read_held_away,
+            "record_held_away_holding": self.record_held_away_holding,
+            "end_held_away_holding": self.end_held_away_holding,
             "read_reconciliation": self.read_reconciliation,
             "import_custody_statement": self.import_custody_statement,
             "resolve_recon_break": self.resolve_recon_break,
@@ -1092,6 +1096,90 @@ class ToolExecutors(AdminToolExecutors):
                     ("Net worth", None if r["side"] == "expense" or r["not_converted"]
                      else f"{say(now['net_worth'])} becomes {say(now['net_worth'] + change)}")]
         except balance_sheet.BalanceSheetError as exc:
+            raise ExecutorError(str(exc))
+
+    # ── Held away, line by line (B-198) ─────────────────────────────────────────────────
+    async def read_held_away(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import held_away
+
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await held_away.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            s = result["summary"]
+            result["message"] = (f"{result['household']}: {s['holdings']} holding(s) listed elsewhere, {s['measured']} measured on real prices, "
+                                 f"{s['underperforming']} underperforming its reference, {s['overlaps']} also in the managed book. "
+                                 "Estimates on price return only, for the adviser."
+                                 + (f" {s['simulated']} come from a simulated feed." if s["simulated"] else ""))
+            return result
+        result = await held_away.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = (f"{s['households']} household(s) with holdings listed elsewhere: {s['underperforming']} underperforming "
+                             f"their reference, {s['overlaps']} also in the managed book. Estimates, for the adviser."
+                             + (f" {s['simulated']} holding(s) come from a simulated feed." if s["simulated"] else ""))
+        return result
+
+    def _held_away_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        uid = lambda k: _parse_uuid(inputs[k], k) if inputs.get(k) else None  # noqa: E731
+        return {"institution": inputs.get("institution"), "instrument_name": inputs.get("instrument_name"), "value": inputs.get("value"),
+                "value_on": self._review_day(inputs.get("value_on"), "value_on"), "source_document": inputs.get("source_document"),
+                "currency": inputs.get("currency"), "person_id": uid("person_id"), "entity_id": uid("entity_id"),
+                "account_label": inputs.get("account_label"), "symbol": inputs.get("symbol"), "isin": inputs.get("isin"),
+                "asset_class": inputs.get("asset_class"), "quantity": inputs.get("quantity"), "replaces_id": uid("replaces_id")}
+
+    async def _held_away_write(self, write) -> dict[str, Any]:
+        from app.aurea_core import held_away
+        from app.models.identity import User
+
+        if self.role not in (UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS):
+            raise ExecutorError("Your role cannot change what a client holds elsewhere.")
+        user = await self.session.get(User, self.user_id)
+        try:
+            return await write(held_away, user.email if user else "unknown")
+        except held_away.HeldAwayError as exc:
+            raise ExecutorError(str(exc))
+
+    async def record_held_away_holding(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+        args = self._held_away_args(inputs)
+        result = await self._held_away_write(lambda h, by: h.record_holding(self.session, household_id, firm_id=self.firm_id, by=by, **args))
+        result["message"] = f"Recorded {result['recorded']} for {result['household']}."
+        return result
+
+    async def end_held_away_holding(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        holding_id = _parse_uuid(inputs.get("holding_id"), "holding_id")
+        result = await self._held_away_write(lambda h, by: h.end_holding(self.session, holding_id, firm_id=self.firm_id,
+                                                                         reason=inputs.get("reason"), by=by))
+        result["message"] = f"{result['ended_holding']} has ended for {result['household']}."
+        return result
+
+    async def _held_away_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What a held-away Confirm card names, refused for the reasons doing it would be refused."""
+        from app.aurea_core import balance_sheet, firm_time, held_away, markets
+
+        say = markets.money_for(await self._firm())
+        try:
+            if tool_key == "end_held_away_holding":
+                r = await held_away.prepare_end(self.session, _parse_uuid(inputs.get("holding_id"), "holding_id"), firm_id=self.firm_id,
+                                                reason=inputs.get("reason"))
+                h = r["holding"]
+                return [("Client", r["household"].name if r["household"] else None), ("Holding", h.instrument_name),
+                        ("Institution", h.institution), ("Value", f"{h.currency} {float(h.value):,.2f}"), ("Reason", r["reason"])]
+            household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+            r = await held_away.prepare_holding(self.session, household_id, firm_id=self.firm_id, **self._held_away_args(inputs))
+            whose = r["person"].full_name if r["person"] else r["entity"].name if r["entity"] else "Joint"
+            now = await balance_sheet.for_household(self.session, household_id, firm_id=self.firm_id)
+            return [("Client", r["household"].name), ("Institution", r["institution"]), ("Account", r["account_label"]),
+                    ("Holding", r["instrument_name"]), ("Symbol", r["symbol"]), ("ISIN", r["isin"]),
+                    ("Quantity", f"{r['quantity']:,.4f}".rstrip("0").rstrip(".") if r["quantity"] is not None else None),
+                    ("Value", f"{r['currency']} {r['value']:,.2f}" if r["not_converted"] else say(r["value"])),
+                    ("Replaces", f"{r['replacing'].currency} {float(r['replacing'].value):,.2f}" if r["replacing"] else None),
+                    ("As at", firm_time.spoken(r["value_on"])), ("Whose", whose), ("Asset class", r["asset_class"]),
+                    ("Priced here", r["instrument"].symbol if r["instrument"] else "No: listed at its stated value"),
+                    ("Document", r["source"]), ("Counted", "Not added: not converted" if r["not_converted"] else None),
+                    ("Held away now", None if r["not_converted"] else say(now["assets"]["held_away"]) if now else None)]
+        except held_away.HeldAwayError as exc:
             raise ExecutorError(str(exc))
 
     async def read_product_shelf(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -4543,6 +4631,8 @@ class ToolExecutors(AdminToolExecutors):
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):
             return rows(*await self._balance_preview(tool_key, inputs))
+        if tool_key in ("record_held_away_holding", "end_held_away_holding"):
+            return rows(*await self._held_away_preview(tool_key, inputs))
         if tool_key in ("request_cash_movement", "record_cash_paid", "cancel_cash_request", "record_standing_instruction", "end_standing_instruction", "start_phase_in", "end_phase_in"):
             return rows(*await self._cash_preview(tool_key, inputs))
         if tool_key in ("record_sip", "end_sip"):

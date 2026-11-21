@@ -300,6 +300,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_balance_item":
     case "end_balance_item":
       return onClient("/studio/net-worth");
+    // Held away, line by line (B-198): one household's lines sit on its net worth page.
+    case "read_held_away":
+    case "record_held_away_holding":
+    case "end_held_away_holding":
+      return onClient("/studio/net-worth");
     case "read_repapering":
     case "start_repapering":
     case "record_repapering":

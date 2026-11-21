@@ -1827,6 +1827,65 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
+    # Held away, line by line, and how it is doing (B-198). Advice about it goes to the adviser, never to a client.
+    "read_held_away": Tool(
+        key="read_held_away",
+        name="Read Held Away",
+        speaking_agent="astra",
+        description="What a household holds at other institutions, line by line, as statements or a feed state it, and how each line is doing: its price return over the last 365 days on real closing prices, beside its asset class's reference (SPY for equity, AGG for fixed income, VNQ for property) and the shelf products in the same class over the same dates. 'underperforming' means it trails its reference by 5 points or more; 'alternative' is the shelf product in the same class that did best over the same dates and beat it, with its shelf standing. 'overlap' means the same instrument is also in the managed book. Give a household_id for one household, or none for every household with something listed. Every figure is an estimate on price return only, in each instrument's own currency; a line with 'not_measured' has no performance, so never give it one. A line marked 'simulated' comes from a simulated feed: say so. This is for the adviser to raise with the client, never advice to send a client. The net_worth view shows it for one household.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, or leave out for every household with holdings listed", required=False),
+        ],
+        output=ToolOutput("object", "Each holding held elsewhere, its performance, reference, alternative and overlap"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_held_away_holding": Tool(
+        key="record_held_away_holding",
+        name="Record Held Away Holding",
+        speaking_agent="astra",
+        description="Record one holding a household has at another institution, from its statement: the institution, the holding as the statement names it (with its symbol or ISIN if shown), how many, and the value the statement states on its date. It changes net worth: a person's holdings listed at an institution replace the total recorded for them there. Use only figures from a statement the user gives you and never estimate one. To record a newer statement for a holding already listed, give replaces_id.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this holding? It changes the household's net worth.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household", required=True),
+            ToolInput("institution", "string", "The institution that holds it", required=True),
+            ToolInput("instrument_name", "string", "The holding as the statement names it", required=True),
+            ToolInput("value", "number", "The value the statement states", required=True),
+            ToolInput("value_on", "string", "The statement's date, YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "The statement it comes from - institution and date", required=True),
+            ToolInput("symbol", "string", "The ticker, if the statement shows one", required=False),
+            ToolInput("isin", "string", "The ISIN, if the statement shows one", required=False),
+            ToolInput("quantity", "number", "How many units the statement shows", required=False),
+            ToolInput("asset_class", "string", "One of: equity, fixed_income, cash, alternatives, property, commodity, multi_asset", required=False),
+            ToolInput("account_label", "string", "The account's name at the institution", required=False),
+            ToolInput("currency", "string", "A three-letter code, if not the firm's. It is listed and left out of the totals", required=False),
+            ToolInput("person_id", "uuid", "Whose it is, if one person's", required=False),
+            ToolInput("entity_id", "uuid", "The trust or company that holds it, if one does", required=False),
+            ToolInput("replaces_id", "uuid", "The holding this is a newer statement for, from read_held_away", required=False),
+        ],
+        output=ToolOutput("object", "The household's holdings held elsewhere after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "end_held_away_holding": Tool(
+        key="end_held_away_holding",
+        name="End Held Away Holding",
+        speaking_agent="astra",
+        description="Mark a holding held elsewhere as no longer held there: sold, transferred in, closed. It stops counting towards net worth and is kept on file with the reason.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="End this holding? It stops counting towards net worth.",
+        inputs=[
+            ToolInput("holding_id", "uuid", "The holding, from read_held_away", required=True),
+            ToolInput("reason", "string", "Why it is no longer held there", required=True),
+        ],
+        output=ToolOutput("object", "The household's holdings held elsewhere after ending it"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",

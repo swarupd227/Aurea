@@ -76,7 +76,8 @@ class MeetingPrepAgent(BaseAgent):
         present = [k for k, v in (("agenda", agenda), ("mandates", record.get("mandates")), ("goals", goals),
                                   ("history", record.get("history")), ("review", record.get("review")),
                                   ("tax", record.get("tax")), ("open_proposals", record.get("open_proposals")),
-                                  ("watch_items", signals), ("life_events", events), ("house_views", cites)) if v]
+                                  ("watch_items", signals), ("life_events", events), ("house_views", cites),
+                                  ("held_away", record.get("held_away"))) if v]
         brief["shaped_for"] = await brief_profile.for_user(ctx.session, ctx.firm.id, adviser.id if adviser else None,
                                                            "meeting", present)
         strengths = brief["shaped_for"]["strengths"]
@@ -108,7 +109,9 @@ class MeetingPrepAgent(BaseAgent):
             f"open proposals: {len(record.get('open_proposals', []))}; watch-items {[s['title'] for s in signals]}; "
             f"last meeting held: {last_meeting or 'none recorded'}; open items for the household: {history.get('open_count', 0)}, "
             f"{sum(1 for t in history.get('open_items', []) if t['overdue'])} overdue; "
-            f"house views {[c['title'] for c in cites]}. Be warm, concise and specific."
+            f"house views {[c['title'] for c in cites]}; "
+            f"held elsewhere and trailing its reference (an estimate, for the adviser): "
+            f"{[f['symbol'] or f['name'] for f in (record.get('held_away') or {}).get('underperforming', [])] or 'none'}. Be warm, concise and specific."
             + (f" Order what you say to lead with {', '.join(lead)}." if lead else "")
             + (f" The adviser leads conversations with: {', '.join(strengths)}; let the summary suit that, adding no fact."
                if strengths else "")
@@ -165,7 +168,28 @@ class MeetingPrepAgent(BaseAgent):
             | ((Recommendation.subject_type == "mandate") & (Recommendation.subject_id.in_(mandate_ids)))))).scalars().all()
         out["open_proposals"] = [{"id": str(r.id), "title": r.title, "agent_key": str(r.agent_key)} for r in recs]
         out["history"] = await self._history(ctx, hid)
+        held = await self._held_away(ctx, hid)
+        if held:
+            out["held_away"] = held
         return out
+
+    async def _held_away(self, ctx: AgentContext, hid: uuid.UUID) -> dict | None:
+        """What the household holds elsewhere, line by line, and what of it the RM should raise (B-198): a holding that
+        trails its reference, with the shelf's alternative, and one also in the managed book. Estimates, for the RM."""
+        from app.aurea_core import held_away
+
+        try:
+            view = await held_away.for_household(ctx.session, hid, firm_id=ctx.firm.id)
+        except Exception:  # a read that fails is left out rather than guessed
+            return None
+        if not view or not view["holdings"]:
+            return None
+        s = view["summary"]
+        return {"holdings": s["holdings"], "value": s["value"], "currency": view["currency"], "measured": s["measured"],
+                "not_measured": s["not_measured"], "not_converted": s["not_converted"], "simulated": s["simulated"],
+                "underperforming": [f for f in view["findings"] if f["kind"] == "underperforming"],
+                "overlaps": [f for f in view["findings"] if f["kind"] == "overlap"],
+                "rule": view["rule"]["text"], "estimate": True}
 
     async def _history(self, ctx: AgentContext, hid: uuid.UUID) -> dict:
         """What has happened with the client, each item dated and named by where it is recorded (B-199): the last
@@ -251,6 +275,13 @@ class MeetingPrepAgent(BaseAgent):
             from app.aurea_core import firm_time
             held = firm_time.spoken(date.fromisoformat(review["unrecorded"]["held_on"]))
             agenda.append(f"Record whether the {held} meeting was a review")
+        held = record.get("held_away") or {}
+        for f in held.get("underperforming", [])[:2]:
+            alt = f.get("alternative")
+            agenda.append(f"Held away: {f['symbol'] or f['name']} at {f['institution']} trails its reference by {abs(f['gap']):.0%} over a year"
+                          + (f"; on the shelf, {alt['symbol']} did {alt['return']:+.0%}" if alt else ""))
+        if held.get("overlaps"):
+            agenda.append("Held away: " + ", ".join(f["symbol"] or f["name"] for f in held["overlaps"][:3]) + " also held in the managed book")
         overdue = [t for t in (record.get("history") or {}).get("open_items", []) if t["overdue"]]
         if overdue:
             agenda.append(f"Overdue: {overdue[0]['title']}" + (f" and {len(overdue) - 1} more" if len(overdue) > 1 else ""))
