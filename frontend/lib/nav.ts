@@ -187,7 +187,8 @@ export function sectionMembers(section: Section, role: string): View[] {
 }
 
 /** What a client's page links to: its sections, in the order an adviser reaches for them. */
-// Pairs, not { href } objects: tests and the page sweep read nav.ts for `href: "..."`, and these are not views.
+// Pairs, not objects with an href key: tests and the page sweep read every quoted href in this file as a view,
+// and these are not views.
 const CLIENT_SECTION_PAIRS: [string, string][] = [
   ["/studio/plan", "Plan"],
   ["/canvas/goals", "Goals"],
