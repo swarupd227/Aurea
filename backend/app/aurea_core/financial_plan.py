@@ -11,6 +11,11 @@ nobody else. A pension's choices are compared on what they imply, and the decisi
 are one-time and largely irreversible. Nothing here advises: it lays the numbers side by side, and the assumptions it
 needs are named with them. A reserve target and education inflation are firm settings with stated defaults.
 
+Returns are the firm's capital market assumptions when it has set them, and the plan says whose (B-167). The withdrawal
+rates, the sustainable income and the 4% rule are all in today's money (B-168). A level pension falls in real terms and
+one that starts after retirement is bridged by the portfolio (B-169). An education goal's likelihood is the goals
+page's (`goal_tradeoff.likelihoods`), its cost grown with education inflation, with the 529s beside it (B-172).
+
 Everything here is an estimate. Tax on income, a surviving spouse's cut in income, long-term care and a guardrail
 spending rule are not modelled.
 """
@@ -23,7 +28,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import balance_sheet, firm_time, markets, retirement
+from app.aurea_core import balance_sheet, firm_time, goal_tradeoff, markets, planning, retirement
 from app.aurea_core.graph import household_brain
 from app.aurea_core.planning import _blended_assumptions
 from app.models.financial_plan import STREAM_KINDS, IncomeStream
@@ -33,7 +38,6 @@ from app.models.tenant import Firm
 from app.provenance import ledger
 
 DEFAULT_RESERVE_MONTHS = 6
-DEFAULT_EDUCATION_INFLATION = 0.05
 RULE_OF_THUMB = 0.04
 PROJECTION_YEARS = 10
 LIFE_TO = 95
@@ -100,6 +104,8 @@ def _stream_view(s: IncomeStream, person: Person | None, today: date, us: bool) 
     age = _age_on(person.date_of_birth, today) if person else None
     view = {"id": str(s.id), "person_id": str(s.person_id), "person": person.full_name if person else None, "kind": s.kind, "name": s.name, "annual": annual,
             "start_age": s.start_age, "inflation_linked": s.inflation_linked, "document": s.source_document, "as_of": s.as_of.isoformat(), "started": age is not None and age >= s.start_age,
+            # Years from today until it is paid, on its own person's age; None with no date of birth on file.
+            "starts_in": max(s.start_age - age, 0) if age is not None else None,
             "planned_annual": annual, "claiming": None, "pension_options": None}
     if s.kind == "social_security" and us and person and person.date_of_birth:
         full = full_retirement_months(person.date_of_birth.year)
@@ -189,26 +195,28 @@ async def _book_cash(session: AsyncSession, household_id: uuid.UUID) -> tuple[fl
     return sum(float(a.cash_balance or 0) for a in accounts), {"accounts": len(plans), "value": sum(float(h.market_value or 0) for h in held) + sum(float(a.cash_balance or 0) for a in accounts if a.id in plans)}
 
 
-def _education(goals: list[dict], saved: dict, firm: Firm, mu: float, today: date) -> list[dict]:
-    rate = float((firm.settings or {}).get("education_inflation") or DEFAULT_EDUCATION_INFLATION)
-    rows = []
+def _education(goals: list[dict], planned: dict, saved: dict) -> list[dict]:
+    """Each education goal as the goals page reads it (`goal_tradeoff.likelihoods`, one goal, one likelihood): its
+    cost grown with education inflation, and what the 529 accounts hold beside it. A goal with no cost, start or
+    length on file still has the page's likelihood, on its target; its cost reads as not assessed."""
+    by_id = {g["id"]: g for g in planned["goals"]}
     share = saved["value"] / max(len([g for g in goals if g.get("kind") == "education"]), 1)
+    rows = []
     for g in goals:
         if g.get("kind") != "education":
             continue
         a = g.get("assumptions") or {}
+        got = by_id.get(str(g.get("id") or g["name"])) or {}
+        row = {"goal": g["name"], "goal_id": str(g.get("id") or g["name"]), "student": a.get("student"), "in_529": round(share),
+               "likelihood": got.get("success_probability"), "on_track": got.get("on_track"), "shortfall": got.get("shortfall"),
+               "years_to_go": got.get("years"), "assumed": got.get("assumed", [])}
         cost, start, years = a.get("annual_cost"), a.get("start_year"), a.get("years")
         if not cost or not start or not years:
-            rows.append({"goal": g["name"], "status": "not_assessed", "student": a.get("student")})
+            rows.append({**row, "status": "not_assessed"})
             continue
-        wait = max(int(start) - today.year, 0)
-        total = sum(float(cost) * (1 + rate) ** (wait + k) for k in range(int(years)))
-        grown = share * (1 + mu) ** wait
-        gap = max(total - grown, 0.0)
-        saving = gap * mu / ((1 + mu) ** wait - 1) if wait and mu else gap
-        rows.append({"goal": g["name"], "status": "assessed", "student": a.get("student"), "start_year": int(start), "years": int(years), "annual_cost_today": float(cost),
-                     "cost_source": a.get("cost_source"), "total_cost": round(total), "saved": round(share), "funded": round(min(grown / total, 1), 3) if total else None,
-                     "saving_a_year": round(saving), "inflation": rate})
+        rows.append({**row, "status": "assessed", "start_year": int(start), "years": int(years), "annual_cost_today": float(cost),
+                     "cost_source": a.get("cost_source"), "total_cost": round(got.get("target_amount") or 0),
+                     "total_cost_today": got.get("target_today"), "inflation": got.get("inflation"), "index": got.get("index")})
     return rows
 
 
@@ -223,9 +231,13 @@ async def retirement_inputs(session: AsyncSession, household_id: uuid.UUID, *, f
     retire_on = today.year + max(retirement_age - current_age, 0)
     debts = sum(float(i.annual_payment or 0) for i in usable if i.side == "liability" and i.annual_payment and (i.ends_on is None or i.ends_on.year > retire_on))
     streams = await streams_of(session, household_id, firm, today)
-    counted = [s for s in streams if s["start_age"] <= retirement_age]
-    return {"spending": spending, "debt_payments": debts, "guaranteed": round(sum(s["planned_annual"] for s in counted), 2),
-            "starts_later": round(sum(s["planned_annual"] for s in streams if s["start_age"] > retirement_age), 2)}
+    acc = max(retirement_age - current_age, 0)
+    # When each is paid, from today, on its own person's age; with no date of birth on file, on the plan's.
+    timed = [{"annual": s["planned_annual"], "inflation_linked": bool(s["inflation_linked"]), "name": s["name"], "person": s["person"],
+              "starts_in": s["starts_in"] if s["starts_in"] is not None else max(s["start_age"] - current_age, 0)} for s in streams]
+    return {"spending": spending, "debt_payments": debts, "streams": timed, "stream_age_assumed": any(s["starts_in"] is None for s in streams),
+            "guaranteed": round(sum(s["annual"] for s in timed if s["starts_in"] <= acc), 2),
+            "starts_later": round(sum(s["annual"] for s in timed if s["starts_in"] > acc), 2)}
 
 
 async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict | None:
@@ -239,26 +251,30 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         return None
     plan = await retirement.for_household(session, household_id, firm_id=firm_id)
     allocation = {k: v for k, v in brain["totals"]["by_asset_class"].items() if v}
-    mu = _blended_assumptions(allocation)[0] if allocation else 0.0
+    mu = _blended_assumptions(allocation, cma=planning.cma_of(brain))[0] if allocation else 0.0
     sheet = await balance_sheet.for_household(session, household_id, firm_id=firm_id)
     book_cash, saved = await _book_cash(session, household_id)
     streams = await streams_of(session, household_id, firm, today)
-    projected = plan["projected_at_retirement"] if plan else 0
+    # The pot in today's money, so every rate and the 4% rule read in the same money as the income (B-168).
+    projected = plan["projected_at_retirement_today"] if plan else 0
     rate = (plan["income_target"] / projected) if plan and projected else None
     essential = sum(i["amount"] for i in sheet["items"] if i["kind"] == "essential_spending")
     guaranteed = plan.get("guaranteed_income", 0.0) if plan else 0.0
     people = (await session.execute(select(Person).where(Person.household_id == household_id, Person.deceased_on.is_(None)).order_by(Person.full_name))).scalars().all()
     return {
         "household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "not_modelled": NOT_MODELLED, "currency": firm.base_currency,
+        "assumptions_source": planning.source_of(brain),
         "people": [{"person_id": str(p.id), "name": p.full_name} for p in people], "streams": streams,
         "retirement": None if plan is None else {
-            **{k: plan[k] for k in ("current_age", "retirement_age", "longevity_age", "income_target", "projected_at_retirement", "success_probability", "on_track",
-                                    "target_success", "median_depletion_age", "sustainable_income", "income_gap", "sequence_risk", "levers")},
+            **{k: plan[k] for k in ("current_age", "retirement_age", "longevity_age", "income_target", "projected_at_retirement", "projected_at_retirement_today",
+                                    "success_probability", "on_track", "target_success", "median_depletion_age", "sustainable_income", "income_gap", "sequence_risk",
+                                    "levers", "years_to_retirement", "years_in_retirement", "end_age", "ages_of", "plan_to", "assumptions_source", "assumed")},
+            "money_basis": "today",
             "income_need": plan.get("income_need"), "income_basis": plan.get("income_basis"), "guaranteed_income": guaranteed, "starts_later": plan.get("starts_later", 0.0),
             "withdrawal_rate": round(rate, 4) if rate is not None else None, "sustainable_rate": round(plan["sustainable_income"] / projected, 4) if projected else None,
             "rule_of_thumb_rate": RULE_OF_THUMB, "rule_of_thumb_income": round(projected * RULE_OF_THUMB),
             "essential_spending": essential or None, "essentials_covered": round(guaranteed / essential, 3) if essential and guaranteed else None},
-        "cash": _cash_flow(sheet, firm, mu, today, book_cash), "education": _education(brain.get("goals", []), saved, firm, mu, today),
+        "cash": _cash_flow(sheet, firm, mu, today, book_cash), "education": _education(brain.get("goals", []), goal_tradeoff.likelihoods(brain, today), saved),
     }
 
 
@@ -357,9 +373,11 @@ async def prepare_education(session: AsyncSession, household_id: uuid.UUID, *, f
 
 async def record_education(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, by: str, **terms) -> Goal:
     ready = await prepare_education(session, household_id, firm_id=firm_id, **terms)
+    # The target is in today's money and grows with education inflation where its likelihood is worked (B-172).
     row = Goal(firm_id=firm_id, household_id=household_id, name=f"Education · {ready['student']}", kind="education", target_amount=ready["annual_cost"] * ready["years"],
                target_date=date(ready["start_year"], 1, 1), priority=2,
-               assumptions={"student": ready["student"], "start_year": ready["start_year"], "years": ready["years"], "annual_cost": ready["annual_cost"], "cost_source": ready["source"]})
+               assumptions={"student": ready["student"], "start_year": ready["start_year"], "years": ready["years"], "annual_cost": ready["annual_cost"], "cost_source": ready["source"],
+                            "target_basis": "today", "index": "education"})
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="education_goal_recorded", actor=by, content={

@@ -43,7 +43,7 @@ class ResearchReportingAgent(BaseAgent):
         values = hh.get("values") or {}
 
         goals = goal_projections(brain, firm_time.today(ctx.firm))
-        risk = planning.portfolio_risk(allocation, totals["total_value"])
+        risk = planning.portfolio_risk(allocation, totals["total_value"], cma=planning.cma_of(brain))
         stress = planning.stress_test(allocation)
         positions = positions_of(brain)
         excluded_present = [p for p in positions

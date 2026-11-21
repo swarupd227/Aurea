@@ -164,9 +164,11 @@ async def main() -> int:
             check("claimed after retirement it is not counted, and says so", (r["guaranteed_income"], r["starts_later"]), (0.0, 44640.0))
             read = await ex.record_income_stream({**ss, "start_age": 62, "annual_amount": 12000, "source_document": "SSA statement, second"})
             r = read["retirement"]
-            check("started by retirement it is", r["guaranteed_income"], 8400.0)
-            check("and the portfolio draws less", (r["income_need"], r["income_target"]), (72000, 63600))
-            check("essentials covered", r["essentials_covered"], 0.175)
+            # Recorded as not linked to inflation, it is paid at its stated amount: at retirement, five years on, it buys
+            # what 8,400 / 1.025^5 buys today (B-169; this used to count it at 8,400).
+            check("started by retirement it is, at what a level amount buys then", r["guaranteed_income"], round(8400 / 1.025 ** 5, 2))
+            check("and the portfolio draws less", (r["income_need"], r["income_target"]), (72000, round(72000 - 8400 / 1.025 ** 5)))
+            check("essentials covered", r["essentials_covered"], round(8400 / 1.025 ** 5 / 48000, 3))
             pension = {"person_id": str(ann.id), "kind": "employer_pension", "annual_amount": 24000, "start_age": 65, "source_document": "Pension statement 2026", "lump_sum": 400000, "joint_annual": 20400, "joint_survivor_share_pct": 50}
             shown = await card("record_income_stream", pension)
             check("the card names its choices", ("400,000" in shown["Lump sum"], "20,400" in shown["Joint-life"], shown["Survivor keeps"]), (True, True, "50%"))
@@ -194,8 +196,8 @@ async def main() -> int:
             read = await ex.record_education_goal(school)
             e = read["education"][0]
             near("the total carries inflation", e["total_cost"], sum(30000 * 1.05 ** (5 + k) for k in range(4)), 2)
-            check("nothing saved is nothing funded", (e["saved"], e["funded"]), (0, 0.0))
-            check("and what to save a year is there", e["saving_a_year"] > 0, True)
+            # The likelihood is the goals page's, with the 529s beside it, not a figure funded from the 529s alone (B-172).
+            check("nothing in a 529, and the goals page's likelihood beside it", (e["in_529"], e["likelihood"] is not None, e["total_cost_today"]), (0, True, 120000.0))
             await refused("one student once", ex.preview_change("record_education_goal", school), "already on file")
             s.add(Goal(id=uuid.uuid4(), firm_id=us.id, household_id=lee.id, name="School", kind="education", target_amount=1000, priority=2, assumptions={}))
             await s.flush()

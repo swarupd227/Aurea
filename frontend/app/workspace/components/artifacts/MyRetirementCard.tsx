@@ -1,5 +1,6 @@
 import { RETIREMENT_ASSUMED } from "@/components/RetirementPlanner";
 import { money, pct } from "@/lib/format";
+import { planToLabel, returnsLabel } from "@/lib/planBasis";
 import { CardHead, CardShell, Chip, LikelihoodBar, Tile, obj } from "./CanvasCardParts";
 
 // The client's retirement projection (`read_my_retirement`): aurea_core/retirement.for_household,
@@ -11,6 +12,10 @@ export interface MyRetirementPayload {
   current_age: number;
   retirement_age: number;
   longevity_age: number;
+  plan_to?: { age: number; person: string | null; whose: string; assumed: boolean };
+  ages_of?: string | null;
+  assumptions_source?: "firm" | "platform";
+  projected_at_retirement_today?: number;
   years_to_retirement: number;
   income_target: number;
   income_need?: number;
@@ -71,9 +76,10 @@ export function MyRetirementCard({ result }: { result: MyRetirementPayload }) {
           <Chip key={k} tone="text-warn">{RETIREMENT_ASSUMED[k](r)}</Chip>
         ))}
         <Chip>retire at {r.retirement_age}</Chip>
-        <Chip>plan to {r.longevity_age}</Chip>
+        <Chip>plan {planToLabel(r)}</Chip>
         <Chip>income {money(r.income_target)}/yr from the portfolio</Chip>
-        <Chip>at retirement {money(r.projected_at_retirement)} median</Chip>
+        <Chip>at retirement {money(r.projected_at_retirement_today ?? r.projected_at_retirement)} median, today&rsquo;s money</Chip>
+        <Chip>{returnsLabel(r.assumptions_source)}</Chip>
         {r.median_depletion_age != null && <Chip tone="text-warn">median depletion age {r.median_depletion_age}</Chip>}
         {!!r.guaranteed_income && r.guaranteed_income > 0 && <Chip>guaranteed {money(r.guaranteed_income)}/yr</Chip>}
         {basis && <Chip tone={basis[1]}>{basis[0]}</Chip>}

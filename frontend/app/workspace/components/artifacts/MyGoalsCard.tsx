@@ -1,4 +1,5 @@
 import { money, pct } from "@/lib/format";
+import { RATE_ASSUMED, returnsLabel, targetBasisLabel } from "@/lib/planBasis";
 import { CardHead, CardShell, Chip, LikelihoodBar, Tile, obj } from "./CanvasCardParts";
 
 // The client's goals side by side (`read_my_goals`): aurea_core/goal_tradeoff.for_household, the engine every
@@ -21,6 +22,10 @@ export interface TradeoffGoal {
   funded_amount: number;
   share?: number | null;
   assumed?: string[];
+  target_basis?: "today" | "as_stated";
+  target_today?: number | null;
+  index?: string | null;
+  inflation?: number | null;
 }
 
 export interface MyGoalsPayload {
@@ -33,6 +38,7 @@ export interface MyGoalsPayload {
   total_effective_capital: number;
   earnings?: { basis: string };
   tradeoff_matrix: any[];
+  assumptions_source?: "firm" | "platform";
   assumptions: { expected_return?: number; volatility?: number; sims?: number };
   current_age: number | null;
   retirement_age: number | null;
@@ -60,6 +66,7 @@ export function MyGoalsCard({ result }: { result: MyGoalsPayload }) {
           {onTrack} of {r.goals.length} on track
         </Chip>
         <Chip testid="my-goals-estimate">estimate</Chip>
+        <Chip>{returnsLabel(r.assumptions_source)}</Chip>
       </CardHead>
       <div className="grid grid-cols-3 divide-x divide-border-soft border-b border-border-soft">
         <Tile label="Invested" value={money(r.invested ?? r.shared_capital)} />
@@ -81,7 +88,9 @@ export function MyGoalsCard({ result }: { result: MyGoalsPayload }) {
                 <Chip>target {money(g.target_amount)}</Chip>
                 <Chip>{g.years}y</Chip>
                 {g.share != null ? <Chip>{pct(g.share, 0)} set aside</Chip> : <Chip>shares the pool</Chip>}
+                {targetBasisLabel(g) && <Chip>{targetBasisLabel(g)}</Chip>}
                 {g.assumed?.includes("years") && <Chip tone="text-warn">assumed horizon</Chip>}
+                {(g.assumed || []).filter((k) => RATE_ASSUMED[k]).map((k) => <Chip key={k} tone="text-warn">{RATE_ASSUMED[k]}</Chip>)}
                 <Chip>median {money(g.projected_median)}</Chip>
                 {!g.on_track && g.shortfall > 0 && <Chip tone="text-warn">shortfall {money(g.shortfall)}</Chip>}
               </div>
