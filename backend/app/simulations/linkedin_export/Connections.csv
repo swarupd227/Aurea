@@ -1,0 +1,13 @@
+Notes:
+"SIMULATED for demonstration: an invented export in LinkedIn's Connections.csv format. When exporting your connection data, you may notice that some of the email addresses are missing. You will only see email addresses for connections who have allowed their connections to see or download their email address."
+
+First Name,Last Name,URL,Email Address,Company,Position,Connected On
+Dana,"Okafor, CPA",https://www.linkedin.example/in/simulated-dana-okafor,,Okafor & Partners (simulated),Principal,14 Mar 2021
+Binh,Nguyen,https://www.linkedin.example/in/simulated-binh-nguyen,,Nguyen Engineering (simulated),Managing Director,02 Sep 2019
+Anders,Muller,https://www.linkedin.example/in/simulated-anders-muller,,Muller Timber (simulated),Owner,19 Jun 2022
+Mei,Chen,https://www.linkedin.example/in/simulated-mei-chen,,Chen Imports (simulated),Director,07 Nov 2020
+Priya,Raman,https://www.linkedin.example/in/simulated-priya-raman,,Harbour Analytics (simulated),Head of Data,23 Jan 2023
+Tom,Ellison,https://www.linkedin.example/in/simulated-tom-ellison,,Ellison Freight (simulated),Operations Manager,11 Aug 2018
+Kiri,Parata,https://www.linkedin.example/in/simulated-kiri-parata,,Parata Design (simulated),Founder,30 Apr 2024
+Jonas,Berg,https://www.linkedin.example/in/simulated-jonas-berg,,Berg Marine (simulated),Naval Architect,05 Feb 2017
+Lucia,Ferraro,https://www.linkedin.example/in/simulated-lucia-ferraro,,Ferraro Wines (simulated),Winemaker,16 Oct 2021

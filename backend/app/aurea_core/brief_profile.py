@@ -29,6 +29,8 @@ SECTIONS: dict[str, list[tuple[str, str]]] = {
     "prospect": [("deals", "Deals"), ("introductions", "Ways in"), ("activity", "Touches"), ("booked", "Booked"),
                  ("not_on_file", "Not on file")],
 }
+# Talking points from public sources (B-202, aurea_core/persona.py), present only where profiling runs.
+SECTIONS["prospect"].append(("persona", "Persona"))
 LABEL = {k: v for sections in SECTIONS.values() for k, v in sections}
 KIND_OF = {k: kind for kind, sections in SECTIONS.items() for k, _ in sections}
 # How many sections open at first; lead sections always open.

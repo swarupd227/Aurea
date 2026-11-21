@@ -26,6 +26,7 @@ SEVERITIES = ("high", "medium", "low")
 SEVERITY_EFFECT = {"high": "a breach blocks the proposal and pauses the agent that raised it",
                    "medium": "a breach is flagged for review", "low": "a breach is noted"}
 IMPACT_DAYS = 90
+TEXT_MAX = 400
 
 # setting -> (label, kind, owner)
 SETTINGS: dict[str, tuple[str, str, UserRole]] = {
@@ -36,6 +37,10 @@ SETTINGS: dict[str, tuple[str, str, UserRole]] = {
     "require_grounding": ("Advice must cite firm research, or it is a high breach", "bool", UserRole.COMPLIANCE),
     "pii_redaction": ("Personal data is masked before any model call", "bool", UserRole.COMPLIANCE),
     "pii_categories": ("What is masked: names, accounts, emails, ids", "list", UserRole.COMPLIANCE),
+    # A persona from public sources (B-202, aurea_core/persona.py): profiling needs a lawful basis, so it is off until
+    # compliance switches it on with the basis in the privacy notice's words.
+    "persona_profiling": ("Persona from public sources runs (needs a lawful basis)", "bool", UserRole.COMPLIANCE),
+    "persona_basis": ("Lawful basis for profiling, in the privacy notice's words", "text", UserRole.COMPLIANCE),
     "fallback_enabled": ("Fall back to the second model provider", "bool", UserRole.ADMIN),
     "monthly_cost_cap_usd": ("Monthly model cost cap, USD (0 is none)", "number", UserRole.ADMIN),
     "max_tokens_default": ("Most tokens per model call", "number", UserRole.ADMIN),
@@ -142,6 +147,11 @@ def _value(key: str, raw):
         return [x for x in allowed if x in items]
     if kind == "bool":
         return raw if isinstance(raw, bool) else str(raw).strip().lower() in ("true", "1", "yes", "on")
+    if kind == "text":
+        text = " ".join(str(raw or "").split())
+        if len(text) > TEXT_MAX:
+            raise RulebookError(f"{SETTINGS[key][0]} is at most {TEXT_MAX} characters.")
+        return text
     try:
         v = float(str(raw).replace(",", "").replace("%", "").strip())
     except ValueError:
@@ -170,6 +180,12 @@ def prepare_setting(firm: Firm, *, role: UserRole | str, key: str | None, value,
     now = foundation.policy(firm).get(key)
     if now == new:
         raise RulebookError("That is already the setting.")
+    # Profiling needs a lawful basis on file (B-202): it is not switched on without one, nor left on without one.
+    pol = foundation.policy(firm)
+    if key == "persona_profiling" and new and not str(pol.get("persona_basis") or "").strip():
+        raise RulebookError("Profiling needs its lawful basis on file first: set persona_basis to the privacy notice's words.")
+    if key == "persona_basis" and not new and pol.get("persona_profiling"):
+        raise RulebookError("Profiling is on, so its lawful basis cannot be cleared; switch persona_profiling off first.")
     return {"key": key, "label": label, "now": now, "after": new, "reason": reason}
 
 

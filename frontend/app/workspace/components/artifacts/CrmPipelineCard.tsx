@@ -1,5 +1,6 @@
 import { money } from "@/lib/format";
 import { IntroPathRow, type IntroPath } from "./IntroductionsCard";
+import { LeftOutChips, PersonaRows, type PersonaLeftOut, type PersonaPoint } from "./PersonaCard";
 
 const STAGE_COLOR: Record<string, string> = {
   lead: "bg-ink-muted", qualified: "bg-info", proposal: "bg-warn", won: "bg-ok", lost: "bg-crit",
@@ -137,6 +138,7 @@ export interface ProspectBriefPayload {
   not_on_file: string[];
   introductions?: { paths: IntroPath[]; in_touch: { user: { name: string }; last: string | null }[]; recorded_links_to_target: number };
   shaped_for?: { for: string | null; set: boolean; order: string[]; length: string; strengths: string[] };
+  persona?: { points: PersonaPoint[]; left_out?: PersonaLeftOut; simulated?: boolean; expiry_days?: number };
 }
 
 const when = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
@@ -210,6 +212,17 @@ function prospectSections(result: ProspectBriefPayload): Record<string, React.Re
           {intro.in_touch.slice(0, 3).map((t, i) => <Chip key={i} tone="text-ok">in touch: {t.user.name}</Chip>)}
         </div>
         <div className="divide-y divide-border-soft">{intro.paths.slice(0, 3).map((p, i) => <IntroPathRow key={i} path={p} />)}</div>
+      </div>
+    ),
+    persona: result.persona && (
+      <div className="border-b border-border-soft" data-testid="prospect-brief-persona">
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2">
+          <span className="tile-label">Persona</span>
+          <Chip>{result.persona.points.length} talking point{result.persona.points.length === 1 ? "" : "s"}</Chip>
+          {result.persona.simulated && <Chip tone="text-warn">simulated source</Chip>}
+          <LeftOutChips left={result.persona.left_out} />
+        </div>
+        {result.persona.points.length > 0 && <PersonaRows points={result.persona.points.slice(0, 5)} />}
       </div>
     ),
     activity: result.activity.length > 0 && (
