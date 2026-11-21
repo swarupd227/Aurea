@@ -64,6 +64,7 @@ import { MyNetWorthCard, isMyNetWorth } from "./MyNetWorthCard";
 import { MyIpsCard, isMyIps } from "./MyIpsCard";
 import { MyRetirementCard, isMyRetirement } from "./MyRetirementCard";
 import { MyGoalsCard, isMyGoals } from "./MyGoalsCard";
+import { GoalUpdatedCard, isGoalUpdated } from "./GoalUpdatedCard";
 import { MyFeesCard, isMyFees } from "./MyFeesCard";
 import { MyReportCard, isMyReport } from "./MyReportCard";
 import { QuestionnaireRecordedCard, isQuestionnaireRecorded } from "./QuestionnaireRecordedCard";
@@ -302,6 +303,8 @@ export function artifactCard(artifact: Artifact) {
       case "record_life_event":
         if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.people)) return null;
         return <ClientFileCard result={artifact.result as any} />;
+      case "update_goal":
+        return isGoalUpdated(artifact.result) ? <GoalUpdatedCard result={artifact.result as any} /> : null;
       case "read_financial_plan":
       case "record_income_stream":
       case "end_income_stream":

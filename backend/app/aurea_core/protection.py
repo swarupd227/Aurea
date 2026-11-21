@@ -207,6 +207,8 @@ def _policy_row(p: ProtectionPolicy, names: dict, today: date) -> dict:
         "status": "expired" if p.status == "in_force" and lapsed else str(p.status),
         "counted": p.status == "in_force" and not lapsed, "source_document": p.source_document,
         "recorded_by": p.recorded_by,
+        # The day it is dated (B-182); a row from before that was kept reads the day it was created.
+        "as_of": d.isoformat() if (d := p.as_of or (p.created_at.date() if p.created_at else None)) else None,
     }
 
 
@@ -414,6 +416,7 @@ async def record_policy(
         benefit_years=ready["benefit_years"],
         annual_premium=ready["annual_premium"], currency=(currency or firm.base_currency or "NZD").upper()[:3],
         expires_on=expires_on, status="in_force", source_document=ready["source"], recorded_by=recorded_by,
+        as_of=today or firm_time.today(firm),
     )
     session.add(row)
     await session.flush()
@@ -500,6 +503,8 @@ async def record_income(session: AsyncSession, firm_id: uuid.UUID, *, person_id:
     previous = tax.get("annual_income")
     tax["annual_income"] = amount
     tax["income_source"] = {"document": source, "recorded_by": recorded_by, "recorded_at": utcnow().isoformat()}
+    # The day the figure is dated, on the firm's calendar, beside each tax field that carries one (B-182).
+    tax["as_of"] = {**(tax.get("as_of") or {}), "annual_income": (await firm_time.today_of(session, firm_id)).isoformat()}
     profile["tax"] = tax
     person.profile = profile
     flag_modified(person, "profile")

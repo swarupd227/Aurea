@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Clock, PiggyBank, RotateCcw, ShieldAlert, Sparkles, TrendingUp, Wallet } from "lucide-react";
 import { Card, ErrorState, SkeletonList } from "./ui";
 import { RetirementFan } from "./Charts";
+import { PlanInputsChips, SequenceIllustration } from "./PlanInputs";
 import { api } from "@/lib/api";
 import { money, pct } from "@/lib/format";
 import { agesOfLabel, planToLabel, returnsLabel } from "@/lib/planBasis";
@@ -214,7 +215,19 @@ export default function RetirementPlanner({
           <SeqBar label="Crash in year 1" pct={Math.round((seq.early_crash || 0) * 100)} tone="bg-crit" />
           <span className="chip bg-crit-bg text-crit tabular-nums">−{Math.round((seq.delta || 0) * 100)} pts</span>
         </div>
+        {seq.illustration && (
+          <div className="mt-3 border-t border-border-soft pt-3">
+            <SequenceIllustration ill={seq.illustration} testid="retirement-sequence-illustration" />
+          </div>
+        )}
       </Card>
+
+      {plan.inputs && (
+        <Card className="p-4" data-testid="retirement-inputs-card">
+          <div className="tile-label mb-2">What it works from</div>
+          <PlanInputsChips inputs={plan.inputs} testid="retirement-inputs" />
+        </Card>
+      )}
 
       {/* What-if levers: reads only */}
       <Card className="p-4" data-testid="retirement-controls">

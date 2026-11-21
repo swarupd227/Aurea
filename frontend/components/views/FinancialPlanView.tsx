@@ -5,6 +5,7 @@ import { money } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { pct1 } from "@/app/workspace/components/artifacts/PlanCard";
 import { agesOfLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
+import { PlanInputsChips, SequenceIllustration } from "@/components/PlanInputs";
 import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
@@ -68,6 +69,23 @@ export function FinancialPlanView({ household = null }: { household?: string | n
         </div>
       </Card>
 
+      {data.inputs && (
+        <Card className="mb-4 overflow-hidden p-0" data-testid="plan-inputs-card">
+          <div className="border-b border-border-soft px-4 py-2.5 text-sm font-medium text-ink">What it works from</div>
+          <div className="grid grid-cols-2 gap-3 px-4 py-3 cq-md:grid-cols-4">
+            {[["Oldest input", data.inputs.oldest ? `${data.inputs.oldest.days}d` : "—"],
+              [`Older than ${data.inputs.line_days}d`, `${data.inputs.older_than_line} of ${data.inputs.inputs}`],
+              ["Undated", data.inputs.undated],
+              ["Facts on file", data.inputs.completeness?.read ? `${data.inputs.completeness.on_file}/${data.inputs.completeness.read}` : "—"]].map(([label, v]) => (
+              <div key={label as string}><div className="tile-label">{label}</div><div className="font-mono text-sm tabular-nums text-ink">{v}</div></div>
+            ))}
+          </div>
+          <div className="border-t border-border-soft px-4 py-2.5">
+            <PlanInputsChips inputs={data.inputs} />
+          </div>
+        </Card>
+      )}
+
       {r && (
         <Card className="mb-4 overflow-hidden p-0" data-testid="plan-retirement">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-4 py-2.5">
@@ -87,6 +105,11 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-4 py-2.5">
             {r.levers.map((l: any) => <span key={l.key} className="chip text-ink-muted">{l.label}: {Math.round(l.success * 100)}%</span>)}
           </div>
+          {r.sequence_risk?.illustration && (
+            <div className="border-t border-border-soft px-4 py-2.5">
+              <SequenceIllustration ill={r.sequence_risk.illustration} testid="plan-sequence-illustration" />
+            </div>
+          )}
         </Card>
       )}
 
