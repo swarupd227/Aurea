@@ -3,13 +3,20 @@
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
-import { said } from "@/app/workspace/components/artifacts/ClientFileCard";
-import { ViewLink } from "./ViewNav";
+import { EstateGaps, said } from "@/app/workspace/components/artifacts/ClientFileCard";
+import { withRef } from "@/lib/refs";
+import { ViewLink, useViewNav } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
+
+/** Whether there is anything for the adviser: a trust that may be unfunded, a minor with no will, or a titling fix. */
+function estateToRaise(g: any): boolean {
+  return (g.trusts ?? []).some((t: any) => t.status === "may_be_unfunded") || !!g.guardianship?.no_will_on_file || (g.titling_fixes ?? []).length > 0;
+}
 
 /** Trusted contacts, estate documents and life events. What goes on file is recorded through the conversation,
  * from the document. With no household it lists what is missing, client by client. */
 export function ClientFileView({ household = null }: { household?: string | null }) {
+  const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any>(household ? `/api/client-file?household=${household}` : "/api/client-file", [household]);
   if (error) return <div className="view-container"><Card><ErrorState what="the client file" message={error} onRetry={refetch} /></Card></div>;
   if (loading || !data || (data.household_id ?? null) !== household) return <div className="view-container"><SkeletonList count={3} /></div>;
@@ -50,10 +57,24 @@ export function ClientFileView({ household = null }: { household?: string | null
   return (
     <div className="view-container">
       <ViewHeader title={`Client file · ${data.household}`} actions={<AllClients href="/studio/client-file" />} />
-      {data.designation_issues.length > 0 && (
+      {!data.estate_gaps && data.designation_issues.length > 0 && (
         <Card className="mb-4"><div className="flex flex-wrap gap-1.5" data-testid="file-issues">
           {data.designation_issues.map((i: any, n: number) => <span key={n} className="chip text-crit">{i.account}: {i.issue}{i.name ? `, ${i.name}` : ""}</span>)}
         </div></Card>
+      )}
+      {data.estate_gaps && (
+        <Card className="mb-4" data-testid="file-estate">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-medium text-ink">Estate · trusts, guardianship, titling</div>
+            {nav.say && (estateToRaise(data.estate_gaps)) && (
+              <button className="btn-outline text-xs" data-testid="file-estate-raise"
+                onClick={() => nav.say?.(withRef(`Raise the estate review for ${data.household} with their adviser.`, "household", data.household_id))}>
+                Ask Astra to raise for the adviser
+              </button>
+            )}
+          </div>
+          <EstateGaps gaps={data.estate_gaps} />
+        </Card>
       )}
       <div className="mb-4 space-y-4" data-testid="file-people">
         {data.people.map((p: any) => (

@@ -25,6 +25,11 @@ Long-term care is a third question, asked of anyone over the firm's care age, re
 for so many years, against care cover and the same assets. The cost is the firm's figure, set by a person
 from a source, because it depends on the place and the kind of care and nothing on file says what it is. With
 none set, care is "not assessed". What the state pays towards care is not modelled, and the result says so.
+
+How the household means to pay for care is a decision, recorded by its adviser or paraplanner with a reason (B-186):
+self-funding with an amount earmarked, care insurance, a hybrid, Medicaid planning (a US household's), or undecided.
+Decisions are added and never edited; the latest stands. None on file reads "no decision on file", never self-fund,
+and a decision moves no figure: the need, the cover and the gap are what they were.
 """
 from __future__ import annotations
 
@@ -40,8 +45,8 @@ from app.aurea_core.balance_sheet import income_of, retirement_accounts_of  # no
 from app.aurea_core.goal_tradeoff import human_capital_pv
 from app.aurea_core.graph import household_brain, list_households
 from app.core.db import utcnow
-from app.models.graph import Person
-from app.models.protection import POLICY_KINDS, ProtectionPolicy
+from app.models.graph import Household, Person
+from app.models.protection import CARE_FUNDING_CHOICES, POLICY_KINDS, CareFundingDecision, ProtectionPolicy
 from app.models.tenant import Firm
 from app.provenance import ledger
 
@@ -268,6 +273,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
                                           if x.kind == "long_term_care"]),
         })
 
+    funding = await care_funding_of(session, household_id, firm_id=firm_id)
     statuses = [s for r in people for s in (r["death"]["status"], r["disability"]["status"], r["care"]["status"])]
     gaps = [r[k]["gap"] for r in people for k in SCENARIOS if r[k].get("gap")]
     return {
@@ -278,7 +284,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
                    "total": round(assets, 2)},
         # No debt on file is not no debt, so the count travels with the figures.
         "debts_on_file": sum(1 for i in usable if i.side == "liability"),
-        "assumptions": rules, "care_basis": care, "not_modelled": not_modelled(care),
+        "assumptions": rules, "care_basis": care, "not_modelled": not_modelled(care), "care_funding": funding,
         "summary": {"people": len(people), "gaps": statuses.count("gap"), "largest_gap": max(gaps, default=0.0),
                     "not_assessed": sum(1 for r in people if r["death"]["status"] == "not_assessed"),
                     "assessed": sum(1 for r in people if r["death"]["status"] in ("gap", "no_gap")),
@@ -511,3 +517,74 @@ async def record_income(session: AsyncSession, firm_id: uuid.UUID, *, person_id:
     await session.flush()
     return {"person_id": str(person.id), "person": person.full_name, "annual_income": amount, "previous": previous}
 
+
+# ── How care will be paid (B-186) ─────────────────────────────────────────────
+# Only those who advise a household record how it means to pay for care: the reason is theirs.
+CARE_FUNDING_RECORDERS = ("adviser", "paraplanner")
+_EARMARKED = ("self_fund", "hybrid")
+CARE_FUNDING_TEXT = {"self_fund": "Self-fund", "care_insurance": "Care insurance", "hybrid": "Hybrid",
+                     "medicaid_planning": "Medicaid planning", "undecided": "Undecided"}
+
+
+def _funding_row(row: CareFundingDecision) -> dict:
+    return {"status": "decided", "id": str(row.id), "choice": row.choice,
+            "earmark_amount": float(row.earmark_amount) if row.earmark_amount is not None else None, "currency": row.currency,
+            "reason": row.reason, "decided_on": row.decided_on.isoformat(), "recorded_by": row.recorded_by}
+
+
+async def care_funding_of(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict:
+    """The decision that stands, with how many came before it. None recorded is "no_decision", never self-fund."""
+    rows = (await session.execute(select(CareFundingDecision).where(
+        CareFundingDecision.household_id == household_id, CareFundingDecision.firm_id == firm_id)
+        .order_by(CareFundingDecision.decided_on, CareFundingDecision.created_at))).scalars().all()
+    if not rows:
+        return {"status": "no_decision", "choice": None, "earmark_amount": None, "superseded": 0}
+    return {**_funding_row(rows[-1]), "superseded": len(rows) - 1}
+
+
+async def prepare_care_funding(session: AsyncSession, firm_id: uuid.UUID, *, household_id: uuid.UUID, choice: str | None,
+                               reason: str | None, earmark_amount=None, role: str | None = None) -> dict:
+    """What recording a care-funding decision would refuse, refused without writing, and the decision it supersedes."""
+    from app.aurea_core import markets
+
+    if role is not None and str(role) not in CARE_FUNDING_RECORDERS:
+        raise ProtectionError("How a household pays for care is recorded by its adviser or paraplanner.")
+    household = await session.get(Household, household_id)
+    if household is None or household.firm_id != firm_id:
+        raise ProtectionError("That household is not in this firm.")
+    choice = (choice or "").strip().lower()
+    if choice not in CARE_FUNDING_CHOICES:
+        raise ProtectionError(f"Choose one of: {', '.join(CARE_FUNDING_CHOICES)}.")
+    firm = await session.get(Firm, firm_id)
+    market = markets.of_household(firm, household.values)
+    if choice == "medicaid_planning" and (market is None or market.code != "US"):
+        raise ProtectionError("Medicaid is a US programme, and this household is not taxed in the US.")
+    amount = _money(earmark_amount, "The earmark")
+    if choice == "self_fund" and not amount:
+        raise ProtectionError("Self-funding names what is earmarked for care: give the amount.")
+    if amount and choice not in _EARMARKED:
+        raise ProtectionError("An earmark goes with self-funding or a hybrid.")
+    why = (reason or "").strip()
+    if len(why) < 10:
+        raise ProtectionError("Give the adviser's reason for this choice.")
+    return {"household": household, "choice": choice, "earmark_amount": amount or None, "reason": why[:2000],
+            "currency": (firm.base_currency if firm else None) or "NZD",
+            "previous": await care_funding_of(session, household_id, firm_id=firm_id)}
+
+
+async def record_care_funding(session: AsyncSession, firm_id: uuid.UUID, *, household_id: uuid.UUID, choice: str | None,
+                              reason: str | None, recorded_by: str, role: str, earmark_amount=None) -> dict:
+    """Add a decision. It supersedes the last and edits nothing; the ledger keeps what it replaced."""
+    ready = await prepare_care_funding(session, firm_id, household_id=household_id, choice=choice, reason=reason,
+                                       earmark_amount=earmark_amount, role=role)
+    row = CareFundingDecision(firm_id=firm_id, household_id=household_id, choice=ready["choice"], earmark_amount=ready["earmark_amount"],
+                              currency=ready["currency"], reason=ready["reason"], decided_on=await firm_time.today_of(session, firm_id),
+                              recorded_by=recorded_by)
+    session.add(row)
+    await session.flush()
+    previous = ready["previous"]
+    await ledger.append_entry(session, firm_id=firm_id, event_type="care_funding_recorded", actor=recorded_by, content={
+        "household_id": str(household_id), "choice": row.choice, "earmark_amount": ready["earmark_amount"],
+        "supersedes": previous.get("id")})
+    return {**_funding_row(row), "household_id": str(household_id), "household": ready["household"].name,
+            "superseded": previous.get("choice")}
