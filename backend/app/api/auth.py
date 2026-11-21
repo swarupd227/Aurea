@@ -258,12 +258,11 @@ async def change_password(
 
 @router.get("/demo-personas")
 async def demo_personas(db: AsyncSession = Depends(get_db)):
-    """Persona catalogue for the role switcher. Only exposed in the local/demo environment."""
+    """Persona catalogue for the role switcher. The full catalogue only in the local/demo environment; elsewhere only
+    the people a demonstration firm carries in its own settings, which the login page shows as that firm's group, as
+    it already shows the demo firm's own personas."""
     from app.core.config import settings
     from app.core.personas import DEMO_PERSONAS, INDIA_PERSONAS, firm_personas
-
-    if settings.app_env not in ("local", "demo"):
-        raise HTTPException(status_code=404, detail="Not available")
 
     existing = {
         u.email for u in (await db.execute(select(User))).scalars().all()
@@ -272,6 +271,8 @@ async def demo_personas(db: AsyncSession = Depends(get_db)):
     named = {p["email"] for p in DEMO_PERSONAS + INDIA_PERSONAS}
     carried = [p for p in firm_personas((await db.execute(select(Firm))).scalars().all())
                if p["email"] in existing and p["email"] not in named]
+    if settings.app_env not in ("local", "demo"):
+        return carried
     return [
         {"email": p["email"], "role": p["role"], "full_name": p["full_name"],
          "title": p["title"], "description": p["description"],

@@ -83,6 +83,8 @@ def firm_personas(firms) -> list[dict]:
     out = []
     for f in firms:
         s = getattr(f, "settings", None) or {}
+        if not (s.get("simulated_firm") or s.get("demonstration")):
+            continue    # only a demonstration firm publishes its people on the login page
         for p in s.get("personas") or []:
             if not isinstance(p, dict) or not p.get("email"):
                 continue
