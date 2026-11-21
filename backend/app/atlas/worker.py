@@ -404,6 +404,10 @@ async def _sync_agent_schedules(scheduler) -> None:
 async def main() -> None:
     configure_logging()
     log.info("worker_starting")
+    from app.core.config import settings as _settings
+    if _settings.simulations:   # stand-ins for systems we do not have yet; AUREA_SIMULATIONS=off removes them
+        from app.simulations import install_all
+        log.info("simulations_installed", simulations=install_all())
     # Give the API time to bootstrap schema + seed.
     await asyncio.sleep(15)
 

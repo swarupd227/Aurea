@@ -92,6 +92,21 @@ its source and date; advice about money held elsewhere goes to the RM, never to 
 | B-204 | Agents that learn from decisions | Not started. Approve, dismiss and revise reasons (`decision_note`, revisions) become per-RM and firm preferences an agent retrieves when it reasons, versioned, shown to the person they describe and removable. A change in behaviour is checked against the eval gates before it applies, and learning never widens an agent's autonomy, as `provenance/evaluation.py` only narrows | M |
 | B-205 | Agents for operations beyond advice | Not started. Marketing and finance asked for. Two firm-library skills to show it (a campaign list from segments and life events; a fee and revenue variance against the billing run), proposals only, as every skill is | S |
 
+### Simulations, built to be thrown away
+
+Asked for on 21 Nov: show the CTOs' requirements whose real source we do not have yet, on simulated sources that can be
+discarded easily later. Design and the rules: `docs/03_Architecture/simulations.md`. The feature each one feeds is
+real and keeps its own row; a simulation row is only the stand-in.
+
+| ID | Item | Where it stands | Size |
+|---|---|---|---|
+| B-220 | Simulations that can be thrown away | Built 21 Nov: `app/simulations` (a registry, `install_all` called from `app.main` and the worker only when `AUREA_SIMULATIONS` is on, a per-firm opt-in in `firm.settings["simulations"]`, rows tagged `simulated:<key>`), `python -m app.simulations status/seed/discard`, and `tests.verify_simulations`: nothing outside imports a simulation, nothing installs when off, seeding twice adds nothing, and a discard leaves every table as it was | S |
+| B-221 | A simulated wealth platform, reached through MCP | Not started. Stands for WealthSmart. The real part: an MCP client adapter in `foundation/adapters` that reads the Foundation contract from any MCP server speaking it (the profile WealthSmart would be asked to expose), and sends orders as commands. The simulated part: that server and its data, for a separate demonstration firm whose parties, accounts and positions are owned by it, with no tax lots so the not-assessed path shows. Feeds B-164 and B-165 | L |
+| B-222 | Dynamics 365 on a demonstration firm | Not started. The Dynamics 365 adapter's mock mode switched on as the CRM's owner for the simulated demonstration firm only, so a sync, an activity going out and coming back, and a break can be shown | S |
+| B-223 | A simulated feed for money held elsewhere | Not started. Statements or an aggregation feed for the demo firm's invented clients, through the feed registry B-198 declares | M |
+| B-224 | A simulated news source | Not started. Invented articles about invented prospects only, never a real person, through the news-source registry B-202 declares | S |
+| B-225 | A simulated LinkedIn connections export | Not started. A file in LinkedIn's own export format, imported as an RM's connections through B-201's import, labelled simulated | S |
+
 ### L200-2, financial planning and advice delivery
 
 From an audit on 17 Nov of `L200-2_Financial_Planning_Advice_Delivery_1.docx` (the user's OneDrive, Domain Material)

@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # ── Behaviour ─────────────────────────────────────────────────────────────
     run_seed: bool = True
     role: str = "api"  # api | worker
+    # Stand-ins for systems and data Astra does not have yet (app/simulations). Off removes every one from the running
+    # platform; `python -m app.simulations discard` removes what they wrote (docs/03_Architecture/simulations.md).
+    simulations: bool = True
 
     @property
     def llm_enabled(self) -> bool:
@@ -70,6 +73,7 @@ _ENV_ALIASES = {
     "run_seed": "AUREA_RUN_SEED",
     "role": "AUREA_ROLE",
     "superadmin_password": "AUREA_SUPERADMIN_PASSWORD",
+    "simulations": "AUREA_SIMULATIONS",
 }
 
 

@@ -22,6 +22,9 @@ log = get_logger("aurea.api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("api_startup", env=settings.app_env, llm_enabled=settings.llm_enabled)
+    if settings.simulations:   # stand-ins for systems we do not have yet; AUREA_SIMULATIONS=off removes them
+        from app.simulations import install_all
+        log.info("simulations_installed", simulations=install_all())
     yield
     await engine.dispose()
 
