@@ -55,7 +55,9 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, household_id: u
     owners = await _mandate_households(session, firm_id, list(mandates))
     names = {h.id: h.name for h in (await session.execute(select(Household).where(Household.firm_id == firm_id))).scalars().all()}
     instruments = {i.id: i for i in (await session.execute(select(Instrument).where(Instrument.firm_id == firm_id))).scalars().all()}
-    paper = not venue_for_firm(firm).reaches_market
+    venue = venue_for_firm(firm)
+    # The product that owns the book (B-165) is not the paper venue, though it claims no market for itself either.
+    paper = not venue.reaches_market and not getattr(venue, "platform", False)
     trades, groups = [], defaultdict(list)
     for o in rows:
         account = accounts.get(o.account_id)

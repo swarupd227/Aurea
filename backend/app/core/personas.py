@@ -70,3 +70,22 @@ INDIA_PERSONAS: list[dict] = [
      "title": "Client", "default_path": "/canvas", "group": "Client",
      "description": "The client's view of their own household."},
 ]
+
+
+# A firm can carry its own demonstration people in its settings (``settings["personas"]``, same fields as above), so
+# a demonstration firm made at run time is reachable from the login page and the role switcher without its people
+# being written into this file. Only people who exist as users of that firm are offered.
+PERSONA_FIELDS = ("email", "role", "full_name", "title", "description", "default_path", "group")
+
+
+def firm_personas(firms) -> list[dict]:
+    """The personas firms carry in their settings, each with the firm it signs in to."""
+    out = []
+    for f in firms:
+        s = getattr(f, "settings", None) or {}
+        for p in s.get("personas") or []:
+            if not isinstance(p, dict) or not p.get("email"):
+                continue
+            out.append({**{k: p.get(k) for k in PERSONA_FIELDS}, "market": f"firm:{f.slug}", "firm_slug": f.slug,
+                        "firm_label": s.get("persona_label") or f.name, "simulated": bool(s.get("simulated_firm"))})
+    return out

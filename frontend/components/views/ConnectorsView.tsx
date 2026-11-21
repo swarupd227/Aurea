@@ -422,6 +422,7 @@ function FoundationSection() {
       <div className="tile-label mb-2 flex flex-wrap items-center gap-2">
         Foundation sources
         <span className={`${chip} text-[10px]`}>{data.native ? "all native" : `${data.domains.filter((d) => !d.native).length} connected`}</span>
+        {data.simulated && <span className={`${chip} text-[10px] text-warn`} data-testid="foundation-section-simulated">simulated</span>}
       </div>
       <Card className="overflow-hidden p-0">
         <FoundationDomainsTable

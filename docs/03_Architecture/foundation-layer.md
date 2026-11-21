@@ -171,3 +171,25 @@ B-205 in the backlog's experience-layer section.
 - Instruments and prices are matched by symbol and by (instrument, day); a model portfolio is named, not synced, because
   it is the portfolio team's record here. Goals, adviser edges and beneficiaries are not in contract v1.
 - Code: `backend/app/foundation/`; suites `tests.verify_foundation_contract` and `tests.verify_foundation_dynamics`.
+## As built (21 Nov 2026, B-164 and B-165, with B-221 and B-222 simulated)
+
+- The client's target is the wealth platform as the Foundation, reached through MCP. `foundation/adapters/mcp.py`
+  (`foundation.mcp`) is an MCP client written to the wire protocol (JSON-RPC 2.0 over Streamable HTTP, 2025-06-18; no
+  `mcp` package), reading the **Foundation MCP profile v1** (`foundation-mcp-profile.md`): `foundation_capabilities`,
+  `foundation_read` (paged contract records) and `foundation_command`. It owns parties, accounts, positions and activity;
+  prices stay the firm's own feed.
+- Its capabilities are what the server declares, recorded in `firm.settings["foundation_declared"]` at each read (a key
+  of its own, so the agent policy is untouched) and read through `Adapter.capabilities_for(firm)`; before the server has
+  said anything, nothing is claimed.
+- Orders out (`foundation/orders.py`): with the positions owned by a product that takes `orders.place` (and owns the
+  activity too), `venue_for_firm` is the platform. An approved proposal's orders and a direct order leave as a command
+  and wait as placed; holdings, cash and the trade arrive through the sync, and the trade's `lineage.order_ref`
+  confirms the command and records the fill on the order, already booked, so `orders.settle` never runs. A product that
+  takes no orders refuses the card naming itself. `order_guard` does not relieve lots a product does not keep: a sale's
+  gain reads not assessed instead of being refused.
+- The Foundation read and card show each owner's platform, a `simulated` chip when the owner's server or connector says
+  so, and waiting orders as figures (`buy 10 VTI`).
+- Simulated (thrown away when WealthSmart exposes its server): `app/simulations/wealth_platform/` is an in-process MCP
+  server speaking the profile for a demonstration firm (`wealthsmart-sim`), and `app/simulations/dynamics_demo/` puts the
+  Dynamics 365 mock on that firm's CRM. Suites `tests.verify_foundation_mcp` (the real adapter, against a test server in
+  the suite) and `tests.verify_sim_wealth_platform` (the simulation, deleted with it).

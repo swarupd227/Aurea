@@ -260,7 +260,7 @@ async def change_password(
 async def demo_personas(db: AsyncSession = Depends(get_db)):
     """Persona catalogue for the role switcher. Only exposed in the local/demo environment."""
     from app.core.config import settings
-    from app.core.personas import DEMO_PERSONAS, INDIA_PERSONAS
+    from app.core.personas import DEMO_PERSONAS, INDIA_PERSONAS, firm_personas
 
     if settings.app_env not in ("local", "demo"):
         raise HTTPException(status_code=404, detail="Not available")
@@ -268,10 +268,14 @@ async def demo_personas(db: AsyncSession = Depends(get_db)):
     existing = {
         u.email for u in (await db.execute(select(User))).scalars().all()
     }
+    # People a firm carries in its own settings (a demonstration firm made at run time), signing in to that firm.
+    named = {p["email"] for p in DEMO_PERSONAS + INDIA_PERSONAS}
+    carried = [p for p in firm_personas((await db.execute(select(Firm))).scalars().all())
+               if p["email"] in existing and p["email"] not in named]
     return [
         {"email": p["email"], "role": p["role"], "full_name": p["full_name"],
          "title": p["title"], "description": p["description"],
          "default_path": p["default_path"], "group": p["group"], "market": market}
         for market, personas in (("NZ", DEMO_PERSONAS), ("IN", INDIA_PERSONAS))
         for p in personas if p["email"] in existing
-    ]
+    ] + carried

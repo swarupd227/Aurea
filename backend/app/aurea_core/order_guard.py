@@ -29,7 +29,11 @@ from app.models.tenant import Firm
 async def _estimate_sales(session: AsyncSession, firm: Firm, account: Account, sells: list[dict]) -> list[str]:
     """Each sale's gain, from the lots settlement would relieve, stamped on the order. A sale settlement
     would refuse is refused here: by then the venue has filled it, and that is a break, not a rejection."""
+    from app.foundation import owners as foundation_owners
+
     refused, method = [], lot_method_for_firm(firm)
+    # A book whose owner keeps no tax lots settles there, not here: the gain is not assessed, and no lot is relieved.
+    no_lots = foundation_owners.lacks(firm, "tax_lots")
     for o in sells:
         holding = (await session.execute(select(Holding).where(
             Holding.account_id == account.id, Holding.instrument_id == uuid.UUID(str(o["instrument_id"]))))).scalar_one_or_none()
@@ -39,6 +43,8 @@ async def _estimate_sales(session: AsyncSession, firm: Firm, account: Account, s
             continue
         if quantity > Decimal(str(holding.quantity)):
             refused.append(f"{account.name} holds {float(holding.quantity):g} {o['symbol']}, so it cannot sell {float(quantity):g}.")
+            continue
+        if no_lots:
             continue
         lots = (await session.execute(select(TaxLot).where(TaxLot.holding_id == holding.id))).scalars().all()
         try:

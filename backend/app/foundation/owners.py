@@ -60,7 +60,7 @@ def capability(firm: Any, name: str) -> Any:
     if is_native(firm, domain):
         return True if name == "tax_lots" else None
     adapter = adapter_for(firm, domain)
-    return (adapter.capabilities or {}).get(name) if adapter else False
+    return (adapter.capabilities_for(firm) or {}).get(name, False) if adapter else False
 
 
 def lacks(firm: Any, name: str) -> str | None:

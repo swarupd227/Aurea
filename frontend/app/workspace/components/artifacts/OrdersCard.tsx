@@ -24,6 +24,9 @@ interface OrdersResult {
   venue: string;
   fills: Fill[];
   failed: Failed[];
+  // Sent to the product that owns the book (B-165): waiting until its confirmation syncs back.
+  orders_waiting?: number;
+  sent_to?: string;
 }
 
 function money(n: number) {
@@ -34,12 +37,12 @@ export function OrdersCard({ result }: { result: OrdersResult }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="flex items-center justify-between border-b border-border-soft px-3 py-2">
-        <div className="text-sm font-medium text-ink">Orders — {result.venue} venue</div>
+        <div className="text-sm font-medium text-ink">Orders — {result.sent_to || `${result.venue} venue`}</div>
         <div className="font-mono text-xs tabular-nums text-ink-muted">
-          {result.orders_settled} settled{result.orders_failed ? `, ${result.orders_failed} failed` : ""}
+          {result.orders_waiting ? <span className="text-warn" data-testid="orders-waiting">{result.orders_waiting} waiting · </span> : null}{result.orders_settled} settled{result.orders_failed ? `, ${result.orders_failed} failed` : ""}
         </div>
       </div>
-      {result.fills.length > 0 && (
+      {(result.fills.length > 0 || result.failed.length > 0) && (
         <table className="w-full text-sm">
           <tbody className="divide-y divide-border-soft">
             {result.fills.map((f) => (

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from app.foundation.adapters.base import Adapter, AdapterError, Pulled
 from app.foundation.adapters.dynamics import DynamicsAdapter
+from app.foundation.adapters.mcp import MCPAdapter
 from app.foundation.adapters.native import NativeAdapter
 
-ADAPTERS: dict[str, Adapter] = {a.key: a for a in (NativeAdapter(), DynamicsAdapter())}
+ADAPTERS: dict[str, Adapter] = {a.key: a for a in (NativeAdapter(), DynamicsAdapter(), MCPAdapter())}
 
 
 def get_adapter(key: str | None) -> Adapter | None:

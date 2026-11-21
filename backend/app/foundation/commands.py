@@ -101,10 +101,14 @@ async def send(session: AsyncSession, firm, actor, *, adapter, connector, domain
 
 
 async def confirm(session: AsyncSession, firm, source: str, records: list[c.Record], *, now: datetime | None = None) -> int:
-    """Pending commands whose record came back in this pull: confirmed, with the row it became."""
+    """Pending commands whose record came back in this pull: confirmed, with the row it became. An order's comes back
+    as the platform's trade (foundation/orders.py)."""
+    from app.foundation.orders import confirm_fills
+
+    filled = await confirm_fills(session, firm, source, records, now=now or utcnow())
     came = {r.external_id for r in records if r.entity == "crm_activity"}
     if not came:
-        return 0
+        return filled
     pending = (await session.execute(select(FoundationCommand).where(
         FoundationCommand.firm_id == firm.id, FoundationCommand.source == source, FoundationCommand.status == "pending",
         FoundationCommand.external_id.in_(came)))).scalars().all()
@@ -114,4 +118,4 @@ async def confirm(session: AsyncSession, firm, source: str, records: list[c.Reco
             ExternalRef.external_id == cmd.external_id))).scalars().first()
         cmd.status, cmd.confirmed_at = "confirmed", now or utcnow()
     await session.flush()
-    return len(pending)
+    return len(pending) + filled

@@ -60,6 +60,22 @@ CONNECTOR_REGISTRY: list[ProviderDef] = [
         "custody.fnz", ConnectorDomain.CUSTODY, "FNZ", "Custody / wrap platform feed (mock).",
         config_schema=_api(),
     ),
+    # The wealth platform as the Foundation (app/foundation/adapters/mcp.py, B-164/B-165): an MCP client reading the
+    # Foundation MCP profile v1 (docs/03_Architecture/foundation-mcp-profile.md) from the platform's own server, and
+    # sending orders back as commands. The server URL is base_url, so the firm's allowed domains cover it. It syncs
+    # records only for a firm whose parties, accounts, positions or activity an administrator has set to it.
+    ProviderDef(
+        "foundation.mcp", ConnectorDomain.CUSTODY, "Wealth platform (MCP)",
+        "Parties, accounts, positions and activity from the wealth platform's MCP server; orders go back as commands.",
+        supports_live=True,
+        config_schema=[
+            ConfigField("base_url", "MCP server URL", required=True,
+                        help="The platform's Streamable HTTP endpoint, https://…/mcp"),
+            ConfigField("auth_header", "Auth header name", default="Authorization"),
+            ConfigField("auth_value", "Auth header value", "password", secret=True,
+                        help="For example: Bearer <token>"),
+        ],
+    ),
     # ── Portfolio accounting ──────────────────────────────────────────────────
     ProviderDef(
         "pa.generic", ConnectorDomain.PORTFOLIO_ACCOUNTING, "Portfolio Accounting",
