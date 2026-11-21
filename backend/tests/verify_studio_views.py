@@ -156,11 +156,10 @@ def figures_in_code() -> None:
     saver = {"persons": [{"full_name": "Sam Single", "profile": {"tax": {"annual_income": 100_000, "ira_value": 50_000}}}]}
     in_2026 = ti._us_roth_conversion(saver, today=today)
     in_2027 = ti._us_roth_conversion(saver, today=new_year)
-    check("the Roth view fills the 22% band to 2026's top", (in_2026["candidates"][0]["room_in_current_bracket"],
-                                                              in_2026["candidates"][0]["recommended_conversion"]), (5_700, 5_700))
-    check("and to 2027's once the year turns", in_2027["candidates"][0]["room_in_current_bracket"], 9_125)
-    check("its guidance names the year's 24% ceiling, not 2025's", ("$201,775" in in_2026["guidance"], "394,600" in in_2026["guidance"]),
-          (True, False))
+    check("the Roth view lays out the room to 2026's 22% top", (in_2026["candidates"][0]["room_to_bracket_top"],
+                                                                 in_2026["candidates"][0]["bracket_top"]), (5_700, 105_700))
+    check("and to 2027's once the year turns", in_2027["candidates"][0]["room_to_bracket_top"], 9_125)
+    check("nothing names 2025's ceiling", "394,600" in in_2026["guidance"] + in_2026["candidates"][0]["action"], False)
     check("and it cites the brackets it used", [l["source"][:24] for l in in_2027["law"]], ["IRS Rev. Proc. 2026-35 §"])
     check("the countdown's law cites 2027's exclusion once the year turns",
           [l["value"] for l in rc._us_estate_exemption({"totals": {"total_value": 1}, "persons": [], "accounts": [],

@@ -41,12 +41,7 @@ _ASSUMED_GROSS_RETURN = 0.07
 _US_NIIT_THRESHOLD_MFJ = 250_000      # NIIT ($200k single / $250k married)
 _US_NIIT_THRESHOLD_SINGLE = 200_000
 _US_NIIT_RATE = 0.038
-_US_RMD_FACTORS = {                   # IRS Uniform Lifetime Table (simplified)
-    73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9,
-    78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5,
-    83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4,
-    88: 13.7, 89: 12.9, 90: 12.2,
-}
+# The RMD table and start age are aurea_core/rmd.py's, one rule for the account card, the cash page and this view.
 # The ordinary income brackets are law_figures' us_brackets_mfj / us_brackets_single, a version per tax year read on
 # the firm's date (B-210).
 
@@ -541,7 +536,11 @@ def _us_cgt_analysis(lots: list[dict], brain: dict) -> dict:
 
 
 def _us_rmd_planning(brain: dict, *, today: date) -> dict:
-    """RMD alerts for persons aged 73+ and pre-planning for 65–72."""
+    """RMDs for the owners who reach their start age this year, and the years to go for those 65 and over. The
+    divisor and the start age are the law's (aurea_core/rmd.py, B-170); the balance is the IRA value on the person's
+    profile, which is not a 31 December value, and says so. The account card reads each IRA's own year-end value."""
+    from app.aurea_core import rmd as rmd_rule
+
     persons = brain.get("persons", [])
     alerts = []
 
@@ -551,54 +550,54 @@ def _us_rmd_planning(brain: dict, *, today: date) -> dict:
         tax = (person.get("profile") or {}).get("tax") or {}
         ira = tax.get("ira_value", 0) or 0
         roth = tax.get("roth_value", 0) or 0
-        if not ira:
+        if not ira or not person.get("date_of_birth"):
+            continue
+        try:
+            dob = date.fromisoformat(str(person["date_of_birth"])[:10])
+        except ValueError:
             continue
 
-        age = _age(person.get("date_of_birth"), today)
-        if not age:
-            continue
-
+        age = rmd_rule.age_in_year(dob, today.year)   # the age reached this year, which the table is read at
+        start = rmd_rule.start_age(dob)
         name = person.get("preferred_name") or person["full_name"]
 
-        if age >= 73:
-            factor = _US_RMD_FACTORS.get(age, max(1.0, 26.5 - (age - 73) * 0.9))
+        if age >= start:
+            factor = rmd_rule.divisor(age)
             rmd_amount = ira / factor
             alerts.append({
-                "person_name": name, "age": age,
-                "ira_balance": ira, "roth_balance": roth,
+                "person_name": name, "age": age, "starts_at_age": start,
+                "ira_balance": ira, "roth_balance": roth, "balance_source": "profile",
                 "rmd_required": True,
                 "estimated_rmd": round(rmd_amount, 2),
                 "life_expectancy_factor": factor,
                 "severity": "high",
                 "action": (
-                    f"RMD required: approximately ${rmd_amount:,.0f} must be withdrawn by December 31 "
-                    f"(IRA balance ${ira:,.0f}, factor {factor}). "
-                    "Failure incurs a 25% excise tax (reduced to 10% if corrected within 2 years via SECURE 2.0)."
+                    f"RMD required this year: about ${rmd_amount:,.0f} by 31 December "
+                    f"(IRA balance on file ${ira:,.0f}, divisor {factor} at age {age}). "
+                    "A missed RMD carries a 25% excise tax, 10% if corrected within two years (SECURE 2.0)."
                 ),
             })
         elif age >= 65:
-            years_to_rmd = 73 - age
+            years_to_rmd = start - age
             alerts.append({
-                "person_name": name, "age": age,
-                "ira_balance": ira, "roth_balance": roth,
+                "person_name": name, "age": age, "starts_at_age": start,
+                "ira_balance": ira, "roth_balance": roth, "balance_source": "profile",
                 "rmd_required": False,
                 "years_to_rmd": years_to_rmd,
                 "severity": "medium",
-                "action": (
-                    f"RMD begins at age 73 ({years_to_rmd} year(s) away). "
-                    f"IRA balance ${ira:,.0f}. "
-                    "Consider Roth conversions in lower-income years now to reduce future RMD obligations."
-                ),
+                "action": f"RMDs start in the year {name} reaches {start} ({years_to_rmd} year(s) away). IRA balance on file ${ira:,.0f}.",
             })
 
     return {
         "alerts": alerts, "count": len(alerts),
         "rmd_active": sum(1 for a in alerts if a.get("rmd_required")),
         "total_rmd_this_year": round(sum(a.get("estimated_rmd", 0) for a in alerts if a.get("rmd_required")), 2),
+        "law": rmd_rule.law(),
+        "not_modelled": rmd_rule.NOT_MODELLED,
         "guidance": (
-            "SECURE 2.0 (2022): RMD age raised to 73 (further raising to 75 in 2033). "
-            "Roth IRAs are exempt from RMDs. Roth 401(k)s are RMD-free from 2024. "
-            "Qualified charitable distributions (QCDs) up to $105,000/year satisfy RMDs tax-free."
+            "RMDs start in the year an owner reaches 73 if born 1951 to 1959, or 75 if born 1960 or later (SECURE 2.0). "
+            "Roth IRAs have no lifetime RMD. The RMDs of several IRAs may be totalled and taken from any of them. "
+            "Figures here use the IRA value on the profile; each account's card uses its value at 31 December."
         ),
     }
 
@@ -661,74 +660,76 @@ def _us_gift_tracker(brain: dict, *, today: date) -> dict:
     }
 
 
+_FILING_LABEL = {"married_filing_jointly": "married filing jointly", "single": "single"}
+_BRACKETS_FOR = {"married_filing_jointly": "us_brackets_mfj", "single": "us_brackets_single"}
+
+
 def _us_roth_conversion(brain: dict, *, today: date) -> dict:
-    """Identify Roth conversion opportunities in low-marginal-rate years, against the brackets of the tax year the
-    firm's `today` falls in."""
+    """Room for a Roth conversion, laid out and not recommended (B-171, L200-2 §5.3).
+
+    Taxable income is counted once per return: a couple filing jointly has one return and one bracket, so its room is
+    the couple's, not each adult's against the joint brackets as it used to be. The filing status is the one recorded
+    (a person's `profile.tax.filing_status`, or the household's `values.filing_status`), else assumed from the adults on
+    file and named. The income is the `annual_income` on the profiles, which is not a return's taxable income (B-183),
+    and says so. The brackets are the tax year the firm's `today` falls in; a year with none on file is not assessed."""
     persons = brain.get("persons", [])
     adults = [p for p in persons if not p.get("is_next_gen")]
-    married = len(adults) >= 2
-    bracket_key = "us_brackets_mfj" if married else "us_brackets_single"
-    brackets = law_figures.bands(bracket_key, today)
-    top_of_24 = next(bound for bound, rate in brackets if rate == 0.24)
+    tax_of = lambda p: (p.get("profile") or {}).get("tax") or {}  # noqa: E731
+    recorded = (((brain.get("household") or {}).get("values") or {}).get("filing_status")
+                or next((tax_of(p).get("filing_status") for p in adults if tax_of(p).get("filing_status")), None))
+    filing = recorded or ("married_filing_jointly" if len(adults) >= 2 else "single")
+    assumed = {} if recorded else {
+        "filing_status": f"{_FILING_LABEL[filing]}, from the {len(adults)} adult(s) on file; no filing status is recorded"}
+    assumed["taxable_income"] = "the annual income on each profile; no tax return is on file"
+    base = {"tax_year": today.year, "filing_status": filing, "filing_status_recorded": bool(recorded), "assumed": assumed,
+            "total_ira_balance": round(sum(tax_of(p).get("ira_value", 0) or 0 for p in adults), 2)}
 
+    def not_assessed(reason: str) -> dict:
+        return {**base, "status": "not_assessed", "reason": reason, "candidates": [], "count": 0, "law": [],
+                "guidance": reason}
+
+    bracket_key = _BRACKETS_FOR.get(filing)
+    if bracket_key is None:
+        return not_assessed(f"Brackets on file are for joint and single returns; the recorded status is {filing}.")
+    figure = law_figures.get(bracket_key, today)
+    if figure.status(today) != "in_force":
+        return not_assessed(f"No {_FILING_LABEL[filing]} brackets are on file for {today.year}.")
+    brackets = law_figures.bands(bracket_key, today)
+
+    # One return for a joint filer; one each for single filers.
+    returns = [adults] if filing == "married_filing_jointly" else [[p] for p in adults]
     candidates = []
-    for person in adults:
-        tax = (person.get("profile") or {}).get("tax") or {}
-        ira = tax.get("ira_value", 0) or 0
-        roth = tax.get("roth_value", 0) or 0
-        income = tax.get("annual_income", 0) or 0
+    for people in returns:
+        ira = sum(tax_of(p).get("ira_value", 0) or 0 for p in people)
         if not ira:
             continue
-
-        name = person.get("preferred_name") or person["full_name"]
-
-        # Find marginal bracket and room remaining
-        prev_threshold = 0
-        current_rate = None
-        room_in_bracket = 0
-        for threshold, rate in brackets:
-            if income < threshold:
-                current_rate = rate
-                room_in_bracket = 0 if threshold == float("inf") else threshold - income
-                break
-            prev_threshold = threshold
-
-        if current_rate is None:
-            current_rate = 0.37
-            room_in_bracket = 0
-
-        attractive = current_rate <= 0.24
-        recommended_amount = round(min(ira, room_in_bracket), 2) if attractive else 0
-
+        roth = sum(tax_of(p).get("roth_value", 0) or 0 for p in people)
+        income = sum(tax_of(p).get("annual_income", 0) or 0 for p in people)
+        names = [p.get("preferred_name") or p["full_name"] for p in people]
+        label = f"Joint return: {' & '.join(names)}" if len(people) > 1 else names[0]
+        top, rate = next((bound, r) for bound, r in brackets if income < bound)
+        room = 0.0 if top == float("inf") else top - income
         candidates.append({
-            "person_name": name,
-            "ira_balance": ira,
-            "roth_balance": roth,
-            "current_income": income,
-            "marginal_rate_pct": round(current_rate * 100, 1),
-            "room_in_current_bracket": round(room_in_bracket, 2),
-            "recommended_conversion": recommended_amount,
-            "attractive": attractive,
+            "person_name": label, "people": names, "filing_status": filing,
+            "ira_balance": ira, "roth_balance": roth,
+            "taxable_income": income, "income_source": "profile",
+            "marginal_rate_pct": round(rate * 100, 1),
+            "bracket_top": None if top == float("inf") else top,
+            "room_to_bracket_top": round(room, 2),
+            "in_low_bracket": rate <= 0.24,
             "action": (
-                f"Roth conversion opportunity: converting up to ${recommended_amount:,.0f} "
-                f"at the current {current_rate*100:.0f}% marginal rate shelters that amount from "
-                "future RMDs and higher tax rates. Roth grows and withdraws tax-free."
-            ) if attractive else (
-                f"Current marginal rate ({current_rate*100:.0f}%) is not favourable for conversion. "
-                "Consider converting in a year where income drops below the 24% threshold (e.g. early retirement, business loss year)."
+                f"Taxable income on file of ${income:,.0f} sits in the {rate * 100:.0f}% bracket for {today.year}"
+                + (f", ${room:,.0f} below its top of ${top:,.0f}. Income converted within that room is taxed at {rate * 100:.0f}%."
+                   if top != float("inf") else ", the top bracket.")
             ),
         })
 
     return {
-        "candidates": candidates,
-        "count": len(candidates),
-        "total_ira_balance": round(sum(p.get("profile", {}).get("tax", {}).get("ira_value", 0) or 0 for p in adults), 2),
+        **base, "status": "assessed", "candidates": candidates, "count": len(candidates),
         "guidance": (
-            f"Optimal conversion window: years where marginal rate is ≤24% "
-            f"({'married filing jointly' if married else 'single'} taxable income ≤${top_of_24:,.0f}). "
-            "Convert enough to fill the current bracket without pushing into the next one. "
-            "Best years: early retirement before RMDs, years with large business losses, "
-            "or after a market correction (convert more shares at lower value)."
+            f"Each row is one {_FILING_LABEL[filing]} return for {today.year}: its taxable income, the bracket its last dollar "
+            "falls in and the room to that bracket's top. A conversion is ordinary income that year. This lays the room "
+            "out; whether to convert is the client's decision with their adviser."
         ),
         "law": law_figures.cited((bracket_key,), today),
     }
@@ -798,7 +799,7 @@ def _us_withdrawal_seq(brain: dict) -> dict:
         "guidance": (
             "US optimal withdrawal order: (1) taxable accounts — use annual CGT exempt amounts and loss-harvesting; "
             "(2) Traditional IRA/401(k) — defer to manage RMD timing; (3) Roth — maximise tax-free compound growth. "
-            "This order may be reversed in years where Roth conversion is attractive."
+            "The Roth conversion rows lay out the room in each year's bracket."
         ),
     }
 
@@ -815,7 +816,7 @@ def _us_tax_report(brain: dict, lots: list[dict], *, today: date) -> dict:
         + (1 if cgt["niit_exposed"] else 0)
         + len(cgt["wash_sale_violations"])
         + rmd["rmd_active"]
-        + sum(1 for c in roth["candidates"] if c["attractive"])
+        + sum(1 for c in roth["candidates"] if c["in_low_bracket"] and c["room_to_bracket_top"] > 0)
     )
 
     return {
@@ -835,7 +836,7 @@ def _us_tax_report(brain: dict, lots: list[dict], *, today: date) -> dict:
                 2,
             ),
             "rmd_required": rmd["rmd_active"],
-            "roth_opportunity": sum(1 for c in roth["candidates"] if c["attractive"]),
+            "roth_opportunity": sum(1 for c in roth["candidates"] if c["in_low_bracket"] and c["room_to_bracket_top"] > 0),
         },
     }
 

@@ -52,7 +52,18 @@ export function CashMovementsView({ household = null }: { household?: string | n
             <Card className="overflow-hidden p-0"><div className="overflow-x-auto"><table className="w-full text-sm" data-testid="cash-rmds">
               <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Required distribution</th><th className={`${th} text-right`}>Required</th><th className={`${th} text-right`}>Taken</th><th className={`${th} text-right`}>Left</th><th className={th}>By</th></tr></thead>
               <tbody className="divide-y divide-border-soft">
-                {data.rmds.map((r: any) => <tr key={r.account_id}><td className="px-4 py-2 text-ink">{r.account}</td><td className={num}>{money(r.required)}</td><td className={num}>{money(r.taken)}</td><td className={num}>{money(r.left)}</td><td className="px-4 py-2 font-mono text-xs text-ink-muted">{reviewDay(r.by)}</td></tr>)}
+                {data.rmds.map((r: any) => (
+                  <tr key={r.owner_id ?? r.account_id}>
+                    <td className="px-4 py-2 text-ink">
+                      {r.owner ? <span className="mr-2 text-ink-muted">{r.owner}</span> : null}{r.account}
+                      {r.aggregated && <span className="chip ml-2 text-ink-muted" title="The RMDs of several IRAs may be totalled and taken from any of them">totalled</span>}
+                    </td>
+                    <td className={num}>{r.required == null ? <span className="text-warn" title={`Not valued at ${r.year_end}: ${(r.not_valued ?? []).join(", ")}`}>not valued</span> : money(r.required)}</td>
+                    <td className={num}>{money(r.taken)}</td>
+                    <td className={num}>{r.left == null ? "—" : money(r.left)}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-ink-muted">{reviewDay(r.by)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table></div></Card>
           )}

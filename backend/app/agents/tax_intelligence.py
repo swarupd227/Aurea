@@ -52,8 +52,9 @@ def _us_findings(result: dict, say) -> list[str]:
     if rmd["rmd_active"]:
         sections.append(f"RMDs: {rmd['rmd_active']} required this year, about {say(rmd['total_rmd_this_year'])} in all.")
     for c in roth["candidates"]:
-        if c["attractive"]:
-            sections.append(f"Roth: {c['person_name']} has room of {say(c['recommended_conversion'])} at a {c['marginal_rate_pct']}% marginal rate.")
+        if c["in_low_bracket"] and c["room_to_bracket_top"] > 0:
+            sections.append(f"Roth: {c['person_name']} has {say(c['room_to_bracket_top'])} of room to the top of the "
+                            f"{c['marginal_rate_pct']}% bracket.")
     return sections
 
 

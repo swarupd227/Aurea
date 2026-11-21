@@ -171,8 +171,9 @@ _NUMBERS = ("balance", "plan_cost_bps", "ira_cost_bps", "employer_stock_value", 
 
 
 def rmd_age(dob: date) -> int:
-    """The age a required distribution starts, under SECURE 2.0: 73 for those born 1951 to 1959, 75 from 1960."""
-    return 75 if dob.year >= 1960 else 73 if dob.year >= 1951 else 72
+    """The age a required distribution starts, under SECURE 2.0: aurea_core/rmd.py holds the rule (B-170)."""
+    from app.aurea_core import rmd
+    return rmd.start_age(dob)
 
 
 def _age_at_year_end(dob: date, year: int) -> int:

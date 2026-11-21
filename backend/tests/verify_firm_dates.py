@@ -81,10 +81,13 @@ def pure() -> None:
     print("\n=== The RMD age is the firm's ===")
     brain = {"persons": [{"full_name": "Ruth", "date_of_birth": "1953-11-18",
                           "profile": {"tax": {"ira_value": 500_000}}}]}
-    ny_today = firm_time.today(us, NY_EVENING)
+    # The RMD year is the year she reaches 73 (B-170), so the firm's day matters at New Year, not on her birthday:
+    # 02:00 UTC on 1 Jan 2026 is still 31 Dec 2025 in New York, the year she reaches 72.
+    ny_new_year = datetime(2026, 1, 1, 2, 0, tzinfo=timezone.utc)
+    ny_today = firm_time.today(us, ny_new_year)
     firm_rmd = tax_intelligence._us_rmd_planning(brain, today=ny_today)["alerts"][0]
-    server_rmd = tax_intelligence._us_rmd_planning(brain, today=NY_EVENING.date())["alerts"][0]
-    check("72 on the firm's day: no RMD yet", (firm_rmd["age"], firm_rmd["rmd_required"]), (72, False))
+    server_rmd = tax_intelligence._us_rmd_planning(brain, today=ny_new_year.date())["alerts"][0]
+    check("72 in the firm's year: no RMD yet", (firm_rmd["age"], firm_rmd["rmd_required"]), (72, False))
     check("the server's date would have demanded one", (server_rmd["age"], server_rmd["rmd_required"]), (73, True))
 
     print("\n=== A goal's horizon is counted from the firm's day ===")
@@ -179,9 +182,11 @@ async def db_checks() -> None:
             with clock(NY_EVENING):
                 rmd = await registration.rmd_for_account(s, ira)
                 report = await tax_intelligence.for_household(s, us_hh.id, "US", firm_id=us.id)
-            check("the account: 72 in New York, so not yet", (rmd["status"], rmd["owner_age"]), ("not_yet", 72))
+            # The RMD year is the year she reaches 73, whatever day her birthday falls (B-170): it used to read her age on
+            # the day, so a client born in November read "not yet" for most of the year she owed her first RMD.
+            check("the account: 73 this year, so this year's RMD is due", (rmd["status"], rmd["owner_age"]), ("required", 73))
             alert = report["rmd_planning"]["alerts"][0]
-            check("the tax report agrees: no RMD demanded", (alert["age"], alert["rmd_required"]), (72, False))
+            check("the tax report agrees", (alert["age"], alert["rmd_required"]), (73, True))
             check("and it is dated on the firm's day", report["generated_at"], "2026-11-17")
 
             print("\n=== Estate: a trust review falls due on the firm's New Year ===")

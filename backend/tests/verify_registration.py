@@ -23,7 +23,7 @@ import app.models  # noqa: F401  — registers every table on Base.metadata
 from app.aurea_core import registration as engine
 from app.core.db import Base
 from app.models.graph import Account, AccountBeneficiary, Household, Mandate, Person
-from app.models.portfolio import Holding, Instrument
+from app.models.portfolio import Holding, Instrument, Price
 from app.models.tenant import Firm
 
 PASS, FAIL = [], []
@@ -42,13 +42,9 @@ def dob_for_age(age: int) -> date:
 
 async def main() -> int:
     db = create_async_engine("sqlite+aiosqlite:///:memory:")
-    # _household_account_ids() unconditionally queries legal_entity even though this
-    # scenario has none — the table still needs to exist for that query not to error.
-    wanted = ["firm", "household", "person", "legal_entity", "mandate", "account",
-              "account_beneficiary", "instrument", "holding"]
-    tables = [Base.metadata.tables[n] for n in wanted]
+    # Every table: the RMD rolls the book back to 31 December through transactions and corporate actions (B-170).
     async with db.begin() as conn:
-        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
+        await conn.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(db, expire_on_commit=False)
 
     async with Session() as s:
@@ -80,11 +76,14 @@ async def main() -> int:
         await s.flush()
         s.add(Holding(id=uuid.uuid4(), firm_id=firm.id, account_id=ira_account.id, instrument_id=inst.id,
                        quantity=Decimal("1000"), market_value=Decimal("530000"), cost_basis=Decimal("400000")))
+        # The RMD is worked from the value at the previous 31 December, at that day's real price (B-170).
+        s.add(Price(id=uuid.uuid4(), firm_id=firm.id, instrument_id=inst.id, as_of=date(date.today().year - 1, 12, 31),
+                    close=Decimal("530"), is_real=True))
         await s.flush()
 
         rmd = await engine.rmd_for_account(s, ira_account)
         check("RMD status required at age 75", rmd["status"], "required")
-        check("RMD account value matches the actual holding", rmd["account_value"], 530000.0)
+        check("RMD account value is the holding at 31 December, at that day's real price", rmd["account_value"], 530000.0)
         # IRS factor at 75 is 24.6 -> 530000 / 24.6 = 21544.72
         check("RMD amount computed from the real value / IRS factor", rmd["amount"], round(530000 / 24.6, 2))
 

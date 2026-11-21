@@ -12,6 +12,9 @@ interface RmdStatus {
   account_value?: number;
   deadline?: string;
   owner_age?: number;
+  starts_at_age?: number;
+  divisor?: number;
+  year_end?: string;
 }
 
 interface RegistrationPayload {
@@ -26,7 +29,7 @@ function money(n: number) {
 }
 
 const RMD_COLOR: Record<string, string> = {
-  required: "text-warn", ten_year_rule: "text-warn", needs_election: "text-crit",
+  required: "text-warn", ten_year_rule: "text-warn", needs_election: "text-crit", not_valued: "text-warn",
   not_yet: "text-ink-muted", life_expectancy: "text-ink-muted",
 };
 
@@ -41,8 +44,9 @@ export function AccountRegistrationCard({ result }: { result: RegistrationPayloa
       </div>
       {result.rmd && (
         <div className={`px-3 py-2 text-xs border-b border-border-soft ${RMD_COLOR[result.rmd.status] || "text-ink-muted"}`}>
-          {result.rmd.status === "required" && `RMD required: ${money(result.rmd.amount!)} (age ${result.rmd.owner_age})`}
-          {result.rmd.status === "not_yet" && `No RMD yet — owner is ${result.rmd.owner_age}`}
+          {result.rmd.status === "required" && `RMD required: ${money(result.rmd.amount!)} · age ${result.rmd.owner_age} this year · ÷ ${result.rmd.divisor} · 31 Dec value ${money(result.rmd.account_value!)}`}
+          {result.rmd.status === "not_valued" && `RMD due · not valued at ${result.rmd.year_end}`}
+          {result.rmd.status === "not_yet" && `No RMD yet · ${result.rmd.owner_age} this year · starts at ${result.rmd.starts_at_age}`}
           {result.rmd.status === "ten_year_rule" && `10-year rule deadline: ${result.rmd.deadline}`}
           {result.rmd.status === "life_expectancy" && "Life-expectancy method — annual RMD"}
           {result.rmd.status === "needs_election" && "Needs a 10-year-rule vs. life-expectancy election"}

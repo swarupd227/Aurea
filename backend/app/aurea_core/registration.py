@@ -21,13 +21,13 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time
+from app.aurea_core import firm_time, rmd
 from app.models.graph import Account, AccountBeneficiary, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding
 
-# Registration types that carry an RMD obligation once the owner reaches 73 (or, for an
-# inherited IRA, on the election-dependent schedule handled separately below).
-_IRA_LIKE = {"traditional_ira", "employer_rollover"}
+# Registration types whose owner takes an RMD from the start age their birth year sets (aurea_core/rmd.py); an
+# inherited IRA follows the election-dependent schedule handled separately below.
+_IRA_LIKE = rmd.IRA_GROUP
 
 # Registration types where a missing/incomplete beneficiary designation is the specific
 # failure L200-1 §4 calls "the #1 practical estate failure" — assets that should pass by
@@ -35,17 +35,6 @@ _IRA_LIKE = {"traditional_ira", "employer_rollover"}
 _BENEFICIARY_REQUIRED = {
     "traditional_ira", "roth_ira", "employer_rollover", "inherited_ira",
     "estate_inherited", "plan_529", "hsa",
-}
-
-# IRS Uniform Lifetime Table (simplified) — deliberately not imported from
-# tax_intelligence.py's private US module: that module computes RMD from a person-level
-# scalar; this one computes it per account from real holdings, and the two are independent
-# enough that sharing a private constant would couple them for no real benefit.
-_US_RMD_FACTORS = {
-    73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9,
-    78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5,
-    83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4,
-    88: 13.7, 89: 12.9, 90: 12.2,
 }
 
 
@@ -100,22 +89,12 @@ async def rmd_for_account(session: AsyncSession, account: Account) -> dict | Non
         return None
 
     mandate = await session.get(Mandate, account.mandate_id) if account.mandate_id else None
-    owner_age = None
-    if mandate and mandate.person_id:
-        person = await session.get(Person, mandate.person_id)
-        owner_age = _age(person.date_of_birth, today) if person else None
-
-    if owner_age is None:
+    person = await session.get(Person, mandate.person_id) if mandate and mandate.person_id else None
+    if person is None or person.date_of_birth is None:
         return {"status": "unknown", "reason": "Owner's date of birth is not on file."}
-    if owner_age < 73:
-        return {"status": "not_yet", "owner_age": owner_age, "starts_at_age": 73}
-
-    value = await _account_value(session, account.id)
-    factor = _US_RMD_FACTORS.get(min(owner_age, 90), 12.2)
-    return {
-        "status": "required", "owner_age": owner_age, "account_value": round(value, 2),
-        "divisor": factor, "amount": round(value / factor, 2) if factor else 0.0,
-    }
+    # The table, the start age and the 31 December value are aurea_core/rmd.py's (B-170).
+    due = await rmd.account_due(session, account, person.date_of_birth, today)
+    return {**due, "owner_id": str(person.id), "owner_name": person.preferred_name or person.full_name}
 
 
 async def _household_account_ids(session: AsyncSession, household_id: uuid.UUID) -> list[uuid.UUID]:

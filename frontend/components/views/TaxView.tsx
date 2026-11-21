@@ -434,7 +434,7 @@ function UnitedStates({ data, ccy }: { data: any; ccy: string }) {
   const gift = data.gift_tracker;
   const roth = data.roth_conversion;
   const sf = gift["529_superfunding"];
-  const attractive = roth.candidates.filter((c: any) => c.attractive).length;
+  const withRoom = roth.candidates.filter((c: any) => c.in_low_bracket && c.room_to_bracket_top > 0).length;
 
   return (
     <>
@@ -442,7 +442,7 @@ function UnitedStates({ data, ccy }: { data: any; ccy: string }) {
         <Tile label="Short-term gains" value={m(cgt.total_short_term_gains)} caption="ordinary income rates" tone="text-warn" />
         <Tile label="Long-term gains" value={m(cgt.total_long_term_gains)} caption="0–20% LTCG rates" />
         <Tile label="RMD this year" value={rmd.total_rmd_this_year > 0 ? m(rmd.total_rmd_this_year) : "Not required"}
-          caption={rmd.rmd_active > 0 ? `${rmd.rmd_active} aged 73+` : "none active"} tone={rmd.rmd_active > 0 ? "text-crit" : "text-ink-muted"} />
+          caption={rmd.rmd_active > 0 ? `${rmd.rmd_active} required this year` : "none active"} tone={rmd.rmd_active > 0 ? "text-crit" : "text-ink-muted"} />
         <Tile label="Harvestable losses" value={m(cgt.total_harvestable_losses)} caption={`est. saving ${m(data.summary.estimated_tax_saving)}`} />
       </Tiles>
 
@@ -487,19 +487,22 @@ function UnitedStates({ data, ccy }: { data: any; ccy: string }) {
         </div>
       </Section>
 
-      <Section title="Roth conversion" count={roth.candidates.length} note={roth.guidance} testId="tax-us-roth"
+      <Section title="Roth conversion room" count={roth.candidates.length} note={roth.guidance} testId="tax-us-roth"
         chips={<>
-          {roth.total_ira_balance > 0 && <Chip>IRA/401(k) {m(roth.total_ira_balance)}</Chip>}
-          {attractive > 0 && <Chip tone="text-ok">opportunities {attractive}</Chip>}
+          {roth.tax_year && <Chip>{roth.tax_year} brackets</Chip>}
+          {roth.filing_status && <Chip tone={roth.filing_status_recorded ? "text-ink-muted" : "text-warn"} title={roth.assumed?.filing_status}>
+            {String(roth.filing_status).replace(/_/g, " ")}{roth.filing_status_recorded ? "" : " · assumed"}</Chip>}
+          {roth.total_ira_balance > 0 && <Chip>IRA {m(roth.total_ira_balance)}</Chip>}
+          {withRoom > 0 && <Chip>room in a ≤24% bracket {withRoom}</Chip>}
         </>}>
-        {roth.candidates.length === 0 ? <None>No IRA on file</None> : (
+        {roth.status === "not_assessed" ? <None>{roth.reason}</None> : roth.candidates.length === 0 ? <None>No IRA on file</None> : (
           <Rows>
             {roth.candidates.map((c: any, i: number) => (
               <Row key={i} hint={c.action} title={c.person_name}
-                sub={`IRA ${m(c.ira_balance)} · Roth ${m(c.roth_balance)}`}
-                chips={<Chip tone={c.attractive ? "text-ok" : "text-ink-muted"}>{pctFig(c.marginal_rate_pct)} marginal</Chip>}
-                figure={c.recommended_conversion > 0 ? m(c.recommended_conversion) : undefined} figureTone="text-ok"
-                caption={c.recommended_conversion > 0 ? "convert this year" : undefined} />
+                sub={`taxable income ${m(c.taxable_income)} (profile) · IRA ${m(c.ira_balance)} · Roth ${m(c.roth_balance)}`}
+                chips={<Chip tone="text-ink-muted">{pctFig(c.marginal_rate_pct)} bracket</Chip>}
+                figure={c.room_to_bracket_top > 0 ? m(c.room_to_bracket_top) : undefined}
+                caption={c.room_to_bracket_top > 0 && c.bracket_top ? `room to ${m(c.bracket_top)}` : undefined} />
             ))}
           </Rows>
         )}

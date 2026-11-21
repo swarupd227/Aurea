@@ -66,9 +66,10 @@ function AccountSleeves({ accountId }: { accountId: string }) {
 const RMD_STATUS_LABEL: Record<string, string> = {
   required: "RMD required", not_yet: "No RMD yet", ten_year_rule: "10-year rule",
   life_expectancy: "Life-expectancy method", needs_election: "Needs election", unknown: "RMD status unknown",
+  not_valued: "RMD due · not valued at 31 Dec",
 };
 const RMD_STATUS_COLOR: Record<string, string> = {
-  required: "text-warn", needs_election: "text-crit", ten_year_rule: "text-warn",
+  required: "text-warn", needs_election: "text-crit", ten_year_rule: "text-warn", not_valued: "text-warn",
 };
 
 function AccountRegistration({ accountId }: { accountId: string }) {

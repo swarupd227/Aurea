@@ -283,16 +283,35 @@ async def end_phase_in(session: AsyncSession, plan_id: uuid.UUID, *, firm_id: uu
 
 
 async def _rmd_rows(session: AsyncSession, accounts: list[Account], today: date) -> list[dict]:
-    rows = []
+    """One row per owner: their IRAs' RMDs totalled, because the total may be taken from any of them (B-170), and what
+    has been taken from any of them this year counted against it. An IRA not valued at 31 December leaves the total
+    unknown, never estimated."""
+    owners: dict[str, dict] = {}
     for a in accounts:
         due = await registration.rmd_for_account(session, a)
-        if not due or due.get("status") != "required":
+        if not due or due.get("status") not in ("required", "not_valued"):
             continue
         taken = sum(float(t.amount) for t in (await session.execute(select(Transaction).where(
             Transaction.account_id == a.id, Transaction.txn_type == "withdrawal", Transaction.trade_date >= date(today.year, 1, 1)))).scalars().all()
             if (t.lineage or {}).get("kind") == "rmd")
-        rows.append({"account_id": str(a.id), "account": a.name, "required": due["amount"], "taken": round(taken, 2), "left": round(max(due["amount"] - taken, 0), 2),
-                     "by": date(today.year, 12, 31).isoformat(), "days_left": (date(today.year, 12, 31) - today).days})
+        key = due.get("owner_id") or str(a.id)
+        row = owners.setdefault(key, {"account_id": str(a.id), "owner_id": key, "owner": due.get("owner_name"), "accounts": [],
+                                      "required": 0.0, "taken": 0.0, "valued": True, "not_valued": [],
+                                      "by": date(today.year, 12, 31).isoformat(), "days_left": (date(today.year, 12, 31) - today).days,
+                                      "year_end": due.get("year_end")})
+        row["accounts"].append(a.name)
+        row["taken"] += taken
+        if due["amount"] is None:
+            row["valued"] = False
+            row["not_valued"].append(a.name)
+        else:
+            row["required"] += due["amount"]
+    rows = []
+    for row in owners.values():
+        required = round(row["required"], 2) if row["valued"] else None
+        rows.append({**row, "account": " + ".join(row["accounts"]), "aggregated": len(row["accounts"]) > 1,
+                     "required": required, "taken": round(row["taken"], 2),
+                     "left": round(max(required - row["taken"], 0), 2) if required is not None else None})
     return rows
 
 
@@ -334,4 +353,5 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, household_id: u
                     if household_id is None or owners.get(p.mandate_id) == household_id],
         "rmds": rmds,
         "summary": {"open": sum(1 for r in requests if r.status == "requested"), "value_open": round(sum(reserved.values()), 2), "short": sum(1 for a, v in reserved.items() if v > float(by_id[a].cash_balance or 0)),
-                    "standing": len(standing), "rmd_left": round(sum(r["left"] for r in rmds), 2)}}
+                    "standing": len(standing), "rmd_left": round(sum(r["left"] for r in rmds if r["left"] is not None), 2),
+                    "rmd_not_valued": sum(1 for r in rmds if r["left"] is None)}}
