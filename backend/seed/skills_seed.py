@@ -25,6 +25,19 @@ EXAMPLES = [
      "instruction": "Identify households that include a next-generation family member and propose a warm "
                     "introduction so we engage them before the wealth transfers.",
      "scope": "book", "output_kind": "note", "default_tier": "tier_1"},
+    # Operations beyond advice (B-205): the same governed skill, for marketing and for finance.
+    {"name": "Retirement seminar invitations",
+     "description": "Marketing: who to invite to the retirement-income seminar.",
+     "instruction": "Find households with a person aged 55 to 67, or a life stage of pre-retirement or retirement, and "
+                    "propose inviting them to the firm's retirement-income seminar. Say which person and why, from the "
+                    "ages and life stages given; do not guess an age that is not on file.",
+     "scope": "book", "output_kind": "note", "default_tier": "tier_1"},
+    {"name": "Fee variance check",
+     "description": "Finance: fees that moved, and why.",
+     "instruction": "Compare the household's last two fees as billed. Flag it if the latest moved by more than 15% from "
+                    "the one before, or if a credit note was issued in the last year, and say what changed in the billable "
+                    "value or the rate from the figures given. If fewer than two fees are on file, it does not apply.",
+     "scope": "book", "output_kind": "insight", "default_tier": "tier_1"},
 ]
 
 

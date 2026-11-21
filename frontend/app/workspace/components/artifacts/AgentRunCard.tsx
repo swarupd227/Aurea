@@ -1,5 +1,6 @@
 import { Check, CircleAlert, Loader2 } from "lucide-react";
 import { MeetingBrief } from "@/components/MeetingBrief";
+import { DecisionMemory } from "@/components/DecisionMemory";
 import { money } from "@/lib/format";
 
 // A run narrated into the thread: published when it starts, settled when it finishes. Figures,
@@ -33,6 +34,7 @@ interface Proposal {
   status: string;
   rebalance?: Rebalance | null;
   brief?: any;
+  memory?: any;
 }
 
 const pct = (v: number | null | undefined) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
@@ -96,6 +98,7 @@ export interface AgentRunData {
   beats: Beat[];
   flags: number;
   proposals: Proposal[];
+  held?: { title: string; by: string | null; until: string | null }[];
 }
 
 const PHASE: Record<string, string> = { sense: "Sense", think: "Reason", check: "Check" };
@@ -168,6 +171,16 @@ export function AgentRunCard({ data }: { data: AgentRunData }) {
             ))}
           </tbody>
         </table>
+      )}
+      {data.proposals.length === 1 && data.proposals[0].memory && (
+        <div className="border-t border-border-soft px-3 py-2"><DecisionMemory memory={data.proposals[0].memory} /></div>
+      )}
+      {(data.held || []).length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-2" data-testid="agent-run-held">
+          {data.held!.map((h, i) => (
+            <span key={i} className="chip text-ink-muted">held by {h.by}{h.until ? ` until ${h.until}` : ""} · {h.title}</span>
+          ))}
+        </div>
       )}
       {data.proposals.length === 1 && data.proposals[0].rebalance && <RebalanceFigures r={data.proposals[0].rebalance} />}
       {data.proposals.length === 1 && data.proposals[0].brief && (

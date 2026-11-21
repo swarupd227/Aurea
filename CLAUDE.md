@@ -243,6 +243,11 @@ pages are artifact views the agents open. Full guideline, including what is buil
   with its evidence, never overwritten in either direction. Astra's writes in an owned domain leave as a command (a CRM
   activity) and appear when the sync brings them back, or are refused naming the owner. What an owner cannot supply
   (tax lots) reads not assessed. Conformance is `tests.verify_foundation_contract`.
+- **An agent remembers what a person told it, and nothing else.** `aurea_core/decision_memory.py`: a proposal carries
+  the last decision on the same finding with its reason; a hold or a note is made by a person who may decide that
+  agent's proposals, in their words, from a proposal, on the audit log, a hold for a year at most. A run says what a
+  hold kept back. A control's finding (supervision, IPS, reconciliation, billing, book integration, screening) is
+  never held. Nothing here widens autonomy, and no model writes a preference.
 - **A simulation can be thrown away.** `app/simulations/<key>/` stands in for a system we do not have yet (a wealth
   platform, an aggregation feed, a news service, a LinkedIn export); the feature it feeds is real and reads only a
   seam that the real source will use too. Nothing outside `app/simulations` imports it; `install_all` runs only when

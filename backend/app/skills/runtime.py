@@ -67,8 +67,51 @@ def _snapshot(brain: dict) -> str:
     return "\n".join(lines)
 
 
+async def _facts(session, firm, brain) -> list[str]:
+    """What a skill for marketing or finance needs beside the portfolio (B-205): each person's age and life stage as
+    recorded, money held elsewhere, the mandates' types, and the household's last fees as billed, with the value and
+    rate each was worked on. Only what is on file; nothing is estimated, and a gap is said."""
+    from datetime import date, timedelta
+
+    from app.aurea_core import firm_time
+    from app.models.billing import Invoice
+
+    today = firm_time.today(firm)
+    say = lambda v: markets.money(v, brain.get("currency"))  # noqa: E731
+    lines = []
+    for p in brain.get("persons", []):
+        if p.get("deceased_on"):
+            continue
+        dob = date.fromisoformat(p["date_of_birth"]) if p.get("date_of_birth") else None
+        age = (today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))) if dob else None
+        stage = (p.get("profile") or {}).get("life_stage")
+        lines.append(f"Person: age {age if age is not None else 'not on file'}"
+                     + (f", life stage {stage.replace('-', ' ')}" if stage else "") + (", next generation" if p.get("is_next_gen") else ""))
+    held = (brain.get("totals") or {}).get("held_away")
+    lines.append(f"Held elsewhere: {say(held)}" if held else "Held elsewhere: none on file")
+    kinds = sorted({str(m.get("mandate_type")) for m in brain.get("mandates", []) if m.get("mandate_type")})
+    if kinds:
+        lines.append(f"Mandates: {', '.join(kinds)}")
+    invoices = (await session.execute(select(Invoice).where(
+        Invoice.firm_id == firm.id, Invoice.household_id == uuid.UUID(brain["household"]["id"]),
+        Invoice.status.in_(("issued", "debited", "credited")), Invoice.period_end >= today - timedelta(days=400))
+        .order_by(Invoice.period_end.desc()))).scalars().all()
+    bills = [i for i in invoices if i.kind == "invoice"]
+    credits = [i for i in invoices if i.kind == "credit_note"]
+    if not bills:
+        lines.append("Fees billed in the last year: none on file")
+    for i in bills[:2]:
+        c = i.calculation or {}
+        lines.append(f"Fee billed for {i.period_start.isoformat()} to {i.period_end.isoformat()}: {say(float(i.amount))}"
+                     + (f" on a billable value of {say(c['billable_value'])}" if c.get("billable_value") is not None else "")
+                     + (f" at {c['effective_bps']:.0f} bps" if c.get("effective_bps") is not None else ""))
+    if credits:
+        lines.append(f"Credit notes in the last year: {len(credits)}, {say(sum(float(i.amount) for i in credits))}")
+    return lines
+
+
 async def _ask(session, firm, skill, brain) -> dict:
-    snapshot = _snapshot(brain)
+    snapshot = _snapshot(brain) + "\n" + "\n".join(await _facts(session, firm, brain))
     system = _SYSTEM.format(firm=firm.name, reg=firm.regulator or "the local regulator")
     prompt = (f"Adviser's skill instruction:\n\"{skill.instruction}\"\n\n"
               f"Client household: {brain['household']['name']}\nSnapshot:\n{snapshot}")

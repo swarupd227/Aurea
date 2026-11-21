@@ -4,6 +4,7 @@ import { CompliancePanelCard } from "./CompliancePanelCard";
 import { CrmPipelineCard, ProspectBriefCard } from "./CrmPipelineCard";
 import { IntroductionsCard, LinkRecordedCard } from "./IntroductionsCard";
 import { BriefProfileCard } from "./BriefProfileCard";
+import { PreferencesCard } from "./PreferencesCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
@@ -130,6 +131,13 @@ export function artifactCard(artifact: Artifact) {
       case "set_brief_profile":
         if (!Array.isArray(artifact.result?.lead) || typeof artifact.result?.length !== "string") return null;
         return <BriefProfileCard result={artifact.result as any} />;
+      case "read_agent_preferences":
+        if (!Array.isArray(artifact.result?.preferences)) return null;
+        return <PreferencesCard result={artifact.result as any} />;
+      case "remember_preference":
+      case "end_preference":
+        if (typeof artifact.result?.kind !== "string" || typeof artifact.result?.text !== "string") return null;
+        return <PreferencesCard result={artifact.result as any} />;
       case "read_corporate_actions":
         if (!Array.isArray(artifact.result?.actions)) return null;
         return <CorporateActionsCard result={artifact.result as any} />;

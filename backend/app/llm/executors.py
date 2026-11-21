@@ -236,6 +236,9 @@ class ToolExecutors(AdminToolExecutors):
             "record_relationship": self.record_relationship,
             "read_brief_profile": self.read_brief_profile,
             "set_brief_profile": self.set_brief_profile,
+            "read_agent_preferences": self.read_agent_preferences,
+            "remember_preference": self.remember_preference,
+            "end_preference": self.end_preference,
             "create_crm_contact": self.create_crm_contact,
             "create_crm_opportunity": self.create_crm_opportunity,
             "log_crm_activity": self.log_crm_activity,
@@ -4563,6 +4566,8 @@ class ToolExecutors(AdminToolExecutors):
             return rows(*await self._crm_preview(tool_key, inputs))
         if tool_key == "record_relationship":
             return rows(*await self._relationship_preview(inputs))
+        if tool_key in ("remember_preference", "end_preference"):
+            return rows(*await self._preference_preview(tool_key, inputs))
         if tool_key == "set_brief_profile":
             return rows(*await self._brief_profile_preview(inputs))
         if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):
@@ -5836,6 +5841,69 @@ class ToolExecutors(AdminToolExecutors):
             raise ExecutorError(str(exc))
         out["suggestions"] = await brief_profile.suggestions(self.session, self.firm_id, me.id, out)
         out["message"] = f"Your briefs now lead with {', '.join(out['lead_labels']) or 'the default order'}, {out['length']}."
+        return out
+
+    # ── What the agents were asked to remember (B-204) ───────────────────────────────────────
+
+    async def read_agent_preferences(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import decision_memory
+
+        firm = await self._firm()
+        prefs = await decision_memory.listing(self.session, firm, agent_key=inputs.get("agent_key") or None,
+                                              subject_id=inputs.get("subject_id") or None)
+        holds = [p for p in prefs if p["kind"] == "hold"]
+        return {"preferences": prefs, "holds": len(holds), "notes": len(prefs) - len(holds),
+                "message": (f"{len(holds)} hold(s) and {len(prefs) - len(holds)} note(s) in force"
+                            + (": " + "; ".join(f"{p['agent_key']} for {p['subject']}: {p['kind']} '{p['text']}' by {p['made_by']}"
+                                                + (f" until {p['until']}" if p["until"] else "") for p in prefs[:6]) if prefs else "")
+                            + ".")}
+
+    async def _preference_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import decision_memory
+        from app.models.agent_preference import AgentPreference
+
+        firm, me = await self._firm(), await self._me()
+        if tool_key == "end_preference":
+            try:
+                row = await self.session.get(AgentPreference, uuid.UUID(str(inputs.get("preference_id"))))
+            except (TypeError, ValueError):
+                row = None
+            if row is None or row.firm_id != firm.id or row.ended_at is not None:
+                raise ExecutorError("No preference in force with that id; read_agent_preferences lists them.")
+            return [("Agent", row.agent_key), ("Subject", row.subject_label), ("Kind", row.kind), ("Text", row.text),
+                    ("Made by", row.made_by_name), ("After this", "Its finding is raised again" if row.kind == "hold" else "The note stops showing")]
+        try:
+            p = await decision_memory.prepare(self.session, firm, me, recommendation_id=inputs.get("recommendation_id"),
+                                              kind=inputs.get("kind"), text=inputs.get("text"), until=inputs.get("until"))
+        except decision_memory.PreferenceError as exc:
+            raise ExecutorError(str(exc))
+        rec = p["rec"]
+        return [("Agent", p["agent_key"]), ("Subject", rec.subject_label), ("From", rec.title),
+                ("Kind", "Hold: not raised again" if p["kind"] == "hold" else "Note on its proposals"),
+                ("Until", p["until"].isoformat() if p["until"] else "Until ended"), ("In your words", p["text"]),
+                ("Made by", me.full_name), ("Never", "Widens the agent's autonomy or changes a fact")]
+
+    async def remember_preference(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import decision_memory
+
+        try:
+            out = await decision_memory.remember(self.session, await self._firm(), await self._me(),
+                                                 recommendation_id=inputs.get("recommendation_id"), kind=inputs.get("kind"),
+                                                 text=inputs.get("text"), until=inputs.get("until"))
+        except decision_memory.PreferenceError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = (f"Remembered for {out['subject']}: {out['kind']} '{out['text']}'"
+                          + (f" until {out['until']}" if out["until"] else "") + ".")
+        return out
+
+    async def end_preference(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import decision_memory
+
+        try:
+            out = await decision_memory.end(self.session, await self._firm(), await self._me(), inputs.get("preference_id"))
+        except decision_memory.PreferenceError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = f"Ended: {out['kind']} '{out['text']}' for {out['subject']}."
         return out
 
     @staticmethod

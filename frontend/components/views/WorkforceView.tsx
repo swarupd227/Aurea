@@ -10,6 +10,7 @@ import { formatDateFull, timeAgo } from "@/lib/format";
 import { useViewNav, ViewLink } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 import { PoliciesTable, type PoliciesData } from "./Policies";
+import { PreferencesTable, type PreferenceRow } from "@/app/workspace/components/artifacts/PreferencesCard";
 
 const STATUS: Record<string, { dot: string; label: string }> = {
   working: { dot: "bg-accent animate-pulse", label: "Working" },
@@ -24,6 +25,7 @@ export function WorkforceView() {
   const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any[]>("/api/atlas/workforce");
   const { data: policies } = useApi<PoliciesData>("/api/autonomy/policies");
+  const { data: preferences } = useApi<{ preferences: PreferenceRow[]; holds: number; notes: number }>("/api/preferences");
   const [open, setOpen] = useState<string | null>(null);
   const runner = useAgentRunner();
 
@@ -56,6 +58,16 @@ export function WorkforceView() {
           </>
         ) : undefined}
       />
+
+      {preferences && preferences.preferences.length > 0 && (
+        <Card className="mb-5 overflow-hidden p-0" data-testid="workforce-preferences">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3 py-2">
+            <span className="text-sm font-medium text-ink">Remembered from decisions</span>
+            <span className={`${chip} tabular-nums`}>{preferences.holds} held · {preferences.notes} noted</span>
+          </div>
+          <PreferencesTable rows={preferences.preferences} />
+        </Card>
+      )}
 
       {policies && (
         <Card className="mb-5 overflow-hidden p-0" data-testid="workforce-policies">

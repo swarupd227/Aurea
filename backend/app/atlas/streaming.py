@@ -99,6 +99,11 @@ async def stream_run(
     yield {"phase": "think", "status": "start",
            "label": THINK_LABELS.get(str(agent_key), "Reasoning over the client brain")}
     drafts = await agent.think(ctx, sensed)
+    # What people decided before (aurea_core/decision_memory.py, B-204): a person's hold keeps a finding back.
+    from app.aurea_core import decision_memory
+    drafts, held = await decision_memory.apply(session, firm, agent_key, drafts, subject)
+    if held:
+        run.context = {**(run.context or {}), "held_by_preference": held}
     await asyncio.sleep(0.4)
     yield {"phase": "think", "status": "done"}
 
@@ -109,6 +114,10 @@ async def stream_run(
                             summary=f"{name} checked {subject.label or 'the book'} — nothing to surface",
                             subject_label=subject.label)
         await session.commit()  # durable before we tell the client we're done
+        if held:
+            yield {"phase": "empty", "summary": f"{name} found {len(held)} thing(s) a person asked it to hold back: "
+                   + "; ".join(f"{h['title']} (held by {h['by']} until {h['until']})" for h in held), "held": held}
+            return
         yield {"phase": "empty", "summary": f"{name} checked — everything is within tolerance."}
         return
 

@@ -423,6 +423,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_brief_profile":
     case "set_brief_profile":
       return "/studio/meetings";
+    case "read_agent_preferences":
+    case "remember_preference":
+    case "end_preference":
+      return "/studio/workforce";
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";
