@@ -4542,10 +4542,12 @@ class ToolExecutors(AdminToolExecutors):
         moved = sum(float(o["est_value"] or 0) * (1 if o["side"] == "sell" else -1) for o in orders)
         gain, budget = trades.get("estimated_realised_gain"), trades.get("cgt_budget")
         venue = venue_for_firm(firm)
+        if getattr(venue, "refusal", None) and action in ("approve", "modify"):   # B-165: the book's owner takes no orders
+            raise ExecutorError(venue.refusal)
         return [*rows, ("Cash, before fees", f"{say(cash)} becomes {say(cash + moved)}"),
                 ("Realised gain", f"{say(float(gain))} of a {say(float(budget))} budget" if gain is not None and budget is not None
                  else say(float(gain)) if gain is not None else None),
-                ("Venue", venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached"),
+                ("Venue", getattr(venue, "label", None) or (venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached")),
                 ("Note", (note or "").strip() or None)]
 
     async def _report_decision_preview(self, inputs: dict[str, Any]) -> dict[str, Any] | None:
@@ -5552,7 +5554,9 @@ class ToolExecutors(AdminToolExecutors):
         for flag in a["review"]["flags"]:
             rows.append((f"Review {flag['symbol']}", f"Sold at a loss in {flag['account']} on {flag['on']}"))
         venue = venue_for_firm(firm)
-        rows.append(("Venue", venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached"))
+        if getattr(venue, "refusal", None):   # positions owned by a product that cannot take this order (B-165)
+            raise ExecutorError(venue.refusal)
+        rows.append(("Venue", getattr(venue, "label", None) or (venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached")))
         rows.append(("Reason", a["reason"].strip() or None))
         return rows
 
@@ -5573,9 +5577,10 @@ class ToolExecutors(AdminToolExecutors):
         # A direct order has no proposal to carry its record, so the ledger does.
         await ledger.append_entry(self.session, firm_id=self.firm_id, event_type="direct_order_placed", actor=await self._shelf_user(), content={
             "mandate_id": str(mandate_id), "reason": a["reason"], "orders": [{"side": o["side"], "symbol": o["symbol"], "quantity": float(o["quantity"]), "est_value": o["est_value"]} for o in order_set],
-            "settled": result["orders_settled"], "failed": result["orders_failed"], "venue": result["venue"], "role": str(self.role)})
+            "settled": result["orders_settled"], "failed": result["orders_failed"], "venue": result["venue"], "role": str(self.role),
+            **({"waiting": result["orders_waiting"]} if "orders_waiting" in result else {})})
 
-        note = (
+        note = result.get("note") or (
             f"{result['orders_settled']} of {result['orders_created']} order(s) filled and "
             f"settled via '{result['venue']}'"
             + ("" if result["reaches_market"] else " (paper venue — real prices and real book "
@@ -5592,6 +5597,8 @@ class ToolExecutors(AdminToolExecutors):
             "fills": result["settled"],
             "failed": result["failed"],
             "message": note,
+            # Sent to the product that owns the book: waiting for its confirmation to sync back (B-165).
+            **({"orders_waiting": result["orders_waiting"], "sent_to": result["sent_to"]} if "orders_waiting" in result else {}),
         }
 
     async def _goal_changes(self, inputs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:

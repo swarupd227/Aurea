@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { login, api, setSession } from "@/lib/api";
 import { roleLanding } from "@/lib/roles";
@@ -21,8 +21,27 @@ const DEMO = [
   { role: "Client", email: "client@aurea.demo", desc: "Canvas experience", subtitle: "Your personal wealth view." },
 ];
 
+// People a demonstration firm carries in its own settings (GET /api/auth/demo-personas, with firm_slug), grouped by
+// firm. Shown only when such a firm exists; a simulated one says so in its label.
+interface FirmPersona {
+  email: string; role: string; title: string; description: string; firm_slug: string; firm_label: string; simulated: boolean;
+}
+
+function useFirmPersonas(): FirmPersona[] {
+  const [rows, setRows] = useState<FirmPersona[]>([]);
+  useEffect(() => {
+    api<any[]>("/api/auth/demo-personas")
+      .then((all) => setRows(all.filter((p) => p.firm_slug)))
+      .catch(() => setRows([]));
+  }, []);
+  return rows;
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const firmPersonas = useFirmPersonas();
+  const firmGroups: Record<string, FirmPersona[]> = {};
+  firmPersonas.forEach((p) => (firmGroups[p.firm_slug] ||= []).push(p));
   const [email, setEmail] = useState("sophie.adviser@aurea.demo");
   const [password, setPassword] = useState("aurea");
   const [error, setError] = useState<string | null>(null);
@@ -258,6 +277,28 @@ export default function LoginPage() {
                 </button>
               ))}
             </div>
+
+            {Object.entries(firmGroups).map(([slug, people]) => (
+              <div key={slug} data-testid={`login-firm-${slug}`}>
+                <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-2 mt-6">
+                  {people[0].firm_label}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {people.map((p) => (
+                    <button
+                      key={p.email}
+                      data-testid={`login-persona-firm-${slug}-${p.role}`}
+                      onClick={() => pickPersona({ role: p.title, email: p.email, desc: p.description, subtitle: p.title })}
+                      disabled={busy}
+                      className="text-left rounded-lg border border-border px-3 py-2 hover:border-border-soft hover:bg-surface transition disabled:opacity-50"
+                    >
+                      <div className="text-sm font-medium text-ink">{p.title}</div>
+                      <div className="text-xs text-ink-muted">{p.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

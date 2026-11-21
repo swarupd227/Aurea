@@ -12,7 +12,10 @@ export interface FoundationDomain {
   native: boolean;
   adapter: string;
   built: boolean;
-  capabilities: { tax_lots?: boolean; transactions_days?: number | null; events?: boolean };
+  capabilities: { tax_lots?: boolean; transactions_days?: number | null | false; events?: boolean };
+  // What the owner's own system says it is (an MCP server declares it), and whether it is a simulation.
+  platform?: string | null;
+  simulated?: boolean;
   connector_id: string | null;
   mode: "mock" | "live" | null;
   last_sync: { at: string | null; status: string; records: number } | null;
@@ -28,11 +31,12 @@ export interface FoundationBreakRow {
   id: string; domain: string; entity: string; external_id: string; fields: FoundationBreakField[]; detected_at: string | null;
 }
 export interface FoundationCommandRow {
-  id: string; domain: string; kind: string; to: string; status: string; activity_type: string | null;
+  id: string; domain: string; kind: string; to: string; status: string; activity_type: string | null; summary?: string | null;
   error: string | null; created_at: string | null; confirmed_at: string | null;
 }
 export interface FoundationPayload {
   native: boolean;
+  simulated?: boolean;
   domains: FoundationDomain[];
   breaks: FoundationBreakRow[];
   commands: FoundationCommandRow[];
@@ -91,14 +95,16 @@ export function FoundationDomainsTable({ domains, action }: { domains: Foundatio
               <td className={TD}>
                 <span className="flex flex-wrap gap-1">
                   <Chip tone={d.native ? "text-ink-muted" : "text-ink"} testid="foundation-owner">{d.adapter}</Chip>
+                  {d.platform && <Chip testid="foundation-platform">{d.platform}</Chip>}
                   {d.mode && <Chip tone={d.mode === "live" ? "text-ok" : "text-warn"}>{d.mode}</Chip>}
+                  {d.simulated && <Chip tone="text-warn" testid="foundation-simulated">simulated</Chip>}
                   {!d.built && <Chip tone="text-crit">not built</Chip>}
                 </span>
               </td>
               <td className={TD}>
                 <span className="flex flex-wrap gap-1">
                   <Chip tone={d.capabilities.tax_lots ? "text-ok" : "text-ink-muted"}>{d.capabilities.tax_lots ? "lots" : "no lots"}</Chip>
-                  <Chip>{d.capabilities.transactions_days == null ? "all history" : `${d.capabilities.transactions_days}d history`}</Chip>
+                  <Chip>{d.capabilities.transactions_days === false ? "no history" : d.capabilities.transactions_days == null ? "all history" : `${d.capabilities.transactions_days}d history`}</Chip>
                   {d.capabilities.events && <Chip>events</Chip>}
                 </span>
               </td>
@@ -179,7 +185,7 @@ export function FoundationCommandsTable({ rows }: { rows: FoundationCommandRow[]
           {rows.map((m) => (
             <tr key={m.id}>
               <td className={`${TD} whitespace-nowrap font-mono text-xs text-ink-soft`}>{day(m.created_at)}</td>
-              <td className={TD}><Chip>{m.activity_type || m.kind}</Chip></td>
+              <td className={TD}><Chip>{m.summary || m.activity_type || m.kind}</Chip></td>
               <td className={`${TD} font-mono text-xs text-ink-soft`}>{m.to}</td>
               <td className={TD}><Chip tone={STATUS_TONE[m.status] || "text-ink-muted"}>{m.status}</Chip></td>
               <td className={`${TD} whitespace-nowrap font-mono text-xs text-ink-muted`}>{day(m.confirmed_at)}</td>
@@ -200,6 +206,7 @@ export function FoundationSourcesCard({ result }: { result: FoundationPayload })
     <CardShell testid="foundation-sources-card">
       <CardHead title="Foundation sources">
         <Chip>{r.native ? "all native" : `${owned} connected`}</Chip>
+        {r.simulated && <Chip tone="text-warn" testid="foundation-sources-simulated">simulated</Chip>}
         {breaks > 0 && <Chip tone="text-warn">{breaks} {breaks === 1 ? "break" : "breaks"}</Chip>}
         {waiting > 0 && <Chip tone="text-warn">{waiting} waiting</Chip>}
       </CardHead>

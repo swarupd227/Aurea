@@ -56,3 +56,19 @@ seeding twice adds nothing, and a discard leaves every table exactly as it was b
 
 The real features each simulation feeds are B-164 and B-165 (the wealth platform), B-198, B-202 and B-201; the
 simulation rows say what is simulated, the feature rows say what is real.
+
+### `wealth_platform` and `dynamics_demo` (B-221, B-222)
+
+- `python -m app.simulations seed wealth_platform dynamics_demo` makes the demonstration firm `wealthsmart-sim` (US,
+  USD, marked `simulated_firm`), its staff, the instruments and models the platform's book names, and a live
+  market-data connector; connects it to the in-process MCP server (a mock-mode `foundation.mcp` connector tagged
+  `simulated`), hands it parties, accounts, positions and activity, runs a first sync and records each household's
+  adviser (tagged); then puts the CRM on the Dynamics 365 mock with its own tagged connector and a first sync.
+- Its people sign in from the login page and the role switcher: core reads any firm's `settings["personas"]`
+  (`core/personas.firm_personas`), a seam that imports nothing from here. Password `aurea`, as for every demo persona.
+- Discarding `wealth_platform` removes the firm and every row in it; on another firm it removes what the platform
+  synced, its connector and its tagged rows, and hands the domains back to Astra. Discarding `dynamics_demo` hands the
+  CRM back and removes what it synced.
+- When WealthSmart exposes its own server: switch the `foundation.mcp` connector live with its URL and auth header on a
+  real firm, then discard these. Delete `tests/verify_sim_wealth_platform.py` with the packages; the real adapter's
+  suite, `tests.verify_foundation_mcp`, runs against its own test server and stays.

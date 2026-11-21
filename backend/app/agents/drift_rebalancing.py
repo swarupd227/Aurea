@@ -494,7 +494,7 @@ class DriftRebalancingAgent(BaseAgent):
         )
         # "executed" means the book moved, not that a message was sent.
         result["executed"] = result["orders_settled"] > 0
-        result["note"] = (
+        result["note"] = result.get("note") or (
             f"{result['orders_settled']} of {result['orders_created']} order(s) filled and "
             f"settled via '{result['venue']}'"
             + ("" if result["reaches_market"] else " (paper venue — real prices and real "
