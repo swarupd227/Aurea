@@ -3,6 +3,8 @@ import { OrdersCard } from "./OrdersCard";
 import { CompliancePanelCard } from "./CompliancePanelCard";
 import { CrmPipelineCard, ProspectBriefCard } from "./CrmPipelineCard";
 import { IntroductionsCard, LinkRecordedCard } from "./IntroductionsCard";
+import { PersonaCard } from "./PersonaCard";
+import { LinkedInImportCard, NetworkMapCard } from "./NetworkMapCard";
 import { BriefProfileCard } from "./BriefProfileCard";
 import { PreferencesCard } from "./PreferencesCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
@@ -127,6 +129,15 @@ export function artifactCard(artifact: Artifact) {
       case "record_relationship":
         if (!artifact.result?.link_id) return null;
         return <LinkRecordedCard result={artifact.result as any} />;
+      case "read_persona":
+        if (!artifact.result?.subject || !Array.isArray(artifact.result?.points)) return null;
+        return <PersonaCard result={artifact.result as any} />;
+      case "read_network_map":
+        if (!artifact.result?.centre || !Array.isArray(artifact.result?.nodes)) return null;
+        return <NetworkMapCard result={artifact.result as any} />;
+      case "import_linkedin_connections":
+        if (typeof artifact.result?.rows !== "number" || !Array.isArray(artifact.result?.linking)) return null;
+        return <LinkedInImportCard result={artifact.result as any} />;
       case "read_brief_profile":
       case "set_brief_profile":
         if (!Array.isArray(artifact.result?.lead) || typeof artifact.result?.length !== "string") return null;

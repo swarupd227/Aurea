@@ -233,6 +233,10 @@ class ToolExecutors(AdminToolExecutors):
             "read_crm_pipeline": self.read_crm_pipeline,
             "prepare_prospect_meeting": self.prepare_prospect_meeting,
             "find_introductions": self.find_introductions,
+            # A persona from public sources, the network map and an RM's own LinkedIn export (B-202, B-201).
+            "read_persona": self.read_persona,
+            "read_network_map": self.read_network_map,
+            "import_linkedin_connections": self.import_linkedin_connections,
             "record_relationship": self.record_relationship,
             "read_brief_profile": self.read_brief_profile,
             "set_brief_profile": self.set_brief_profile,
@@ -2367,6 +2371,8 @@ class ToolExecutors(AdminToolExecutors):
                 return say(float(v or 0))
             if kind == "list":
                 return ", ".join(v or []) or "Nothing"
+            if kind == "text":
+                return v or "Not set"
             return f"{v:,}" if isinstance(v, (int, float)) else str(v)
         return [("Control", p["label"]), ("Now", shown(p["now"])), ("Becomes", shown(p["after"])), ("Reason", p["reason"])]
 
@@ -4568,6 +4574,8 @@ class ToolExecutors(AdminToolExecutors):
             return rows(*await self._relationship_preview(inputs))
         if tool_key in ("remember_preference", "end_preference"):
             return rows(*await self._preference_preview(tool_key, inputs))
+        if tool_key == "import_linkedin_connections":
+            return rows(*await self._linkedin_preview(inputs))
         if tool_key == "set_brief_profile":
             return rows(*await self._brief_profile_preview(inputs))
         if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):
@@ -5718,6 +5726,14 @@ class ToolExecutors(AdminToolExecutors):
                                 "recorded_links_to_target": ways["recorded_links_to_target"]}
         present = ["deals", "activity", "not_on_file"] + (["introductions"] if ways["paths"] or ways["in_touch"] else []) \
             + (["booked"] if out["booked"] else [])
+        # Talking points from public sources, only where compliance has switched profiling on (B-202).
+        from app.aurea_core import persona
+
+        pers = await persona.build(self.session, firm, contact_id=out["contact"]["id"])
+        if pers["allowed"]:
+            out["persona"] = {k: pers.get(k) for k in ("points", "left_out", "control", "simulated", "expiry_days",
+                                                        "sources", "not_on_file", "articles_read", "as_of")}
+            present.append("persona")
         # Laid out for whoever is preparing (B-203).
         out["shaped_for"] = await brief_profile.for_user(self.session, firm.id, self.user_id, "prospect", present)
         out["currency"] = firm.base_currency
@@ -5727,6 +5743,8 @@ class ToolExecutors(AdminToolExecutors):
                           + (f"; best way in: {best['introducer']['name']}, asked by "
                              f"{'you' if best['ask']['id'] == str(self.user_id) else best['ask']['name']} (score {best['score']})"
                              if best else "; no way in recorded")
+                          + (f"; {len(out['persona']['points'])} talking point(s) from public sources"
+                             + (" (simulated source)" if out["persona"]["simulated"] else "") if "persona" in out else "")
                           + (f"; not on file: {', '.join(out['not_on_file'])}" if out["not_on_file"] else "") + ".")
         return out
 
@@ -5787,6 +5805,84 @@ class ToolExecutors(AdminToolExecutors):
         except introductions.IntroductionError as exc:
             raise ExecutorError(str(exc))
         out["message"] = f"Recorded: {out['from']['name']} {out['label']} {out['to']['name']}, in {out['recorded_by']}'s name."
+        return out
+
+    # ── A persona, the network map and an RM's LinkedIn export (B-202, B-201 internal part) ──────────
+
+    def _who(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"contact_id": inputs.get("contact_id"), "person_id": inputs.get("person_id"), "name": inputs.get("name")}
+
+    async def read_persona(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import persona
+
+        if UserRole(self.role) == UserRole.CLIENT:
+            raise ExecutorError("A persona is never shown to a client.")
+        try:
+            out = await persona.read(self.session, await self._firm(), **self._who(inputs))
+        except persona.PersonaError as exc:
+            raise ExecutorError(str(exc))
+        left = out["left_out"]
+        gone = [f"{left['special_category']} sentence(s) on a special category" if left["special_category"] else "",
+                f"{left['adverse_media']} adverse article(s), which stay with screening" if left["adverse_media"] else "",
+                f"{left['unchecked']} point(s) whose quote was not in the article" if left["unchecked"] else "",
+                f"{left['expired']} article(s) older than {out['expiry_days']} days" if left["expired"] else ""]
+        gone = [g for g in gone if g]
+        who = out["subject"]["name"]
+        out["message"] = ((f"{len(out['points'])} talking point(s) about {who} from {out['articles_read']} article(s)"
+                           if out["points"] else f"No talking point about {who} from {out['articles_read']} article(s)")
+                          + (f"; left out: {', '.join(gone)}" if gone else "")
+                          + ("; the news source is simulated" if out["simulated"] else "")
+                          + (f"; not on file: {', '.join(out['not_on_file'])}" if out["not_on_file"] else "")
+                          + f". Basis: {out['control']['basis']}.")
+        return out
+
+    async def read_network_map(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import introductions, network_map
+
+        try:
+            out = await network_map.build(self.session, await self._firm(), **self._who(inputs))
+        except introductions.IntroductionError as exc:
+            raise ExecutorError(str(exc))
+        me = str(self.user_id)
+        for n in out["nodes"]:
+            n["you"] = n["type"] == "user" and n["id"] == me
+        c = out["counts"]
+        out["message"] = (f"Around {out['centre']['name']}, {out['depth']} links out: {c['nodes'] - 1} people and entities, "
+                          f"{c['recorded']} link(s) a person recorded ({c['linkedin']} from a LinkedIn export) and "
+                          f"{c['facts']} the platform holds as fact" + (f"; {c['truncated']} more not drawn" if c["truncated"] else "") + ".")
+        return out
+
+    async def _linkedin_prepared(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import linkedin_import
+
+        try:
+            return await linkedin_import.prepare(self.session, await self._firm(), await self._me(), inputs.get("csv_text") or "")
+        except linkedin_import.LinkedInImportError as exc:
+            raise ExecutorError(str(exc))
+
+    async def _linkedin_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import linkedin_import
+
+        p = await self._linkedin_prepared(inputs)
+        s = linkedin_import.summary(p)
+        names = ", ".join(x["name"] for x in s["linking"][:8]) + (f" and {len(s['linking']) - 8} more" if len(s["linking"]) > 8 else "")
+        example = linkedin_import.evidence(s["rm"], p["to_link"][0]["connected_on"]) if p["to_link"] else None
+        return [("Whose export", s["rm"]), ("Rows in the export", str(s["rows"])), ("Will be linked", str(s["to_link"])),
+                ("Linking", names or "Nobody"), ("Already linked", str(s["already"])), ("Matched", str(s["matched"])),
+                ("Skipped, matching nobody", str(s["unmatched"])), ("Skipped, matching two people", str(s["ambiguous"])),
+                ("Evidence", example), ("Contacts created", "None; a row matching nobody is only counted")]
+
+    async def import_linkedin_connections(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import linkedin_import
+
+        try:
+            out = await linkedin_import.import_connections(self.session, await self._firm(), await self._me(),
+                                                           inputs.get("csv_text") or "")
+        except linkedin_import.LinkedInImportError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = (f"Linked {out['linked']} of {out['rows']} connection(s) to the firm's contacts and clients; "
+                          f"{out['already']} already linked, {out['unmatched']} matching nobody (not added), "
+                          f"{out['ambiguous']} matching two people (skipped).")
         return out
 
     # ── The RM's brief profile (B-203) ───────────────────────────────────────────────────────

@@ -2751,6 +2751,52 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
     ),
 
+    # ─── Persona and network (B-202, B-201 internal part)
+
+    "read_persona": Tool(
+        key="read_persona",
+        name="Read Persona",
+        speaking_agent="meeting_prep",
+        description="Talking points about a prospect or client from professional and public sources (aurea_core/persona.py): interests at work and beyond, each citing its article (title, publisher, date, link) and quoting the words it rests on, dated and good for 180 days from the article. Nothing about health, religion, politics, sex life, ethnicity, union membership or criminal matters, and no adverse media (that stays with screening); what was left out is a count. Articles come only from the firm's registered news sources; a simulated source is marked simulated. It runs only where compliance has switched profiling on with its lawful basis; otherwise it is refused and names compliance. Never shown to a client. Give contact_id, person_id, or a name.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("contact_id", "uuid", "The pipeline contact", required=False),
+            ToolInput("person_id", "uuid", "A client person", required=False),
+            ToolInput("name", "string", "The contact's or client's name, if no id", required=False),
+        ],
+        output=ToolOutput("object", "The talking points with their sources, and what was left out"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
+    "read_network_map": Tool(
+        key="read_network_map",
+        name="Read Network Map",
+        speaking_agent="warm_introduction",
+        description="Who knows whom around a prospect or client, two links out (aurea_core/network_map.py): each person, contact, entity and member of staff with how far they are, and each link with whether a person recorded it (with its evidence, by hand or from their own LinkedIn export) or the platform holds it as fact (a family, a household, a recorded adviser, a logged CRM touch). The map stops at staff. It records and introduces nobody. Give contact_id, person_id, or a name.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("contact_id", "uuid", "The pipeline contact", required=False),
+            ToolInput("person_id", "uuid", "A client person", required=False),
+            ToolInput("name", "string", "The contact's or client's name, if no id", required=False),
+        ],
+        output=ToolOutput("object", "The nodes and links of the map"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
+    "import_linkedin_connections": Tool(
+        key="import_linkedin_connections",
+        name="Import LinkedIn Connections",
+        speaking_agent="warm_introduction",
+        description="Import the signed-in person's own LinkedIn connections export (LinkedIn's Connections.csv, the whole file's text): each row whose name matches one of the firm's contacts or clients (accent and case aside) becomes a 'knows' link from them, evidence 'LinkedIn connection since <date>, from <their> own export'. A row matching nobody is counted and listed and never becomes a contact; one matching two people is skipped; one already linked is left. Only their own export: nothing is scraped. The Growth pipeline page takes the file as an upload.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will link you to the contacts and clients your LinkedIn export matches. Continue?",
+        inputs=[ToolInput("csv_text", "string", "The text of the Connections.csv export", required=True)],
+        output=ToolOutput("object", "How many were linked, already linked, unmatched and ambiguous"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
     "read_brief_profile": Tool(
         key="read_brief_profile",
         name="Read Brief Profile",

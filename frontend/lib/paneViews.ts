@@ -420,6 +420,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "find_introductions":
     case "record_relationship":
       return "/studio/pipeline";
+    // A persona, the network map and an RM's LinkedIn export (B-202, B-201): beside the Ways in.
+    case "read_persona":
+    case "read_network_map":
+    case "import_linkedin_connections":
+      return "/studio/pipeline";
     case "read_brief_profile":
     case "set_brief_profile":
       return "/studio/meetings";

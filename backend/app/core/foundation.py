@@ -23,6 +23,9 @@ DEFAULTS: dict = {
     # Grounding & context
     "require_grounding": False,      # escalate "no firm research cited" from advisory to blocking
     "rag_top_k": 3,                  # retrieval depth for grounded reasoning
+    # A persona from public sources (B-202): off until compliance records the lawful basis and switches it on
+    "persona_profiling": False,
+    "persona_basis": "",
 }
 
 

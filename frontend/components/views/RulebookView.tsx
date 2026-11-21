@@ -18,7 +18,7 @@ export interface Rulebook {
 }
 
 const shown = (s: Rulebook["settings"][number]) =>
-  s.kind === "bool" ? (s.value ? "On" : "Off") : s.kind === "share" ? `${Math.round(Number(s.value || 0) * 100)}%`
+  s.kind === "text" ? (s.value || "Not set") : s.kind === "bool" ? (s.value ? "On" : "Off") : s.kind === "share" ? `${Math.round(Number(s.value || 0) * 100)}%`
     : Array.isArray(s.value) ? s.value.join(", ") || "Nothing" : Number(s.value).toLocaleString();
 
 /** The regime's rules as the firm runs them: checked or not, severity, how often each failed. Figures and chips only. */
