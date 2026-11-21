@@ -7,6 +7,8 @@ talking-point memos, calibrated to each household's life stage, goals, and estat
 """
 from __future__ import annotations
 
+import uuid
+
 from app.agents._common import firm_voice, narrate
 from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
@@ -49,7 +51,8 @@ class WalletShareScoutAgent(FollowUpOnApproval, BaseAgent):
             ids = [h["id"] for h in await list_households(s, ctx.firm.id)]
         else:
             ids = [str(ctx.subject.id)]
-        brains = [b for hid in ids if (b := await household_brain(s, hid, firm_id=ctx.firm.id))]
+        # Ids as UUIDs: a text id is looked up on Postgres but not on SQLite, so a test or local run found nothing.
+        brains = [b for hid in ids if (b := await household_brain(s, uuid.UUID(str(hid)), firm_id=ctx.firm.id))]
         return {"brains": brains}
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
