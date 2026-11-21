@@ -6,6 +6,12 @@ horizon), the share of the wealth recorded for it, its priority and the contribu
 A goal with a share is funded from that share; the goals without one draw on the rest in priority
 order, each residual compounding for the next. Whatever it has to assume is named in `assumed`.
 
+Returns are the firm's capital market assumptions when it has set them (the brain carries them, B-167). A goal
+whose target is in today's money grows with its own index (CPI, education, healthcare) to its date; an education
+goal recorded with a yearly cost, a start and a length is today's money by construction, and grows with education
+inflation year by year (B-172). A goal with no basis recorded is read as stated. A rate the firm has not set is the
+stated default, and named in `assumed`.
+
 Human capital, the present value of the career earnings still to come, is shown beside the goals from a
 person's recorded income and date of birth. It is never paid into them: a salary is not savings.
 Whether savings pay a retirement income is a different question, the retirement engine's
@@ -17,7 +23,7 @@ from datetime import date
 
 import numpy as np
 
-from app.aurea_core import markets
+from app.aurea_core import markets, planning
 from app.aurea_core.planning import _blended_assumptions
 
 _DISCOUNT_RATE = 0.04   # risk-free rate used to PV human capital
@@ -52,6 +58,7 @@ def run_tradeoff(
     human_capital_value: float = 0.0,
     sims: int = 2500,
     seed: int = 42,
+    cma: dict | None = None,
 ) -> dict:
     """
     Multi-goal Monte Carlo over the household's capital.
@@ -70,7 +77,7 @@ def run_tradeoff(
         return {"goals": [], "shared_capital": round(total_portfolio, 2), "human_capital": round(human_capital_value, 2),
                 "total_effective_capital": effective, "assumptions": {}, "shares_scaled": False}
 
-    mu, sigma = _blended_assumptions(allocation)
+    mu, sigma = _blended_assumptions(allocation, cma=cma)
     rng = np.random.default_rng(seed)
 
     sorted_goals = sorted(goals, key=lambda g: (g.get("priority", 99), g.get("years", ASSUMED_YEARS)))
@@ -151,6 +158,7 @@ def compute_tradeoff_matrix(
     annual_contribution_total: float = 0.0,
     human_capital_value: float = 0.0,
     ccy: str | None = None,
+    cma: dict | None = None,
 ) -> list[dict]:
     """
     For each goal compute three what-if levers and show cross-goal impact.
@@ -163,7 +171,7 @@ def compute_tradeoff_matrix(
     base = run_tradeoff(
         goals=goals, total_portfolio=total_portfolio, allocation=allocation,
         annual_contribution_total=annual_contribution_total,
-        human_capital_value=human_capital_value, sims=1200,
+        human_capital_value=human_capital_value, sims=1200, cma=cma,
     )
     base_by_id = {g["id"]: g["success_probability"] for g in base["goals"]}
 
@@ -172,7 +180,9 @@ def compute_tradeoff_matrix(
         levers = []
 
         for lever_key, lever_label, mod_fn in [
-            ("delay_2y", "Delay by 2 years", lambda g: dict(g, years=g.get("years", 10) + 2)),
+            # A target in today's money grows two more years of its own inflation when it is put off.
+            ("delay_2y", "Delay by 2 years", lambda g: dict(g, years=g.get("years", 10) + 2,
+                                                            target_amount=(g.get("target_amount") or 0) * (1 + (g.get("inflation") or 0)) ** 2)),
             ("reduce_20pct", "Reduce target 20%", lambda g: dict(g, target_amount=(g.get("target_amount") or 0) * 0.80)),
             ("contribute_5k", f"Add {markets.money(5000, ccy)} a year", None),
         ]:
@@ -181,14 +191,14 @@ def compute_tradeoff_matrix(
                 result = run_tradeoff(
                     goals=modified, total_portfolio=total_portfolio, allocation=allocation,
                     annual_contribution_total=annual_contribution_total + 5000,
-                    human_capital_value=human_capital_value, sims=1200,
+                    human_capital_value=human_capital_value, sims=1200, cma=cma,
                 )
             else:
                 modified[i] = mod_fn(g)
                 result = run_tradeoff(
                     goals=modified, total_portfolio=total_portfolio, allocation=allocation,
                     annual_contribution_total=annual_contribution_total,
-                    human_capital_value=human_capital_value, sims=1200,
+                    human_capital_value=human_capital_value, sims=1200, cma=cma,
                 )
             res_by_id = {r["id"]: r["success_probability"] for r in result["goals"]}
             levers.append({
@@ -269,6 +279,29 @@ def earnings(brain: dict, today: date, *, annual_income: float | None = None) ->
             "assumed": sorted(assumed)}
 
 
+def grown_target(goal: dict, target: float, years: int, today: date, assumptions: dict | None, *,
+                 years_delta: int = 0) -> dict:
+    """A goal's target in the money of its date. Read as stated unless it is recorded in today's money
+    (`target_basis: "today"`, with its `index`), or is an education goal recorded with a yearly cost, start
+    and length, which is today's money by construction and grows year by year from its start."""
+    a = goal.get("assumptions") or {}
+    school = goal.get("kind") == "education" and a.get("annual_cost") and a.get("start_year") and a.get("years")
+    if not school and a.get("target_basis") != "today":
+        return {"target": target, "target_basis": "as_stated", "index": None, "inflation": None, "target_today": None, "assumed": []}
+    rates = assumptions or planning.assumption_set(None)
+    index = a.get("index") if a.get("index") in planning.INFLATION_INDEXES else ("education" if goal.get("kind") == "education" else "cpi")
+    rate = float((rates.get("inflation") or {}).get(index, planning.INFLATION_INDEXES[index][1]))
+    named = [f"{index}_inflation"] if f"{index}_inflation" in rates.get("inflation_assumed", [f"{index}_inflation"]) else []
+    if school:
+        cost, span = float(a["annual_cost"]), int(a["years"])
+        wait = max(int(a["start_year"]) - today.year + years_delta, 0)
+        scale = target / (cost * span) if cost * span else 1.0   # a what-if scale on the target carries through
+        today_total, grown = target, sum(cost * scale * (1 + rate) ** (wait + k) for k in range(span))
+    else:
+        today_total, grown = target, target * (1 + rate) ** years
+    return {"target": grown, "target_basis": "today", "index": index, "inflation": rate, "target_today": round(today_total, 2), "assumed": named}
+
+
 def prepare(brain: dict, today: date, *, priority_overrides: dict | None = None, goal_overrides: dict | None = None,
             annual_income: float | None = None) -> dict:
     """The goals as the engine runs them, the earnings beside them and the contributions recorded on them."""
@@ -281,22 +314,28 @@ def prepare(brain: dict, today: date, *, priority_overrides: dict | None = None,
         ov = (goal_overrides or {}).get(gid) or {}
         years = max(1, years + int(ov.get("years_delta", 0)))
         target = target * float(ov.get("target_scale", 1.0))
+        grown = grown_target(g, target, years, today, brain.get("planning"), years_delta=int(ov.get("years_delta", 0)))
         goals.append({"id": gid, "name": g.get("name") or _kind_label(g.get("kind", "other")),
-                      "kind": g.get("kind", "other"), "priority": priority, "target_amount": round(target, 2),
+                      "kind": g.get("kind", "other"), "priority": priority, "target_amount": round(grown["target"], 2),
                       "years": years, "horizon": basis, "assumptions": a,
+                      "target_basis": grown["target_basis"], "target_today": grown["target_today"], "index": grown["index"],
+                      "inflation": grown["inflation"], "rates_assumed": grown["assumed"],
                       "share": float(a["funding_share"]) if a.get("funding_share") is not None else None,
                       "contribution": float(a.get("annual_contribution") or 0.0)})
     extra = sum(float(((goal_overrides or {}).get(g["id"]) or {}).get("extra_contribution", 0)) for g in goals)
     earned = earnings(brain, today, annual_income=annual_income)
     what_if = bool(priority_overrides or goal_overrides or annual_income is not None)
+    rates = {k for g in goals for k in g["rates_assumed"]}
     return {"goals": goals, "contributions": extra, "earnings": earned, "what_if": what_if,
-            "assumed": sorted(set(earned["assumed"]) | ({"years"} if any(g["horizon"] == "assumed" for g in goals) else set()))}
+            "assumed": sorted(set(earned["assumed"]) | rates | ({"years"} if any(g["horizon"] == "assumed" for g in goals) else set()))}
 
 
 def _annotate(results: list[dict], goals: list[dict]) -> list[dict]:
     by_id = {g["id"]: g for g in goals}
     return [{**r, "horizon": by_id[r["id"]]["horizon"],
-             "assumed": ["years"] if by_id[r["id"]]["horizon"] == "assumed" else [], "estimate": True} for r in results]
+             **{k: by_id[r["id"]][k] for k in ("target_basis", "target_today", "index", "inflation")},
+             "assumed": (["years"] if by_id[r["id"]]["horizon"] == "assumed" else []) + by_id[r["id"]]["rates_assumed"],
+             "estimate": True} for r in results]
 
 
 def likelihoods(brain: dict, today: date, *, sims: int = 2500, **overrides) -> dict:
@@ -307,9 +346,11 @@ def likelihoods(brain: dict, today: date, *, sims: int = 2500, **overrides) -> d
     allocation = {k: v for k, v in brain["totals"]["by_asset_class"].items() if v}
     base = run_tradeoff(goals=inputs["goals"], total_portfolio=total, allocation=allocation,
                         annual_contribution_total=inputs["contributions"],
-                        human_capital_value=inputs["earnings"]["value"], sims=sims)
+                        human_capital_value=inputs["earnings"]["value"], sims=sims, cma=planning.cma_of(brain))
+    source = planning.source_of(brain)
     return {**base, "goals": _annotate(base["goals"], inputs["goals"]), "earnings": inputs["earnings"],
-            "assumed": inputs["assumed"], "what_if": inputs["what_if"]}
+            "assumed": inputs["assumed"], "what_if": inputs["what_if"], "assumptions_source": source,
+            "assumptions": {**base["assumptions"], "source": source} if base["assumptions"] else {}}
 
 
 # ── Household assembler ───────────────────────────────────────────────────────
@@ -341,6 +382,7 @@ async def for_household(
     shared = {
         "household": {"id": str(household_id), "name": brain["household"]["name"]},
         "currency": brain.get("currency"), "invested": round(total, 2), "earnings": earned, "assumed": inputs["assumed"], "what_if": inputs["what_if"],
+        "assumptions_source": planning.source_of(brain),
         # The figures the page lays out; None where nothing is on file, never a stand-in.
         "current_age": lead["age"] if lead else None,
         "retirement_age": lead["retirement_age"] if lead else None,
@@ -350,11 +392,12 @@ async def for_household(
         return {**shared, "goals": [], "shared_capital": round(total, 2), "human_capital": earned["value"],
                 "total_effective_capital": round(total + earned["value"], 2), "tradeoff_matrix": [], "assumptions": {}}
 
+    cma = planning.cma_of(brain)
     base = run_tradeoff(goals=inputs["goals"], total_portfolio=total, allocation=allocation,
-                        annual_contribution_total=inputs["contributions"], human_capital_value=earned["value"])
+                        annual_contribution_total=inputs["contributions"], human_capital_value=earned["value"], cma=cma)
     matrix = compute_tradeoff_matrix(goals=inputs["goals"], total_portfolio=total, allocation=allocation,
                                      annual_contribution_total=inputs["contributions"],
-                                     human_capital_value=earned["value"], ccy=brain.get("currency"))
+                                     human_capital_value=earned["value"], ccy=brain.get("currency"), cma=cma)
     return {
         **shared,
         "goals": _annotate(base["goals"], inputs["goals"]),
@@ -362,7 +405,7 @@ async def for_household(
         "human_capital": base["human_capital"],
         "total_effective_capital": base["total_effective_capital"],
         "tradeoff_matrix": matrix,
-        "assumptions": base["assumptions"],
+        "assumptions": {**base["assumptions"], "source": shared["assumptions_source"]},
     }
 
 

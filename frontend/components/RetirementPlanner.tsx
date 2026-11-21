@@ -5,6 +5,7 @@ import { Card, ErrorState, SkeletonList } from "./ui";
 import { RetirementFan } from "./Charts";
 import { api } from "@/lib/api";
 import { money, pct } from "@/lib/format";
+import { agesOfLabel, planToLabel, returnsLabel } from "@/lib/planBasis";
 
 type Plan = any;
 type Levers = { retirement_age: number; longevity_age: number; annual_income: number };
@@ -13,7 +14,7 @@ type Levers = { retirement_age: number; longevity_age: number; annual_income: nu
 export const RETIREMENT_ASSUMED: Record<string, (p: any) => string> = {
   current_age: () => "assumed age 54",
   retirement_age: (p) => `assumed retirement at ${p.retirement_age}`,
-  longevity_age: (p) => `assumed to age ${p.longevity_age}`,
+  longevity_age: (p) => `assumed ${planToLabel(p)}`,
   funding_share: (p) => `assumed ${Math.round((p.funding_share ?? 0) * 100)}% set aside`,
 };
 
@@ -123,7 +124,9 @@ export default function RetirementPlanner({
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
               <span className="chip bg-border-soft text-ink-soft tabular-nums">{money(plan.income_target)}/yr from the portfolio · today&rsquo;s money</span>
-              <span className="chip bg-border-soft text-ink-soft tabular-nums">age {plan.retirement_age}–{plan.longevity_age}</span>
+              <span className="chip bg-border-soft text-ink-soft tabular-nums" data-testid="retirement-span">retire at {plan.retirement_age}, {planToLabel(plan)}</span>
+              {agesOfLabel(plan) && <span className="chip bg-border-soft text-ink-muted">{agesOfLabel(plan)}</span>}
+              <span className="chip bg-border-soft text-ink-muted" data-testid="retirement-returns-source">{returnsLabel(plan.assumptions_source)}</span>
               {plan.median_depletion_age && (
                 <span className="chip bg-warn-bg text-warn tabular-nums">median depletion · age {plan.median_depletion_age}</span>
               )}
@@ -159,11 +162,11 @@ export default function RetirementPlanner({
       {/* Key figures */}
       <div className="grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="retirement-figures">
         <Stat icon={Clock} label="Years to retirement" value={`${plan.years_to_retirement}`} sub={`retire at ${plan.retirement_age}`} />
-        <Stat icon={TrendingUp} label="At retirement" value={money(plan.projected_at_retirement)} sub="median · estimate" />
+        <Stat icon={TrendingUp} label="At retirement" value={money(plan.projected_at_retirement_today ?? plan.projected_at_retirement)} sub="median · today's money" />
         <Stat icon={Wallet} label="Sustainable income" value={money(plan.sustainable_income)}
           sub={plan.income_gap > 0 ? `${money(plan.income_gap)} below target` : "covers the target"}
           tone={plan.income_gap > 0 ? "text-warn" : "text-ok"} />
-        <Stat icon={PiggyBank} label="Income at retirement" value={money(plan.income_at_retirement)} sub="inflation-adjusted" />
+        <Stat icon={PiggyBank} label="Income at retirement" value={money(plan.income_at_retirement)} sub="from the portfolio · that year's money" />
       </div>
 
       <div className="grid gap-4 cq-md:grid-cols-3">

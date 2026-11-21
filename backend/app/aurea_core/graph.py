@@ -110,8 +110,12 @@ async def household_brain(
     from app.aurea_core.advisers import adviser_of
 
     adviser = await adviser_of(session, firm_id, household_id)
+    from app.aurea_core.planning import assumption_set
+
     return {
         "currency": firm.base_currency if firm else None,
+        # The firm's returns and inflation indexes, so every engine reading the brain projects on them (B-167).
+        "planning": assumption_set(firm.settings if firm else None),
         "household": {
             "id": str(household.id),
             "name": household.name,

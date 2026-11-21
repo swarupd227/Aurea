@@ -38,6 +38,53 @@ def effective_cma(firm_settings: dict | None = None) -> dict:
                 pass
     return out
 
+
+def cma_source(firm_settings: dict | None = None) -> str:
+    """Whose capital market assumptions a projection runs on: "firm" when the firm has set any that
+    `effective_cma` would use, else "platform" (the defaults above)."""
+    for val in ((firm_settings or {}).get("cmas") or {}).values():
+        if isinstance(val, (list, tuple)) and len(val) == 2:
+            try:
+                float(val[0]), float(val[1])
+                return "firm"
+            except (TypeError, ValueError):
+                continue
+    return "platform"
+
+
+# A goal's own inflation, by index: the firm setting it is read from and the stated default used without one.
+# A default used is named in a result's `assumed` as "<index>_inflation", never applied silently.
+INFLATION_INDEXES = {"cpi": ("inflation", 0.025), "education": ("education_inflation", 0.05),
+                     "healthcare": ("healthcare_inflation", 0.05)}
+
+
+def assumption_set(firm_settings: dict | None = None) -> dict:
+    """What a firm's projections run on: its returns (the firm's CMAs over the platform's) and each inflation
+    index, with whether each came from the firm or is the stated default. The client brain carries it, so every
+    engine that reads the brain reads the firm's figures."""
+    s = firm_settings or {}
+    inflation, assumed = {}, []
+    for index, (key, default) in INFLATION_INDEXES.items():
+        try:
+            value = float(s[key]) if s.get(key) not in (None, "") else None
+        except (TypeError, ValueError):
+            value = None
+        if value is None:
+            value = default
+            assumed.append(f"{index}_inflation")
+        inflation[index] = value
+    return {"cma": {k: list(v) for k, v in effective_cma(s).items()}, "source": cma_source(s),
+            "inflation": inflation, "inflation_assumed": assumed}
+
+
+def cma_of(brain: dict | None) -> dict | None:
+    """The CMAs a client brain carries (`assumption_set`), or None for the platform's."""
+    return ((brain or {}).get("planning") or {}).get("cma")
+
+
+def source_of(brain: dict | None) -> str:
+    return ((brain or {}).get("planning") or {}).get("source") or "platform"
+
 # Named stress scenarios: per-asset-class shock (instantaneous return).
 STRESS_SCENARIOS = {
     "gfc_2008": {"equity": -0.40, "fixed_income": 0.05, "alternatives": -0.30,

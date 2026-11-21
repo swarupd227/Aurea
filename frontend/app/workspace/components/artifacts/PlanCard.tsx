@@ -1,4 +1,5 @@
 import { money } from "@/lib/format";
+import { returnsLabel } from "@/lib/planBasis";
 
 export const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -10,7 +11,11 @@ export function PlanCard({ result }: { result: any }) {
     <div className="overflow-hidden rounded-lg border border-border bg-surface" data-testid="plan-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3 py-2">
         <div className="text-sm font-medium text-ink">Financial plan · {result.household}</div>
-        <span className="chip text-ink-muted">estimates</span>
+        <div className="flex flex-wrap gap-1.5">
+          <span className="chip text-ink-muted">estimates</span>
+          <span className="chip text-ink-muted" data-testid="plan-card-returns-source">{returnsLabel(result.assumptions_source)}</span>
+          {r && <span className="chip text-ink-muted">today&rsquo;s money</span>}
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-3 px-3 py-2.5 sm:grid-cols-4">
         {[
@@ -27,7 +32,7 @@ export function PlanCard({ result }: { result: any }) {
       </div>
       {result.education.length > 0 && (
         <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-2">
-          {result.education.map((e: any) => <span key={e.goal} className="chip text-ink-muted">{e.student}: {e.status === "assessed" ? `${pct1(e.funded)} funded` : "not assessed"}</span>)}
+          {result.education.map((e: any) => <span key={e.goal} className="chip text-ink-muted">{e.student ?? e.goal}: {e.likelihood != null ? `${Math.round(e.likelihood * 100)}% likely` : "not assessed"}</span>)}
         </div>
       )}
     </div>

@@ -4,6 +4,7 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { money } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { pct1 } from "@/app/workspace/components/artifacts/PlanCard";
+import { agesOfLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
 import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
@@ -59,6 +60,8 @@ export function FinancialPlanView({ household = null }: { household?: string | n
       <Card className="mb-4">
         <div className="flex flex-wrap gap-1.5" data-testid="plan-basis">
           <span className="chip text-ink-muted">estimates from what is on file</span>
+          <span className="chip text-ink-muted" data-testid="plan-returns-source">{returnsLabel(data.assumptions_source)}</span>
+          {r && <span className="chip text-ink-muted" data-testid="plan-money-basis">today&rsquo;s money</span>}
           {r && <span className="chip text-ink-muted">{{ stated: "income stated", recorded_spending: "income from recorded spending", assumed_draw: "income assumed at 5% of the pot" }[r.income_basis as string]}</span>}
           {c.basis === "assets_only" && <span className="chip text-warn">assets only</span>}
           <span className="chip text-ink-muted">tax and survivor income not modelled</span>
@@ -67,9 +70,15 @@ export function FinancialPlanView({ household = null }: { household?: string | n
 
       {r && (
         <Card className="mb-4 overflow-hidden p-0" data-testid="plan-retirement">
-          <div className="border-b border-border-soft px-4 py-2.5 text-sm font-medium text-ink">Retirement at {r.retirement_age}, to age {r.longevity_age}</div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-4 py-2.5">
+            <div className="text-sm font-medium text-ink" data-testid="plan-retirement-span">Retirement at {r.retirement_age}, {planToLabel(r)}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {agesOfLabel(r) && <span className="chip text-ink-muted">{agesOfLabel(r)}</span>}
+              {r.plan_to?.assumed && <span className="chip text-warn">plan-to age assumed</span>}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3 px-4 py-3 cq-md:grid-cols-4">
-            {[["Income needed", money(r.income_need ?? r.income_target)], ["Counted on", money(r.guaranteed_income)], ["From the portfolio", money(r.income_target)], ["Projected pot", money(r.projected_at_retirement)],
+            {[["Income needed", money(r.income_need ?? r.income_target)], ["Counted on", money(r.guaranteed_income)], ["From the portfolio", money(r.income_target)], ["Projected pot", money(r.projected_at_retirement_today ?? r.projected_at_retirement)],
               ["At the 4% rule", money(r.rule_of_thumb_income)], ["Early crash", `${Math.round(r.sequence_risk.early_crash * 100)}%`],
               ["Essentials covered", r.essentials_covered != null ? pct1(r.essentials_covered) : "—"], ["Depletes at", r.median_depletion_age ?? "—"]].map(([label, v]) => (
               <div key={label as string}><div className="tile-label">{label}</div><div className="font-mono text-sm tabular-nums text-ink">{v}</div></div>
@@ -157,15 +166,21 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           <div className="border-b border-border-soft px-4 py-2.5 text-sm font-medium text-ink">Education</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="plan-education">
-              <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>For</th><th className={`${th} text-right`}>From</th><th className={`${th} text-right`}>Total cost</th><th className={`${th} text-right`}>Funded</th><th className={`${th} text-right`}>To save a year</th></tr></thead>
+              <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>For</th><th className={`${th} text-right`}>From</th><th className={`${th} text-right`}>Total cost</th><th className={`${th} text-right`}>Likelihood</th><th className={`${th} text-right`}>In 529s</th><th className={th}>Basis</th></tr></thead>
               <tbody className="divide-y divide-border-soft">
                 {data.education.map((e: any) => (
                   <tr key={e.goal} title={e.cost_source}>
                     <td className="px-4 py-2 text-ink">{e.student ?? e.goal}</td>
                     <td className={num}>{e.start_year ?? "—"}</td>
                     <td className={num}>{e.total_cost != null ? money(e.total_cost) : "not assessed"}</td>
-                    <td className={num}>{e.funded != null ? pct1(e.funded) : "—"}</td>
-                    <td className={num}>{e.saving_a_year != null ? money(e.saving_a_year) : "—"}</td>
+                    <td className={e.likelihood == null ? num : num.replace("text-ink-muted", e.on_track ? "text-ok" : "text-warn")}>{e.likelihood != null ? `${Math.round(e.likelihood * 100)}%` : "—"}</td>
+                    <td className={num}>{money(e.in_529 ?? 0)}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {e.inflation != null && <span className="chip text-ink-muted">{money(e.total_cost_today)} today · +{pct1(e.inflation)}/yr</span>}
+                        {(e.assumed || []).filter((k: string) => RATE_ASSUMED[k]).map((k: string) => <span key={k} className="chip text-warn">{RATE_ASSUMED[k]}</span>)}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

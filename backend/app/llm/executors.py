@@ -1281,7 +1281,8 @@ class ToolExecutors(AdminToolExecutors):
             raise ExecutorError(f"Household {household_id} not found or access denied")
         say = markets.money_for(await self._firm())
         r = result["retirement"]
-        result["message"] = (f"{result['household']}: {r['success_probability']:.0%} probability of success, sustainable income {say(r['sustainable_income'])} a year. "
+        result["message"] = (f"{result['household']}: {r['success_probability']:.0%} probability of success, sustainable income {say(r['sustainable_income'])} a year "
+                             f"in today's money, as are the withdrawal rates and the 4% rule. {self._plan_to_words(r)} {self._returns_words(result['assumptions_source'])} "
                              "These are estimates from what is on file." if r else f"{result['household']}: no retirement projection.")
         return result
 
@@ -5021,19 +5022,37 @@ class ToolExecutors(AdminToolExecutors):
         """What a goal likelihood rests on, for the model to say: the one engine every screen reads, and
         what it had to assume (B-131)."""
         said = ["a horizon for a goal with no date"] if "years" in assumed else []
+        said += [f"{index} inflation at the platform's default rate" for index in ("cpi", "education", "healthcare") if f"{index}_inflation" in assumed]
         return ("The same figures as the goals page: each goal is funded from the share of wealth recorded for it, "
-                "and goals with none share the rest in priority order. Career earnings are not counted as savings."
+                "and goals with none share the rest in priority order. A target in today's money grows with its own inflation "
+                "to its date. Career earnings are not counted as savings."
                 + (f" Assumed, not on file: {', '.join(said)}." if said else ""))
 
     @staticmethod
+    def _plan_to_words(plan: dict) -> str:
+        """Whose ages a retirement plan counts in and whose plan-to age ends it (B-173)."""
+        to = plan.get("plan_to") or {}
+        who = f"until {to['person']}, the younger adult, is {to.get('age')}" if to.get("whose") == "younger_adult" else f"to age {plan.get('longevity_age')}"
+        ages = f" Ages are {plan['ages_of']}'s." if plan.get("ages_of") and to.get("whose") == "younger_adult" else ""
+        return f"The plan runs {who}{' (assumed)' if to.get('assumed') else ''}.{ages}"
+
+    @staticmethod
+    def _returns_words(source: str | None) -> str:
+        return ("Returns are the firm's capital market assumptions." if source == "firm"
+                else "Returns are the platform's capital market assumptions: the firm has set none.")
+
+    @staticmethod
     def _retirement_basis(plan: dict) -> str:
+        to = plan.get("plan_to") or {}
         words = {"current_age": "an age of 54", "retirement_age": f"retiring at {plan.get('retirement_age')}",
-                 "longevity_age": f"living to {plan.get('longevity_age')}",
+                 "longevity_age": f"{to['person'] + ', the younger adult, ' if to.get('whose') == 'younger_adult' else ''}living to {plan.get('longevity_age')}",
+                 "stream_start": "a guaranteed income's owner the age of the eldest adult",
                  "funding_share": f"{plan.get('funding_share', 0):.0%} of wealth set aside for it",
                  "annual_income": "an income of 5% a year of what is set aside"}
         said = [words[a] for a in plan.get("assumed", []) if a in words]
         return ("Whether the savings set aside for retirement pay the income wanted until the longevity age: a "
-                "different question from whether the retirement goal's target sum is reached, which the goals answer."
+                "different question from whether the retirement goal's target sum is reached, which the goals answer. "
+                + ToolExecutors._plan_to_words(plan) + " " + ToolExecutors._returns_words(plan.get("assumptions_source"))
                 + (f" Assumed, not on file: {', '.join(said)}." if said else ""))
 
     async def read_client_canvas(self, inputs: dict[str, Any]) -> dict[str, Any]:

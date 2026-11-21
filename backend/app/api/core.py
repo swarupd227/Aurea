@@ -50,7 +50,8 @@ async def household_planning(
     by_class = brain["totals"]["by_asset_class"]
     allocation = {k: v for k, v in by_class.items()}
 
-    risk = planning.portfolio_risk(allocation, total)
+    # On the firm's capital market assumptions when it has set them (B-167), as every projection is.
+    risk = planning.portfolio_risk(allocation, total, cma=planning.cma_of(brain))
     stress = planning.stress_test(allocation)
 
     # The goals as every other screen sees them (goal_tradeoff.likelihoods), not a copy of the engine.
@@ -71,6 +72,7 @@ async def household_planning(
         "goals": goal_projections,
         "goals_assumed": planned["assumed"],
         "earnings": planned["earnings"]["basis"],
+        "assumptions_source": planning.source_of(brain),
     }
 
 
@@ -212,8 +214,9 @@ async def portfolio_whatif(
     total = sum(allocation.values()) or 0.0
     return {
         "total": round(total, 2),
-        "risk": planning.portfolio_risk(allocation, total),
+        "risk": planning.portfolio_risk(allocation, total, cma=planning.effective_cma(firm.settings)),
         "stress": planning.stress_test(allocation),
+        "assumptions_source": planning.cma_source(firm.settings),
     }
 
 
@@ -233,5 +236,6 @@ async def ad_hoc_projection(
         annual_withdrawal=float(body.get("annual_withdrawal", 0)),
         years=int(body["years"]),
         target_amount=float(body["target_amount"]),
+        cma=planning.effective_cma(firm.settings),
     )
-    return proj.__dict__
+    return {**proj.__dict__, "assumptions_source": planning.cma_source(firm.settings)}

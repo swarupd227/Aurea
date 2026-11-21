@@ -108,7 +108,10 @@ async def compute(session: AsyncSession, firm_id: uuid.UUID, brains: list[dict] 
                     esg_excluded += mv
 
     allocation = {k: round(v, 2) for k, v in by_class_mv.items()}
-    risk = planning.portfolio_risk(allocation, total_mv)
+    from app.models.tenant import Firm
+
+    firm = await session.get(Firm, firm_id)
+    risk = planning.portfolio_risk(allocation, total_mv, cma=planning.effective_cma(firm.settings if firm else None))
     stress = planning.stress_test(allocation)
 
     # Performance & attribution: the real linked return from `performance.py`, not the old
