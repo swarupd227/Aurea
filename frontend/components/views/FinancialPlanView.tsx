@@ -4,7 +4,7 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { money } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { pct1 } from "@/app/workspace/components/artifacts/PlanCard";
-import { agesOfLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
+import { agesOfLabel, basisLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
 import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
@@ -65,6 +65,9 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           {r && <span className="chip text-ink-muted">{{ stated: "income stated", recorded_spending: "income from recorded spending", assumed_draw: "income assumed at 5% of the pot" }[r.income_basis as string]}</span>}
           {c.basis === "assets_only" && <span className="chip text-warn">assets only</span>}
           <span className="chip text-ink-muted">tax and survivor income not modelled</span>
+          {(data.assumption_basis ?? []).map((b: any) => (
+            <span key={b.key} className="chip text-ink-muted" data-testid="plan-market-basis" title={`${b.source} · ${b.basis}`}>{basisLabel(b)}</span>
+          ))}
         </div>
       </Card>
 

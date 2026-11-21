@@ -14,7 +14,7 @@ export interface MyRetirementPayload {
   longevity_age: number;
   plan_to?: { age: number; person: string | null; whose: string; assumed: boolean };
   ages_of?: string | null;
-  assumptions_source?: "firm" | "platform";
+  assumptions_source?: "firm" | "market" | "platform";
   projected_at_retirement_today?: number;
   years_to_retirement: number;
   income_target: number;

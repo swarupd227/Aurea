@@ -774,7 +774,11 @@ class ToolExecutors(AdminToolExecutors):
                 "kind": str(inputs.get("kind") or "").strip().lower(), "provider": inputs.get("provider") or "",
                 "source_document": inputs.get("source_document") or "", "sum_insured": inputs.get("sum_insured"),
                 "annual_benefit": inputs.get("annual_benefit"), "benefit_to_age": inputs.get("benefit_to_age"),
-                "benefit_years": inputs.get("benefit_years"), "expires_on": expires}
+                "benefit_years": inputs.get("benefit_years"), "expires_on": expires,
+                "cover_basis": inputs.get("cover_basis"),
+                "rider_of": _parse_uuid(inputs["rider_of"], "rider_of") if inputs.get("rider_of") else None,
+                "group_cover": str(inputs.get("group_cover")).lower() == "true", "nominee": inputs.get("nominee"),
+                "nominee_relationship": inputs.get("nominee_relationship"), "mwp": str(inputs.get("mwp")).lower() == "true"}
 
     async def record_protection_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
         args = self._policy_args(inputs)
@@ -790,7 +794,7 @@ class ToolExecutors(AdminToolExecutors):
         firm = await self._firm()
         say = markets.money_for(firm)
         kinds = {"life": "Life", "tpd": "Total and permanent disablement", "income_protection": "Income protection",
-                 "long_term_care": "Long-term care"}
+                 "long_term_care": "Long-term care", "critical_illness": "Critical illness", "personal_accident": "Personal accident"}
         try:
             if tool_key == "set_care_assumptions":
                 r = await protection.prepare_care(self.session, self.firm_id, annual_cost=inputs.get("annual_cost"),
@@ -808,7 +812,15 @@ class ToolExecutors(AdminToolExecutors):
                         ("Benefit to age", r["benefit_to_age"]),
                         ("Paid for", f"{r['benefit_years']} years" if r["benefit_years"] else
                          ("As long as care lasts" if r["kind"] == "long_term_care" else None)),
-                        ("Ends on", r["expires_on"]), ("Document", r["source"])]
+                        ("Ends on", r["expires_on"]),
+                        ("Pays on", "An accident only" if r["cover_basis"] == "accident_only" else None),
+                        ("Rider of", f"{kinds.get(r['rider_of'].kind, r['rider_of'].kind)} with {r['rider_of'].provider}" if r["rider_of"] else None),
+                        ("Group cover", "Employer group cover" if r["group_cover"] else None),
+                        ("Nominee", f"{r['nominee']} ({r['nominee_relationship']})" if r["nominee"] and r["nominee_relationship"] else r["nominee"]),
+                        ("Written under", "Married Women's Property Act: outside the estate" if r["mwp"] else None),
+                        ("Counted", "No, " + protection.not_counted_for(r["kind"], r["cover_basis"])
+                         if protection.not_counted_for(r["kind"], r["cover_basis"]) else None),
+                        ("Document", r["source"])]
             if tool_key == "end_protection_policy":
                 r = await protection.prepare_end(self.session, self.firm_id, _parse_uuid(inputs.get("policy_id"), "policy_id"),
                                                  reason=inputs.get("reason") or "")
@@ -1465,7 +1477,8 @@ class ToolExecutors(AdminToolExecutors):
         return {k: inputs.get(k) for k in ("name", "relationship", "source_document", "phone", "email")}
 
     def _estate_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        return {"kind": inputs.get("kind"), "signed_on": self._exit_day(inputs.get("signed_on"), "signed_on"), "source_document": inputs.get("source_document"), "held_by": inputs.get("held_by")}
+        return {"kind": inputs.get("kind"), "signed_on": self._exit_day(inputs.get("signed_on"), "signed_on"), "source_document": inputs.get("source_document"), "held_by": inputs.get("held_by"),
+                "named_heirs": inputs.get("named_heirs")}
 
     def _event_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {"kind": inputs.get("kind"), "happened_on": self._exit_day(inputs.get("happened_on"), "happened_on"), "source_document": inputs.get("source_document"),
@@ -1520,7 +1533,8 @@ class ToolExecutors(AdminToolExecutors):
                         ("Replaces", r["was"].name if r["was"] else None), ("Authority", "None: they may be called, not instructed"), ("Document", r["document"])]
             if tool_key == "record_estate_document":
                 r = await client_file.prepare_estate_document(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._estate_args(inputs))
-                return [("Client", r["person"].full_name), ("Document", r["kind"].replace("_", " ").capitalize()), ("Signed", firm_time.spoken(r["signed_on"])), ("Held by", r["held_by"]), ("Known from", r["document"])]
+                return [("Client", r["person"].full_name), ("Document", r["kind"].replace("_", " ").capitalize()), ("Signed", firm_time.spoken(r["signed_on"])), ("Held by", r["held_by"]),
+                        ("Names as heirs", ", ".join(r["named"]) if r["named"] else None), ("Known from", r["document"])]
             r = await client_file.prepare_event(self.session, _parse_uuid(inputs.get("household_id") or "", "household_id"), firm_id=self.firm_id, **self._event_args(inputs))
             return [("Client", r["household"].name), ("Event", r["kind"].replace("_", " ").capitalize()), ("Who", r["person"].full_name if r["person"] else None), ("On", firm_time.spoken(r["day"])),
                     ("Other party", r["other"]), ("Note", r["note"]), ("Touches", ", ".join(t.replace("_", " ") for t in r["touches"])), ("Then", "A review task opens"), ("Document", r["document"])]
@@ -3405,6 +3419,11 @@ class ToolExecutors(AdminToolExecutors):
         if not name or percentage is None:
             raise ExecutorError("beneficiary_name and percentage are required")
         account = await self._account(inputs)
+        from app.aurea_core import nominations
+
+        too_many = await nominations.refusal(self.session, await self._firm(), account)
+        if too_many:
+            raise ExecutorError(too_many)
         designation_class = inputs.get("designation_class") or "primary"
         if designation_class not in ("primary", "contingent"):
             raise ExecutorError("designation_class must be primary or contingent")

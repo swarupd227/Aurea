@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, String, Text
+from sqlalchemy import JSON, Date, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -39,6 +39,8 @@ class EstateDocument(Base):
     kind: Mapped[str] = mapped_column(String(24))
     signed_on: Mapped[date] = mapped_column(Date)
     held_by: Mapped[str | None] = mapped_column(String(200))
+    # Who a will names to inherit, as written in it, so a nominee can be read against it (India row 5).
+    named: Mapped[list | None] = mapped_column(JSON, nullable=True)
     source_document: Mapped[str] = mapped_column(String(300))
     recorded_by: Mapped[str] = mapped_column(String(200))
 

@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.aurea_core import balance_sheet, firm_time, goal_tradeoff, markets, planning, retirement
 from app.aurea_core.graph import household_brain
 from app.aurea_core.planning import _blended_assumptions
-from app.models.financial_plan import STREAM_KINDS, IncomeStream
+from app.models.financial_plan import INDIA_STREAM_KINDS, STREAM_KINDS, IncomeStream
 from app.models.graph import Account, Goal, Household, Mandate, Person
 from app.models.portfolio import Holding
 from app.models.tenant import Firm
@@ -99,7 +99,7 @@ def _age_on(dob: date | None, today: date) -> int | None:
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day)) if dob else None
 
 
-def _stream_view(s: IncomeStream, person: Person | None, today: date, us: bool) -> dict:
+def _stream_view(s: IncomeStream, person: Person | None, today: date, us: bool, life_to: int = LIFE_TO) -> dict:
     annual = float(s.annual_amount)
     age = _age_on(person.date_of_birth, today) if person else None
     view = {"id": str(s.id), "person_id": str(s.person_id), "person": person.full_name if person else None, "kind": s.kind, "name": s.name, "annual": annual,
@@ -112,12 +112,12 @@ def _stream_view(s: IncomeStream, person: Person | None, today: date, us: bool) 
         view["planned_annual"] = round(annual * claim_factor(full, s.start_age * 12), 2)
         view["claiming"] = claiming_table(annual, person.date_of_birth.year)
     if s.lump_sum is not None or s.joint_annual is not None:
-        years = max(LIFE_TO - max(s.start_age, age or 0), 1)
+        years = max(life_to - max(s.start_age, age or 0), 1)
         lump = float(s.lump_sum) if s.lump_sum is not None else None
         joint = float(s.joint_annual) if s.joint_annual is not None else None
         view["pension_options"] = {
             "lump_sum": lump, "years_to_match_lump": round(lump / annual, 1) if lump else None, "implied_return": implied_return(lump, annual, years) if lump else None,
-            "to_age": LIFE_TO, "joint_annual": joint, "joint_survivor_share": float(s.joint_survivor_share) if s.joint_survivor_share is not None else None,
+            "to_age": life_to, "joint_annual": joint, "joint_survivor_share": float(s.joint_survivor_share) if s.joint_survivor_share is not None else None,
             "cost_of_joint": round(1 - joint / annual, 4) if joint else None}
     return view
 
@@ -130,7 +130,10 @@ async def streams_of(session: AsyncSession, household_id: uuid.UUID, firm: Firm,
     household = await session.get(Household, household_id)
     market = markets.of_household(firm, household.values if household else None)
     people = {p.id: p for p in (await session.execute(select(Person).where(Person.household_id == household_id))).scalars().all()}
-    return [_stream_view(r, people.get(r.person_id), today, bool(market and market.code == "US")) for r in rows
+    from app.aurea_core import market_assumptions
+
+    life_to, _ = market_assumptions.value(firm.settings, firm.jurisdiction, "plan_to_age", LIFE_TO)
+    return [_stream_view(r, people.get(r.person_id), today, bool(market and market.code == "US"), life_to) for r in rows
             if not (people.get(r.person_id) and people[r.person_id].deceased_on)]
 
 
@@ -262,8 +265,14 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     guaranteed = plan.get("guaranteed_income", 0.0) if plan else 0.0
     people = (await session.execute(select(Person).where(Person.household_id == household_id, Person.deceased_on.is_(None)).order_by(Person.full_name))).scalars().all()
     return {
-        "household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "not_modelled": NOT_MODELLED, "currency": firm.base_currency,
+        "household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "currency": firm.base_currency,
+        # Gratuity is a lump sum on leaving work, and the retirement pot here starts from the book alone (India row 5).
+        "not_modelled": NOT_MODELLED + (["gratuity"] if (markets.for_firm(firm) and markets.for_firm(firm).code == "IN") else []),
         "assumptions_source": planning.source_of(brain),
+        # The market's suggested figures this plan used where the firm set none, each with its source (India row 5).
+        "assumption_basis": [b for b in ((brain.get("planning") or {}).get("market_basis") or [])
+                             if ((brain.get("planning") or {}).get("sources") or {}).get(b["key"].replace("inflation", "cpi_inflation")
+                                                                                       if b["key"] == "inflation" else b["key"], "market") == "market"],
         "people": [{"person_id": str(p.id), "name": p.full_name} for p in people], "streams": streams,
         "retirement": None if plan is None else {
             **{k: plan[k] for k in ("current_age", "retirement_age", "longevity_age", "income_target", "projected_at_retirement", "projected_at_retirement_today",
@@ -295,6 +304,12 @@ async def prepare_stream(session: AsyncSession, person_id: uuid.UUID, *, firm_id
         raise PlanError("The starting age must be between 18 and 100.")
     if kind == "social_security" and not 62 <= age <= 70:
         raise PlanError("Social Security is claimed between 62 and 70.")
+    if kind in INDIA_STREAM_KINDS:
+        firm = await session.get(Firm, firm_id)
+        household = await session.get(Household, person.household_id)
+        market = markets.of_household(firm, household.values if household else None)
+        if not market or market.code != "IN":
+            raise PlanError("An EPS pension or an NPS annuity is India's; this household is not taxed there.")
     named = (source_document or "").strip()
     if len(named) < 5:
         raise PlanError("Say which statement this comes from.")

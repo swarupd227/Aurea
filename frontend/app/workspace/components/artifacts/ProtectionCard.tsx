@@ -36,6 +36,11 @@ export interface ProtectionPolicy {
   expires_on: string | null;
   status: string;
   counted: boolean;
+  not_counted?: string | null;
+  cover_basis?: string;
+  rider_of?: string | null;
+  group_cover?: boolean;
+  payee?: { to: string | null; relationship?: string | null; means: string | null };
   source_document: string;
 }
 
@@ -60,7 +65,15 @@ export function money(v: number | null | undefined) {
   return v.toLocaleString(firmLocale(), { maximumFractionDigits: 0 });
 }
 
-export const KIND_TEXT: Record<string, string> = { life: "life", tpd: "TPD", income_protection: "income", long_term_care: "care" };
+export const KIND_TEXT: Record<string, string> = {
+  life: "life", tpd: "TPD", income_protection: "income", long_term_care: "care", critical_illness: "critical illness", personal_accident: "personal accident",
+};
+
+/** Who a policy pays, as chip text: the nominee as named, or a Married Women's Property Act trust. */
+export function payeeText(p: ProtectionPolicy): string | null {
+  if (!p.payee) return null;
+  return p.payee.to ? `to ${p.payee.to}${p.payee.relationship ? ` (${p.payee.relationship})` : ""}` : "no nominee on file";
+}
 
 export const SCENARIO_TEXT: Record<string, string> = { death: "if they die", disability: "if they cannot work", care: "if they need care" };
 
@@ -152,8 +165,13 @@ export function ProtectionCard({ result }: { result: any }) {
           : <PeopleTable rows={h.people.map((p) => ({ p }))} currency={h.currency} />}
         <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-2">
           {h.policies.filter((p) => p.counted).map((p) => (
-            <span key={p.id} className="chip text-ink-muted" title={p.source_document}>
-              {p.person} · {KIND_TEXT[p.kind] ?? p.kind} · {money(p.sum_insured ?? p.annual_benefit)}
+            <span key={p.id} className="chip text-ink-muted" title={[p.source_document, p.payee?.means].filter(Boolean).join(" · ")}>
+              {p.person} · {KIND_TEXT[p.kind] ?? p.kind} · {money(p.sum_insured ?? p.annual_benefit)}{payeeText(p) ? ` · ${payeeText(p)}` : ""}
+            </span>
+          ))}
+          {h.policies.filter((p) => p.status === "in_force" && p.not_counted).map((p) => (
+            <span key={p.id} className="chip text-warn" title={p.not_counted ?? undefined} data-testid="protection-not-counted">
+              {p.person} · {KIND_TEXT[p.kind] ?? p.kind} · not counted
             </span>
           ))}
           <span className="chip text-ink-muted">not modelled: {h.not_modelled.join(" · ").replace(/_/g, " ")}</span>

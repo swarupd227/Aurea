@@ -122,7 +122,9 @@ async def main() -> int:
                 brain = await household_brain(s, h.id, firm_id=firm.id)
                 for g in _signals.goal_projections(brain, firm_time.today(firm)):
                     on_track[f"{h.name}: {g['name']}"] = g["on_track"]
-            check("a book with some goals met and some to talk about", sum(on_track.values()), 4)
+            # India's suggested assumptions (row 5) move these: the check is the mix, not a count.
+            met = sum(on_track.values())
+            check("a book with some goals met and some to talk about", 0 < met < len(on_track), True)
             check("the client we sign in as has one of each", [v for k, v in sorted(on_track.items()) if "Sharma" in k],
                   [False, True])
 
@@ -280,7 +282,9 @@ async def main() -> int:
             funds = {sym: spec for sym, spec in india_demo.INSTRUMENTS.items() if spec[4].get("amfi_code")}
             check("three schemes, each in a direct and a regular plan",
                   sorted(spec[4]["fund_plan"] for spec in funds.values()), ["direct"] * 3 + ["regular"] * 3)
-            day = _date.today().strftime("%d-%b-%Y")
+            from app.core.db import utcnow as _utcnow
+
+            day = _utcnow().date().strftime("%d-%b-%Y")      # the sync's own today, so a local date ahead of UTC is not "future"
             new_layout = "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date\n\n"
             new_layout += "\n".join(f"{spec[4]['amfi_code']};{spec[4]['isin']};-;{spec[4]['scheme']};x;Growth;{spec[3]};{day}" for spec in funds.values())
             old_layout = "122639;INF879O01027;-;Parag Parikh Flexi Cap Fund - Direct Plan - Growth;89.7397;02-Nov-2026\n100822;-;-;x;N.A.;02-Nov-2026"
@@ -388,6 +392,67 @@ async def main() -> int:
             check("run by its karta", [r[0] for r in parties.required_roles("huf")], [PartyRole.KARTA])
             check("formed by a declaration, with its own PAN card",
                   [d[0] for d in document_matrix.MATRIX["huf"]["documents"]], ["id", "huf", "pan"])
+
+            print("\n=== Row 5: planning on India's suggested assumptions ===")
+            from app.aurea_core import client_file, financial_plan, nominations, planning as planning_core, protection as protection_core
+            from app.models.graph import AccountBeneficiary as _Nominee, Account as _Account
+
+            india = planning_core.assumption_set(firm.settings, firm.jurisdiction)
+            check("inflation, retirement and the horizon are India's, and say so",
+                  (india["inflation"]["cpi"], india["retirement_age"], india["plan_to_age"], india["sources"]["cpi_inflation"]),
+                  (0.055, 60, 90, "market"))
+            check("so are equity and fixed income returns, the platform's volatility kept",
+                  (india["cma"]["equity"][0], india["cma"]["fixed_income"][0], india["source"]), (0.11, 0.07, "market"))
+            check("each with its source, as a suggestion", all(b["source"] and b["basis"].startswith("suggested") for b in india["market_basis"]), True)
+            check("a firm's own figure replaces the market's", planning_core.assumption_set({"inflation": 0.06}, "IN")["sources"]["cpi_inflation"], "firm")
+            check("a market with none keeps the platform's", (planning_core.assumption_set({}, "NZ")["inflation"]["cpi"],
+                                                              planning_core.assumption_set({}, "NZ")["source"]), (0.025, "platform"))
+            plan = await financial_plan.for_household(s, sharma.id, firm_id=firm.id)
+            check("the plan shows the figures it used, and names gratuity as not modelled",
+                  (len(plan["assumption_basis"]) > 0, "gratuity" in plan["not_modelled"]), (True, True))
+            eps = next(st for st in plan["streams"] if st["kind"] == "eps_pension")
+            check("an EPS pension on file counts, and the plan runs to India's horizon",
+                  (eps["annual"], eps["start_age"], plan["retirement"]["longevity_age"]), (36000.0, 58, 90))
+
+            print("\n=== Row 5: protection on Indian terms ===")
+            cover = await protection_core.for_household(s, sharma.id, firm_id=firm.id)
+            rows = {(r["person"], r["kind"], r["provider"]): r for r in cover["policies"]}
+            term = rows[("Rajesh Sharma", "life", "Term insurer (demonstration)")]
+            rider = rows[("Rajesh Sharma", "tpd", "Term insurer (demonstration)")]
+            group = rows[("Rajesh Sharma", "life", "Employer group term (demonstration)")]
+            ci = rows[("Meera Sharma", "critical_illness", "Health insurer (demonstration)")]
+            check("a spouse nominee on a life policy is beneficially entitled", term["payee"]["means"], "beneficially entitled (Insurance Act s.39(7))")
+            check("a brother receives it for the legal heirs", "for the legal heirs" in group["payee"]["means"], True)
+            check("an accident-only rider is listed, not counted", (rider["counted"], rider["rider_of"] == term["id"]), (False, True))
+            check("nor is critical illness", (ci["counted"], "no need is modelled" in ci["not_counted"]), (False, True))
+            rajesh_cover = next(p for p in cover["people"] if p["name"] == "Rajesh Sharma")
+            check("the death gap counts the term and the group cover, nothing else",
+                  rajesh_cover["death"].get("cover", rajesh_cover["death"].get("covered")), 18000000.0)
+            iyer = (await s.execute(select(Household).where(Household.firm_id == firm.id, Household.name == "The Iyer Family"))).scalar_one()
+            mwp = next(r for r in (await protection_core.for_household(s, iyer.id, firm_id=firm.id))["policies"] if r["kind"] == "life")
+            check("a Married Women's Property Act policy is outside the estate", mwp["payee"]["to"], "Married Women's Property Act trust")
+            rajesh_p = (await s.execute(select(Person).where(Person.full_name == "Rajesh Sharma"))).scalar_one()
+            for label, change, contains in (("a rider on nothing but a base policy", {"kind": "life", "rider_of": term["id"]}, "rider"),
+                                            ("MWP only on the insured's own life", {"kind": "tpd", "mwp": True}, "Married Women")):
+                try:
+                    await protection_core.prepare_policy(s, firm.id, person_id=rajesh_p.id, provider="X insurer", source_document="Schedule 2026",
+                                                         sum_insured=100000, **{**change, "rider_of": __import__("uuid").UUID(change["rider_of"]) if change.get("rider_of") else None})
+                    check(label, "recorded", "refused")
+                except protection_core.ProtectionError as exc:
+                    check(label, contains in str(exc), True)
+
+            print("\n=== Row 5: nominations, and a nominee against the will ===")
+            file = await client_file.for_household(s, sharma.id, firm_id=firm.id)
+            issues = [(i["account"], i["issue"].split(":")[0], i["name"]) for i in file["designation_issues"]]
+            check("a demat nominee the will does not name is flagged",
+                  ("Rajesh Sharma demat", "nominee is not named in the will", "Anil Sharma") in issues, True)
+            check("a demat with no nomination says so, not that the client opted out",
+                  ("Meera Sharma demat", "no nomination on file (an opt-out is not modelled)", None) in issues, True)
+            meera_demat = (await s.execute(select(_Account).where(_Account.firm_id == firm.id, _Account.name == "Meera Sharma demat"))).scalar_one()
+            for who in ("A", "B", "C"):
+                s.add(_Nominee(firm_id=firm.id, account_id=meera_demat.id, beneficiary_name=who, designation_class="primary", percentage=33))
+            await s.flush()
+            check("a fourth nominee on a demat is refused", "at most 3" in (await nominations.refusal(s, firm, meera_demat) or ""), True)
 
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)

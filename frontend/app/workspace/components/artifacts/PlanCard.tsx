@@ -1,5 +1,5 @@
 import { money } from "@/lib/format";
-import { returnsLabel } from "@/lib/planBasis";
+import { basisLabel, returnsLabel } from "@/lib/planBasis";
 
 export const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -15,6 +15,11 @@ export function PlanCard({ result }: { result: any }) {
           <span className="chip text-ink-muted">estimates</span>
           <span className="chip text-ink-muted" data-testid="plan-card-returns-source">{returnsLabel(result.assumptions_source)}</span>
           {r && <span className="chip text-ink-muted">today&rsquo;s money</span>}
+          {(result.assumption_basis ?? []).length > 0 && (
+            <span className="chip text-ink-muted" title={(result.assumption_basis as any[]).map((b) => `${basisLabel(b)}: ${b.source}`).join("\n")}>
+              market&rsquo;s suggested assumptions
+            </span>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 px-3 py-2.5 sm:grid-cols-4">

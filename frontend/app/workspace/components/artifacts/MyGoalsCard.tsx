@@ -38,7 +38,7 @@ export interface MyGoalsPayload {
   total_effective_capital: number;
   earnings?: { basis: string };
   tradeoff_matrix: any[];
-  assumptions_source?: "firm" | "platform";
+  assumptions_source?: "firm" | "market" | "platform";
   assumptions: { expected_return?: number; volatility?: number; sims?: number };
   current_age: number | null;
   retirement_age: number | null;
