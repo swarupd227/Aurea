@@ -379,6 +379,72 @@ async def behaviour() -> None:
             check("words before a tool are shown once it is called", reply.text, "I'll check their plan.\n\nDone: 1,250 rows.")
             check("  in the same order on screen", shown(events), "I'll check their plan.\n\nDone: 1,250 rows.")
 
+            print("\n=== compliance hands a proposal to the client's adviser ===")
+            from app.core.db import utcnow
+            from app.models.enums import RecommendationStatus
+            from app.models.governance import AgentRun, Recommendation
+            from app.models.graph import RelationshipEdge
+
+            grace = person(mine, "Grace Lee", R.COMPLIANCE)
+            bea = person(mine, "Bea Lead", R.BRANCH_LEADER)
+            nobodys = Household(id=uuid.uuid4(), firm_id=mine.id, name="Nobody's Family")
+            their_compliance = person(theirs, "Their Compliance", R.COMPLIANCE)
+            s.add_all([grace, bea, nobodys, their_compliance])
+            s.add(RelationshipEdge(firm_id=mine.id, kind="adviser", from_type="user", from_id=sophie.id, to_type="household", to_id=chen.id))
+            run = AgentRun(firm_id=mine.id, agent_key="drift_rebalancing", status="awaiting", tier="tier_2", trigger="manual", started_at=utcnow())
+            s.add(run)
+            await s.flush()
+
+            def proposal(title, household=None, **kw):
+                r = Recommendation(firm_id=mine.id, run_id=run.id, agent_key="drift_rebalancing", tier="tier_2", title=title, summary="s",
+                                   subject_type="household" if household else "firm", subject_id=household.id if household else None,
+                                   subject_label=household.name if household else "Mine", **kw)
+                s.add(r)
+                return r
+            trade = proposal("Rebalance Chen", chen)
+            second = proposal("Harvest Chen losses", chen)
+            firm_wide = proposal("Conduct review")
+            unheld = proposal("Rebalance Nobody's", nobodys)
+            decided = proposal("Rebalance Chen last month", chen, status=RecommendationStatus.APPROVED)
+            await s.flush()
+            refer = {"recommendation_id": str(trade.id), "reason": "MSFT is under a concentration flag; please decide this today."}
+            referrals = (Task.source == "referral",)
+
+            check("compliance and a branch leader hold the hand-off", TOOLS["refer_proposal"].roles_required, {R.COMPLIANCE, R.BRANCH_LEADER})
+            check("  and it stops for a Confirm", TOOLS["refer_proposal"].change_state, ToolChangeState.PAUSE_FOR_CONFIRMATION)
+            check("an adviser does not hold it", "refer_proposal" in tools_for_role(R.ADVISER), False)
+            shown = {r["label"]: r["value"] for r in (await ex(grace).preview_change("refer_proposal", refer))["rows"]}
+            check("the card names the proposal, the client and the adviser it goes to",
+                  (shown["Proposal"], shown["Client"], shown["To"]), ("Rebalance Chen", "Chen Family", "Sophie Tran"))
+            check("  with the reason in the referrer's name", shown["Reason"], f"From Grace Lee (compliance): {refer['reason']}")
+            check("  and says the proposal is unchanged", shown["Proposal after"].startswith("Unchanged"), True)
+            check("showing it adds nothing", await count(*referrals), 0)
+            done_now = await ex(grace).refer_proposal(refer)
+            given = done_now["tasks"][0]
+            check("the task is the adviser's, on the client, from a referral",
+                  (given["assigned_to_name"], given["subject_label"], given["source"]), ("Sophie Tran", "Chen Family", "referral"))
+            check("  and decides nothing", (str(trade.status), trade.decided_at), ("proposed", None))
+            heard = [t for t in (await ex().execute("read_tasks", {"assigned_to_me": True}))["tasks"] if t["source"] == "referral"]
+            check("the adviser reads it, with the reason", [(t["title"], refer["reason"] in (t["detail"] or "")) for t in heard],
+                  [("Decide the proposal: Rebalance Chen", True)])
+            await refused("handed on once while it is open", ex(grace).preview_change("refer_proposal", refer), "already has this proposal")
+            await refused("a proposal about no one client", ex(grace).preview_change("refer_proposal", {**refer, "recommendation_id": str(firm_wide.id)}),
+                          "not about one client")
+            await refused("a client with no adviser on record", ex(grace).preview_change("refer_proposal", {**refer, "recommendation_id": str(unheld.id)}),
+                          "no adviser on record")
+            await refused("a decided proposal", ex(grace).preview_change("refer_proposal", {**refer, "recommendation_id": str(decided.id)}),
+                          "already approved")
+            await refused("no reason", ex(grace).preview_change("refer_proposal", {"recommendation_id": str(second.id), "reason": "  "}), "Say why")
+            await refused("an adviser cannot hand one on", ex().preview_change("refer_proposal", {**refer, "recommendation_id": str(second.id)}),
+                          "compliance or a branch leader")
+            await refused("another firm's proposal", ex(their_compliance).preview_change("refer_proposal", refer),
+                          "not a proposal on file")
+            check("a branch leader may", {r["label"]: r["value"] for r in (await ex(bea).preview_change(
+                "refer_proposal", {**refer, "recommendation_id": str(second.id)}))["rows"]}["To"], "Sophie Tran")
+            await refused("a due date already gone", ex(grace).preview_change(
+                "refer_proposal", {**refer, "recommendation_id": str(second.id), "due_date": (today - timedelta(days=1)).isoformat()}), "already passed")
+            check("only the one referral was added", await count(*referrals), 1)
+
             print("\n=== today is the firm's ===")
             # 8pm UTC on a Friday is already Saturday morning in Auckland.
             friday_night = datetime(2026, 10, 30, 20, 0, tzinfo=timezone.utc)

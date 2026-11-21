@@ -1,7 +1,7 @@
 """Follow-ups: what the Tasks page and the conversation both read and change.
 
-A task comes from an agent (Meeting Companion, on approval), from a client's request in Canvas, or
-from a person in a conversation. Everything here is firm-scoped: a task, a household or an assignee
+A task comes from an agent (Meeting Companion, on approval), from a client's request in Canvas, from a
+person in a conversation, or from compliance or a branch leader handing a proposal to its client's adviser. Everything here is firm-scoped: a task, a household or an assignee
 from another firm reads as not found.
 """
 from __future__ import annotations
@@ -21,6 +21,9 @@ STATUSES = ("open", "done", "dismissed", "all")
 LIST_LIMIT = 200
 TITLE_MAX = 280
 NOT_ASSIGNABLE = (UserRole.CLIENT, UserRole.ADMIN, UserRole.SUPERADMIN)
+# Compliance and a branch leader may not approve a trade, but may hand it to the client's adviser to decide.
+REFERRERS = (UserRole.COMPLIANCE, UserRole.BRANCH_LEADER)
+REFERRAL_SOURCE = "referral"
 
 
 class TaskError(Exception):
@@ -110,6 +113,46 @@ def assign(t: Task, to: User | None, by: uuid.UUID) -> None:
         raise TaskError(f"'{t.title}' is already {t.status}.")
     t.assigned_to = to.id if to else None
     t.assigned_by = by if to else None
+
+
+async def prepare_referral(session: AsyncSession, firm_id: uuid.UUID, rec, *, reason: str | None, by: User,
+                           due_date: date | None = None) -> dict:
+    """Handing an open proposal to the client's recorded adviser as a task, with the referrer's reason. It goes
+    to whoever is on record (advisers.adviser_of), never someone worked out; it decides nothing and changes
+    nothing on the proposal. Writes nothing."""
+    from app.aurea_core import advisers
+
+    if UserRole(by.role) not in REFERRERS:
+        raise TaskError("Handing a proposal to its adviser is for compliance or a branch leader.")
+    if rec is None or rec.firm_id != firm_id:
+        raise TaskError("That is not a proposal on file here. Look it up again and use its id.")
+    if str(rec.status) != "proposed":
+        raise TaskError(f"'{rec.title}' is already {rec.status}, so there is nothing left for an adviser to decide.")
+    reason = (reason or "").strip()
+    if not reason:
+        raise TaskError("Say why it goes to the adviser: the reason is what they read.")
+    household_id = (await advisers.subject_households(session, firm_id, [rec])).get(rec.id)
+    household = await session.get(Household, household_id) if household_id else None
+    if household is None:
+        raise TaskError(f"'{rec.title}' is not about one client, so it has no adviser to go to.")
+    adviser = await advisers.adviser_of(session, firm_id, household.id)
+    if adviser is None or not adviser.is_active:
+        raise TaskError(f"{household.name} has no adviser on record, so there is nobody to hand it to.")
+    title = f"Decide the proposal: {rec.title}"[:TITLE_MAX]
+    waiting = (await session.execute(select(Task).where(
+        Task.firm_id == firm_id, Task.household_id == household.id, Task.title == title,
+        Task.source == REFERRAL_SOURCE, Task.status == TaskStatus.OPEN))).scalars().first()
+    if waiting is not None:
+        raise TaskError(f"{adviser.full_name} already has this proposal to decide, as an open task.")
+    who = UserRole(by.role).value.replace("_", " ")
+    return {"proposal": rec, "household": household, "adviser": adviser, "title": title, "due_date": due_date,
+            "detail": f"From {by.full_name} ({who}): {reason}"}
+
+
+def referral(firm_id: uuid.UUID, p: dict, by: uuid.UUID) -> Task:
+    return Task(firm_id=firm_id, household_id=p["household"].id, title=p["title"], detail=p["detail"],
+                status=TaskStatus.OPEN, due_date=p["due_date"], source=REFERRAL_SOURCE,
+                subject_label=p["household"].name, assigned_to=p["adviser"].id, assigned_by=by)
 
 
 def new(firm_id: uuid.UUID, title: str, *, household: Household | None, due_date: date | None,
