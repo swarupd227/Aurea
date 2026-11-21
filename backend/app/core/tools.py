@@ -2412,6 +2412,25 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
+    "refer_proposal": Tool(
+        key="refer_proposal",
+        name="Refer Proposal to Adviser",
+        speaking_agent="astra",
+        description=("Hand an open proposal to its client's recorded adviser, as a task carrying the person's reason, for "
+                     "compliance or a branch leader: the way they pass on one they may not decide. It decides nothing and "
+                     "changes nothing on the proposal; the adviser decides it. Refused for a proposal about no one client, "
+                     "or a client with no adviser on record. Find the proposal with read_recommendations this turn."),
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Send this to the adviser as a task? The proposal itself is not changed.",
+        inputs=[
+            ToolInput("recommendation_id", "uuid", "The proposal (from read_recommendations)", required=True),
+            ToolInput("reason", "string", "Why it goes to the adviser, in the person's own words: it is what the adviser reads", required=True),
+            ToolInput("due_date", "string", "When the adviser should decide by, as YYYY-MM-DD. Leave out if no date was given", required=False),
+        ],
+        output=ToolOutput("object", "The adviser's new task"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER},
+    ),
+
     "read_reports": Tool(
         key="read_reports",
         name="Read Reports",

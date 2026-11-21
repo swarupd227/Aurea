@@ -366,6 +366,7 @@ export function artifactCard(artifact: Artifact) {
       case "complete_task":
       case "assign_task":
       case "create_task":
+      case "refer_proposal":
         if (!Array.isArray(artifact.result?.tasks)) return null;
         return <TasksCard result={artifact.result as any} />;
       case "read_reports":
