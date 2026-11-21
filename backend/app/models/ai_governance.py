@@ -21,7 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db import Base
 
 RISK_TIERS = ("low", "medium", "high")
-USE_CASE_CATEGORIES = ("agent", "tool", "narration")
+USE_CASE_CATEGORIES = ("agent", "tool", "narration", "model")   # model: a planning engine (B-189)
 USE_CASE_STATUSES = ("active", "retired")
 CHANGE_TYPES = ("prompt", "model", "tool_definition", "risk_tier", "other")
 

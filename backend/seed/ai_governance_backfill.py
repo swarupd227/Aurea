@@ -364,28 +364,44 @@ _TOOLS = [
      "Sets the model a task runs on, refused while the enforced eval gates are not green, with a reason. Confirm-gated."),
 ]
 
+# The planning engines (B-189): owned by the head of advice, who sets the assumptions they run on. Retirement and
+# goal likelihoods reach a client on Canvas, so they are high risk.
+_MODELS = [
+    ("retirement_engine", "Retirement income engine", "model", "Head of Advice", "high",
+     "Whether a household's retirement income lasts: Monte Carlo over the firm's assumptions (aurea_core/retirement.py)."),
+    ("goal_likelihood_engine", "Goal likelihood engine", "model", "Head of Advice", "high",
+     "The one answer to whether a goal will be met: Monte Carlo per goal (aurea_core/goal_tradeoff.py)."),
+    ("financial_plan_engine", "Financial plan", "model", "Head of Advice", "medium",
+     "The plan assembled from what is on file over the retirement engine and goal likelihoods (aurea_core/financial_plan.py)."),
+    ("protection_engine", "Protection needs", "model", "Head of Advice", "medium",
+     "Life, income and care needs from what is recorded, nothing estimated (aurea_core/protection.py)."),
+]
+
+
+async def seed_firm(session, firm) -> int:
+    """Add the inventory rows a firm does not have yet; returns how many were added. Idempotent by key."""
+    have = set((await session.execute(
+        select(AIUseCase.use_case_key).where(AIUseCase.firm_id == firm.id))).scalars().all())
+    added = 0
+    for key, name, category, owner, risk_tier, description in _AGENTS + _TOOLS + _MODELS:
+        if key in have:
+            continue
+        session.add(AIUseCase(
+            firm_id=firm.id, use_case_key=key, name=name, category=category, owner=owner,
+            risk_tier=risk_tier, description=description, status="active",
+        ))
+        added += 1
+    if added:
+        log.info("ai_use_cases_seeded", firm=firm.slug, count=added)
+    return added
+
 
 async def backfill() -> None:
     async with SessionLocal() as s:
         firms = (await s.execute(select(Firm))).scalars().all()
         created = 0
-
         for firm in firms:
-            have = set((await s.execute(
-                select(AIUseCase.use_case_key).where(AIUseCase.firm_id == firm.id))).scalars().all())
-            added = 0
-            for key, name, category, owner, risk_tier, description in _AGENTS + _TOOLS:
-                if key in have:
-                    continue
-                s.add(AIUseCase(
-                    firm_id=firm.id, use_case_key=key, name=name, category=category, owner=owner,
-                    risk_tier=risk_tier, description=description, status="active",
-                ))
-                created += 1
-                added += 1
-            if added:
-                log.info("ai_use_cases_seeded", firm=firm.slug, count=added)
-
+            created += await seed_firm(s, firm)
         await s.commit()
         print(f"\nSeeded {created} AI use-case inventory row(s) across {len(firms)} firm(s).\n")
 

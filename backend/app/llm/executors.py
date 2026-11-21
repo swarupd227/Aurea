@@ -3300,7 +3300,9 @@ class ToolExecutors(AdminToolExecutors):
         n_violations = result["entitlement_violations"]["total"]
         result["message"] = (
             f"{result['active']} active use case(s) ({result['by_risk_tier']['high']} high-risk). "
-            f"{n_overdue} overdue for review. {n_violations} entitlement violation(s) logged."
+            f"{n_overdue} overdue for review. {n_violations} entitlement violation(s) logged. "
+            f"{len(result['models'])} planning engine(s) on the inventory, running on the "
+            f"{(result['models'][0]['assumptions']['source'] if result['models'] else 'platform')}'s assumptions."
         )
         return result
 

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import utcnow
+from app.models.tenant import Firm
 from app.llm import usage as llm_usage
 from app.models.ai_governance import AIChangeLogEntry, AIUseCase, EntitlementViolation
 
@@ -48,6 +49,52 @@ async def log_change(
     return row
 
 
+# The planning engines (B-189, L200-2 §4.1): each answers a client's question with a model, so each is on the
+# inventory with its method, an owner and a review, and the assumption version it runs on.
+PLANNING_MODELS = {
+    "retirement_engine": ("Retirement income engine", "aurea_core/retirement.py",
+                          "Monte Carlo over the firm's returns: accumulation, then each year's need less that year's "
+                          "guaranteed income until the younger adult's plan-to age; sustainable income by search; a "
+                          "first-year crash and a sequence illustration."),
+    "goal_likelihood_engine": ("Goal likelihood engine", "aurea_core/goal_tradeoff.py",
+                               "Monte Carlo per goal over the firm's returns: funded from its recorded share, else the pool "
+                               "in priority order; targets grown by their own inflation index."),
+    "financial_plan_engine": ("Financial plan", "aurea_core/financial_plan.py",
+                              "Deterministic assembly of what is on file (spending, streams, debts, education) over the "
+                              "retirement engine and goal likelihoods, in today's money."),
+    "protection_engine": ("Protection needs", "aurea_core/protection.py",
+                          "Deterministic needs analysis from recorded incomes, ages, debts and policies; care from a "
+                          "firm-stated cost only; nothing estimated."),
+}
+
+
+def _review_due(uc: AIUseCase):
+    anchor = _aware(uc.last_reviewed_at) or _aware(uc.created_at)
+    return anchor + timedelta(days=uc.review_cadence_days) if anchor else None
+
+
+async def models(session: AsyncSession, firm_id: uuid.UUID) -> list[dict]:
+    """The planning engines on the inventory, each with the assumption version it runs on today."""
+    from app.aurea_core import planning
+
+    firm = await session.get(Firm, firm_id)
+    settings = firm.settings if firm else None
+    version, source = planning.assumption_version(settings), planning.cma_source(settings)
+    rows = (await session.execute(select(AIUseCase).where(
+        AIUseCase.firm_id == firm_id, AIUseCase.category == "model"))).scalars().all()
+    now, out = utcnow(), []
+    for uc in sorted(rows, key=lambda r: r.name):
+        name, module, method = PLANNING_MODELS.get(uc.use_case_key, (uc.name, None, uc.description))
+        due = _review_due(uc)
+        out.append({"use_case_key": uc.use_case_key, "name": uc.name, "module": module, "method": method,
+                    "owner": uc.owner, "risk_tier": uc.risk_tier, "status": uc.status,
+                    "assumptions": {"source": source, "version": version},
+                    "last_reviewed_at": uc.last_reviewed_at.isoformat() if uc.last_reviewed_at else None,
+                    "review_due": due.date().isoformat() if due else None,
+                    "overdue": bool(due and now > due)})
+    return out
+
+
 async def inventory_summary(session: AsyncSession, firm_id: uuid.UUID) -> dict:
     use_cases = (
         await session.execute(select(AIUseCase).where(AIUseCase.firm_id == firm_id))
@@ -79,6 +126,7 @@ async def inventory_summary(session: AsyncSession, firm_id: uuid.UUID) -> dict:
 
     return {
         "total_use_cases": len(use_cases),
+        "models": await models(session, firm_id),
         "active": sum(1 for uc in use_cases if uc.status == "active"),
         "by_risk_tier": by_tier,
         "overdue_review": sorted(overdue, key=lambda r: r["risk_tier"] != "high"),
