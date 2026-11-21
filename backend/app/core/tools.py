@@ -2424,7 +2424,7 @@ TOOLS: dict[str, Tool] = {
         confirmation="Send this to the adviser as a task? The proposal itself is not changed.",
         inputs=[
             ToolInput("recommendation_id", "uuid", "The proposal (from read_recommendations)", required=True),
-            ToolInput("reason", "string", "Why it goes to the adviser, in the person's own words: it is what the adviser reads", required=True),
+            ToolInput("reason", "string", "Why it goes to the adviser, exactly as the person said it, adding nothing: it goes out in their name and is what the adviser reads", required=True),
             ToolInput("due_date", "string", "When the adviser should decide by, as YYYY-MM-DD. Leave out if no date was given", required=False),
         ],
         output=ToolOutput("object", "The adviser's new task"),
