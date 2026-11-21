@@ -243,6 +243,13 @@ pages are artifact views the agents open. Full guideline, including what is buil
   with its evidence, never overwritten in either direction. Astra's writes in an owned domain leave as a command (a CRM
   activity) and appear when the sync brings them back, or are refused naming the owner. What an owner cannot supply
   (tax lots) reads not assessed. Conformance is `tests.verify_foundation_contract`.
+- **A simulation can be thrown away.** `app/simulations/<key>/` stands in for a system we do not have yet (a wealth
+  platform, an aggregation feed, a news service, a LinkedIn export); the feature it feeds is real and reads only a
+  seam that the real source will use too. Nothing outside `app/simulations` imports it; `install_all` runs only when
+  `AUREA_SIMULATIONS` is on; it acts only for a firm that opted in; every row it writes is tagged `simulated:<key>`
+  and nothing untagged, no audit or ledger entry; what it supplies carries `simulated: true` and shows a chip.
+  `python -m app.simulations discard` removes it all, and `tests.verify_simulations` proves a discard leaves every
+  table as it was (`docs/03_Architecture/simulations.md`).
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
   `price_source: "synthetic"`; the paper venue never claims a market was reached; a filled order is
   offset, never reversed.
