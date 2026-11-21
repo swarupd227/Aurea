@@ -404,10 +404,14 @@ async def mentionables(
     for tool in tools.values():
         by_agent.setdefault(tool.speaking_agent, []).append(tool.name)
 
+    from app.agents.catalogue import CATALOGUE
+
+    # `name` is what an @-mention types; `label` is what a person reads (the catalogue's name, not the key).
     items = [
         {
             "id": agent,
             "name": agent,
+            "label": (CATALOGUE.get(agent) or {}).get("name") or agent.replace("_", " ").capitalize(),
             "description": ", ".join(sorted(names)),
         }
         for agent, names in sorted(by_agent.items())

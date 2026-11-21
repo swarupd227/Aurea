@@ -39,7 +39,7 @@ interface WorkspaceContextValue {
   say: (text: string) => void;
   /** The open thread registers how it sends; null when it unmounts. */
   registerSender: (send: ((text: string) => void) | null) => void;
-  /** Go to a thread (or home, for null), keeping the work pane as it is. */
+  /** Go to a thread with the view it last had beside it (or none); home, for null, keeps the pane as it is. */
   goThread: (id: string | null) => void;
   /** The landing page, with any view beside it closed. */
   goHome: () => void;
@@ -66,6 +66,30 @@ interface WorkspaceContextValue {
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+
+// The view beside a conversation is that conversation's. Going to another conversation brings back the view it had,
+// or none: a pane left open from one client while talking about another was the most confusing thing in the
+// workspace (usability review, 22 Nov). Kept for the browser session only.
+const PANE_BY_THREAD = "astra:pane-by-thread";
+
+function panesByThread(): Record<string, string> {
+  try {
+    return JSON.parse(sessionStorage.getItem(PANE_BY_THREAD) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function rememberPane(threadId: string, route: string | null) {
+  try {
+    const all = panesByThread();
+    if (route) all[threadId] = route;
+    else delete all[threadId];
+    sessionStorage.setItem(PANE_BY_THREAD, JSON.stringify(all));
+  } catch {
+    // Storage blocked: the pane simply is not restored.
+  }
+}
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -102,6 +126,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const paneRoute = pane?.route ?? null;
   const paneRef = useRef<string | null>(paneRoute);
   paneRef.current = paneRoute;
+
+  // What is beside this conversation now is what it gets back when you return to it.
+  useEffect(() => {
+    const thread = pathname.match(/^\/workspace\/([^/?#]+)$/)?.[1];
+    if (thread) rememberPane(thread, paneRoute);
+  }, [pathname, paneRoute]);
 
   const [trail, setTrail] = useState<string[]>([]);
   const nextWithin = useRef(false);
@@ -151,8 +181,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     router.push(pathname);
   }, [router, pathname]);
 
+  // A conversation opens with its own view beside it, not whatever the last one had open.
   const goThread = useCallback(
-    (id: string | null) => router.push(withView(id ? `/workspace/${id}` : "/workspace", paneRef.current)),
+    (id: string | null) => {
+      setFocus(false);
+      router.push(id ? withView(`/workspace/${id}`, panesByThread()[id] ?? null) : withView("/workspace", paneRef.current));
+    },
     [router]
   );
   // Home is the landing page itself: any view beside it closes, and a widened one lets go, or Home would land under it.

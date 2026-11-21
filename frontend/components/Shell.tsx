@@ -1,5 +1,6 @@
 "use client";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, Suspense, useEffect, useRef, useState } from "react";
+import { PageSectionTabs } from "./SectionTabs";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -7,7 +8,7 @@ import {
   Shield, Copy, Check, MessageSquare, ChevronRight, Search, Menu, X,
 } from "lucide-react";
 import { clearSession, getToken, getUser } from "@/lib/api";
-import { isViewActive, moreViews, pinnedViews, viewsForRole, hasWorkspace, type View } from "@/lib/nav";
+import { isEntryActive, moreViews, pinnedViews, viewsForRole, hasWorkspace, type View } from "@/lib/nav";
 import RoleSwitcher from "./RoleSwitcher";
 import PageAsk from "./PageAsk";
 import { CommandPalette } from "./CommandPalette";
@@ -29,7 +30,7 @@ const iconButton =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 function ViewLink({ item, pathname }: { item: View; pathname: string }) {
-  const active = isViewActive(pathname, item.href);
+  const active = isEntryActive(pathname, item);
   const Icon = item.icon;
   return (
     <Link
@@ -252,7 +253,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   const showDock = (isStaff && showAstra && user.role !== "admin") || (isClient && pathname.startsWith("/canvas"));
   const pinned = unique(isStaff ? pinnedViews(user.role) : isClient ? clientViews : viewsForRole(user.role), (v) => v.href);
   const more = isStaff ? moreViews(user.role) : [];
-  const moreActive = more.some((g) => g.items.some((i) => isViewActive(pathname, i.href)));
+  const moreActive = more.some((g) => g.items.some((i) => isEntryActive(pathname, i)));
   const moreCount = more.reduce((n, g) => n + g.items.length, 0);
 
   const notifications = unique(notifItems, (n: any) => `${n.type ?? ""}:${n.id}`);
@@ -463,7 +464,14 @@ export default function Shell({ children }: { children: ReactNode }) {
 
       {/* Main */}
       <main className="min-h-screen min-w-0 md:ml-64">
-        <div className="mx-auto max-w-[1280px] px-4 py-5 fade-in md:px-8 md:py-7">{children}</div>
+        <div className="mx-auto max-w-[1280px] px-4 py-5 fade-in md:px-8 md:py-7">
+          {isStaff && (
+            <Suspense fallback={null}>
+              <PageSectionTabs role={user.role} />
+            </Suspense>
+          )}
+          {children}
+        </div>
         {showDock && <div aria-hidden className="h-36" />}
       </main>
 

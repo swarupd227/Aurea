@@ -28,13 +28,15 @@ export interface View {
   keywords?: string[];
   /** Only for firms in this market. */
   market?: string;
+  /** A section's menu entry: the pages it stands for (SECTIONS). */
+  members?: string[];
 }
 
 export const INTENT_TITLES: Record<ViewIntent, string> = {
   decide: "Decide",
   clients: "Clients & advice",
   operate: "Run the business",
-  govern: "Govern the agents",
+  govern: "Oversight",
   configure: "Configure",
   platform: "Platform",
 };
@@ -120,17 +122,116 @@ export const VIEWS: View[] = [
   { href: "/superadmin", label: "Firm management", icon: Building2, roles: ["superadmin_only"], intent: "platform" },
 ];
 
+// ── Consolidation (usability review, 22 Nov). Two kinds of page left the menu:
+//
+//   * A page about one client, which shows only a list of households without one, is a section of that client:
+//     it is reached from the client (ClientSections) and the palette, never listed on its own.
+//   * Pages that belong together are one entry, a SECTION: the menu lists the section once, and every member
+//     shows the same tabs (SectionTabs), so moving between them is one click and the menu stays short.
+//
+// Nothing is removed: every route still opens, by URL, from a card, from Astra and from the palette.
+
+/** Pages about one client: listed under the client, not in the menu. */
+export const CLIENT_ONLY = new Set([
+  "/studio/plan", "/studio/estate", "/studio/family", "/studio/behavioural", "/studio/regulatory-countdown",
+  "/canvas", "/canvas/retirement", "/canvas/goals", "/canvas/next-gen", "/canvas/questionnaire",
+]);
+
+/** Views that read one household when given `?household=`; a client's tabs carry it between them. */
+export const TAKES_HOUSEHOLD = new Set([
+  ...CLIENT_ONLY, "/studio/ips", "/studio/reviews", "/studio/protection", "/studio/risk-profiles", "/studio/net-worth",
+  "/studio/equity-comp", "/studio/client-file", "/studio/cash", "/studio/trades", "/studio/tax-documents",
+  "/studio/consents", "/studio/exits", "/studio/tax",
+]);
+
+export interface Section {
+  key: string;
+  label: string;
+  icon: any;
+  intent: ViewIntent;
+  /** In tab order; the first a role may see is where the menu entry lands. */
+  members: string[];
+}
+
+export const SECTIONS: Section[] = [
+  { key: "advice", label: "Advice checks", icon: CalendarCheck, intent: "clients", members: [
+    "/studio/reviews", "/studio/ips", "/studio/risk-profiles", "/studio/protection", "/studio/net-worth", "/studio/tax",
+    "/studio/equity-comp", "/studio/client-file", "/studio/exits", "/studio/beneficiary-audit"] },
+  { key: "onboarding", label: "Onboarding", icon: UserPlus, intent: "operate", members: [
+    "/studio/onboarding", "/studio/onboarding-queues", "/studio/document-matrix", "/studio/consents", "/studio/transfers",
+    "/studio/money-in", "/studio/account-features", "/studio/aml", "/studio/onboarding-scoreboard"] },
+  { key: "money", label: "Money & trades", icon: ArrowLeftRight, intent: "operate", members: [
+    "/studio/trades", "/studio/cash", "/studio/tax-documents", "/studio/reconciliation", "/studio/valuations", "/studio/prices",
+    "/studio/corporate-actions", "/studio/book-integration"] },
+  { key: "insights", label: "Insights", icon: BarChart3, intent: "operate", members: [
+    "/studio/analytics", "/studio/composites", "/studio/capacity"] },
+  { key: "compliance", label: "Compliance", icon: ShieldCheck, intent: "govern", members: [
+    "/provenance", "/studio/monitoring", "/studio/repapering", "/admin/regulatory"] },
+  { key: "agents", label: "Agents", icon: Workflow, intent: "govern", members: [
+    "/studio/workforce", "/studio/agent-history", "/studio/skills"] },
+  { key: "settings", label: "Settings", icon: Settings, intent: "configure", members: [
+    "/admin", "/admin/foundation", "/admin/connectors"] },
+];
+
+const SECTION_OF: Record<string, Section> = Object.fromEntries(SECTIONS.flatMap((s) => s.members.map((m) => [m, s])));
+
+/** The section a route belongs to (its path, any query ignored). */
+export function sectionOf(route: string): Section | undefined {
+  return SECTION_OF[route.split("?")[0]];
+}
+
+/** The members of a section this role may open, in tab order. */
+export function sectionMembers(section: Section, role: string): View[] {
+  const mine = viewsForRole(role);
+  return section.members.map((h) => mine.find((v) => v.href === h)).filter((v): v is View => !!v);
+}
+
+/** What a client's page links to: its sections, in the order an adviser reaches for them. */
+// Pairs, not { href } objects: tests and the page sweep read nav.ts for `href: "..."`, and these are not views.
+const CLIENT_SECTION_PAIRS: [string, string][] = [
+  ["/studio/plan", "Plan"],
+  ["/canvas/goals", "Goals"],
+  ["/canvas/retirement", "Retirement"],
+  ["/studio/net-worth", "Net worth"],
+  ["/studio/protection", "Protection"],
+  ["/studio/risk-profiles", "Risk profile"],
+  ["/studio/ips", "IPS"],
+  ["/studio/reviews", "Reviews"],
+  ["/studio/tax", "Tax"],
+  ["/studio/estate", "Estate"],
+  ["/studio/family", "Family"],
+  ["/studio/equity-comp", "Equity comp"],
+  ["/studio/client-file", "Client file"],
+  ["/studio/cash", "Cash"],
+  ["/studio/trades", "Trades"],
+  ["/studio/behavioural", "Behavioural"],
+  ["/studio/regulatory-countdown", "Deadlines"],
+  ["/canvas/questionnaire", "Questionnaire"],
+];
+export const CLIENT_SECTIONS: { href: string; label: string }[] = CLIENT_SECTION_PAIRS.map(([href, label]) => ({ href, label }));
+
 /** The handful of views each role opens every day. Everything else is under "More views". */
+// A pin is a page, or "section:<key>" for a whole section (its tabs reach the rest). Two pages of one section are
+// never both pinned: the section is pinned once instead.
 export const ROLE_PINNED: Record<string, string[]> = {
   adviser: ["/studio/review", "/studio/clients", "/studio/meetings", "/studio/tasks"],
   paraplanner: ["/studio/meetings", "/studio/clients", "/studio/reports", "/studio/tasks"],
-  portfolio_team: ["/studio/review", "/studio/clients", "/studio/composites", "/studio/analytics"],
-  research_cio: ["/studio/reports", "/studio/composites", "/studio/analytics", "/studio/clients"],
-  compliance: ["/provenance", "/studio/review", "/studio/agent-history", "/admin/regulatory"],
-  operations: ["/studio/onboarding", "/studio/billing", "/studio/corporate-actions", "/studio/book-integration"],
-  branch_leader: ["/studio/capacity", "/studio/billing", "/studio/clients", "/provenance"],
-  admin: ["/admin", "/admin/foundation", "/studio/workforce"],
+  portfolio_team: ["/studio/review", "/studio/clients", "section:insights", "section:money"],
+  research_cio: ["/studio/reports", "/studio/products", "section:insights", "/studio/clients"],
+  compliance: ["/studio/review", "section:compliance", "section:onboarding", "section:agents"],
+  operations: ["section:onboarding", "section:money", "/studio/billing", "/studio/clients"],
+  branch_leader: ["/studio/clients", "section:insights", "/studio/billing", "section:compliance"],
+  admin: ["section:settings", "section:agents", "section:compliance"],
 };
+
+/** A section as one menu entry for this role: named for the section when the role sees two or more of its pages,
+ * the one page itself when it sees one, nothing when it sees none. */
+function sectionEntry(section: Section, role: string): View | null {
+  const members = sectionMembers(section, role);
+  if (members.length === 0) return null;
+  if (members.length === 1) return members[0];
+  return { href: members[0].href, label: section.label, icon: section.icon, intent: section.intent, members: members.map((m) => m.href) };
+}
 
 /** Every view this role may open. Mirrors the old sidebar's rule exactly. */
 export function viewsForRole(role: string): View[] {
@@ -144,22 +245,52 @@ export function pinnedViews(role: string): View[] {
   const all = viewsForRole(role);
   const pins = ROLE_PINNED[role];
   if (!pins) return [];
-  return pins.map((h) => all.find((v) => v.href === h)).filter((v): v is View => !!v);
+  return pins
+    .map((h) => {
+      if (h.startsWith("section:")) {
+        const section = SECTIONS.find((s) => s.key === h.slice("section:".length));
+        return section ? sectionEntry(section, role) : null;
+      }
+      return all.find((v) => v.href === h) ?? null;
+    })
+    .filter((v): v is View => !!v);
 }
 
-/** The rest of a role's views, grouped by intent, in a stable order. */
+/** The rest of a role's menu, grouped by intent, in a stable order. A section is one entry (named for the section
+ * when the role sees two or more of its pages, else the one page's own name) and is left out when one of its pages
+ * is already pinned, since that page carries the section's tabs. A client's own pages are not listed. */
 export function moreViews(role: string): { intent: ViewIntent; title: string; items: View[] }[] {
-  const pinned = new Set(pinnedViews(role).map((v) => v.href));
-  const rest = viewsForRole(role).filter((v) => !pinned.has(v.href));
+  const pinned = pinnedViews(role);
+  const pinnedHrefs = new Set(pinned.flatMap((v) => v.members ?? [v.href]));
+  const pinnedSections = new Set(pinned.flatMap((v) => (v.members ?? [v.href]).map((h) => sectionOf(h)?.key)).filter(Boolean));
+  const entries: View[] = [];
+  const placed = new Set<string>();
+  for (const v of viewsForRole(role)) {
+    if (pinnedHrefs.has(v.href) || CLIENT_ONLY.has(v.href)) continue;
+    const s = sectionOf(v.href);
+    if (!s) {
+      entries.push(v);
+      continue;
+    }
+    if (placed.has(s.key) || pinnedSections.has(s.key)) continue;
+    placed.add(s.key);
+    const entry = sectionEntry(s, role);
+    if (entry) entries.push(entry);
+  }
   return INTENT_ORDER.map((intent) => ({
     intent,
     title: INTENT_TITLES[intent],
-    items: rest.filter((v) => v.intent === intent),
+    items: entries.filter((v) => v.intent === intent),
   })).filter((g) => g.items.length > 0);
 }
 
 export function isViewActive(pathname: string, href: string): boolean {
   return pathname === href || (href !== "/studio" && pathname.startsWith(href + "/"));
+}
+
+/** A menu entry is current on its own page or, for a section, on any of the section's pages. */
+export function isEntryActive(pathname: string, item: View): boolean {
+  return (item.members ?? [item.href]).some((h) => isViewActive(pathname, h));
 }
 
 /** Roles that have conversation tools, and so a workspace. Clients and the platform owner do not. */

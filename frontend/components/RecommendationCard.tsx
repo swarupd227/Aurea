@@ -189,7 +189,10 @@ export default function RecommendationCard({
   /** Shown under the report it is about, so it needs no link to that report. */
   inReport?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen || rec.status === "proposed");
+  // A list of proposals reads as a list: each opens on "Details". One proposal on its own (a run's result, a
+  // meeting's or a report's, or the one a link focuses) is passed defaultOpen. Every open proposal used to start
+  // expanded, so a list of a hundred read as a hundred memos (usability review, 22 Nov).
+  const [open, setOpen] = useState(defaultOpen);
   const [mode, setMode] = useState<null | "approve" | "modify" | "dismiss" | "revise">(null);
   const [note, setNote] = useState("");
   const needsReason = rec.payload?.signal === "ips_breach" && mode === "approve";
@@ -774,6 +777,10 @@ function renderVal(v: any): string {
 const isProse = (v: unknown): v is string => typeof v === "string" && (v.length > 120 || v.includes("\n"));
 const squash = (s: string) => s.replace(/[*_#>`\s]+/g, " ").trim().toLowerCase();
 
+// A share stored as a fraction (current_equity_pct 0.747) reads as one: 74.7%.
+const isShare = (k: string, v: unknown): v is number => typeof v === "number" && /(_pct|_weight|_share|_ratio)$/.test(k) && Math.abs(v) <= 1.5;
+const fieldLabel = (k: string) => titleCase(k).replace(/\bPct\b/, "%");
+
 function PayloadView({ payload, shown = "" }: { payload: any; shown?: string }) {
   const already = squash(shown);
   const entries = Object.entries(payload).filter(
@@ -786,8 +793,10 @@ function PayloadView({ payload, shown = "" }: { payload: any; shown?: string }) 
       <dl className="text-sm text-ink-soft space-y-1">
         {entries.map(([k, v]) => (
           <div key={k} className="flex flex-col gap-0.5 cq-sm:flex-row cq-sm:gap-2">
-            <dt className="text-ink-muted cq-sm:min-w-[140px]">{titleCase(k)}</dt>
-            <dd className="flex-1 min-w-0 break-words">{isProse(v) ? <Markdown text={v} /> : renderVal(v)}</dd>
+            <dt className="text-ink-muted cq-sm:min-w-[140px]">{fieldLabel(k)}</dt>
+            <dd className="flex-1 min-w-0 break-words tabular-nums">
+              {isProse(v) ? <Markdown text={v} /> : isShare(k, v) ? `${(v * 100).toFixed(1)}%` : renderVal(v)}
+            </dd>
           </div>
         ))}
       </dl>

@@ -105,12 +105,20 @@ Humans keep the gates, and an agent never crosses one on its own:
   - **One per open onboarding case.**
   - **One per auto-paused agent or open surveillance incident.**
 
-  The left rail reads, top to bottom: **Needs you** (confirmations paused in a thread, plus the agents'
-  open proposals this role may decide), **Conversations**, **Views**, then the agents the role can
-  mention. *Views* are the existing pages: a role's four or so everyday pages are pinned and the rest sit
-  under *More views*, grouped by intent (Decide, Clients & advice, Run the business, Govern the agents,
-  Configure). The list lives in `frontend/lib/nav.ts` and is shared by the rail, the classic sidebar and
-  the palette. An empty thread teaches by example — *Try saying* shows role-specific sentences, each one
+  The left rail reads, top to bottom: **Needs you** (the three most pressing: confirmations paused in a
+  thread, then decisions, then the agents' open proposals this role may decide, with a count of the rest),
+  **Views**, **Conversations** (the six newest), then the agents the role can mention, by name. *Views* are
+  the existing pages: a role's four everyday entries are pinned and the rest sit under *More views*, grouped
+  by intent (Decide, Clients & advice, Run the business, Oversight, Configure). The list lives in
+  `frontend/lib/nav.ts` and is shared by the rail, the classic sidebar and the palette.
+  - **A menu entry can be a section.** Pages that belong together (Advice checks, Onboarding, Money &
+    trades, Insights, Compliance, Agents, Settings) are one entry, and every page of a section shows the
+    same tabs (`components/SectionTabs.tsx`), in the pane and on the page. A pin may be a whole section.
+  - **A page about one client is under the client.** The pages that show only a list of households
+    without one (plan, goals, retirement, estate, family, behavioural, deadlines, questionnaire) are not in
+    the menu: a client's page carries tabs for its sections, each keeping `?household=`.
+  - Nothing left the product: every route still opens by URL, from a card, from Astra and from the palette.
+  This replaced 46 entries under *More views* for an adviser with 12 (usability review, 22 Nov). An empty thread teaches by example — *Try saying* shows role-specific sentences, each one
   answerable by a tool the role holds.
 
 - **The work pane** — the workspace is three columns: rail | conversation | work pane. The pane holds the
@@ -118,7 +126,10 @@ Humans keep the gates, and an agent never crosses one on its own:
   sentence that explained it rather than on another page.
   - **State is the URL.** `/workspace?view=<route>` and `/workspace/[id]?view=<route>` (for example
     `?view=/studio/clients/<id>`, or `?view=/studio/review?rec=<id>` to bring one proposal to the top).
-    A pane is linkable and survives a reload; switching conversations keeps it open.
+    A pane is linkable and survives a reload. **The pane belongs to its conversation:** going to another
+    conversation brings back the view that conversation last had beside it, or none, so a client opened in
+    one conversation never sits beside another about someone else. A question asked from home or the
+    palette starts its conversation beside whatever is open, since that is what it is about.
   - **Only pane views open in it.** `PANE_VIEWS` in `frontend/lib/paneViews.ts`: Cockpit (`/studio`),
     Recommendations (`/studio/review`), Clients (`/studio/clients`) and a client (`/studio/clients/[id]`),
     each only for the roles its page's sidebar entry shows. Any other route navigates to its page as it

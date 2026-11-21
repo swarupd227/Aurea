@@ -111,7 +111,10 @@ export interface Briefing {
 
 export interface Mentionable {
   id: string;
+  /** What an @-mention types (the agent's key). */
   name: string;
+  /** What a person reads: the agent's catalogue name. */
+  label?: string;
   description: string;
 }
 

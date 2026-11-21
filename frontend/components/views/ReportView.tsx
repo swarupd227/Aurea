@@ -104,7 +104,7 @@ export function ReportView({ id }: { id: string }) {
 
       {rec?.status === "proposed" && (
         <div className="mt-5">
-          <RecommendationCard rec={rec} inReport onDecided={(u) => { setRec(u); refetch(); nav.changed(); }} />
+          <RecommendationCard rec={rec} inReport defaultOpen onDecided={(u) => { setRec(u); refetch(); nav.changed(); }} />
         </div>
       )}
     </div>

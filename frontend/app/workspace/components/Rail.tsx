@@ -27,6 +27,9 @@ function Section({ title, children, count }: { title: string; children: React.Re
 
 const rowBase = "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors";
 
+/** An agent's key read as words ("drift_rebalancing" -> "Drift rebalancing"), until the server sends its name. */
+const agentLabel = (key: string) => key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " ");
+
 /** Shown until a section's data has arrived: an empty list must mean empty, not "not loaded yet". */
 function Loading() {
   return <div role="status" aria-label="Loading" className="mx-2 my-1 h-3 w-28 rounded bg-border-soft motion-safe:animate-pulse" />;
@@ -117,7 +120,7 @@ export function Rail({
   const more = moreViews(role);
 
   // The newest few are enough on the rail; the rest are one palette search away.
-  const RECENT = 8;
+  const RECENT = 6;
   const shownThreads = showAllThreads ? threads : threads.slice(0, RECENT);
   const items = needsYou?.needs_decision ?? [];
   // A waiting thread is listed once: by its question when Needs-you has it, by its title otherwise.
@@ -128,6 +131,12 @@ export function Rail({
   const proposals = needsYou?.proposals ?? [];
   const proposalsTotal = needsYou?.proposals_count ?? proposals.length;
   const needsYouTotal = waitingThreads.length + (needsYou?.needs_decision_count ?? 0) + proposalsTotal;
+  // Three rows: enough to act on now without pushing everything else off the rail. The rest is one click away.
+  const SHOWN = 3;
+  const shownWaiting = waitingThreads.slice(0, SHOWN);
+  const shownItems = items.slice(0, Math.max(0, SHOWN - shownWaiting.length));
+  const shownProposals = proposals.slice(0, Math.max(0, SHOWN - shownWaiting.length - shownItems.length));
+  const notShown = needsYouTotal - shownWaiting.length - shownItems.length - shownProposals.length;
 
   return (
     <nav className="flex h-full min-h-0 flex-col bg-surface" aria-label="Astra" data-testid="astra-rail">
@@ -165,7 +174,7 @@ export function Rail({
             <p className="px-2 text-xs text-ink-muted">Nothing waiting on you.</p>
           ) : (
             <ul className="space-y-0.5" data-testid="needs-you-list">
-              {waitingThreads.map((t) => (
+              {shownWaiting.map((t) => (
                 <li key={t.id}>
                   <button
                     type="button"
@@ -177,7 +186,7 @@ export function Rail({
                   </button>
                 </li>
               ))}
-              {items.slice(0, 6).map((item) => (
+              {shownItems.map((item) => (
                 <li key={item.id} className="rounded px-2 py-1.5 hover:bg-border-soft">
                   <div className="flex items-start gap-2">
                     <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-crit" />
@@ -196,7 +205,7 @@ export function Rail({
                   </div>
                 </li>
               ))}
-              {proposals.slice(0, 5).map((p) => {
+              {shownProposals.map((p) => {
                 const walk = () =>
                   onAsk(
                     `Walk me through the proposal "${p.title}"${p.subject_label ? ` for ${p.subject_label}` : ""}, and ${
@@ -241,7 +250,7 @@ export function Rail({
                   </li>
                 );
               })}
-              {proposalsTotal > Math.min(proposals.length, 5) && (
+              {notShown > 0 && (
                 <li>
                   <button
                     type="button"
@@ -253,7 +262,7 @@ export function Rail({
                     }
                     className={`${rowBase} text-xs text-ink-muted hover:bg-border-soft hover:text-ink`}
                   >
-                    {proposalsTotal - Math.min(proposals.length, 5)} more proposals
+                    {notShown} more waiting
                     <ChevronRight className="ml-auto h-3.5 w-3.5" aria-hidden />
                   </button>
                 </li>
@@ -262,6 +271,64 @@ export function Rail({
           )}
         </Section>
 
+        <Section title="Views">
+          <ul className="space-y-0.5" data-testid="rail-views">
+            {pinned.map((v) => {
+              const Icon = v.icon;
+              const here = openPath ? (v.members ?? [v.href]).includes(openPath) : false;
+              return (
+                <li key={v.href}>
+                  <button
+                    type="button"
+                    onClick={() => open(v.href)}
+                    aria-current={here ? "page" : undefined}
+                    data-pane={matchPaneView(v.href) ? "true" : undefined}
+                    className={`${rowBase} ${here ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft hover:text-ink"}`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+                    <span className="truncate">{v.label}</span>
+                    {!matchPaneView(v.href) && <ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-ink-faint" aria-label="opens its page" />}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {more.length > 0 && (
+            <details className="group" data-testid="rail-more-views">
+              <summary
+                className={`${rowBase} cursor-pointer list-none text-xs text-ink-muted hover:bg-border-soft hover:text-ink [&::-webkit-details-marker]:hidden`}
+              >
+                <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" aria-hidden />
+                More views
+                <span className="ml-auto font-mono tabular-nums">{more.reduce((n, g) => n + g.items.length, 0)}</span>
+              </summary>
+              <div className="mt-1 space-y-3 pb-1">
+                {more.map((g) => (
+                  <div key={g.intent}>
+                    <div className="px-2 pb-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-faint">{g.title}</div>
+                    <ul className="space-y-0.5">
+                      {g.items.map((v) => (
+                        <li key={v.href}>
+                          <button
+                            type="button"
+                            onClick={() => open(v.href)}
+                            aria-current={openPath && (v.members ?? [v.href]).includes(openPath) ? "page" : undefined}
+                            className={`${rowBase} ${
+                              openPath && (v.members ?? [v.href]).includes(openPath) ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft hover:text-ink"
+                            }`}
+                          >
+                            <span className="truncate pl-1">{v.label}</span>
+                            {!matchPaneView(v.href) && <ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-ink-faint" aria-label="opens its page" />}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </Section>
         <Section title="Conversations">
           {!threadsLoaded ? (
             <Loading />
@@ -302,64 +369,6 @@ export function Rail({
           )}
         </Section>
 
-        <Section title="Views">
-          <ul className="space-y-0.5" data-testid="rail-views">
-            {pinned.map((v) => {
-              const Icon = v.icon;
-              const here = openPath === v.href;
-              return (
-                <li key={v.href}>
-                  <button
-                    type="button"
-                    onClick={() => open(v.href)}
-                    aria-current={here ? "page" : undefined}
-                    data-pane={matchPaneView(v.href) ? "true" : undefined}
-                    className={`${rowBase} ${here ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft hover:text-ink"}`}
-                  >
-                    <Icon className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
-                    <span className="truncate">{v.label}</span>
-                    {!matchPaneView(v.href) && <ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-ink-faint" aria-label="opens its page" />}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {more.length > 0 && (
-            <details className="group" data-testid="rail-more-views">
-              <summary
-                className={`${rowBase} cursor-pointer list-none text-xs text-ink-muted hover:bg-border-soft hover:text-ink [&::-webkit-details-marker]:hidden`}
-              >
-                <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" aria-hidden />
-                More views
-                <span className="ml-auto font-mono tabular-nums">{more.reduce((n, g) => n + g.items.length, 0)}</span>
-              </summary>
-              <div className="mt-1 space-y-3 pb-1">
-                {more.map((g) => (
-                  <div key={g.intent}>
-                    <div className="px-2 pb-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-faint">{g.title}</div>
-                    <ul className="space-y-0.5">
-                      {g.items.map((v) => (
-                        <li key={v.href}>
-                          <button
-                            type="button"
-                            onClick={() => open(v.href)}
-                            aria-current={openPath === v.href ? "page" : undefined}
-                            className={`${rowBase} ${
-                              openPath === v.href ? "bg-border-soft text-ink" : "text-ink-soft hover:bg-border-soft hover:text-ink"
-                            }`}
-                          >
-                            <span className="truncate pl-1">{v.label}</span>
-                            {!matchPaneView(v.href) && <ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-ink-faint" aria-label="opens its page" />}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-        </Section>
         <Section title="Your agents">
           {agents === null ? (
             <Loading />
@@ -372,11 +381,11 @@ export function Rail({
                   <button
                     type="button"
                     onClick={() => onMention(a.name)}
-                    title={`Mention @${a.name} in your message`}
+                    title={`Ask ${a.label ?? agentLabel(a.name)} in your message`}
                     className={`${rowBase} text-ink-soft hover:bg-border-soft`}
                   >
                     <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" />
-                    <span className="truncate">{a.name}</span>
+                    <span className="truncate">{a.label ?? agentLabel(a.name)}</span>
                   </button>
                 </li>
               ))}
