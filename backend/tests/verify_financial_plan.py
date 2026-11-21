@@ -164,11 +164,13 @@ async def main() -> int:
             check("claimed after retirement it is not counted, and says so", (r["guaranteed_income"], r["starts_later"]), (0.0, 44640.0))
             read = await ex.record_income_stream({**ss, "start_age": 62, "annual_amount": 12000, "source_document": "SSA statement, second"})
             r = read["retirement"]
-            # Recorded as not linked to inflation, it is paid at its stated amount: at retirement, five years on, it buys
-            # what 8,400 / 1.025^5 buys today (B-169; this used to count it at 8,400).
-            check("started by retirement it is, at what a level amount buys then", r["guaranteed_income"], round(8400 / 1.025 ** 5, 2))
-            check("and the portfolio draws less", (r["income_need"], r["income_target"]), (72000, round(72000 - 8400 / 1.025 ** 5)))
-            check("essentials covered", r["essentials_covered"], round(8400 / 1.025 ** 5 / 48000, 3))
+            # Recorded with nothing said about inflation, Social Security takes its kind's default and is linked, as the
+            # SSA indexes it, so it counts in full (B-212; before, it defaulted to level and read 8,400 / 1.025^5).
+            check("started by retirement it is, linked by default", r["guaranteed_income"], 8400.0)
+            check("and the portfolio draws less", (r["income_need"], r["income_target"]), (72000, 72000 - 8400))
+            check("essentials covered", r["essentials_covered"], round(8400 / 48000, 3))
+            level = await card("record_income_stream", {**ss, "start_age": 62, "annual_amount": 12000, "inflation_linked": False})
+            check("said to be level, it is: the card shows what was said", level["Rises with inflation"], "No")
             pension = {"person_id": str(ann.id), "kind": "employer_pension", "annual_amount": 24000, "start_age": 65, "source_document": "Pension statement 2026", "lump_sum": 400000, "joint_annual": 20400, "joint_survivor_share_pct": 50}
             shown = await card("record_income_stream", pension)
             check("the card names its choices", ("400,000" in shown["Lump sum"], "20,400" in shown["Joint-life"], shown["Survivor keeps"]), (True, True, "50%"))

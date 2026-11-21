@@ -1,5 +1,6 @@
 import { money } from "@/lib/format";
 import { returnsLabel } from "@/lib/planBasis";
+import { PlanInputsChips } from "@/components/PlanInputs";
 
 export const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -30,6 +31,11 @@ export function PlanCard({ result }: { result: any }) {
           </div>
         ))}
       </div>
+      {result.inputs && (
+        <div className="border-t border-border-soft px-3 py-2">
+          <PlanInputsChips inputs={result.inputs} testid="plan-card-inputs" />
+        </div>
+      )}
       {result.education.length > 0 && (
         <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-2">
           {result.education.map((e: any) => <span key={e.goal} className="chip text-ink-muted">{e.student ?? e.goal}: {e.likelihood != null ? `${Math.round(e.likelihood * 100)}% likely` : "not assessed"}</span>)}

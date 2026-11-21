@@ -16,6 +16,9 @@ rates, the sustainable income and the 4% rule are all in today's money (B-168). 
 one that starts after retirement is bridged by the portfolio (B-169). An education goal's likelihood is the goals
 page's (`goal_tradeoff.likelihoods`), its cost grown with education inflation, with the 529s beside it (B-172).
 
+A stream's kind sets whether it rises with inflation when nobody says (B-212), and the plan carries how old its
+inputs are and which facts it reads are not on file (B-182).
+
 Everything here is an estimate. Tax on income, a surviving spouse's cut in income, long-term care and a guardrail
 spending rule are not modelled.
 """
@@ -28,7 +31,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import balance_sheet, firm_time, goal_tradeoff, markets, planning, retirement
+from app.aurea_core import balance_sheet, firm_time, goal_tradeoff, markets, plan_inputs, planning, retirement
 from app.aurea_core.graph import household_brain
 from app.aurea_core.planning import _blended_assumptions
 from app.models.financial_plan import STREAM_KINDS, IncomeStream
@@ -42,6 +45,14 @@ RULE_OF_THUMB = 0.04
 PROJECTION_YEARS = 10
 LIFE_TO = 95
 NOT_MODELLED = ["tax_on_income", "survivor_income_drop", "long_term_care", "guardrail_spending"]
+# The kinds a statement's issuer indexes to prices by law or by practice, so the default is linked (B-212): Social
+# Security's cost-of-living adjustment, and most state pensions. A recorded answer replaces the default.
+LINKED_BY_DEFAULT = ("social_security", "state_pension")
+
+
+def linked_default(kind: str | None) -> bool:
+    """Whether a stream of this kind rises with inflation when the person recording it does not say."""
+    return kind in LINKED_BY_DEFAULT
 
 
 class PlanError(ValueError):
@@ -275,11 +286,13 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
             "rule_of_thumb_rate": RULE_OF_THUMB, "rule_of_thumb_income": round(projected * RULE_OF_THUMB),
             "essential_spending": essential or None, "essentials_covered": round(guaranteed / essential, 3) if essential and guaranteed else None},
         "cash": _cash_flow(sheet, firm, mu, today, book_cash), "education": _education(brain.get("goals", []), goal_tradeoff.likelihoods(brain, today), saved),
+        # How old its inputs are, and what it reads that is not on file (B-182).
+        "inputs": plan["inputs"] if plan and plan.get("inputs") else await plan_inputs.for_household(session, household_id, firm_id=firm_id),
     }
 
 
 async def prepare_stream(session: AsyncSession, person_id: uuid.UUID, *, firm_id: uuid.UUID, kind: str | None, name: str | None, annual_amount, start_age, source_document: str | None,
-                         inflation_linked: bool = False, lump_sum=None, joint_annual=None, joint_survivor_share=None) -> dict:
+                         inflation_linked: bool | None = None, lump_sum=None, joint_annual=None, joint_survivor_share=None) -> dict:
     person = await session.get(Person, person_id)
     if person is None or person.firm_id != firm_id or person.household_id is None:
         raise PlanError("Person not found.")
@@ -307,7 +320,9 @@ async def prepare_stream(session: AsyncSession, person_id: uuid.UUID, *, firm_id
     if numbers["survivor share"] is not None and not 0 < numbers["survivor share"] <= 1:
         raise PlanError("The survivor share must be above 0% and at most 100%.")
     return {"person": person, "kind": kind, "name": (name or "").strip() or kind.replace("_", " ").capitalize(), "amount": amount, "age": age, "document": named,
-            "inflation_linked": bool(inflation_linked), "lump_sum": numbers["lump sum"], "joint_annual": numbers["joint-life amount"], "survivor_share": numbers["survivor share"]}
+            # Not said: the kind's default, and the card says it is one (B-212).
+            "inflation_linked": linked_default(kind) if inflation_linked is None else bool(inflation_linked),
+            "inflation_linked_basis": "default_for_kind" if inflation_linked is None else "stated", "lump_sum": numbers["lump sum"], "joint_annual": numbers["joint-life amount"], "survivor_share": numbers["survivor share"]}
 
 
 async def record_stream(session: AsyncSession, person_id: uuid.UUID, *, firm_id: uuid.UUID, by: str, **terms) -> IncomeStream:
@@ -319,7 +334,8 @@ async def record_stream(session: AsyncSession, person_id: uuid.UUID, *, firm_id:
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="income_stream_recorded", actor=by, content={
-        "stream_id": str(row.id), "person_id": str(person_id), "kind": row.kind, "annual": ready["amount"], "start_age": row.start_age, "document": row.source_document})
+        "stream_id": str(row.id), "person_id": str(person_id), "kind": row.kind, "annual": ready["amount"], "start_age": row.start_age, "document": row.source_document,
+        "inflation_linked": row.inflation_linked, "inflation_linked_basis": ready["inflation_linked_basis"]})
     return row
 
 

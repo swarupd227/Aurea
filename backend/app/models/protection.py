@@ -44,6 +44,9 @@ class ProtectionPolicy(Base):
     # The document it came from - schedule, date and provider. Required.
     source_document: Mapped[str] = mapped_column(String(255))
     recorded_by: Mapped[str] = mapped_column(String(120), default="unknown")
+    # The day the figures were on file as true (B-182): the firm's day it was recorded. None on a row recorded
+    # before this was kept, which reads the day it was created.
+    as_of: Mapped[date | None] = mapped_column(Date, nullable=True)
     ended_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     ended_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     ended_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)

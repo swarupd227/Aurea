@@ -1380,7 +1380,23 @@ class ToolExecutors(AdminToolExecutors):
         result["message"] = (f"{result['household']}: {r['success_probability']:.0%} probability of success, sustainable income {say(r['sustainable_income'])} a year "
                              f"in today's money, as are the withdrawal rates and the 4% rule. {self._plan_to_words(r)} {self._returns_words(result['assumptions_source'])} "
                              "These are estimates from what is on file." if r else f"{result['household']}: no retirement projection.")
+        result["message"] += " " + self._inputs_words(result.get("inputs"))
         return result
+
+    @staticmethod
+    def _inputs_words(inputs: dict | None) -> str:
+        """How old the plan's inputs are, and how many facts it reads are not on file (B-182)."""
+        if not inputs:
+            return ""
+        line = f"{inputs['line_days']} days" + (" (the default line; the firm has set none)" if inputs["line_assumed"] else "")
+        oldest = inputs.get("oldest")
+        said = [f"Oldest input dated {oldest['as_of']}." if oldest else "No dated input on file.",
+                f"{inputs['older_than_line']} input(s) older than {line}; {inputs['undated']} undated."]
+        c = inputs["completeness"]
+        if c["read"]:
+            said.append(f"{c['on_file']} of {c['read']} facts the plan reads are on file"
+                        + (f"; not on file: {', '.join(m['fact'] + (' (' + (m.get('person') or m.get('goal')) + ')' if m.get('person') or m.get('goal') else '') for m in inputs['missing'])}." if inputs["missing"] else "."))
+        return " ".join(said)
 
     def _stream_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         share = inputs.get("joint_survivor_share_pct")
@@ -1389,8 +1405,23 @@ class ToolExecutors(AdminToolExecutors):
         except (TypeError, ValueError):
             raise ExecutorError("joint_survivor_share_pct must be a number.")
         return {"kind": inputs.get("kind"), "name": inputs.get("name"), "annual_amount": inputs.get("annual_amount"), "start_age": inputs.get("start_age"),
-                "source_document": inputs.get("source_document"), "inflation_linked": str(inputs.get("inflation_linked")).lower() == "true", "lump_sum": inputs.get("lump_sum"),
+                "source_document": inputs.get("source_document"), "inflation_linked": self._said_linked(inputs.get("inflation_linked")), "lump_sum": inputs.get("lump_sum"),
                 "joint_annual": inputs.get("joint_annual"), "joint_survivor_share": share}
+
+    @staticmethod
+    def _said_linked(value: Any) -> bool | None:
+        """Whether the person said the stream rises with inflation; None when they did not, so the kind's default
+        applies (B-212)."""
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        if isinstance(value, bool):
+            return value
+        said = str(value).strip().lower()
+        if said in ("true", "yes", "y", "1"):
+            return True
+        if said in ("false", "no", "n", "0"):
+            return False
+        raise ExecutorError("inflation_linked must be true or false.")
 
     def _education_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {k: inputs.get(k) for k in ("student", "start_year", "years", "annual_cost", "cost_source")}
@@ -1434,7 +1465,9 @@ class ToolExecutors(AdminToolExecutors):
                 social = r["kind"] == "social_security"
                 return [("Person", r["person"].full_name), ("Income", f"{r['kind'].replace('_', ' ').capitalize()} · {r['name']}"),
                         ("At full retirement age" if social else "A year", say(r["amount"])), ("Claiming at" if social else "From age", str(r["age"])),
-                        ("Rises with inflation", "Yes" if r["inflation_linked"] else None), ("Lump sum", say(r["lump_sum"]) if r["lump_sum"] else None),
+                        ("Rises with inflation", ("Yes" if r["inflation_linked"] else "No")
+                         + (f" · the default for {r['kind'].replace('_', ' ')}" if r["inflation_linked_basis"] == "default_for_kind" else "")),
+                        ("Lump sum", say(r["lump_sum"]) if r["lump_sum"] else None),
                         ("Joint-life", say(r["joint_annual"]) if r["joint_annual"] else None), ("Survivor keeps", f"{r['survivor_share']:.0%}" if r["survivor_share"] else None),
                         ("Document", r["document"])]
             if tool_key == "end_income_stream":
@@ -5655,6 +5688,8 @@ class ToolExecutors(AdminToolExecutors):
         target = inputs.get("target")
         timeline = inputs.get("timeline")
         priority = inputs.get("priority")
+        basis = inputs.get("target_basis")
+        index = inputs.get("index")
 
         goal = await self.session.get(Goal, goal_id)
         if not goal or goal.firm_id != self.firm_id:
@@ -5678,9 +5713,45 @@ class ToolExecutors(AdminToolExecutors):
             if mapped is None:
                 raise ExecutorError("priority must be high, medium or low.")
             changes["priority"] = mapped
+        changes.update(self._goal_basis_changes(goal, basis, index))
         if not changes:
-            raise ExecutorError("Say what to change on this goal: its target, year or priority.")
+            raise ExecutorError("Say what to change on this goal: its target, year, priority, target basis or index.")
         return goal, changes
+
+    @staticmethod
+    def _goal_basis_changes(goal: Any, basis: Any, index: Any) -> dict[str, Any]:
+        """Whether the goal's target is in today's money or a fixed sum, and the index a today's-money target grows
+        with (B-211). Written in the goal's `assumptions`, where `goal_tradeoff.grown_target` reads them. Only what
+        differs from the goal as it stands is a change."""
+        from app.aurea_core import planning
+
+        a = goal.assumptions or {}
+        said_basis = str(basis).strip().lower() if basis not in (None, "") else None
+        said_index = str(index).strip().lower() if index not in (None, "") else None
+        if said_basis is None and said_index is None:
+            return {}
+        if said_basis is not None and said_basis not in ("today", "nominal"):
+            raise ExecutorError("target_basis must be today (today's money, grown to the goal's date) or nominal (a fixed sum).")
+        if said_index is not None and said_index not in planning.INFLATION_INDEXES:
+            raise ExecutorError(f"index must be one of {', '.join(planning.INFLATION_INDEXES)}.")
+        school = goal.kind == "education" and a.get("annual_cost") and a.get("start_year") and a.get("years")
+        if school and said_basis == "nominal":
+            raise ExecutorError("This education goal is recorded as a yearly cost in today's money from its source, so its target cannot be a fixed sum.")
+        now_basis = "today" if (a.get("target_basis") == "today" or school) else ("nominal" if a.get("target_basis") == "nominal" else None)
+        after_basis = said_basis or now_basis
+        if said_index is not None and after_basis != "today":
+            raise ExecutorError("An index applies only to a target in today's money: say target_basis today.")
+        changes: dict[str, Any] = {}
+        if said_basis is not None and said_basis != now_basis:
+            changes["target_basis"] = said_basis
+        if after_basis == "today":
+            # Not named: what is on file stands, else the goal kind's own index, shown on the card.
+            want = said_index or a.get("index") or ("education" if goal.kind == "education" else "cpi")
+            if want != a.get("index"):
+                changes["index"] = want
+        elif a.get("index") is not None and "target_basis" in changes:
+            changes["index"] = None   # a fixed sum grows with nothing
+        return changes
 
     async def _goal_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core import firm_time, markets
@@ -5693,24 +5764,62 @@ class ToolExecutors(AdminToolExecutors):
                 ("Target", f"{say(float(goal.target_amount))} becomes {say(c['target_amount'])}" if "target_amount" in c else None),
                 ("Date", f"{firm_time.spoken(goal.target_date) if goal.target_date else 'None'} becomes {firm_time.spoken(c['target_date'])}"
                  if "target_date" in c else None),
-                ("Priority", f"{rank.get(goal.priority, goal.priority)} becomes {rank[c['priority']]}" if "priority" in c else None)]
+                ("Priority", f"{rank.get(goal.priority, goal.priority)} becomes {rank[c['priority']]}" if "priority" in c else None),
+                *self._goal_basis_rows(goal, c)]
+
+    @staticmethod
+    def _goal_basis_rows(goal: Any, c: dict[str, Any]) -> list[tuple[str, Any]]:
+        a = goal.assumptions or {}
+        school = goal.kind == "education" and a.get("annual_cost") and a.get("start_year") and a.get("years")
+        word = {"today": "Today's money", "nominal": "A fixed sum", None: "Not recorded (read as stated)"}
+        index_word = {"cpi": "CPI", "education": "Education inflation", "healthcare": "Healthcare inflation", None: "Nothing"}
+        before = "today" if (a.get("target_basis") == "today" or school) else a.get("target_basis") if a.get("target_basis") == "nominal" else None
+        rows: list[tuple[str, Any]] = []
+        if "target_basis" in c:
+            rows.append(("Target basis", f"{word[before]} becomes {word[c['target_basis']]}"))
+        if "index" in c:
+            rows.append(("Grows with", f"{index_word.get(a.get('index'), a.get('index'))} becomes {index_word[c['index']]}"))
+        return rows
 
     async def update_goal(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Update a household goal's target, timeline, or priority."""
+        """Update a household goal's target, timeline, priority, or whether its target is in today's money and the
+        index it grows with (B-211)."""
         goal, changes = await self._goal_changes(inputs)
+        basis = {k: changes.pop(k) for k in ("target_basis", "index") if k in changes}
         for field, value in changes.items():
             setattr(goal, field, value)
+        if basis:
+            # Nothing else in the goal's assumptions changes (B-211).
+            terms = dict(goal.assumptions or {})
+            for k, v in basis.items():
+                if v is None:
+                    terms.pop(k, None)
+                else:
+                    terms[k] = v
+            goal.assumptions = terms
         await self.session.flush()
 
-        updates = dict(changes)
+        updates = {**changes, **basis}
         if "target_date" in updates:
             updates["target_date"] = updates["target_date"].isoformat()
         if "priority" in updates:
             updates["priority"] = str(inputs.get("priority")).lower()
+        # The goal as the goals page now reads it: one goal, one likelihood (goal_tradeoff.likelihoods).
+        from app.aurea_core import goal_tradeoff, markets
+
+        say = markets.money_for(await self._firm())
+        plan = await goal_tradeoff.for_household(self.session, goal.household_id, firm_id=self.firm_id) if goal.household_id else None
+        row = next((g for g in (plan or {}).get("goals", []) if g.get("id") == str(goal.id)), None)
+        keep = ("name", "target_amount", "target_basis", "target_today", "index", "inflation", "success_probability", "on_track", "years", "assumed")
         return {
             "goal_id": str(goal.id),
             "updates": updates,
-            "message": f"Updated goal '{goal.name}'.",
+            "goal": {k: row.get(k) for k in keep} if row else None,
+            "assumptions_source": (plan or {}).get("assumptions_source"),
+            "message": f"Updated goal '{goal.name}'."
+                       + (f" It is now {row['success_probability']:.0%} likely, on a target of {say(row['target_amount'])} by its date"
+                          + (f" ({say(row['target_today'])} in today's money, grown with {row['index']})" if row.get("target_basis") == "today" else "") + "."
+                          if row and row.get("success_probability") is not None else ""),
         }
 
     # ─────────────────────────────────────────────────────────────────────
