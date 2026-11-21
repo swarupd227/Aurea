@@ -51,3 +51,5 @@ from app.models import (  # noqa: F401
 )
 # The Foundation layer (B-161 to B-163): external ids, breaks and outbound commands.
 from app.models import foundation  # noqa: F401,E402
+# Holdings held elsewhere, line by line (B-198).
+from app.models import held_away  # noqa: F401,E402

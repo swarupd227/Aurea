@@ -83,6 +83,13 @@ def pure() -> None:
     check("a recorded figure replaces that person's profile, not the other's", got["held_away"], 350.0)
     got = bs.assets_on_file(people, [item("held_away_investment", 150)])
     check("a joint figure replaces everyone's", got["held_away"], 150.0)
+    # Holdings listed line by line (B-198): the most detailed figure counts, once.
+    named = SimpleNamespace(kind="held_away_investment", side="asset", amount=150, person_id=a, name="Jarden", annual_payment=None)
+    line = SimpleNamespace(institution="Jarden", value=60, person_id=a, entity_id=None)
+    got = bs.assets_on_file(people, [named], [line])
+    check("a line replaces the total recorded for its owner at its institution, and their profile", got["held_away"], 60.0 + 200.0)
+    trust = SimpleNamespace(institution="Jarden", value=40, person_id=None, entity_id=uuid.uuid4())
+    check("a trust's line adds and replaces nothing", bs.assets_on_file(people, [named], [trust])["held_away"], 150.0 + 200.0 + 40.0)
     got = bs.assets_on_file(people, [item("pension", 500, b)])
     check("a recorded pension replaces that person's pots", got["retirement_accounts"], 550.0)
     got = bs.assets_on_file(people, [item("property", 900), item("business", 40), item("other_asset", 5), item("cash", 10)])

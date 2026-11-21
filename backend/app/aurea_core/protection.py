@@ -229,7 +229,8 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
 
     managed = float(brain["totals"]["total_value"])
     usable, _ = balance_sheet.in_currency(await balance_sheet.current_items(session, household_id, firm_id=firm_id), firm)
-    outside = balance_sheet.assets_on_file(persons, usable)
+    lines, _ = await balance_sheet.held_away_lines(session, household_id, firm=firm)
+    outside = balance_sheet.assets_on_file(persons, usable, lines)
     assets = managed + balance_sheet.liquid_of(outside)
     has_people = len(persons) > 1
 

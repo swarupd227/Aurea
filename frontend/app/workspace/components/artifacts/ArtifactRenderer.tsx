@@ -23,6 +23,7 @@ import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
 import { IpsCard } from "./IpsCard";
 import { BalanceSheetCard } from "./BalanceSheetCard";
+import { HeldAwayCard } from "./HeldAwayCard";
 import { EquityCompCard } from "./EquityCompCard";
 import { CashCard } from "./CashCard";
 import { SipCard } from "./SipCard";
@@ -202,6 +203,12 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      // Held away, line by line, and how it is doing (B-198).
+      case "read_held_away":
+      case "record_held_away_holding":
+      case "end_held_away_holding":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.holdings)) return null;
+        return <HeldAwayCard result={artifact.result as any} />;
       case "read_repapering":
       case "start_repapering":
       case "record_repapering":

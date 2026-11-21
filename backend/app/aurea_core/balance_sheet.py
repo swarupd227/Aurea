@@ -11,6 +11,9 @@ would be wrong in a way that looks exact.
 A figure recorded here replaces what a person's profile says about the same thing, so an amount is
 never counted twice: recorded held-away investments replace `profile.held_away`, and a recorded pension
 replaces the pots in their tax details. A joint item replaces them for everyone in the household.
+Holdings listed line by line (`aurea_core/held_away.py`, B-198) go one step further: the most detailed
+figure counts, so a person's lines at an institution replace the total recorded for them there, and
+replace their profile figure too. They are counted at the value their statement states.
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import firm_time
-from app.aurea_core.graph import held_away_of, household_brain, list_households, replaced_by
+from app.aurea_core.graph import held_away_of, household_brain, itemised_by, list_households, replaced_by
 from app.core.db import utcnow
 from app.models.balance_sheet import ASSET_KINDS, EXPENSE_KINDS, LIABILITY_KINDS, BalanceItem, side_of
 from app.models.graph import Household, Person
@@ -54,11 +57,11 @@ def _sum(items: list[BalanceItem], *kinds: str) -> float:
     return sum(float(i.amount) for i in items if i.kind in kinds)
 
 
-def assets_on_file(persons: list[Person], items: list[BalanceItem]) -> dict[str, float]:
-    """Everything a household owns outside the book, by kind. Pure. `items` are current and in the
-    firm's currency. Recorded figures replace the profile's, person by person."""
+def assets_on_file(persons: list[Person], items: list[BalanceItem], lines=()) -> dict[str, float]:
+    """Everything a household owns outside the book, by kind. Pure. `items` and `lines` (held-away
+    holdings) are current and in the firm's currency. Recorded figures replace the profile's, person by person."""
     pots = _sum(items, "pension") + sum(retirement_accounts_of(p) for p in persons if not replaced_by(items, "pension", p))
-    return {"held_away": held_away_of(persons, items), "retirement_accounts": pots, "cash": _sum(items, "cash"),
+    return {"held_away": held_away_of(persons, items, lines), "retirement_accounts": pots, "cash": _sum(items, "cash"),
             "property": _sum(items, "property"), "business": _sum(items, "business"), "other": _sum(items, "other_asset")}
 
 
@@ -71,6 +74,16 @@ def liquid_of(assets: dict[str, float]) -> float:
 def debts_of(items: list[BalanceItem], person_id: uuid.UUID | None = None) -> float:
     """What is owed: a person's own debts and the household's joint ones, or with no person, all of it."""
     return sum(float(i.amount) for i in items if i.side == "liability" and (person_id is None or i.person_id in (None, person_id)))
+
+
+async def held_away_lines(session: AsyncSession, household_id: uuid.UUID, *, firm: Firm | None) -> tuple[list, list]:
+    """A household's current held-away holdings (B-198): those in the firm's currency, and those that are not."""
+    from app.models.held_away import HeldAwayHolding
+
+    rows = (await session.execute(select(HeldAwayHolding).where(
+        HeldAwayHolding.household_id == household_id, HeldAwayHolding.status == "current"))).scalars().all()
+    base = ((firm.base_currency if firm else None) or "NZD").upper()
+    return [r for r in rows if (r.currency or base).upper() == base], [r for r in rows if (r.currency or base).upper() != base]
 
 
 async def current_items(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID) -> list[BalanceItem]:
@@ -128,7 +141,8 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     names = {p.id: p.full_name for p in persons}
     items = await current_items(session, household_id, firm_id=firm_id)
     usable, foreign = in_currency(items, firm)
-    outside = assets_on_file(persons, usable)
+    lines, foreign_lines = await held_away_lines(session, household_id, firm=firm)
+    outside = assets_on_file(persons, usable, lines)
     managed = float(brain["totals"]["total_value"])
     assets = managed + sum(outside.values())
     owed = debts_of(usable)
@@ -150,6 +164,10 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         "items": [_item_view(i, names) for i in items],
         "not_converted": [_item_view(i, names) for i in foreign],
         "ended": [_item_view(i, names) for i in ended],
+        # Held away line by line (B-198): how many, what they state, and which recorded totals they stand in for.
+        "held_away_lines": {"count": len(lines) + len(foreign_lines), "value": round(sum(float(l.value) for l in lines), 2),
+                            "not_converted": len(foreign_lines),
+                            "replaces": [i.name for i in usable if i.kind == "held_away_investment" and itemised_by(lines, i.person_id, i.name)]},
     }
 
 

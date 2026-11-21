@@ -12,6 +12,7 @@ import {
 } from "@/app/workspace/components/artifacts/BalanceSheetCard";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
+import { HeldAwaySection } from "./HeldAwaySection";
 
 interface Panel {
   b: BalanceSheet;
@@ -152,6 +153,9 @@ export function NetWorthView({ household = null }: { household?: string | null }
           <span className="chip text-ink-muted">other currencies are not converted</span>
         </div>
       </Card>
+
+      {/* Held away, line by line, and how it is doing (B-198), for one household. */}
+      {one && <HeldAwaySection householdId={one.household_id} household={one.household} canRecord={canRecord} asOf={data.as_of} />}
 
       {rows.length === 0 ? <Empty>No households.</Empty> : (
         <Card className="overflow-hidden p-0">

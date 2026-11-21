@@ -66,3 +66,7 @@ api_router.include_router(superadmin.router)
 api_router.include_router(portfolios.router)
 api_router.include_router(threads.router)
 api_router.include_router(vault.router)
+# Held away, line by line, and how it is doing (B-198).
+from app.api import held_away as held_away_api  # noqa: E402
+
+api_router.include_router(held_away_api.router)

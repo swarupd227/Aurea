@@ -23,7 +23,7 @@ from app.models.identity import AuditEvent, User
 
 # Each brief's sections in their default order. Keys are unique across both kinds, so a profile names them plainly.
 SECTIONS: dict[str, list[tuple[str, str]]] = {
-    "meeting": [("agenda", "Agenda"), ("mandates", "Mandates"), ("goals", "Goals"), ("history", "History"),
+    "meeting": [("agenda", "Agenda"), ("mandates", "Mandates"), ("held_away", "Held away"), ("goals", "Goals"), ("history", "History"),
                 ("review", "Review"), ("tax", "Tax"), ("open_proposals", "Open proposals"),
                 ("watch_items", "Watch items"), ("life_events", "Life events"), ("house_views", "House views")],
     "prospect": [("deals", "Deals"), ("introductions", "Ways in"), ("activity", "Touches"), ("booked", "Booked"),
