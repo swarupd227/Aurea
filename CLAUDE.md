@@ -62,6 +62,14 @@ pages are artifact views the agents open. Full guideline, including what is buil
   counts twice, and a new figure carries over a loan's terms. An item in another currency is listed and left out of
   every sum. `totals.total_value` stays what is managed and billed; `totals.held_away` sits beside it. Debts add to
   the death need in protection; a home or a business does not close a gap.
+- **Held away is listed line by line, measured on real prices, and told to the adviser.** `aurea_core/held_away.py`:
+  a holding elsewhere is what its statement states, recorded by a person or delivered by a feed registered at
+  `held_away_feeds.register`, pulled by the feed's own ids. Net worth counts it once: the most detailed figure wins,
+  so lines replace a total recorded for the same owner at the same institution and either replaces the profile; a
+  trust's lines replace nothing. Performance is price return over 365 days on real closes, beside the class reference
+  (SPY, AGG, VNQ) over the same dates; five points behind underperforms, and the alternative is a shelf product in the
+  class that beat it, never one the shelf bars, watches, closes or the household excludes. No symbol, no instrument
+  here or no real history means no performance, never an estimate of one. No client route or tool reads it.
 - **A report reaches a client only through its proposal.** Research & Reporting drafts and proposes;
   approving that proposal publishes, rolling it back withdraws. `aurea_core/reports.py` publishes nothing,
   no tool does, and the agent stops at a proposal whatever its tier (`agent_runs.forced_to_proposal`). A rerun rewrites the draft still waiting for a decision, so none is stranded. A draft
@@ -235,6 +243,15 @@ pages are artifact views the agents open. Full guideline, including what is buil
   brief is shaped for the household's recorded adviser. What an RM opens or closes is offered back as a suggestion and
   changes nothing until they accept it. The brief's history is dated and names where each item is recorded; a client's
   message appears as who and when, never its words in a prompt; there is no complaints register here, and it says so.
+- **A persona needs a lawful basis, and quotes what it rests on.** `aurea_core/persona.py`: off for every firm until
+  compliance records the basis in the privacy notice's words and switches it on (`persona_basis`, `persona_profiling`
+  in `rulebook.SETTINGS`, with a reason on the audit log); a refusal names compliance. Articles come only from a source
+  registered at `news_sources.register`, never scraped. Each talking point cites its article, quotes words checked to
+  be in it, and expires 180 days after it; nothing on health, religion, politics, sex life, ethnicity, union membership
+  or criminal matters, filtered before and after any model and left out as a count; adverse media stays with screening.
+  Never shown to a client. The network map (`network_map.py`) reads the ways-in graph two links out and tells a recorded
+  link from a fact; an RM's own LinkedIn export (`linkedin_import.py`) adds "knows" links to people already on file, and
+  a row matching nobody is counted, never made a contact.
 - **Firm scope.** `household_brain` and every `for_household` take a required keyword-only `firm_id`. Never
   make it optional. Agents pass `ctx.firm.id`; routes pass `firm.id`.
 - **A legal figure carries its law.** `aurea_core/law_figures.py` holds each exemption, allowance and rate with its
@@ -251,6 +268,26 @@ pages are artifact views the agents open. Full guideline, including what is buil
   with its evidence, never overwritten in either direction. Astra's writes in an owned domain leave as a command (a CRM
   activity) and appear when the sync brings them back, or are refused naming the owner. What an owner cannot supply
   (tax lots) reads not assessed. Conformance is `tests.verify_foundation_contract`.
+- **An agent remembers what a person told it, and nothing else.** `aurea_core/decision_memory.py`: a proposal carries
+  the last decision on the same finding with its reason; a hold or a note is made by a person who may decide that
+  agent's proposals, in their words, from a proposal, on the audit log, a hold for a year at most. A run says what a
+  hold kept back. A control's finding (supervision, IPS, reconciliation, billing, book integration, screening) is
+  never held. Nothing here widens autonomy, and no model writes a preference.
+- **A simulation can be thrown away.** `app/simulations/<key>/` stands in for a system we do not have yet (a wealth
+  platform, an aggregation feed, a news service, a LinkedIn export); the feature it feeds is real and reads only a
+  seam that the real source will use too. Nothing outside `app/simulations` imports it; `install_all` runs only when
+  `AUREA_SIMULATIONS` is on; it acts only for a firm that opted in; every row it writes is tagged `simulated:<key>`
+  and nothing untagged, no audit or ledger entry; what it supplies carries `simulated: true` and shows a chip.
+  `python -m app.simulations discard` removes it all, and `tests.verify_simulations` proves a discard leaves every
+  table as it was (`docs/03_Architecture/simulations.md`).
+- **An order on a book a product owns goes to that product.** `foundation/orders.py`: with the positions owned by an
+  adapter that takes `orders.place` (the wealth platform through MCP, `foundation/adapters/mcp.py`, profile in
+  `docs/03_Architecture/foundation-mcp-profile.md`), `venue_for_firm` is that product. An order leaves as a command and
+  waits as placed; holdings, cash and the trade change only when the sync brings the product's trade back
+  (`lineage.order_ref`), which records the fill as booked, never through `orders.settle`. A product that takes no
+  orders, or does not own the activity, refuses naming itself. The guards run unchanged; on a book with no lots a sale's
+  gain reads not assessed. What an MCP server declares it supplies is recorded in `settings["foundation_declared"]`,
+  never assumed. A firm whose positions are native keeps the paper venue exactly.
 - **Honesty.** Nothing fills on a synthetic price, and a valuation that uses one carries
   `price_source: "synthetic"`; the paper venue never claims a market was reached; a filled order is
   offset, never reversed.
@@ -265,7 +302,7 @@ pages are artifact views the agents open. Full guideline, including what is buil
   on the SQLite-backed suites below; verify live behaviour through the deployed API.
 - **Checks**, from `backend/` with `.venv\Scripts\python.exe -m tests.<name>`:
   `verify_decision_rights`, `verify_tenant_scope`, `verify_orders`, `verify_funding`,
-  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_onboarding_states`, `verify_aml_risk`, `verify_consents`, `verify_document_matrix`, `verify_transfer_files`, `verify_transaction_monitoring`, `verify_money_in`, `verify_account_features`, `verify_onboarding_scoreboard`, `verify_repapering`, `verify_advisers`, `verify_stalled_onboarding`, `verify_demo_cards`, `verify_rulebook`, `verify_start_onboarding`, `verify_overpromise`, `verify_admin_controls`, `verify_admin_tools`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`, `verify_studio_views`, `verify_client_canvas`, `verify_goal_likelihood`, `verify_firm_dates`, `verify_book_scan_route`, `verify_fees`, `verify_wash_sale`, `verify_ledger`, `verify_pipeline_funnel`, `verify_approval_tasks`, `verify_skill_reruns`, `verify_lapsed_confirmations`, `verify_platform_secrets`, `verify_introductions`, `verify_meeting_briefs`, `verify_foundation_contract`, `verify_foundation_dynamics`, `verify_rmd_roth`, `verify_planning_bugs`. From the repo root:
+  `verify_model_instruments`, `verify_capacity`, `verify_schedules`, `verify_proposals`, `verify_price_freshness`, `verify_reconciliation`, `verify_reconciliation_agent`, `verify_wash_sale_guard`, `verify_tasks`, `verify_reports`, `verify_messages`, `verify_protection`, `verify_protection_agent`, `verify_supervision`, `verify_risk_profile`, `verify_client_reviews`, `verify_ips`, `verify_direct_orders`, `verify_exits`, `verify_shelf`, `verify_equity_comp`, `verify_financial_plan`, `verify_client_file`, `verify_cash_movement`, `verify_trades`, `verify_ips_limits`, `verify_agent_decisions`, `verify_aml_reviews`, `verify_onboarding_states`, `verify_aml_risk`, `verify_consents`, `verify_document_matrix`, `verify_transfer_files`, `verify_transaction_monitoring`, `verify_money_in`, `verify_account_features`, `verify_onboarding_scoreboard`, `verify_repapering`, `verify_advisers`, `verify_stalled_onboarding`, `verify_demo_cards`, `verify_rulebook`, `verify_start_onboarding`, `verify_overpromise`, `verify_admin_controls`, `verify_admin_tools`, `verify_client_search`, `verify_confirm_cards`, `verify_balance_sheet`, `verify_markets`, `verify_india_tax`, `verify_licences`, `verify_india_demo`, `verify_book_screen`, `verify_studio_views`, `verify_client_canvas`, `verify_goal_likelihood`, `verify_firm_dates`, `verify_book_scan_route`, `verify_fees`, `verify_wash_sale`, `verify_ledger`, `verify_pipeline_funnel`, `verify_approval_tasks`, `verify_skill_reruns`, `verify_lapsed_confirmations`, `verify_platform_secrets`, `verify_introductions`, `verify_meeting_briefs`, `verify_foundation_contract`, `verify_foundation_dynamics`, `verify_persona`, `verify_network_map`, `verify_held_away`, `verify_simulations`, `verify_decision_memory`, `verify_ops_skills`, `verify_foundation_mcp`, `verify_sim_wealth_platform`, `verify_rmd_roth`, `verify_planning_bugs`. From the repo root:
   `node e2e/check-testids.mjs`.
 - **Seed changes need a backfill.** `seed/run.py` skips a firm that already exists, so changing what it
   writes does nothing to a deployed database. Ship a `seed/<name>_backfill.py` alongside, and say so.

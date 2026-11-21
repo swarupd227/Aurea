@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from app.api import (
     account_features, account_registration, admin, advisers, autonomy, briefs, introductions, rulebook, aml, aml_monitoring, consents, document_matrix, money_in, onboarding_scoreboard, repapering, transfer_files, agents, ai_governance, analytics, atlas, auth, balance_sheet, billing, canvas, cash_movement, client_file, equity_comp, exits, financial_plan, shelf, trades, valuations,
     compliance_program, composites, conduit, core, corporate_actions, crm, engage, ips, licences, onboarding,
-    portfolios, prices, protection, provenance, reconciliation, reviews, risk_profile, skills, sleeves, studio,
+    portfolios, preferences, prices, protection, provenance, reconciliation, reviews, risk_profile, skills, sleeves, studio,
     superadmin, threads, vault,
 )
 
@@ -49,6 +49,7 @@ api_router.include_router(onboarding_scoreboard.router)
 api_router.include_router(repapering.router)
 api_router.include_router(advisers.router)
 api_router.include_router(briefs.router)
+api_router.include_router(preferences.router)
 api_router.include_router(introductions.router)
 api_router.include_router(autonomy.router)
 api_router.include_router(rulebook.router)
@@ -65,3 +66,7 @@ api_router.include_router(superadmin.router)
 api_router.include_router(portfolios.router)
 api_router.include_router(threads.router)
 api_router.include_router(vault.router)
+# Held away, line by line, and how it is doing (B-198).
+from app.api import held_away as held_away_api  # noqa: E402
+
+api_router.include_router(held_away_api.router)

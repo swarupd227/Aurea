@@ -164,6 +164,10 @@ class ToolExecutors(AdminToolExecutors):
             "read_balance_sheet": self.read_balance_sheet,
             "record_balance_item": self.record_balance_item,
             "end_balance_item": self.end_balance_item,
+            # Held away, line by line, and how it is doing (B-198).
+            "read_held_away": self.read_held_away,
+            "record_held_away_holding": self.record_held_away_holding,
+            "end_held_away_holding": self.end_held_away_holding,
             "read_reconciliation": self.read_reconciliation,
             "import_custody_statement": self.import_custody_statement,
             "resolve_recon_break": self.resolve_recon_break,
@@ -234,9 +238,16 @@ class ToolExecutors(AdminToolExecutors):
             "read_crm_pipeline": self.read_crm_pipeline,
             "prepare_prospect_meeting": self.prepare_prospect_meeting,
             "find_introductions": self.find_introductions,
+            # A persona from public sources, the network map and an RM's own LinkedIn export (B-202, B-201).
+            "read_persona": self.read_persona,
+            "read_network_map": self.read_network_map,
+            "import_linkedin_connections": self.import_linkedin_connections,
             "record_relationship": self.record_relationship,
             "read_brief_profile": self.read_brief_profile,
             "set_brief_profile": self.set_brief_profile,
+            "read_agent_preferences": self.read_agent_preferences,
+            "remember_preference": self.remember_preference,
+            "end_preference": self.end_preference,
             "create_crm_contact": self.create_crm_contact,
             "create_crm_opportunity": self.create_crm_opportunity,
             "log_crm_activity": self.log_crm_activity,
@@ -1093,6 +1104,90 @@ class ToolExecutors(AdminToolExecutors):
                     ("Net worth", None if r["side"] == "expense" or r["not_converted"]
                      else f"{say(now['net_worth'])} becomes {say(now['net_worth'] + change)}")]
         except balance_sheet.BalanceSheetError as exc:
+            raise ExecutorError(str(exc))
+
+    # ── Held away, line by line (B-198) ─────────────────────────────────────────────────
+    async def read_held_away(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import held_away
+
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            result = await held_away.for_household(self.session, household_id, firm_id=self.firm_id)
+            if result is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            s = result["summary"]
+            result["message"] = (f"{result['household']}: {s['holdings']} holding(s) listed elsewhere, {s['measured']} measured on real prices, "
+                                 f"{s['underperforming']} underperforming its reference, {s['overlaps']} also in the managed book. "
+                                 "Estimates on price return only, for the adviser."
+                                 + (f" {s['simulated']} come from a simulated feed." if s["simulated"] else ""))
+            return result
+        result = await held_away.for_firm(self.session, self.firm_id)
+        s = result["summary"]
+        result["message"] = (f"{s['households']} household(s) with holdings listed elsewhere: {s['underperforming']} underperforming "
+                             f"their reference, {s['overlaps']} also in the managed book. Estimates, for the adviser."
+                             + (f" {s['simulated']} holding(s) come from a simulated feed." if s["simulated"] else ""))
+        return result
+
+    def _held_away_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        uid = lambda k: _parse_uuid(inputs[k], k) if inputs.get(k) else None  # noqa: E731
+        return {"institution": inputs.get("institution"), "instrument_name": inputs.get("instrument_name"), "value": inputs.get("value"),
+                "value_on": self._review_day(inputs.get("value_on"), "value_on"), "source_document": inputs.get("source_document"),
+                "currency": inputs.get("currency"), "person_id": uid("person_id"), "entity_id": uid("entity_id"),
+                "account_label": inputs.get("account_label"), "symbol": inputs.get("symbol"), "isin": inputs.get("isin"),
+                "asset_class": inputs.get("asset_class"), "quantity": inputs.get("quantity"), "replaces_id": uid("replaces_id")}
+
+    async def _held_away_write(self, write) -> dict[str, Any]:
+        from app.aurea_core import held_away
+        from app.models.identity import User
+
+        if self.role not in (UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS):
+            raise ExecutorError("Your role cannot change what a client holds elsewhere.")
+        user = await self.session.get(User, self.user_id)
+        try:
+            return await write(held_away, user.email if user else "unknown")
+        except held_away.HeldAwayError as exc:
+            raise ExecutorError(str(exc))
+
+    async def record_held_away_holding(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+        args = self._held_away_args(inputs)
+        result = await self._held_away_write(lambda h, by: h.record_holding(self.session, household_id, firm_id=self.firm_id, by=by, **args))
+        result["message"] = f"Recorded {result['recorded']} for {result['household']}."
+        return result
+
+    async def end_held_away_holding(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        holding_id = _parse_uuid(inputs.get("holding_id"), "holding_id")
+        result = await self._held_away_write(lambda h, by: h.end_holding(self.session, holding_id, firm_id=self.firm_id,
+                                                                         reason=inputs.get("reason"), by=by))
+        result["message"] = f"{result['ended_holding']} has ended for {result['household']}."
+        return result
+
+    async def _held_away_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        """What a held-away Confirm card names, refused for the reasons doing it would be refused."""
+        from app.aurea_core import balance_sheet, firm_time, held_away, markets
+
+        say = markets.money_for(await self._firm())
+        try:
+            if tool_key == "end_held_away_holding":
+                r = await held_away.prepare_end(self.session, _parse_uuid(inputs.get("holding_id"), "holding_id"), firm_id=self.firm_id,
+                                                reason=inputs.get("reason"))
+                h = r["holding"]
+                return [("Client", r["household"].name if r["household"] else None), ("Holding", h.instrument_name),
+                        ("Institution", h.institution), ("Value", f"{h.currency} {float(h.value):,.2f}"), ("Reason", r["reason"])]
+            household_id = _parse_uuid(inputs.get("household_id"), "household_id")
+            r = await held_away.prepare_holding(self.session, household_id, firm_id=self.firm_id, **self._held_away_args(inputs))
+            whose = r["person"].full_name if r["person"] else r["entity"].name if r["entity"] else "Joint"
+            now = await balance_sheet.for_household(self.session, household_id, firm_id=self.firm_id)
+            return [("Client", r["household"].name), ("Institution", r["institution"]), ("Account", r["account_label"]),
+                    ("Holding", r["instrument_name"]), ("Symbol", r["symbol"]), ("ISIN", r["isin"]),
+                    ("Quantity", f"{r['quantity']:,.4f}".rstrip("0").rstrip(".") if r["quantity"] is not None else None),
+                    ("Value", f"{r['currency']} {r['value']:,.2f}" if r["not_converted"] else say(r["value"])),
+                    ("Replaces", f"{r['replacing'].currency} {float(r['replacing'].value):,.2f}" if r["replacing"] else None),
+                    ("As at", firm_time.spoken(r["value_on"])), ("Whose", whose), ("Asset class", r["asset_class"]),
+                    ("Priced here", r["instrument"].symbol if r["instrument"] else "No: listed at its stated value"),
+                    ("Document", r["source"]), ("Counted", "Not added: not converted" if r["not_converted"] else None),
+                    ("Held away now", None if r["not_converted"] else say(now["assets"]["held_away"]) if now else None)]
+        except held_away.HeldAwayError as exc:
             raise ExecutorError(str(exc))
 
     async def read_product_shelf(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2366,6 +2461,8 @@ class ToolExecutors(AdminToolExecutors):
                 return say(float(v or 0))
             if kind == "list":
                 return ", ".join(v or []) or "Nothing"
+            if kind == "text":
+                return v or "Not set"
             return f"{v:,}" if isinstance(v, (int, float)) else str(v)
         return [("Control", p["label"]), ("Now", shown(p["now"])), ("Becomes", shown(p["after"])), ("Reason", p["reason"])]
 
@@ -4468,10 +4565,12 @@ class ToolExecutors(AdminToolExecutors):
         moved = sum(float(o["est_value"] or 0) * (1 if o["side"] == "sell" else -1) for o in orders)
         gain, budget = trades.get("estimated_realised_gain"), trades.get("cgt_budget")
         venue = venue_for_firm(firm)
+        if getattr(venue, "refusal", None) and action in ("approve", "modify"):   # B-165: the book's owner takes no orders
+            raise ExecutorError(venue.refusal)
         return [*rows, ("Cash, before fees", f"{say(cash)} becomes {say(cash + moved)}"),
                 ("Realised gain", f"{say(float(gain))} of a {say(float(budget))} budget" if gain is not None and budget is not None
                  else say(float(gain)) if gain is not None else None),
-                ("Venue", venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached"),
+                ("Venue", getattr(venue, "label", None) or (venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached")),
                 ("Note", (note or "").strip() or None)]
 
     async def _report_decision_preview(self, inputs: dict[str, Any]) -> dict[str, Any] | None:
@@ -4566,6 +4665,8 @@ class ToolExecutors(AdminToolExecutors):
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):
             return rows(*await self._balance_preview(tool_key, inputs))
+        if tool_key in ("record_held_away_holding", "end_held_away_holding"):
+            return rows(*await self._held_away_preview(tool_key, inputs))
         if tool_key in ("request_cash_movement", "record_cash_paid", "cancel_cash_request", "record_standing_instruction", "end_standing_instruction", "start_phase_in", "end_phase_in"):
             return rows(*await self._cash_preview(tool_key, inputs))
         if tool_key in ("record_sip", "end_sip"):
@@ -4586,6 +4687,10 @@ class ToolExecutors(AdminToolExecutors):
             return rows(*await self._crm_preview(tool_key, inputs))
         if tool_key == "record_relationship":
             return rows(*await self._relationship_preview(inputs))
+        if tool_key in ("remember_preference", "end_preference"):
+            return rows(*await self._preference_preview(tool_key, inputs))
+        if tool_key == "import_linkedin_connections":
+            return rows(*await self._linkedin_preview(inputs))
         if tool_key == "set_brief_profile":
             return rows(*await self._brief_profile_preview(inputs))
         if tool_key in ("compute_corporate_action_entitlements", "post_corporate_action_entitlement"):
@@ -5495,7 +5600,9 @@ class ToolExecutors(AdminToolExecutors):
         for flag in a["review"]["flags"]:
             rows.append((f"Review {flag['symbol']}", f"Sold at a loss in {flag['account']} on {flag['on']}"))
         venue = venue_for_firm(firm)
-        rows.append(("Venue", venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached"))
+        if getattr(venue, "refusal", None):   # positions owned by a product that cannot take this order (B-165)
+            raise ExecutorError(venue.refusal)
+        rows.append(("Venue", getattr(venue, "label", None) or (venue.key if venue.reaches_market else "Paper: real prices and book entries, no market reached")))
         rows.append(("Reason", a["reason"].strip() or None))
         return rows
 
@@ -5516,9 +5623,10 @@ class ToolExecutors(AdminToolExecutors):
         # A direct order has no proposal to carry its record, so the ledger does.
         await ledger.append_entry(self.session, firm_id=self.firm_id, event_type="direct_order_placed", actor=await self._shelf_user(), content={
             "mandate_id": str(mandate_id), "reason": a["reason"], "orders": [{"side": o["side"], "symbol": o["symbol"], "quantity": float(o["quantity"]), "est_value": o["est_value"]} for o in order_set],
-            "settled": result["orders_settled"], "failed": result["orders_failed"], "venue": result["venue"], "role": str(self.role)})
+            "settled": result["orders_settled"], "failed": result["orders_failed"], "venue": result["venue"], "role": str(self.role),
+            **({"waiting": result["orders_waiting"]} if "orders_waiting" in result else {})})
 
-        note = (
+        note = result.get("note") or (
             f"{result['orders_settled']} of {result['orders_created']} order(s) filled and "
             f"settled via '{result['venue']}'"
             + ("" if result["reaches_market"] else " (paper venue — real prices and real book "
@@ -5535,6 +5643,8 @@ class ToolExecutors(AdminToolExecutors):
             "fills": result["settled"],
             "failed": result["failed"],
             "message": note,
+            # Sent to the product that owns the book: waiting for its confirmation to sync back (B-165).
+            **({"orders_waiting": result["orders_waiting"], "sent_to": result["sent_to"]} if "orders_waiting" in result else {}),
         }
 
     async def _goal_changes(self, inputs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
@@ -5759,6 +5869,14 @@ class ToolExecutors(AdminToolExecutors):
                                 "recorded_links_to_target": ways["recorded_links_to_target"]}
         present = ["deals", "activity", "not_on_file"] + (["introductions"] if ways["paths"] or ways["in_touch"] else []) \
             + (["booked"] if out["booked"] else [])
+        # Talking points from public sources, only where compliance has switched profiling on (B-202).
+        from app.aurea_core import persona
+
+        pers = await persona.build(self.session, firm, contact_id=out["contact"]["id"])
+        if pers["allowed"]:
+            out["persona"] = {k: pers.get(k) for k in ("points", "left_out", "control", "simulated", "expiry_days",
+                                                        "sources", "not_on_file", "articles_read", "as_of")}
+            present.append("persona")
         # Laid out for whoever is preparing (B-203).
         out["shaped_for"] = await brief_profile.for_user(self.session, firm.id, self.user_id, "prospect", present)
         out["currency"] = firm.base_currency
@@ -5768,6 +5886,8 @@ class ToolExecutors(AdminToolExecutors):
                           + (f"; best way in: {best['introducer']['name']}, asked by "
                              f"{'you' if best['ask']['id'] == str(self.user_id) else best['ask']['name']} (score {best['score']})"
                              if best else "; no way in recorded")
+                          + (f"; {len(out['persona']['points'])} talking point(s) from public sources"
+                             + (" (simulated source)" if out["persona"]["simulated"] else "") if "persona" in out else "")
                           + (f"; not on file: {', '.join(out['not_on_file'])}" if out["not_on_file"] else "") + ".")
         return out
 
@@ -5830,6 +5950,84 @@ class ToolExecutors(AdminToolExecutors):
         out["message"] = f"Recorded: {out['from']['name']} {out['label']} {out['to']['name']}, in {out['recorded_by']}'s name."
         return out
 
+    # ── A persona, the network map and an RM's LinkedIn export (B-202, B-201 internal part) ──────────
+
+    def _who(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"contact_id": inputs.get("contact_id"), "person_id": inputs.get("person_id"), "name": inputs.get("name")}
+
+    async def read_persona(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import persona
+
+        if UserRole(self.role) == UserRole.CLIENT:
+            raise ExecutorError("A persona is never shown to a client.")
+        try:
+            out = await persona.read(self.session, await self._firm(), **self._who(inputs))
+        except persona.PersonaError as exc:
+            raise ExecutorError(str(exc))
+        left = out["left_out"]
+        gone = [f"{left['special_category']} sentence(s) on a special category" if left["special_category"] else "",
+                f"{left['adverse_media']} adverse article(s), which stay with screening" if left["adverse_media"] else "",
+                f"{left['unchecked']} point(s) whose quote was not in the article" if left["unchecked"] else "",
+                f"{left['expired']} article(s) older than {out['expiry_days']} days" if left["expired"] else ""]
+        gone = [g for g in gone if g]
+        who = out["subject"]["name"]
+        out["message"] = ((f"{len(out['points'])} talking point(s) about {who} from {out['articles_read']} article(s)"
+                           if out["points"] else f"No talking point about {who} from {out['articles_read']} article(s)")
+                          + (f"; left out: {', '.join(gone)}" if gone else "")
+                          + ("; the news source is simulated" if out["simulated"] else "")
+                          + (f"; not on file: {', '.join(out['not_on_file'])}" if out["not_on_file"] else "")
+                          + f". Basis: {out['control']['basis']}.")
+        return out
+
+    async def read_network_map(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import introductions, network_map
+
+        try:
+            out = await network_map.build(self.session, await self._firm(), **self._who(inputs))
+        except introductions.IntroductionError as exc:
+            raise ExecutorError(str(exc))
+        me = str(self.user_id)
+        for n in out["nodes"]:
+            n["you"] = n["type"] == "user" and n["id"] == me
+        c = out["counts"]
+        out["message"] = (f"Around {out['centre']['name']}, {out['depth']} links out: {c['nodes'] - 1} people and entities, "
+                          f"{c['recorded']} link(s) a person recorded ({c['linkedin']} from a LinkedIn export) and "
+                          f"{c['facts']} the platform holds as fact" + (f"; {c['truncated']} more not drawn" if c["truncated"] else "") + ".")
+        return out
+
+    async def _linkedin_prepared(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import linkedin_import
+
+        try:
+            return await linkedin_import.prepare(self.session, await self._firm(), await self._me(), inputs.get("csv_text") or "")
+        except linkedin_import.LinkedInImportError as exc:
+            raise ExecutorError(str(exc))
+
+    async def _linkedin_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import linkedin_import
+
+        p = await self._linkedin_prepared(inputs)
+        s = linkedin_import.summary(p)
+        names = ", ".join(x["name"] for x in s["linking"][:8]) + (f" and {len(s['linking']) - 8} more" if len(s["linking"]) > 8 else "")
+        example = linkedin_import.evidence(s["rm"], p["to_link"][0]["connected_on"]) if p["to_link"] else None
+        return [("Whose export", s["rm"]), ("Rows in the export", str(s["rows"])), ("Will be linked", str(s["to_link"])),
+                ("Linking", names or "Nobody"), ("Already linked", str(s["already"])), ("Matched", str(s["matched"])),
+                ("Skipped, matching nobody", str(s["unmatched"])), ("Skipped, matching two people", str(s["ambiguous"])),
+                ("Evidence", example), ("Contacts created", "None; a row matching nobody is only counted")]
+
+    async def import_linkedin_connections(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import linkedin_import
+
+        try:
+            out = await linkedin_import.import_connections(self.session, await self._firm(), await self._me(),
+                                                           inputs.get("csv_text") or "")
+        except linkedin_import.LinkedInImportError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = (f"Linked {out['linked']} of {out['rows']} connection(s) to the firm's contacts and clients; "
+                          f"{out['already']} already linked, {out['unmatched']} matching nobody (not added), "
+                          f"{out['ambiguous']} matching two people (skipped).")
+        return out
+
     # ── The RM's brief profile (B-203) ───────────────────────────────────────────────────────
 
     async def read_brief_profile(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -5882,6 +6080,69 @@ class ToolExecutors(AdminToolExecutors):
             raise ExecutorError(str(exc))
         out["suggestions"] = await brief_profile.suggestions(self.session, self.firm_id, me.id, out)
         out["message"] = f"Your briefs now lead with {', '.join(out['lead_labels']) or 'the default order'}, {out['length']}."
+        return out
+
+    # ── What the agents were asked to remember (B-204) ───────────────────────────────────────
+
+    async def read_agent_preferences(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import decision_memory
+
+        firm = await self._firm()
+        prefs = await decision_memory.listing(self.session, firm, agent_key=inputs.get("agent_key") or None,
+                                              subject_id=inputs.get("subject_id") or None)
+        holds = [p for p in prefs if p["kind"] == "hold"]
+        return {"preferences": prefs, "holds": len(holds), "notes": len(prefs) - len(holds),
+                "message": (f"{len(holds)} hold(s) and {len(prefs) - len(holds)} note(s) in force"
+                            + (": " + "; ".join(f"{p['agent_key']} for {p['subject']}: {p['kind']} '{p['text']}' by {p['made_by']}"
+                                                + (f" until {p['until']}" if p["until"] else "") for p in prefs[:6]) if prefs else "")
+                            + ".")}
+
+    async def _preference_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import decision_memory
+        from app.models.agent_preference import AgentPreference
+
+        firm, me = await self._firm(), await self._me()
+        if tool_key == "end_preference":
+            try:
+                row = await self.session.get(AgentPreference, uuid.UUID(str(inputs.get("preference_id"))))
+            except (TypeError, ValueError):
+                row = None
+            if row is None or row.firm_id != firm.id or row.ended_at is not None:
+                raise ExecutorError("No preference in force with that id; read_agent_preferences lists them.")
+            return [("Agent", row.agent_key), ("Subject", row.subject_label), ("Kind", row.kind), ("Text", row.text),
+                    ("Made by", row.made_by_name), ("After this", "Its finding is raised again" if row.kind == "hold" else "The note stops showing")]
+        try:
+            p = await decision_memory.prepare(self.session, firm, me, recommendation_id=inputs.get("recommendation_id"),
+                                              kind=inputs.get("kind"), text=inputs.get("text"), until=inputs.get("until"))
+        except decision_memory.PreferenceError as exc:
+            raise ExecutorError(str(exc))
+        rec = p["rec"]
+        return [("Agent", p["agent_key"]), ("Subject", rec.subject_label), ("From", rec.title),
+                ("Kind", "Hold: not raised again" if p["kind"] == "hold" else "Note on its proposals"),
+                ("Until", p["until"].isoformat() if p["until"] else "Until ended"), ("In your words", p["text"]),
+                ("Made by", me.full_name), ("Never", "Widens the agent's autonomy or changes a fact")]
+
+    async def remember_preference(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import decision_memory
+
+        try:
+            out = await decision_memory.remember(self.session, await self._firm(), await self._me(),
+                                                 recommendation_id=inputs.get("recommendation_id"), kind=inputs.get("kind"),
+                                                 text=inputs.get("text"), until=inputs.get("until"))
+        except decision_memory.PreferenceError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = (f"Remembered for {out['subject']}: {out['kind']} '{out['text']}'"
+                          + (f" until {out['until']}" if out["until"] else "") + ".")
+        return out
+
+    async def end_preference(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import decision_memory
+
+        try:
+            out = await decision_memory.end(self.session, await self._firm(), await self._me(), inputs.get("preference_id"))
+        except decision_memory.PreferenceError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = f"Ended: {out['kind']} '{out['text']}' for {out['subject']}."
         return out
 
     @staticmethod

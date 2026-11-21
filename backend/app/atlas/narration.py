@@ -45,6 +45,10 @@ def new_card(preview: dict[str, Any]) -> dict[str, Any]:
 def fold(card: dict[str, Any], event: dict[str, Any]) -> bool:
     """Fold one streamed run event into the card. True when the card changed."""
     phase = event.get("phase")
+    if phase == "empty" and event.get("held"):
+        # What a person's preference kept back (B-204): said on the card, never silently dropped.
+        card["held"] = [{"title": h.get("title"), "by": h.get("by"), "until": h.get("until")} for h in event["held"]]
+        return True
     if phase == "start":
         card["run_id"] = event.get("run_id")
         if event.get("tier"):
@@ -122,6 +126,8 @@ def proposal_row(rec) -> dict[str, Any]:
         row["rebalance"] = rebalance_figures(payload)
     if payload.get("brief"):
         row["brief"] = payload["brief"]
+    if payload.get("memory"):
+        row["memory"] = payload["memory"]      # the last decision on this finding, and notes (B-204)
     return row
 
 

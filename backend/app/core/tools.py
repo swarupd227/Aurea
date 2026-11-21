@@ -1827,6 +1827,65 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
+    # Held away, line by line, and how it is doing (B-198). Advice about it goes to the adviser, never to a client.
+    "read_held_away": Tool(
+        key="read_held_away",
+        name="Read Held Away",
+        speaking_agent="astra",
+        description="What a household holds at other institutions, line by line, as statements or a feed state it, and how each line is doing: its price return over the last 365 days on real closing prices, beside its asset class's reference (SPY for equity, AGG for fixed income, VNQ for property) and the shelf products in the same class over the same dates. 'underperforming' means it trails its reference by 5 points or more; 'alternative' is the shelf product in the same class that did best over the same dates and beat it, with its shelf standing. 'overlap' means the same instrument is also in the managed book. Give a household_id for one household, or none for every household with something listed. Every figure is an estimate on price return only, in each instrument's own currency; a line with 'not_measured' has no performance, so never give it one. A line marked 'simulated' comes from a simulated feed: say so. This is for the adviser to raise with the client, never advice to send a client. The net_worth view shows it for one household.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, or leave out for every household with holdings listed", required=False),
+        ],
+        output=ToolOutput("object", "Each holding held elsewhere, its performance, reference, alternative and overlap"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_held_away_holding": Tool(
+        key="record_held_away_holding",
+        name="Record Held Away Holding",
+        speaking_agent="astra",
+        description="Record one holding a household has at another institution, from its statement: the institution, the holding as the statement names it (with its symbol or ISIN if shown), how many, and the value the statement states on its date. It changes net worth: a person's holdings listed at an institution replace the total recorded for them there. Use only figures from a statement the user gives you and never estimate one. To record a newer statement for a holding already listed, give replaces_id.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this holding? It changes the household's net worth.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household", required=True),
+            ToolInput("institution", "string", "The institution that holds it", required=True),
+            ToolInput("instrument_name", "string", "The holding as the statement names it", required=True),
+            ToolInput("value", "number", "The value the statement states", required=True),
+            ToolInput("value_on", "string", "The statement's date, YYYY-MM-DD", required=True),
+            ToolInput("source_document", "string", "The statement it comes from - institution and date", required=True),
+            ToolInput("symbol", "string", "The ticker, if the statement shows one", required=False),
+            ToolInput("isin", "string", "The ISIN, if the statement shows one", required=False),
+            ToolInput("quantity", "number", "How many units the statement shows", required=False),
+            ToolInput("asset_class", "string", "One of: equity, fixed_income, cash, alternatives, property, commodity, multi_asset", required=False),
+            ToolInput("account_label", "string", "The account's name at the institution", required=False),
+            ToolInput("currency", "string", "A three-letter code, if not the firm's. It is listed and left out of the totals", required=False),
+            ToolInput("person_id", "uuid", "Whose it is, if one person's", required=False),
+            ToolInput("entity_id", "uuid", "The trust or company that holds it, if one does", required=False),
+            ToolInput("replaces_id", "uuid", "The holding this is a newer statement for, from read_held_away", required=False),
+        ],
+        output=ToolOutput("object", "The household's holdings held elsewhere after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "end_held_away_holding": Tool(
+        key="end_held_away_holding",
+        name="End Held Away Holding",
+        speaking_agent="astra",
+        description="Mark a holding held elsewhere as no longer held there: sold, transferred in, closed. It stops counting towards net worth and is kept on file with the reason.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="End this holding? It stops counting towards net worth.",
+        inputs=[
+            ToolInput("holding_id", "uuid", "The holding, from read_held_away", required=True),
+            ToolInput("reason", "string", "Why it is no longer held there", required=True),
+        ],
+        output=ToolOutput("object", "The household's holdings held elsewhere after ending it"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
     "read_composites": Tool(
         key="read_composites",
         name="Read Composites",
@@ -2424,7 +2483,7 @@ TOOLS: dict[str, Tool] = {
         confirmation="Send this to the adviser as a task? The proposal itself is not changed.",
         inputs=[
             ToolInput("recommendation_id", "uuid", "The proposal (from read_recommendations)", required=True),
-            ToolInput("reason", "string", "Why it goes to the adviser, in the person's own words: it is what the adviser reads", required=True),
+            ToolInput("reason", "string", "Why it goes to the adviser, exactly as the person said it, adding nothing: it goes out in their name and is what the adviser reads", required=True),
             ToolInput("due_date", "string", "When the adviser should decide by, as YYYY-MM-DD. Leave out if no date was given", required=False),
         ],
         output=ToolOutput("object", "The adviser's new task"),
@@ -2770,6 +2829,52 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
     ),
 
+    # ─── Persona and network (B-202, B-201 internal part)
+
+    "read_persona": Tool(
+        key="read_persona",
+        name="Read Persona",
+        speaking_agent="meeting_prep",
+        description="Talking points about a prospect or client from professional and public sources (aurea_core/persona.py): interests at work and beyond, each citing its article (title, publisher, date, link) and quoting the words it rests on, dated and good for 180 days from the article. Nothing about health, religion, politics, sex life, ethnicity, union membership or criminal matters, and no adverse media (that stays with screening); what was left out is a count. Articles come only from the firm's registered news sources; a simulated source is marked simulated. It runs only where compliance has switched profiling on with its lawful basis; otherwise it is refused and names compliance. Never shown to a client. Give contact_id, person_id, or a name.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("contact_id", "uuid", "The pipeline contact", required=False),
+            ToolInput("person_id", "uuid", "A client person", required=False),
+            ToolInput("name", "string", "The contact's or client's name, if no id", required=False),
+        ],
+        output=ToolOutput("object", "The talking points with their sources, and what was left out"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
+    "read_network_map": Tool(
+        key="read_network_map",
+        name="Read Network Map",
+        speaking_agent="warm_introduction",
+        description="Who knows whom around a prospect or client, two links out (aurea_core/network_map.py): each person, contact, entity and member of staff with how far they are, and each link with whether a person recorded it (with its evidence, by hand or from their own LinkedIn export) or the platform holds it as fact (a family, a household, a recorded adviser, a logged CRM touch). The map stops at staff. It records and introduces nobody. Give contact_id, person_id, or a name.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("contact_id", "uuid", "The pipeline contact", required=False),
+            ToolInput("person_id", "uuid", "A client person", required=False),
+            ToolInput("name", "string", "The contact's or client's name, if no id", required=False),
+        ],
+        output=ToolOutput("object", "The nodes and links of the map"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
+    "import_linkedin_connections": Tool(
+        key="import_linkedin_connections",
+        name="Import LinkedIn Connections",
+        speaking_agent="warm_introduction",
+        description="Import the signed-in person's own LinkedIn connections export (LinkedIn's Connections.csv, the whole file's text): each row whose name matches one of the firm's contacts or clients (accent and case aside) becomes a 'knows' link from them, evidence 'LinkedIn connection since <date>, from <their> own export'. A row matching nobody is counted and listed and never becomes a contact; one matching two people is skipped; one already linked is left. Only their own export: nothing is scraped. The Growth pipeline page takes the file as an upload.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will link you to the contacts and clients your LinkedIn export matches. Continue?",
+        inputs=[ToolInput("csv_text", "string", "The text of the Connections.csv export", required=True)],
+        output=ToolOutput("object", "How many were linked, already linked, unmatched and ambiguous"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
     "read_brief_profile": Tool(
         key="read_brief_profile",
         name="Read Brief Profile",
@@ -2796,6 +2901,49 @@ TOOLS: dict[str, Tool] = {
         ],
         output=ToolOutput("object", "The profile as set"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER},
+    ),
+
+    "read_agent_preferences": Tool(
+        key="read_agent_preferences",
+        name="Read Agent Preferences",
+        speaking_agent="astra",
+        description="What people have asked the agents to remember from decisions they took (aurea_core/decision_memory.py): holds (an agent does not raise its finding for a subject until a date) and notes (carried on its proposals for the subject), each in the person's own words with who made it and when it ends. Optionally for one agent (agent_key) or one subject (subject_id). Every new proposal also carries the last decision on the same finding with its reason, in its payload's memory.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("agent_key", "string", "Only this agent's", required=False),
+                ToolInput("subject_id", "uuid", "Only this subject's (a household, contact or mandate)", required=False)],
+        output=ToolOutput("object", "The preferences in force"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER,
+                        UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.RESEARCH_CIO, UserRole.ADMIN},
+    ),
+
+    "remember_preference": Tool(
+        key="remember_preference",
+        name="Remember Preference",
+        speaking_agent="astra",
+        description="From a proposal the person may decide (recommendation_id), ask its agent to remember something about that subject, in the person's own words (text): kind hold (it does not raise that finding for the subject until a date, until, a year at most) or note (carried on its proposals for the subject so the next person deciding sees it). Use it when someone dismisses or modifies with a standing reason and says to remember it; never on your own initiative. A supervision, IPS, reconciliation, billing, book-integration or screening finding is never held, only noted. It never widens an agent's autonomy.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will ask the agent to remember this, in your name. Continue?",
+        inputs=[ToolInput("recommendation_id", "uuid", "The proposal it comes from", required=True),
+                ToolInput("kind", "string", "hold|note", required=True),
+                ToolInput("text", "string", "The person's own words", required=True),
+                ToolInput("until", "string", "For a hold, the date it ends (YYYY-MM-DD); optional for a note", required=False)],
+        output=ToolOutput("object", "The preference as remembered"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER,
+                        UserRole.COMPLIANCE, UserRole.OPERATIONS},
+    ),
+
+    "end_preference": Tool(
+        key="end_preference",
+        name="End Preference",
+        speaking_agent="astra",
+        description="End a preference an agent was asked to remember (preference_id from read_agent_preferences), so its finding is raised again or its note stops showing. Its maker, or someone who may decide that agent's proposals.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will end that preference. Continue?",
+        inputs=[ToolInput("preference_id", "uuid", "The preference", required=True)],
+        output=ToolOutput("object", "The preference, ended"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER,
+                        UserRole.COMPLIANCE, UserRole.OPERATIONS},
     ),
 
     "create_crm_contact": Tool(

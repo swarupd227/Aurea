@@ -197,7 +197,9 @@ class AdminToolExecutors:
         breaks = sum(d["open_breaks"] for d in out["domains"])
         waiting = sum(d["pending_commands"] for d in out["domains"])
         out["message"] = ("Every domain is native: Astra's own tables." if not owned else
-                          "; ".join(f"{d['label']} from {d['adapter']}" for d in owned) + ", the rest native") + (
+                          "; ".join(f"{d['label']} from {d['platform'] or d['adapter']}"
+                                    + (" (simulated)" if d.get("simulated") and "simulated" not in str(d["platform"] or "").lower()
+                                       else "") for d in owned) + ", the rest native") + (
             f"; {breaks} open break(s)" if breaks else "") + (f"; {waiting} command(s) waiting" if waiting else "") + "."
         return out
 

@@ -20,12 +20,30 @@ def replaced_by(items, kind: str, person) -> bool:
     return any(i.kind == kind and i.person_id in (None, person.id) for i in items)
 
 
-def held_away_of(persons, items) -> float:
-    """What a household holds elsewhere: recorded investments, and for anyone with none recorded, the
-    figure on their profile. Never an estimate, and never both for the same person."""
-    recorded = sum(float(i.amount) for i in items if i.kind == "held_away_investment")
-    return recorded + sum(float((p.profile or {}).get("held_away") or 0) for p in persons
-                          if not replaced_by(items, "held_away_investment", p))
+def _institution(name) -> str:
+    return " ".join(str(name or "").lower().split())
+
+
+def itemised_by(lines, owner_id, institution) -> bool:
+    """Whether holdings listed line by line (B-198) stand in for a total recorded for the same owner at the same
+    institution. A trust's lines stand in for nothing a person or the household recorded."""
+    return any(l.entity_id is None and l.person_id == owner_id and _institution(l.institution) == _institution(institution)
+               for l in lines)
+
+
+def held_away_of(persons, items, lines=()) -> float:
+    """What a household holds elsewhere: holdings listed line by line, recorded totals, and for anyone with
+    neither, the figure on their profile. Never an estimate, and never two of them for the same money: the most
+    detailed figure replaces the less detailed, owner by owner - lines replace a total recorded for the same
+    institution, and either replaces a profile. `lines` are current and in the firm's currency."""
+    recorded = sum(float(i.amount) for i in items
+                   if i.kind == "held_away_investment" and not (lines and itemised_by(lines, i.person_id, i.name)))
+    listed = sum(float(l.value) for l in lines)
+
+    def covered(p) -> bool:
+        return replaced_by(items, "held_away_investment", p) or any(
+            l.entity_id is None and l.person_id in (None, p.id) for l in lines)
+    return recorded + listed + sum(float((p.profile or {}).get("held_away") or 0) for p in persons if not covered(p))
 
 
 async def household_brain(
@@ -107,6 +125,11 @@ async def household_brain(
     held_items = (await session.execute(select(BalanceItem).where(
         BalanceItem.household_id == household_id, BalanceItem.kind == "held_away_investment", BalanceItem.status == "current",
     ))).scalars().all()
+    from app.models.held_away import HeldAwayHolding
+
+    held_lines = [l for l in (await session.execute(select(HeldAwayHolding).where(
+        HeldAwayHolding.household_id == household_id, HeldAwayHolding.status == "current",
+    ))).scalars().all() if (l.currency or base).upper() == base]
     from app.aurea_core.advisers import adviser_of
 
     adviser = await adviser_of(session, firm_id, household_id)
@@ -158,7 +181,7 @@ async def household_brain(
         "totals": {
             "total_value": round(total, 2),
             # Not part of total_value, which is what is managed and billed on.
-            "held_away": round(held_away_of(persons, [i for i in held_items if (i.currency or base).upper() == base]), 2),
+            "held_away": round(held_away_of(persons, [i for i in held_items if (i.currency or base).upper() == base], held_lines), 2),
             "by_asset_class": {k: round(v, 2) for k, v in by_class.items()},
             "data_confidence": round(sum(confidences) / len(confidences), 3) if confidences else 1.0,
         },

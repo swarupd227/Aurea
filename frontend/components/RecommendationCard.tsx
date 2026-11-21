@@ -10,6 +10,7 @@ import { DriftBars } from "./Charts";
 import { ViewLink } from "./views/ViewNav";
 import { ConsentPanel, ConsentChips } from "./ConsentPanel";
 import { MeetingBrief } from "./MeetingBrief";
+import { DecisionMemory } from "./DecisionMemory";
 import { BUCKET_TEXT } from "@/app/workspace/components/artifacts/TaxPositionCard";
 import { findingText, type IpsFinding } from "@/app/workspace/components/artifacts/IpsCard";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
@@ -402,6 +403,7 @@ export default function RecommendationCard({
               {rec.rationale && <Markdown text={rec.rationale} className="mt-1 text-sm text-ink-soft" />}
             </figure>
           )}
+          <DecisionMemory memory={payload.memory} />
 
           {isDrift && <DriftAnalysis payload={payload} ev={ev} orders={orders} />}
           {isDrift && payload.india_tax && <IndiaTaxPanel tax={payload.india_tax} />}

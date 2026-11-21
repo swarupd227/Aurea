@@ -1444,8 +1444,9 @@ async def prepare_foundation_owner(session: AsyncSession, firm: Firm, *, domain:
         notes += [("Connector", f"{connector.display_name} · {'mock' if connector.use_mock else 'live'}"),
                   ("Records", f"Come from {adapter.name} on each sync"),
                   ("Differences", "Reported as breaks, nothing overwritten"),
-                  ("Writes", "Activities go to " + adapter.name if adapter.commands else "Refused, naming " + adapter.name)]
-        if adapter.capabilities.get("tax_lots") is False and d == "positions":
+                  ("Writes", ("Orders go to " if "orders.place" in adapter.commands else "Activities go to ") + adapter.name
+                   if adapter.commands else "Refused, naming " + adapter.name)]
+        if adapter.capabilities_for(firm).get("tax_lots") is False and d == "positions":
             notes.append(("Tax lots", "None supplied: tax and rebalancing read not assessed"))
     else:
         notes += [("Records", "Astra's own tables"), ("Writes", "Recorded in Astra")]

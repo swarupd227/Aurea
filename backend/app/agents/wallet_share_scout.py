@@ -7,6 +7,8 @@ talking-point memos, calibrated to each household's life stage, goals, and estat
 """
 from __future__ import annotations
 
+import uuid
+
 from app.agents._common import firm_voice, narrate
 from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
@@ -49,7 +51,8 @@ class WalletShareScoutAgent(FollowUpOnApproval, BaseAgent):
             ids = [h["id"] for h in await list_households(s, ctx.firm.id)]
         else:
             ids = [str(ctx.subject.id)]
-        brains = [b for hid in ids if (b := await household_brain(s, hid, firm_id=ctx.firm.id))]
+        # Ids as UUIDs: a text id is looked up on Postgres but not on SQLite, so a test or local run found nothing.
+        brains = [b for hid in ids if (b := await household_brain(s, uuid.UUID(str(hid)), firm_id=ctx.firm.id))]
         return {"brains": brains}
 
     async def think(self, ctx: AgentContext, sensed: dict) -> list[RecommendationDraft]:
@@ -138,4 +141,43 @@ class WalletShareScoutAgent(FollowUpOnApproval, BaseAgent):
 
         # Sort by consolidation opportunity descending
         drafts.sort(key=lambda d: -(d.payload or {}).get("held_away", 0))
+        for brain in sensed["brains"]:
+            drafts += await self._underperforming(ctx, brain)
         return drafts
+
+    async def _underperforming(self, ctx: AgentContext, brain: dict) -> list[RecommendationDraft]:
+        """A holding held elsewhere that trails its reference, raised to the adviser with its evidence and the shelf's
+        alternative over the same dates (B-198). Approving is a task for the adviser to raise it; nothing is bought,
+        sold or sent to the client, because it is advice and goes through the adviser."""
+        import uuid as _uuid
+
+        from app.aurea_core import held_away
+
+        hh = brain["household"]
+        view = await held_away.for_household(ctx.session, _uuid.UUID(str(hh["id"])), firm_id=ctx.firm.id)
+        out = []
+        for f in (view or {}).get("findings", []):
+            if f["kind"] != "underperforming":
+                continue
+            ref, alt = f["reference"] or {}, f["alternative"]
+            name = f["symbol"] or f["name"]
+            summary = (f"{name} at {f['institution']} ({f['owner']}): {f['return']:+.1%} over {f['period'][0]} to {f['period'][1]}, "
+                       f"against {ref.get('label')} {ref.get('return'):+.1%}. "
+                       + (f"On the shelf, {alt['symbol']} returned {alt['return']:+.1%} over the same dates"
+                          + (" (not reviewed by research)." if alt["shelf"] == "not_reviewed" else ".") if alt
+                          else "No shelf product in its class beat it over the same dates.")
+                       + " Estimates on price return only." + (" From a simulated feed." if f["simulated"] else ""))
+            out.append(RecommendationDraft(
+                title=f"Held away underperforming — {name} at {f['institution']} trails its reference by {abs(f['gap']):.0%} — {hh['name']}",
+                summary=summary,
+                rationale=summary + " Raise it with the client at the next conversation; the decision is theirs and the adviser's.",
+                confidence=0.7, priority=2,
+                subject=Subject("household", hh["id"], hh["name"]),
+                payload={"signal": "held_away_underperforming", "holding_id": f["id"], "symbol": f["symbol"],
+                         "institution": f["institution"], "value": f["value"], "currency": f["currency"],
+                         "return": f["return"], "reference": ref, "gap": f["gap"], "period": f["period"],
+                         "alternative": alt, "rule": held_away.RULE, "estimate": True, "simulated": f["simulated"]},
+                evidence={"return": f["return"], "reference_return": ref.get("return"), "gap": f["gap"],
+                          "alternative_return": alt["return"] if alt else None},
+            ))
+        return out

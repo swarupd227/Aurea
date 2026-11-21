@@ -113,6 +113,14 @@ async def run_agent(
 
         run.status = AgentRunStatus.THINKING
         drafts = await agent.think(ctx, sensed)
+        # What people decided before: a hold a person made keeps a finding back (and says so), and the last decision
+        # and any notes go on the rest (aurea_core/decision_memory.py, B-204).
+        from app.aurea_core import decision_memory
+        drafts, held = await decision_memory.apply(session, firm, agent_key, drafts, subject)
+        held_idents = {proposals.identity(agent_key, h["subject_type"], uuid.UUID(h["subject_id"]), h["subject"], h["title"])
+                       for h in held}
+        if held:
+            run.context = {**(run.context or {}), "held_by_preference": held}
 
         from app.core import foundation
         require_all = bool((await foundation.for_agent(session, firm, agent_key)).get("require_approval_everywhere"))
@@ -196,7 +204,9 @@ async def run_agent(
         if pools is not None and agent.expires_unraised and (subject.id is None or subject.type == "firm"):
             # A scan of the whole book that no longer finds a condition has resolved it. The
             # scheduler names the firm as a firm-wide run's subject, which is the same scan.
-            for left in pools.values():
+            for ident, left in pools.items():
+                if ident in held_idents:
+                    continue    # held by a person's preference, not resolved: an open one stays for them
                 for rec in left:
                     await proposals.expire(session, rec, run_id=run.id,
                                            reason="No longer found when the book was last checked.")

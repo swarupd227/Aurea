@@ -301,6 +301,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_balance_item":
     case "end_balance_item":
       return onClient("/studio/net-worth");
+    // Held away, line by line (B-198): one household's lines sit on its net worth page.
+    case "read_held_away":
+    case "record_held_away_holding":
+    case "end_held_away_holding":
+      return onClient("/studio/net-worth");
     case "read_repapering":
     case "start_repapering":
     case "record_repapering":
@@ -421,9 +426,18 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "find_introductions":
     case "record_relationship":
       return "/studio/pipeline";
+    // A persona, the network map and an RM's LinkedIn export (B-202, B-201): beside the Ways in.
+    case "read_persona":
+    case "read_network_map":
+    case "import_linkedin_connections":
+      return "/studio/pipeline";
     case "read_brief_profile":
     case "set_brief_profile":
       return "/studio/meetings";
+    case "read_agent_preferences":
+    case "remember_preference":
+    case "end_preference":
+      return "/studio/workforce";
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";

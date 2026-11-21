@@ -3,7 +3,10 @@ import { OrdersCard } from "./OrdersCard";
 import { CompliancePanelCard } from "./CompliancePanelCard";
 import { CrmPipelineCard, ProspectBriefCard } from "./CrmPipelineCard";
 import { IntroductionsCard, LinkRecordedCard } from "./IntroductionsCard";
+import { PersonaCard } from "./PersonaCard";
+import { LinkedInImportCard, NetworkMapCard } from "./NetworkMapCard";
 import { BriefProfileCard } from "./BriefProfileCard";
+import { PreferencesCard } from "./PreferencesCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
@@ -20,6 +23,7 @@ import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
 import { IpsCard } from "./IpsCard";
 import { BalanceSheetCard } from "./BalanceSheetCard";
+import { HeldAwayCard } from "./HeldAwayCard";
 import { EquityCompCard } from "./EquityCompCard";
 import { CashCard } from "./CashCard";
 import { SipCard } from "./SipCard";
@@ -126,10 +130,26 @@ export function artifactCard(artifact: Artifact) {
       case "record_relationship":
         if (!artifact.result?.link_id) return null;
         return <LinkRecordedCard result={artifact.result as any} />;
+      case "read_persona":
+        if (!artifact.result?.subject || !Array.isArray(artifact.result?.points)) return null;
+        return <PersonaCard result={artifact.result as any} />;
+      case "read_network_map":
+        if (!artifact.result?.centre || !Array.isArray(artifact.result?.nodes)) return null;
+        return <NetworkMapCard result={artifact.result as any} />;
+      case "import_linkedin_connections":
+        if (typeof artifact.result?.rows !== "number" || !Array.isArray(artifact.result?.linking)) return null;
+        return <LinkedInImportCard result={artifact.result as any} />;
       case "read_brief_profile":
       case "set_brief_profile":
         if (!Array.isArray(artifact.result?.lead) || typeof artifact.result?.length !== "string") return null;
         return <BriefProfileCard result={artifact.result as any} />;
+      case "read_agent_preferences":
+        if (!Array.isArray(artifact.result?.preferences)) return null;
+        return <PreferencesCard result={artifact.result as any} />;
+      case "remember_preference":
+      case "end_preference":
+        if (typeof artifact.result?.kind !== "string" || typeof artifact.result?.text !== "string") return null;
+        return <PreferencesCard result={artifact.result as any} />;
       case "read_corporate_actions":
         if (!Array.isArray(artifact.result?.actions)) return null;
         return <CorporateActionsCard result={artifact.result as any} />;
@@ -183,6 +203,12 @@ export function artifactCard(artifact: Artifact) {
       case "end_balance_item":
         if (!Array.isArray(artifact.result?.households) && typeof artifact.result?.net_worth !== "number") return null;
         return <BalanceSheetCard result={artifact.result as any} />;
+      // Held away, line by line, and how it is doing (B-198).
+      case "read_held_away":
+      case "record_held_away_holding":
+      case "end_held_away_holding":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.holdings)) return null;
+        return <HeldAwayCard result={artifact.result as any} />;
       case "read_repapering":
       case "start_repapering":
       case "record_repapering":

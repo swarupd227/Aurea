@@ -16,6 +16,9 @@ const LABELS: Record<string, string> = {
   agenda: "Agenda", mandates: "Mandates", goals: "Goals", history: "History", review: "Review", tax: "Tax",
   open_proposals: "Open proposals", watch_items: "Watch items", life_events: "Life events", house_views: "House views",
 };
+// Held away, line by line, and how it is doing (B-198): after the mandates, as the brief's backend orders it.
+DEFAULT_ORDER.splice(DEFAULT_ORDER.indexOf("goals"), 0, "held_away");
+LABELS.held_away = "Held away";
 
 /** A section the RM can open or close; what they do is recorded only to offer a change back (B-203). */
 function Section({ id, label, open, onToggle, children }: { id: string; label: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
@@ -25,6 +28,42 @@ function Section({ id, label, open, onToggle, children }: { id: string; label: s
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />} {label}
       </button>
       {open && children}
+    </div>
+  );
+}
+
+const signedPct = (v: number | null | undefined) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`);
+
+/** What the household holds elsewhere and what of it to raise (B-198): a holding that trails its reference, with the
+ * shelf's alternative over the same dates, and one also in the managed book. Estimates, for the RM only. */
+function HeldAwayBrief({ held }: { held: any }) {
+  const under: any[] = held.underperforming || [];
+  const overlaps: any[] = held.overlaps || [];
+  return (
+    <div className="space-y-1.5 text-xs" data-testid="meeting-brief-held-away">
+      <div className="flex flex-wrap gap-1.5">
+        <span className="chip tabular-nums text-ink-muted">{held.holdings} listed · {money(held.value || 0, held.currency)}</span>
+        <span className="chip tabular-nums text-ink-muted">{held.measured} measured</span>
+        {held.not_measured > 0 && <span className="chip tabular-nums text-ink-muted">{held.not_measured} no performance</span>}
+        {held.simulated > 0 && <span className="chip text-warn" data-testid="meeting-brief-held-away-simulated">simulated feed</span>}
+        <span className="chip text-ink-muted" title={held.rule}>estimate · price return</span>
+      </div>
+      {under.map((f: any) => (
+        <div key={f.id} className="flex flex-wrap items-center gap-1.5">
+          <span className="font-medium text-ink">{f.symbol || f.name}</span>
+          <span className="text-ink-muted">{f.institution} · {f.owner}</span>
+          <span className="chip tabular-nums text-crit">{signedPct(f.return)}</span>
+          {f.reference && <span className="chip tabular-nums text-ink-muted">{f.reference.symbol} {signedPct(f.reference.return)}</span>}
+          {f.alternative
+            ? <span className="chip tabular-nums text-ok">shelf: {f.alternative.symbol} {signedPct(f.alternative.return)}{f.alternative.shelf === "not_reviewed" ? " · not reviewed" : ""}</span>
+            : <span className="chip text-ink-muted">no shelf alternative</span>}
+        </div>
+      ))}
+      {overlaps.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {overlaps.map((f: any) => <span key={f.id} className="chip text-warn">{f.symbol || f.name} · also managed</span>)}
+        </div>
+      )}
     </div>
   );
 }
@@ -40,6 +79,7 @@ export function MeetingBrief({ brief }: { brief: any }) {
   const open: any[] = brief.open_proposals || [];
   const history = brief.history;
   const shaped = brief.shaped_for;
+  const heldAway = brief.held_away;
 
   const body: Record<string, React.ReactNode> = {
     agenda: brief.agenda?.length > 0 && (
@@ -69,6 +109,7 @@ export function MeetingBrief({ brief }: { brief: any }) {
         </table>
       </div>
     ),
+    held_away: heldAway && <HeldAwayBrief held={heldAway} />,
     goals: goals.length > 0 && (
       <div className="flex flex-wrap gap-1.5">
         {goals.map((g: any, i: number) => (

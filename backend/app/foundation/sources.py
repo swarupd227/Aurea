@@ -21,6 +21,14 @@ def _iso(v):
     return v.isoformat() if v else None
 
 
+def _command_summary(m) -> str | None:
+    """An order as the figures it carries: side, units, symbol."""
+    p = m.payload or {}
+    if m.kind == "orders.place" and p.get("symbol"):
+        return f"{str(p.get('side') or '').lower()} {float(p.get('quantity') or 0):g} {p['symbol']}"
+    return None
+
+
 async def overview(session: AsyncSession, firm) -> dict:
     owned = owners(firm)
     rows = []
@@ -53,10 +61,15 @@ async def overview(session: AsyncSession, firm) -> dict:
         pending = (await session.execute(select(func.count()).select_from(FoundationCommand).where(
             FoundationCommand.firm_id == firm.id, FoundationCommand.domain == domain,
             FoundationCommand.status == "pending"))).scalar_one()
+        declared = adapter.declared(firm) if adapter is not None and key != NATIVE else {}
+        simulated = key != NATIVE and (bool(declared.get("simulated")) or bool(connector is not None and (connector.config or {}).get("simulated")))
         rows.append({
             "domain": domain, "label": DOMAIN_LABEL[domain], "owner": key, "native": key == NATIVE,
             "adapter": adapter.name if adapter else key, "built": adapter is not None,
-            "capabilities": dict(adapter.capabilities) if adapter else {},
+            "capabilities": dict(adapter.capabilities_for(firm)) if adapter else {},
+            # What the owner's own system said of itself (an MCP server declares it), and whether it is a simulation.
+            "platform": (declared.get("platform") or {}).get("name") if declared else None,
+            "simulated": simulated,
             "connector_id": str(connector.id) if connector else None,
             "mode": None if connector is None else ("mock" if connector.use_mock else "live"),
             "last_sync": last, "as_of": _iso(as_of),
@@ -71,12 +84,14 @@ async def overview(session: AsyncSession, firm) -> dict:
                                       .order_by(FoundationCommand.created_at.desc()).limit(SHOWN))).scalars().all()
     return {
         "native": all(r["native"] for r in rows),
+        "simulated": any(r["simulated"] for r in rows),
         "domains": rows,
         "breaks": [{"id": str(b.id), "domain": b.domain, "entity": b.entity_type, "local_id": str(b.local_id),
                     "source": b.source, "external_id": b.external_id, "fields": b.fields or [],
                     "detected_at": _iso(b.detected_at)} for b in breaks],
         "commands": [{"id": str(m.id), "domain": m.domain, "kind": m.kind, "to": m.source, "status": m.status,
                       "external_id": m.external_id, "activity_type": (m.payload or {}).get("activity_type"),
+                      "summary": _command_summary(m),
                       "error": m.error, "created_at": _iso(m.created_at), "confirmed_at": _iso(m.confirmed_at)}
                      for m in commands],
     }

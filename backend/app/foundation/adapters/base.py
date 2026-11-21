@@ -43,6 +43,18 @@ class Adapter:
     def serves(self, domain: str) -> bool:
         return domain in self.domains
 
+    def declared(self, firm) -> dict:
+        """What the system itself last said it supplies, for an adapter that asks it (the MCP adapter); empty for one
+        whose capabilities are fixed in code."""
+        return {}
+
+    def capabilities_for(self, firm) -> dict[str, Any]:
+        """What it supplies to this firm: its declared capabilities, which for most adapters are fixed in code."""
+        return dict(self.capabilities)
+
+    def commands_for(self, firm) -> frozenset[str]:
+        return self.commands
+
     async def pull(self, session, firm, connector, domain: str) -> Pulled:   # pragma: no cover - interface
         raise NotImplementedError
 

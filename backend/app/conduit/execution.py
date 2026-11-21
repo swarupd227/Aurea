@@ -162,7 +162,13 @@ def get_venue(key: str | None = None) -> ExecutionVenue:
 
 
 def venue_for_firm(firm: Firm) -> ExecutionVenue:
-    """The venue a firm trades through. Defaults to paper until a broker is configured."""
+    """The venue a firm trades through. Defaults to paper until a broker is configured. A firm whose positions a
+    Foundation product owns trades through that product, booked when its confirmation syncs back (B-165)."""
+    from app.foundation.orders import platform_venue
+
+    platform = platform_venue(firm) if firm else None
+    if platform is not None:
+        return platform
     cfg = ((firm.settings or {}).get("execution") or {}) if firm else {}
     return get_venue(cfg.get("venue"))
 
@@ -282,6 +288,18 @@ async def execute_order_set(
                 settled.append({"order_id": str(order.id), "symbol": label, **result})
 
     await session.flush()
+    if getattr(venue, "platform", False):
+        # Sent to the product that owns the book: nothing is booked here until its confirmation syncs back.
+        waiting = [p for p in placed if p["status"] == "placed"]
+        return {
+            "venue": venue.key, "reaches_market": venue.reaches_market, "sent_to": venue.name,
+            "orders_created": len(order_set), "orders_placed": len(placed), "orders_waiting": len(waiting),
+            "orders_settled": 0, "orders_failed": len(failed), "settlement_breaks": 0, "realised_gain": 0.0,
+            "fees": 0.0, "lot_method": str(lot_method), "placed": placed, "settled": [], "failed": failed,
+            "breaks": [],
+            "note": (f"{len(waiting)} of {len(order_set)} order(s) sent to {venue.name}; the book moves when its "
+                     f"confirmation syncs back" + (f". {len(failed)} could not be sent." if failed else ".")),
+        }
     return {
         "venue": venue.key,
         "reaches_market": venue.reaches_market,
