@@ -267,6 +267,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "complete_task":
     case "assign_task":
     case "create_task":
+    case "refer_proposal":
       return "/studio/tasks";
     case "read_reports":
     case "withdraw_report": {

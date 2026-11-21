@@ -220,6 +220,7 @@ class ToolExecutors(AdminToolExecutors):
             "complete_task": self.complete_task,
             "assign_task": self.assign_task,
             "create_task": self.create_task,
+            "refer_proposal": self.refer_proposal,
             "read_reports": self.read_reports,
             "withdraw_report": self.withdraw_report,
             "read_messages": self.read_messages,
@@ -4345,6 +4346,27 @@ class ToolExecutors(AdminToolExecutors):
         self.session.add(task)
         return await self._task_result(task, f"Added '{task.title}'.")
 
+    async def _referral(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tasks
+        from app.models.governance import Recommendation
+        from app.models.identity import User
+
+        rec = await self.session.get(Recommendation, _parse_uuid(inputs.get("recommendation_id") or "", "recommendation_id"))
+        try:
+            return await tasks.prepare_referral(self.session, self.firm_id, rec, reason=inputs.get("reason"),
+                                                by=await self.session.get(User, self.user_id),
+                                                due_date=await self._task_due(inputs.get("due_date")))
+        except tasks.TaskError as exc:
+            raise ExecutorError(str(exc))
+
+    async def refer_proposal(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tasks
+
+        p = await self._referral(inputs)
+        task = tasks.referral(self.firm_id, p, self.user_id)
+        self.session.add(task)
+        return await self._task_result(task, f"'{p['proposal'].title}' is with {p['adviser'].full_name} to decide. The proposal is unchanged.")
+
     async def _report(self, inputs: dict[str, Any]):
         from app.aurea_core import reports
 
@@ -4737,6 +4759,11 @@ class ToolExecutors(AdminToolExecutors):
             return rows(*await named[tool_key](inputs))
         if tool_key in ("import_custody_statement", "resolve_recon_break"):
             return rows(*await self._recon_preview(tool_key, inputs))
+        if tool_key == "refer_proposal":
+            p = await self._referral(inputs)
+            return rows(("Proposal", p["proposal"].title), ("Client", p["household"].name), ("To", p["adviser"].full_name),
+                        ("Reason", p["detail"]), ("Due", firm_time.spoken(p["due_date"]) if p["due_date"] else None),
+                        ("Proposal after", "Unchanged: the adviser decides it"))
         if tool_key not in ("complete_task", "assign_task", "create_task"):
             return None
 

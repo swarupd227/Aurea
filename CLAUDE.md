@@ -26,7 +26,8 @@ pages are artifact views the agents open. Full guideline, including what is buil
 
 - **Trade decisions.** Proposals that move money on a book (`BOOK_MOVING_AGENTS`) are approved, modified or
   revised only by an adviser or portfolio team; compliance may dismiss or roll back but not approve;
-  admins hold neither. An acquired book is committed by operations alone (`BOOK_INTEGRATION_AGENTS`), and its agent
+  admins hold neither. Compliance or a branch leader may hand an open proposal to its client's recorded adviser
+  as a task with their reason (`refer_proposal`, `tasks.prepare_referral`); it decides and changes nothing on it. An acquired book is committed by operations alone (`BOOK_INTEGRATION_AGENTS`), and its agent
   always stops at a proposal. Single source: `backend/app/core/decision_rights.py`. Do not reintroduce
   `require_roles(*STAFF_ROLES)` on a decision route.
 - **Exactly-once decisions.** `runtime.decide` and `runtime.rollback` lock the recommendation and re-read

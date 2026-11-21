@@ -94,6 +94,7 @@ export function TasksView() {
               )}
               <div className="min-w-0 flex-1">
                 <div className={`text-sm font-medium ${t.status === "open" ? "text-ink" : "text-ink-muted line-through"}`}>{t.title}</div>
+                {t.detail && <div className="mt-0.5 text-xs text-ink-muted" data-testid="task-detail">{t.detail}</div>}
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   {t.subject_label && (t.household_id
                     ? <ViewLink href={`/studio/clients/${t.household_id}`} className={`${chip} hover:text-ink`}>{t.subject_label}</ViewLink>
