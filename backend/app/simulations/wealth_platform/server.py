@@ -158,7 +158,7 @@ class PlatformServer:
             raise Refused(f"This platform takes no {args.get('kind')}.")
         p = dict(args.get("payload") or {})
         key = str(args.get("idempotency_key") or "")
-        ext = "WS-ORD-" + uuid.uuid5(uuid.NAMESPACE_URL, f"wealthsmart-sim:{key or uuid.uuid4()}").hex[:12].upper()
+        ext = "WS-ORD-" + uuid.uuid5(uuid.NAMESPACE_URL, f"platform-sim:{key or uuid.uuid4()}").hex[:12].upper()
         for cmd in await self._accepted():   # asked again: the same answer
             if cmd.external_id == ext:
                 return dict((cmd.payload or {}).get("ack") or {})

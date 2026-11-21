@@ -2,7 +2,7 @@
 
 The real part is the Dynamics 365 adapter (``app/foundation/adapters/dynamics.py``, B-163), whose mock mode reads a
 Dataverse-shaped fixture and takes an activity as Dynamics 365 would. This switches it on as the CRM's owner of the
-simulated WealthSmart firm, so a sync, an activity going out and coming back, and a break can be shown there: its own
+simulated wealth platform firm, so a sync, an activity going out and coming back, and a break can be shown there: its own
 mock-mode connector, tagged ``simulated``, the CRM owned by it, and a first sync. ``firms`` names only the simulated
 firm (creating it through the wealth-platform simulation when needed); a firm that already has a Dynamics 365
 connector of its own, or whose CRM another system owns, is left as it is.
@@ -120,7 +120,7 @@ register(Simulation(
     key=KEY, name="Dynamics 365 on the simulated demonstration firm",
     stands_for="A Dynamics 365 environment holding the firm's CRM",
     seam="foundation.adapters: the Dynamics 365 adapter (crm.dynamics) in mock mode, as the CRM's owner of the "
-         "simulated WealthSmart firm",
+         "simulated wealth platform firm",
     install=install, seed=seed, discard=discard, firms=firms,
     notes=["Contacts, opportunities and activities from the adapter's Dataverse-shaped fixture."],
 ))

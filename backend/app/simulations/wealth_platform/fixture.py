@@ -9,8 +9,8 @@ The people are invented. Any likeness to a real person is accidental.
 """
 from __future__ import annotations
 
-PLATFORM = {"name": "WealthSmart (simulated)", "version": "sim-1"}
-CUSTODIAN = "WealthSmart (simulated)"
+PLATFORM = {"name": "Wealth platform (simulated)", "version": "sim-1"}
+CUSTODIAN = "Wealth platform (simulated)"
 STAMP = "2026-11-14T22:00:00+00:00"   # when the platform last changed the fixture's records
 
 # The instruments it holds: symbol, name, asset class. Real listed instruments, priced by the firm's real feed.

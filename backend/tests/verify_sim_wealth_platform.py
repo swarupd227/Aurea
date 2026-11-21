@@ -70,7 +70,7 @@ async def main() -> int:
             offered = firm_personas([firm])
             check("its people are offered on the login page, each a user of the firm",
                   (sorted(p["email"] for p in offered) == sorted(u.email for u in users), {p["firm_slug"] for p in offered},
-                   all(p["simulated"] for p in offered)), (True, {"wealthsmart-sim"}, True))
+                   all(p["simulated"] for p in offered)), (True, {"platform-sim"}, True))
             check("no client data of its own", (await s.execute(select(func.count()).select_from(Household).where(
                 Household.firm_id == firm.id))).scalar_one(), 0)
             for i in (await s.execute(select(Instrument).where(Instrument.firm_id == firm.id))).scalars().all():
@@ -104,7 +104,7 @@ async def main() -> int:
             src = await ToolExecutors(s, ops.id, ops.role, firm.id).read_foundation_sources({})
             pos = next(r for r in src["domains"] if r["domain"] == "positions")
             check("the Foundation read names the platform and says simulated",
-                  (pos["platform"], pos["simulated"], pos["mode"], src["simulated"]), ("WealthSmart (simulated)", True, "mock", True))
+                  (pos["platform"], pos["simulated"], pos["mode"], src["simulated"]), ("Wealth platform (simulated)", True, "mock", True))
             again = await wealth_platform.seed(s, firm)
             check("seeding again adds nothing", (again["connector"], again["owners_set"], again["records_synced"],
                                                  again["adviser_edges"]), (0, 0, 0, 0))
@@ -136,7 +136,7 @@ async def main() -> int:
         print("\n=== Dynamics 365 on the simulated firm ===")
         async with Session() as s:
             found = await dynamics_demo.firms(s)
-            check("named for the simulated firm only", [f.slug for f in found], ["wealthsmart-sim"])
+            check("named for the simulated firm only", [f.slug for f in found], ["platform-sim"])
             firm = found[0]
             out = await dynamics_demo.seed(s, firm)
             await s.commit()

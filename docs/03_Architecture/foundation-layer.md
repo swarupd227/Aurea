@@ -190,6 +190,6 @@ B-205 in the backlog's experience-layer section.
 - The Foundation read and card show each owner's platform, a `simulated` chip when the owner's server or connector says
   so, and waiting orders as figures (`buy 10 VTI`).
 - Simulated (thrown away when WealthSmart exposes its server): `app/simulations/wealth_platform/` is an in-process MCP
-  server speaking the profile for a demonstration firm (`wealthsmart-sim`), and `app/simulations/dynamics_demo/` puts the
+  server speaking the profile for a demonstration firm (`platform-sim`), and `app/simulations/dynamics_demo/` puts the
   Dynamics 365 mock on that firm's CRM. Suites `tests.verify_foundation_mcp` (the real adapter, against a test server in
   the suite) and `tests.verify_sim_wealth_platform` (the simulation, deleted with it).

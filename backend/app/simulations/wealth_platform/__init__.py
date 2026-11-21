@@ -25,18 +25,18 @@ from app.simulations import Simulation, enabled_for, opt_in, opt_out, register, 
 
 KEY = "wealth_platform"
 TAG = tag(KEY)
-SLUG = "wealthsmart-sim"
+SLUG = "platform-sim"
 OWNED = ("parties", "accounts", "positions", "activity")
-DOMAIN = "wealthsmart-sim.demo"
+DOMAIN = "platform-sim.demo"
 PERSONAS = [
     {"email": f"adviser@{DOMAIN}", "role": "adviser", "full_name": "Rachel Moreno", "title": "Senior Adviser",
-     "default_path": "/studio", "group": "Advice", "description": "Advises the platform's households; orders go to WealthSmart."},
+     "default_path": "/studio", "group": "Advice", "description": "Advises the platform's households; orders go to the platform."},
     {"email": f"portfolio@{DOMAIN}", "role": "portfolio_team", "full_name": "Daniel Kwan", "title": "Portfolio Manager",
      "default_path": "/studio/review", "group": "Investment", "description": "Discretionary mandates on the platform."},
     {"email": f"compliance@{DOMAIN}", "role": "compliance", "full_name": "Priya Raman", "title": "Head of Compliance",
      "default_path": "/provenance", "group": "Risk", "description": "Supervision over a book the platform owns."},
     {"email": f"operations@{DOMAIN}", "role": "operations", "full_name": "Marcus Bell", "title": "Operations Lead",
-     "default_path": "/studio/onboarding", "group": "Operations", "description": "Syncs, breaks and orders waiting on WealthSmart."},
+     "default_path": "/studio/onboarding", "group": "Operations", "description": "Syncs, breaks and orders waiting on the platform."},
     {"email": f"admin@{DOMAIN}", "role": "admin", "full_name": "Hannah Lee", "title": "Platform Admin",
      "default_path": "/admin", "group": "Platform", "description": "Which system owns each domain."},
 ]
@@ -70,13 +70,13 @@ async def ensure_firm(session, *, fetch_prices: bool = True):
     firm = (await session.execute(select(Firm).where(Firm.slug == SLUG))).scalar_one_or_none()
     if firm is not None:
         return firm
-    firm = Firm(slug=SLUG, name="WealthSmart demonstration (simulated)",
-                legal_name="WealthSmart demonstration firm (simulated platform, invented clients)",
+    firm = Firm(slug=SLUG, name="Wealth platform demonstration (simulated)",
+                legal_name="Wealth platform demonstration firm (simulated platform, invented clients)",
                 jurisdiction="US", regulator="SEC", base_currency="USD",
                 branding={"primary": "#163a52", "accent": "#c8a35e", "logo_text": "Astra for Wealth",
-                          "tagline": "On a simulated WealthSmart"},
+                          "tagline": "On a simulated wealth platform"},
                 settings={"timezone": "America/New_York", "demonstration": True, "simulated_firm": KEY,
-                          "personas": PERSONAS, "persona_label": "WealthSmart · simulated platform, invented clients",
+                          "personas": PERSONAS, "persona_label": "Wealth platform · simulated, invented clients",
                           "execution": {"fee_bps": 0, "fee_minimum": 0}},
                 model_config_json={})
     session.add(firm)
@@ -137,7 +137,7 @@ async def _connector(session, firm):
     if mine:
         return mine[0], False
     c = Connector(firm_id=firm.id, domain=ConnectorDomain.CUSTODY, provider_key=MCP,
-                  display_name="WealthSmart (simulated, MCP)", status=ConnectorStatus.MOCK, use_mock=True,
+                  display_name="Wealth platform (simulated, MCP)", status=ConnectorStatus.MOCK, use_mock=True,
                   sync_cron="0 */6 * * *", config={"simulated": KEY})
     session.add(c)
     await session.flush()

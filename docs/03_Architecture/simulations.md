@@ -59,7 +59,7 @@ simulation rows say what is simulated, the feature rows say what is real.
 
 ### `wealth_platform` and `dynamics_demo` (B-221, B-222)
 
-- `python -m app.simulations seed wealth_platform dynamics_demo` makes the demonstration firm `wealthsmart-sim` (US,
+- `python -m app.simulations seed wealth_platform dynamics_demo` makes the demonstration firm `platform-sim` (US,
   USD, marked `simulated_firm`), its staff, the instruments and models the platform's book names, and a live
   market-data connector; connects it to the in-process MCP server (a mock-mode `foundation.mcp` connector tagged
   `simulated`), hands it parties, accounts, positions and activity, runs a first sync and records each household's
