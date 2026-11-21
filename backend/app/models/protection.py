@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -18,6 +18,8 @@ from app.core.db import Base
 # life and tpd pay a lump sum; income_protection pays a yearly benefit while the insured cannot work,
 # and long_term_care one while they need care.
 POLICY_KINDS = ("life", "tpd", "income_protection", "long_term_care")
+# How a household means to pay for care (B-186). Medicaid is a US programme, so medicaid_planning is a US household's.
+CARE_FUNDING_CHOICES = ("self_fund", "care_insurance", "hybrid", "medicaid_planning", "undecided")
 
 
 class ProtectionPolicy(Base):
@@ -47,3 +49,20 @@ class ProtectionPolicy(Base):
     ended_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     ended_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     ended_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class CareFundingDecision(Base):
+    """How a household means to pay for long-term care, as its adviser recorded it with their reason (B-186). Added and
+    never edited: a new decision supersedes the last, and the latest stands. None on file is no decision, never self-fund."""
+
+    __tablename__ = "care_funding_decision"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    household_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("household.id", ondelete="CASCADE"), index=True)
+    choice: Mapped[str] = mapped_column(String(24))
+    # What the household sets aside for care, in `currency`. Self-funding names one; a hybrid may.
+    earmark_amount: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), default="NZD")
+    reason: Mapped[str] = mapped_column(Text)
+    decided_on: Mapped[date] = mapped_column(Date)
+    recorded_by: Mapped[str] = mapped_column(String(200))

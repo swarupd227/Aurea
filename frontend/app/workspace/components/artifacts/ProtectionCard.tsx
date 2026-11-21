@@ -47,6 +47,35 @@ export interface ProtectionHousehold {
   policies: ProtectionPolicy[];
   assets: { managed: number; held_away: number; retirement_accounts: number; total: number };
   summary: { people: number; gaps: number; largest_gap: number; not_assessed: number; policies_counted: number };
+  care_funding?: CareFunding;
+}
+
+/** B-186: how a household means to pay for care, as its adviser recorded it. None is "no decision", never self-fund. */
+export interface CareFunding {
+  status?: "decided" | "no_decision";
+  choice: string | null;
+  earmark_amount: number | null;
+  reason?: string;
+  decided_on?: string;
+  recorded_by?: string;
+  superseded?: number | string | null;
+}
+
+export const CARE_FUNDING_TEXT: Record<string, string> = {
+  self_fund: "self-fund", care_insurance: "care insurance", hybrid: "hybrid", medicaid_planning: "Medicaid planning", undecided: "undecided",
+};
+
+export function CareFundingChips({ funding, testid = "care-funding" }: { funding: CareFunding | undefined; testid?: string }) {
+  if (!funding || !funding.choice) {
+    return <span className="chip text-warn" data-testid={testid}>care paid by · no decision on file</span>;
+  }
+  return (
+    <span className="inline-flex flex-wrap gap-1.5" data-testid={testid}>
+      <span className="chip text-ink" title={funding.reason}>care paid by · {CARE_FUNDING_TEXT[funding.choice] ?? funding.choice}</span>
+      {funding.earmark_amount != null && <span className="chip text-ink-muted">earmarked {money(funding.earmark_amount)}</span>}
+      {funding.decided_on && <span className="chip text-ink-muted">{funding.decided_on}</span>}
+    </span>
+  );
 }
 
 interface Book {
@@ -156,6 +185,7 @@ export function ProtectionCard({ result }: { result: any }) {
               {p.person} · {KIND_TEXT[p.kind] ?? p.kind} · {money(p.sum_insured ?? p.annual_benefit)}
             </span>
           ))}
+          <CareFundingChips funding={h.care_funding} />
           <span className="chip text-ink-muted">not modelled: {h.not_modelled.join(" · ").replace(/_/g, " ")}</span>
         </div>
       </div>

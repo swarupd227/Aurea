@@ -16,7 +16,7 @@ import { BillingCard } from "./BillingCard";
 import { ValuationCard } from "./ValuationCard";
 import { PriceFreshnessCard } from "./PriceFreshnessCard";
 import { ReconciliationCard } from "./ReconciliationCard";
-import { ProtectionCard } from "./ProtectionCard";
+import { CareFundingChips, ProtectionCard } from "./ProtectionCard";
 import { LicenceCard } from "./LicenceCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
@@ -182,6 +182,9 @@ export function artifactCard(artifact: Artifact) {
       case "record_income":
         if (!artifact.result?.policy_id && !artifact.result?.person_id) return null;
         return <ProtectionCard result={artifact.result as any} />;
+      case "record_care_funding":
+        if (typeof artifact.result?.choice !== "string") return null;
+        return <CareFundingChips funding={artifact.result as any} testid="care-funding-card" />;
       case "read_risk_profiles":
         if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.mandates)) return null;
         return <RiskProfileCard result={artifact.result as any} />;
@@ -300,6 +303,7 @@ export function artifactCard(artifact: Artifact) {
       case "record_trusted_contact":
       case "record_estate_document":
       case "record_life_event":
+      case "raise_estate_review":
         if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.people)) return null;
         return <ClientFileCard result={artifact.result as any} />;
       case "read_financial_plan":

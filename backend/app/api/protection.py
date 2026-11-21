@@ -58,7 +58,8 @@ def _guard(user: User) -> None:
 
 @router.get("")
 async def read(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    return {**await protection.for_firm(db, firm.id), "can_record": user.role in RECORDERS}
+    return {**await protection.for_firm(db, firm.id), "can_record": user.role in RECORDERS,
+            "can_decide_care": str(user.role) in protection.CARE_FUNDING_RECORDERS}
 
 
 @router.get("/households/{household_id}")
@@ -67,7 +68,7 @@ async def read_household(household_id: uuid.UUID, user: User = ReaderDep, firm: 
     view = await protection.for_household(db, household_id, firm_id=firm.id)
     if view is None:
         raise HTTPException(status_code=404, detail="Household not found.")
-    return {**view, "can_record": user.role in RECORDERS}
+    return {**view, "can_record": user.role in RECORDERS, "can_decide_care": str(user.role) in protection.CARE_FUNDING_RECORDERS}
 
 
 @router.post("/policies")
@@ -88,6 +89,23 @@ async def end_policy(policy_id: uuid.UUID, body: EndIn, user: User = ReaderDep, 
         return await protection.end_policy(db, firm.id, policy_id, reason=body.reason, by=user.email)
     except protection.ProtectionError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+class CareFundingIn(BaseModel):
+    household_id: uuid.UUID
+    choice: str
+    reason: str
+    earmark_amount: float | None = None
+
+
+@router.post("/care-funding")
+async def record_care_funding(body: CareFundingIn, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                              db: AsyncSession = Depends(get_db)):
+    """How a household means to pay for care (B-186): its adviser's or paraplanner's, which the module checks."""
+    try:
+        return await protection.record_care_funding(db, firm.id, recorded_by=user.email, role=str(user.role), **body.model_dump())
+    except protection.ProtectionError as exc:
+        raise HTTPException(status_code=403 if "adviser or paraplanner" in str(exc) else 422, detail=str(exc))
 
 
 @router.post("/income")
