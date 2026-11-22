@@ -587,6 +587,15 @@ async def main() -> int:
             except compliance_calendar.CalendarError:
                 check("a registration change with no reason is refused", True, True)
 
+            print("\n=== Row 6: the firm's own compliance persona is its registered officer ===")
+            from seed import india_row6
+            check("the seed names Neha Kulkarni, and a correction has nothing to do",
+                  ((firm.settings or {}).get("sebi_registration", {}).get("compliance_officer"), await india_row6.correct_names(s, firm)),
+                  ("Neha Kulkarni (demonstration)", 0))
+            firm.settings = {**firm.settings, "sebi_registration": {**firm.settings["sebi_registration"], "compliance_officer": india_row6.WRONG_OFFICER}}
+            check("a firm seeded with the old name is corrected", (await india_row6.correct_names(s, firm) >= 1,
+                  firm.settings["sebi_registration"]["compliance_officer"]), (True, "Neha Kulkarni (demonstration)"))
+
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)
 

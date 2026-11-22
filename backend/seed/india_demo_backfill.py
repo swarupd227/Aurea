@@ -72,6 +72,7 @@ async def main() -> None:
         from seed import india_row6
 
         row6 = await india_row6.add(s, firm)
+        row6 += await india_row6.correct_names(s, firm)
         await s.commit()
         from app.conduit.service import sync_market_data
         priced = await sync_market_data(s, firm.id)
