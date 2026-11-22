@@ -106,6 +106,11 @@ async def add_beneficiary(account_id: uuid.UUID, body: BeneficiaryIn, user: User
     account = await _get_account(account_id, firm, db)
     if body.designation_class not in ("primary", "contingent"):
         raise HTTPException(status_code=422, detail="designation_class must be 'primary' or 'contingent'.")
+    from app.aurea_core import nominations
+
+    too_many = await nominations.refusal(db, firm, account)
+    if too_many:
+        raise HTTPException(status_code=422, detail=too_many)
     from app.aurea_core import firm_time
     row = AccountBeneficiary(
         firm_id=firm.id, account_id=account.id, date_designated=firm_time.today(firm), **body.model_dump()

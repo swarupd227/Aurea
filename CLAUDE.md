@@ -207,6 +207,13 @@ pages are artifact views the agents open. Full guideline, including what is buil
   AMFI's, by scheme code, and is never invented. `shelf.plan_bars` bars a regular plan under an adviser or a portfolio
   manager. A PAN is recorded by a person from a document and shown masked everywhere (`aurea_core/pan.py`); it is not
   encrypted, and one typed into the conversation reaches the model.
+- **A market's planning figures are suggestions with their source, and cover says who is paid.** `aurea_core/market_assumptions.py`
+  holds a market's suggested planning figures, dated and sourced and never a regulatory value; `planning.assumption_set`
+  takes the firm's own first, then the market's, then the platform's, and says which. Accident-only cover and critical
+  illness are listed and never counted against a gap, and a policy says who is paid: in India a parent, spouse or child
+  nominee on a life policy is beneficially entitled (s.39(7)), any other holds for the legal heirs, and an MWP policy is
+  outside the estate. A demat takes three nominees, and a nominee the will does not name is flagged, never changed
+  (`aurea_core/nominations.py`). Gratuity is not modelled.
 - **Whose client a household is, is what a person recorded.** `aurea_core/advisers.py` is the one reading of the
   "adviser" edges, the household's own outranking one to a member; nothing works out an adviser from activity, and
   unassigned says so. `assign_adviser` changes it with a reason, replacing every earlier edge, on the audit log. An

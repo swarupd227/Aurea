@@ -58,23 +58,47 @@ INFLATION_INDEXES = {"cpi": ("inflation", 0.025), "education": ("education_infla
                      "healthcare": ("healthcare_inflation", 0.05)}
 
 
-def assumption_set(firm_settings: dict | None = None) -> dict:
+# When work stops and how long a plan runs, without one on file: the platform's, unless the market suggests its own.
+PLATFORM_RETIREMENT_AGE = 65
+PLATFORM_PLAN_TO_AGE = 95
+
+
+def assumption_set(firm_settings: dict | None = None, jurisdiction: str | None = None) -> dict:
     """What a firm's projections run on: its returns (the firm's CMAs over the platform's) and each inflation
     index, with whether each came from the firm or is the stated default. The client brain carries it, so every
-    engine that reads the brain reads the firm's figures."""
+    engine that reads the brain reads the firm's figures.
+
+    Between the firm and the platform sits the firm's market (`market_assumptions`, India row 5): a figure the firm
+    has not set takes the market's suggestion where there is one, and says so ("market"), with its source in
+    `market_basis`. A market with none keeps exactly the platform's defaults."""
+    from app.aurea_core import market_assumptions
+
     s = firm_settings or {}
-    inflation, assumed = {}, []
+    inflation, assumed, sources = {}, [], {}
     for index, (key, default) in INFLATION_INDEXES.items():
-        try:
-            value = float(s[key]) if s.get(key) not in (None, "") else None
-        except (TypeError, ValueError):
-            value = None
-        if value is None:
-            value = default
+        value, whose = market_assumptions.value(s, jurisdiction, key, float(default))
+        if whose == "platform":
             assumed.append(f"{index}_inflation")
-        inflation[index] = value
-    return {"cma": {k: list(v) for k, v in effective_cma(s).items()}, "source": cma_source(s),
-            "inflation": inflation, "inflation_assumed": assumed}
+        inflation[index], sources[f"{index}_inflation"] = value, whose
+    cma, source = effective_cma(s), cma_source(s)
+    suggested = market_assumptions.for_market(jurisdiction)
+    firm_classes = set((s.get("cmas") or {}).keys())
+    for cls, key in market_assumptions.RETURN_KEYS.items():
+        if key in suggested and cls in cma and cls not in firm_classes:
+            cma[cls] = (float(suggested[key].value), cma[cls][1])
+            source = "firm" if source == "firm" else "market"
+    retirement_age, sources["retirement_age"] = market_assumptions.value(s, jurisdiction, "retirement_age", PLATFORM_RETIREMENT_AGE)
+    plan_to_age, sources["plan_to_age"] = market_assumptions.value(s, jurisdiction, "plan_to_age", PLATFORM_PLAN_TO_AGE)
+    return {"cma": {k: list(v) for k, v in cma.items()}, "source": source,
+            "inflation": inflation, "inflation_assumed": assumed,
+            "retirement_age": retirement_age, "plan_to_age": plan_to_age, "sources": sources,
+            "market_basis": [a.view() for a in suggested.values()]}
+
+
+def default_of(brain: dict | None, key: str, platform):
+    """A planning default the brain carries (`retirement_age`, `plan_to_age`), else the platform's."""
+    got = ((brain or {}).get("planning") or {}).get(key)
+    return type(platform)(got) if got is not None else platform
 
 
 def assumption_version(firm_settings: dict | None = None) -> str:

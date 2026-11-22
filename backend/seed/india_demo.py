@@ -389,6 +389,9 @@ async def build(s, *, quotes: dict | None = None) -> Firm:
                        target_amount=target, target_date=date(today.year + years, 3, 31),
                        assumptions={"years": years, **assumptions}))
     await s.flush()
+    from seed import india_row5
+
+    await india_row5.add(s, firm)
     return firm
 
 
