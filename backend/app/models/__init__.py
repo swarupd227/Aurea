@@ -67,3 +67,5 @@ from app.models import scenarios  # noqa: F401,E402
 from app.models import compliance_calendar  # noqa: F401,E402
 # A filed tax return's facts, recorded from the document (B-183).
 from app.models import tax_return  # noqa: F401,E402
+# The plan of record: baselines, reviews and deliveries of a household's plan (B-181).
+from app.models import plan_record  # noqa: F401,E402

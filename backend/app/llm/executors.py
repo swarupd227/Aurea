@@ -21,6 +21,7 @@ from app.aurea_core.graph import household_brain
 from app.llm.admin_executors import AdminToolExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
+from app.llm.plan_record_executors import PlanRecordExecutors
 from app.models.enums import UserRole
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding, Instrument, Price
@@ -44,7 +45,7 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID:
 _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "proposals", "recommendation", "recommendations"}
 
 
-class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors):
+class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -308,6 +309,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._estate_care_map(),
             # The advice file (B-175): app/llm/advice_file_executors.py.
             **self._advice_file_map(),
+            # The plan of record (B-181): app/llm/plan_record_executors.py.
+            **self._plan_record_map(),
         }
 
         executor = executor_map.get(tool_key)
@@ -5093,6 +5096,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._estate_care_preview(tool_key, inputs))
         if tool_key in ("record_recommendation", "record_advice_outcome"):
             return rows(*await self._advice_preview(tool_key, inputs))
+        if tool_key in ("record_plan_baseline", "record_plan_review", "record_plan_delivery"):
+            return rows(*await self._plan_record_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
             return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):

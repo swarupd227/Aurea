@@ -78,3 +78,7 @@ api_router.include_router(outside_agents_api.router)
 from app.api import advice_file as advice_file_api  # noqa: E402
 
 api_router.include_router(advice_file_api.router)
+# The plan of record: baselines, reviews and deliveries, and the firm's plan metrics (B-181).
+from app.api import plan_record as plan_record_api  # noqa: E402
+
+api_router.include_router(plan_record_api.router)

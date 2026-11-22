@@ -1089,6 +1089,71 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
+    # B-181: the plan of record. A household's plan as a produced artifact: a baseline freezes its figures, a second
+    # person reviews it, a delivery says it went to the client. Where it stands is worked out from those, never set.
+    "read_plan_record": Tool(
+        key="read_plan_record",
+        name="Read Plan Record",
+        speaking_agent="astra",
+        description="Where a household's plan of record stands, or the firm's. Give household_id for one client: the state (not_started, data_incomplete, data_complete, baseline, scenarios, in_review, reviewed, delivered, implementing, complete) worked out from what is recorded, whose move it is, the plan version, the facts the plan reads that are not on file (listed, never filled), the complexity counted part by part from what is on file and whether a second person must review it (above the firm's complexity line; until the firm sets one, every plan is reviewed, and it says so), the current baseline's frozen figures and assumption version beside today's where they differ, the delivered plan of record with its evidence, action items and tasks, whether it is fresh against the household's review cadence (twelve months when none is on file, named as assumed), and every baseline, review and delivery. With no household_id: coverage (households with a delivered plan over active households), freshness, the QC pass rate (passed over reviews in the period, the last year unless since/until are given; null when there were none, never zero), scenario depth (scenarios saved per baseline, median and mean), the count in each state and a row per household. An adviser sees their own households. Every figure is an estimate.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[
+            ToolInput("household_id", "uuid", "One household, or leave out for the firm", required=False),
+            ToolInput("since", "string", "For the firm: the first day of the QC period, YYYY-MM-DD", required=False),
+            ToolInput("until", "string", "For the firm: the last day of the QC period, YYYY-MM-DD. Defaults to today", required=False),
+        ],
+        output=ToolOutput("object", "The plan record, or the firm's plan metrics"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE, UserRole.BRANCH_LEADER},
+    ),
+
+    "record_plan_baseline": Tool(
+        key="record_plan_baseline",
+        name="Record Plan Baseline",
+        speaking_agent="astra",
+        description="Freeze a household's plan as it stands: the retirement success and sustainable income, each goal's likelihood and tier, the needs met together, the funded ratio, the inputs summary and the firm's assumption version, with the complexity and whether a review is needed. Refused while a fact the plan reads is missing: the refusal lists them, and they are recorded from their documents first, never filled in. A baseline after a delivery starts the next plan version; one before revises the current. It changes no goal, mandate or plan figure.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Freeze these figures as the plan's baseline? It is added to the plan record and cannot be edited.",
+        inputs=[ToolInput("household_id", "uuid", "The household, from search_households or read_plan_record", required=True)],
+        output=ToolOutput("object", "The plan record with the new baseline"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "record_plan_review": Tool(
+        key="record_plan_review",
+        name="Record Plan Review",
+        speaking_agent="astra",
+        description="Record a second person's review of the household's current plan baseline: passed, or failed with its findings (required). Whoever recorded the baseline cannot review it. A failed review sends the plan back: a new baseline is recorded and reviewed. Take the outcome and the findings from the reviewer's words; never suggest them. It changes no plan figure.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this review on the plan record? It is added and cannot be edited.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, from read_plan_record", required=True),
+            ToolInput("outcome", "string", "passed or failed", required=True),
+            ToolInput("findings", "string", "What the reviewer found. Required when it failed", required=False),
+        ],
+        output=ToolOutput("object", "The plan record with the review"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM},
+    ),
+
+    "record_plan_delivery": Tool(
+        key="record_plan_delivery",
+        name="Record Plan Delivery",
+        speaking_agent="astra",
+        description="Record that the household's current plan baseline was delivered to the client, from its evidence (a document or a meeting note). Refused until a needed review has passed. The delivery keeps the baseline's figures and assumption version exactly as they were frozen, never worked out again. Each action item becomes a task for the household's recorded adviser (unassigned when none is on record), due when given, on the firm's calendar. Take every action item from the user. It sends nothing to the client and changes no goal, mandate or plan figure.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this plan as delivered and raise its action items as tasks? It is added and cannot be edited.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, from read_plan_record", required=True),
+            ToolInput("evidence_kind", "string", "document or note", required=True),
+            ToolInput("evidence", "string", "The document or the meeting note that shows the plan was delivered", required=True),
+            ToolInput("action_items", "list[object]", "Each action item as {title, due_on (YYYY-MM-DD, optional)}", required=False),
+            ToolInput("due_on", "string", "A due date for action items given none, YYYY-MM-DD", required=False),
+            ToolInput("delivered_on", "string", "When it was delivered, YYYY-MM-DD. Defaults to today", required=False),
+        ],
+        output=ToolOutput("object", "The plan record with the delivery and its tasks"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
     "read_cash_movements": Tool(
         key="read_cash_movements",
         name="Read Cash Movements",
@@ -2584,19 +2649,19 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) advice_file (the recommendations advisers made, what became of each, and the implementation rate) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), rulebook (the regime's rules as the firm runs them, and the agent controls), book_integration (acquired books), book_batch (one acquired book; give batch_id), canvas (a client's home page as they see it), canvas_retirement (their retirement page), canvas_goals (their goals page), canvas_next_gen (a next-gen member's journey), canvas_questionnaire (their risk questionnaire, to record answers), admin (the firm's settings, users and agents; give tab to open one tab: firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage) or connectors (the firm's connectors and feeds). ips, reviews, protection, risk_profiles, net_worth and "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) advice_file (the recommendations advisers made, what became of each, and the implementation rate) plans (the firm's plans of record: coverage, freshness, QC pass rate, scenario depth and each household's state) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), rulebook (the regime's rules as the firm runs them, and the agent controls), book_integration (acquired books), book_batch (one acquired book; give batch_id), canvas (a client's home page as they see it), canvas_retirement (their retirement page), canvas_goals (their goals page), canvas_next_gen (a next-gen member's journey), canvas_questionnaire (their risk questionnaire, to record answers), admin (the firm's settings, users and agents; give tab to open one tab: firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage) or connectors (the firm's connectors and feeds). ips, reviews, protection, risk_profiles, net_worth and "
             "exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural, regulatory_countdown and the canvas views show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
             "read_onboarding_cases, read_meetings, read_reports, read_messages, read_balance_sheet, read_protection, "
-            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan, read_client_file, read_advice_file, read_cash_movements, read_tax_position, read_estate, read_family, read_behavioural, read_regulatory_countdown, read_client_canvas, screen_book, read_book_batches); an id from memory or an earlier turn is refused."
+            "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan, read_client_file, read_advice_file, read_plan_record, read_cash_movements, read_tax_position, read_estate, read_family, read_behavioural, read_regulatory_countdown, read_client_canvas, screen_book, read_book_batches); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, account_features, onboarding_scoreboard, repapering, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, rulebook, book_integration, book_batch, canvas, canvas_retirement, canvas_goals, canvas_next_gen, canvas_questionnaire, admin or connectors", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, advice_file, plans, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, account_features, onboarding_scoreboard, repapering, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, rulebook, book_integration, book_batch, canvas, canvas_retirement, canvas_goals, canvas_next_gen, canvas_questionnaire, admin or connectors", required=True),
             ToolInput("tab", "string", "For admin: the tab to open on - firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage", required=False),
             ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural, regulatory_countdown, canvas, canvas_retirement, canvas_goals, canvas_next_gen or canvas_questionnaire to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
@@ -4038,6 +4103,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "plan": ("/studio/plan", "Financial plan", {_A, _P, _PT, _C, _O, _B}),
     "client_file": ("/studio/client-file", "Client file", {_A, _P, _PT, _C, _O, _B}),
     "advice_file": ("/studio/advice-file", "Advice file", {_A, _P, _PT, _C, _B}),
+    "plans": ("/studio/plans", "Plans of record", {_A, _P, _PT, _C, _B}),
     "cash": ("/studio/cash", "Cash movements", {_A, _P, _PT, _C, _O, _B}),
     "trades": ("/studio/trades", "Trades", {_A, _P, _PT, _C, _O, _B}),
     "tax_documents": ("/studio/tax-documents", "Tax documents", {_A, _P, _PT, _C, _O, _B}),

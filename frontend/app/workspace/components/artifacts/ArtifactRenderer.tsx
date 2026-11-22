@@ -23,6 +23,7 @@ import { PriceFreshnessCard } from "./PriceFreshnessCard";
 import { ReconciliationCard } from "./ReconciliationCard";
 import { CareFundingChips, ProtectionCard } from "./ProtectionCard";
 import { AdviceFileCard } from "./AdviceFileCard";
+import { PlanRecordCard } from "./PlanRecordCard";
 import { LicenceCard } from "./LicenceCard";
 import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
 import { TaxPositionCard } from "./TaxPositionCard";
@@ -339,6 +340,12 @@ export function artifactCard(artifact: Artifact) {
       case "record_advice_outcome":
         if (!Array.isArray(artifact.result?.recommendations) && typeof artifact.result?.status !== "string") return null;
         return <AdviceFileCard result={artifact.result as any} />;
+      case "read_plan_record":
+      case "record_plan_baseline":
+      case "record_plan_review":
+      case "record_plan_delivery":
+        if (typeof artifact.result?.state !== "string" && !artifact.result?.coverage) return null;
+        return <PlanRecordCard result={artifact.result as any} />;
       case "read_client_file":
       case "record_trusted_contact":
       case "record_estate_document":
