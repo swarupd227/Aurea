@@ -4,7 +4,7 @@ How the research team adds a financial product, and how the agents then tell eac
 fits, why, and what stops it for the rest, without Astra ever recommending a product to a client by itself.
 
 Raised 22 Nov 2026 by a prospective client: "a new financial product can be added in the platform, and then agents
-help the advisers on which clients they should pitch it to". Backlog rows B-226 to B-231.
+help the advisers on which clients they should pitch it to". Backlog rows B-235 to B-240.
 
 ## The decision
 
@@ -220,12 +220,12 @@ All four are new tables, so `create_all` adds them; no column is added to an exi
 
 | Phase | Delivers | Backlog |
 |---|---|---|
-| 1 | `add_product`; the target market and its tool, card and page tab; the EU rule made real | B-226 |
-| 2 | `product_fit.py` with gates, missing facts and signals; `read_product_fit` and its card | B-227 |
-| 3 | The Product Match agent, its decision rights and tasks; surveillance rules | B-228 |
-| 4 | Pitches: brief, message checks, outcomes, suppression; the order-guard target-market check | B-229 |
-| 5 | Compliance sign-off, the distribution report and the fairness view | B-230 |
-| 6 | Market specifics: EMT import for UK/EU, the India licence path | B-231 |
+| 1 | `add_product`; the target market and its tool, card and page tab; the EU rule made real | B-235 |
+| 2 | `product_fit.py` with gates, missing facts and signals; `read_product_fit` and its card | B-236 |
+| 3 | The Product Match agent, its decision rights and tasks; surveillance rules | B-237 |
+| 4 | Pitches: brief, message checks, outcomes, suppression; the order-guard target-market check | B-238 |
+| 5 | Compliance sign-off, the distribution report and the fairness view | B-239 |
+| 6 | Market specifics: EMT import for UK/EU, the India licence path | B-240 |
 
 Phases 1 and 2 give an adviser a useful answer in the conversation on their own; the agent and the reports build on
 them.
