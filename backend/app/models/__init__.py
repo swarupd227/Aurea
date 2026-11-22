@@ -57,3 +57,5 @@ from app.models import held_away  # noqa: F401,E402
 from app.models import outside_agent  # noqa: F401,E402
 # Who a product is for, its distribution sign-off, and who it was offered to (B-226 to B-231).
 from app.models import product_distribution  # noqa: F401,E402
+# An adviser's own recommendations to a client, and what became of each (B-175).
+from app.models import advice_file  # noqa: F401,E402

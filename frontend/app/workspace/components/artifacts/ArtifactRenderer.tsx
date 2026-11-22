@@ -18,6 +18,7 @@ import { ValuationCard } from "./ValuationCard";
 import { PriceFreshnessCard } from "./PriceFreshnessCard";
 import { ReconciliationCard } from "./ReconciliationCard";
 import { CareFundingChips, ProtectionCard } from "./ProtectionCard";
+import { AdviceFileCard } from "./AdviceFileCard";
 import { LicenceCard } from "./LicenceCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
@@ -308,6 +309,11 @@ export function artifactCard(artifact: Artifact) {
       case "end_sip":
         if (!Array.isArray(artifact.result?.sips)) return null;
         return <SipCard result={artifact.result as any} />;
+      case "read_advice_file":
+      case "record_recommendation":
+      case "record_advice_outcome":
+        if (!Array.isArray(artifact.result?.recommendations) && typeof artifact.result?.status !== "string") return null;
+        return <AdviceFileCard result={artifact.result as any} />;
       case "read_client_file":
       case "record_trusted_contact":
       case "record_estate_document":
