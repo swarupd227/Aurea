@@ -140,6 +140,17 @@ flooring (with B-24); planning sold unbundled; projections for prospects (B-23);
 position, which is law, not software; equity-comp tax and AMT, left to the CPA; state law, recorded from the statute when
 a client needs it; L300 estate machinery and Medicaid planning.
 
+A new product and who to offer it to: raised 22 Nov by a prospective client. The design is `docs/03_Architecture/product-distribution.md`; five decisions in it are the firm's (outside the target market, who records it, what approving a list gives, a contact limit, India).
+
+| ID | Item | Where it stands | Size |
+|---|---|---|---|
+| B-226 | A product and its target market | Designed. `add_product` for research and the portfolio team; `product_target_market` (objectives, profiles, capacity, horizon, minimum, complexity, liquidity, markets, account types, negative target market, distribution, conflict, document), added and never edited, with its tool, card and a tab on the product page; the EU product-governance rule reads it instead of passing on any mandate type | M |
+| B-227 | The fit check | Designed. `aurea_core/product_fit.py` reads a client against a product from what is on file: gates from the shelf, licence, IPS, exclusions, capacity ceiling, exits and the target market; a missing fact is "needs a fact first", never a no; signals (idle cash, a goal off track, concentration, a dearer share class, held away, a review due) order the clients who fit and never read a fee. `read_product_fit` and its card | M |
+| B-228 | The Product Match agent | Designed. One list per adviser per product, refreshed not stacked, Tier 1 and forced to a proposal; the named adviser or a branch leader approves (`DISTRIBUTION_AGENTS`), compliance may dismiss; approving gives a task per client kept, removing keeps the reason. Surveillance: no client outside the target market, no list without a needed sign-off | M |
+| B-229 | Pitches and their outcomes | Designed. `product_pitch` with its fit snapshot; the meeting brief carries the product; a message to the client names the document and, if conflicted, the disclosure; `record_pitch_outcome`; a decline suppresses for six months unless a fact changes; `order_guard` refuses a buy in the negative target market and asks a reason outside it | M |
+| B-230 | Distribution sign-off and report | Designed. Compliance signs off a complex or conflicted product before any list, not the person who recorded its target market; the distribution report per product (offered, interested, declined, bought, bought outside the target market) and a fairness view by adviser | S |
+| B-231 | Product distribution by market | Designed. EMT import as the UK/EU target-market source; India: a fee-only adviser offers no product it is paid to distribute, a distributor offers regular plans, consent per buy stands; no market, no lists | S |
+
 ## Smaller items
 
 | ID | Item | L100 | Where it stands |
