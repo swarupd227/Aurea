@@ -128,8 +128,9 @@ export function MessageView({
           ) : null
         )}
 
+        {/* Every "Open" sits in the same place, under what it opens, whether or not the result has a card. */}
         {loose.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap justify-end gap-1.5">
             {loose.map((r) => (
               <OpenView key={r} route={r} onOpenView={onOpenView} />
             ))}

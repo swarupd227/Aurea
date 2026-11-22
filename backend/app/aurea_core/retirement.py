@@ -12,8 +12,14 @@ that is not linked to inflation is paid at its stated amount, so it buys less ea
 after retirement pays nothing until it starts, and the portfolio bridges the gap (B-169). A couple's plan
 runs until the younger adult reaches the plan-to age, and says whose ages it counts in (B-173).
 
+Beside the first-year crash, one deterministic sequence of returns and its reverse run on the household's own pot
+and draw, labelled an illustration (B-195). The plan carries how old its inputs are and what it reads that is not
+on file (`plan_inputs`, B-182).
+
 No I/O here; `for_household` (below) assembles the inputs from the client brain."""
 from __future__ import annotations
+
+from statistics import NormalDist
 
 import numpy as np
 
@@ -68,6 +74,34 @@ def _simulate(
         "success": float(np.mean(paths > 0)),
         "end": paths, "at_retirement": at_retirement, "depletion": depletion, "balance": balance,
     }
+
+
+def illustration_returns(mu: float, sigma: float, years: int) -> list[float]:
+    """One deterministic return for each retirement year, weakest first: the plan's own expected return and
+    volatility, spread at evenly spaced points of the normal curve, so their average is the expected return."""
+    n = max(int(years), 1)
+    curve = NormalDist()
+    return [mu + sigma * curve.inv_cdf((k + 0.5) / n) for k in range(n)]
+
+
+def sequence_illustration(pot: float, draws: list[float], *, mu: float, sigma: float, retirement_age: int,
+                          deflator: float = 1.0) -> dict:
+    """The same returns run on the household's pot and draw twice, weakest years first and then reversed (B-195).
+    An illustration of order alone, beside the first-year crash: no randomness, and not a forecast. `pot` and
+    `draws` are in the money of their year; the ending balance is also given in today's money by `deflator`."""
+    returns = illustration_returns(mu, sigma, len(draws))
+    orders = []
+    for order, path in (("weak_first", returns), ("strong_first", list(reversed(returns)))):
+        balance, depletes_at = float(pot), None
+        for y, (r, draw) in enumerate(zip(path, draws)):
+            balance = balance * (1 + r) - draw
+            if balance <= 0:
+                balance, depletes_at = 0.0, retirement_age + y + 1
+                break
+        orders.append({"order": order, "first_year_return": round(path[0], 4), "depletes_at": depletes_at,
+                       "ending_balance": round(balance), "ending_balance_today": round(balance / (deflator or 1.0))})
+    return {"illustration": True, "basis": "plan_return_and_volatility", "pot": round(pot), "years": len(draws),
+            "average_return": round(sum(returns) / len(returns), 4), "orders": orders}
 
 
 def _shift_to_growth(allocation: dict[str, float], frac: float = 0.10) -> dict[str, float]:
@@ -153,6 +187,8 @@ def retirement_plan(
     seq = _simulate(current_value, mu, sigma, acc_years=acc, draws=draws,
                     annual_contribution=annual_contribution, sims=sims, seed=seed,
                     first_year_shock=crash_return)
+    illustration = sequence_illustration(proj_at_ret, draws, mu=mu, sigma=sigma, retirement_age=retirement_age,
+                                         deflator=(1 + inflation) ** (acc + dec))
 
     # Levers the adviser can pull.
     levers = []
@@ -192,6 +228,7 @@ def retirement_plan(
             "early_crash": round(seq["success"], 3),
             "delta": round(base["success"] - seq["success"], 3),
             "crash_return": round(crash_return, 3),
+            "illustration": illustration,
         },
         "levers": levers,
         "balance_by_age": balance_by_age,
@@ -313,5 +350,9 @@ async def for_household(
     # retirement pay the income wanted until the longevity age, not whether the goal's target sum is reached.
     plan["measures"] = "retirement_income"
     plan["estimate"] = True
+    # How old what it works from is, and what it reads that is not on file (B-182).
+    from app.aurea_core import plan_inputs  # local import avoids a cycle
+
+    plan["inputs"] = await plan_inputs.for_household(session, household_id, firm_id=firm_id)
     plan["inputs_editable"] = ["retirement_age", "longevity_age", "annual_income", "annual_contribution"]
     return plan

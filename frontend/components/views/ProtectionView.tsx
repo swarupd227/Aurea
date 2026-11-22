@@ -5,13 +5,15 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { withRef } from "@/lib/refs";
-import { KIND_TEXT, Scenario, money, payeeText } from "@/app/workspace/components/artifacts/ProtectionCard";
+import { CARE_FUNDING_TEXT, CareFundingChips, KIND_TEXT, Scenario, money, payeeText } from "@/app/workspace/components/artifacts/ProtectionCard";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
 const NEW_POLICY = { person_id: "", kind: "life", provider: "", amount: "", benefit_years: "", expires_on: "", source_document: "",
   nominee: "", nominee_relationship: "" };
 const NEW_INCOME = { person_id: "", annual_income: "", source_document: "" };
+const NEW_FUNDING = { choice: "", earmark_amount: "", reason: "" };
+const EARMARKED = ["self_fund", "hybrid"];
 
 /** What happens to a household if an earner dies or cannot work, or someone needs care: every client,
  * or one when opened on it. In the work pane, a change is the conversation's tool behind its Confirm
@@ -26,6 +28,8 @@ export function ProtectionView({ household = null }: { household?: string | null
   const [policy, setPolicy] = useState(NEW_POLICY);
   const [income, setIncome] = useState(NEW_INCOME);
   const [ending, setEnding] = useState<{ id: string; reason: string } | null>(null);
+  const [funding, setFunding] = useState(NEW_FUNDING);
+  const [fundingConfirm, setFundingConfirm] = useState(false);
 
   if (error) return <div className="view-container"><Card><ErrorState what="protection" message={error} onRetry={refetch} /></Card></div>;
   if (loading || !data) return <div className="view-container"><SkeletonList count={4} /></div>;
@@ -101,6 +105,30 @@ export function ProtectionView({ household = null }: { household?: string | null
       person_id: income.person_id, annual_income: Number(income.annual_income), source_document: income.source_document,
     }, (r) => `Recorded an income of ${money(r.annual_income)} for ${r.person}.`);
     if (ok) setIncome(NEW_INCOME);
+  }
+
+  // B-186: how the household opened here means to pay for care, its adviser's or paraplanner's decision with a reason.
+  const canDecideCare: boolean = data.can_decide_care;
+  const fundingReady = !!one && funding.choice !== "" && funding.reason.trim().length >= 10
+    && (funding.choice !== "self_fund" || funding.earmark_amount !== "");
+
+  function askFunding() {
+    if (!one) return;
+    const earmark = EARMARKED.includes(funding.choice) && funding.earmark_amount ? `, with ${funding.earmark_amount} earmarked` : "";
+    nav.say?.(withRef(
+      `Record how ${one.household} will pay for care: ${funding.choice}${earmark}. Reason: ${funding.reason.trim()}`,
+      "household", one.household_id));
+    setFunding(NEW_FUNDING);
+  }
+
+  async function saveFunding() {
+    if (!one) return;
+    const ok = await run("/api/protection/care-funding", {
+      household_id: one.household_id, choice: funding.choice, reason: funding.reason,
+      earmark_amount: EARMARKED.includes(funding.choice) && funding.earmark_amount !== "" ? Number(funding.earmark_amount) : null,
+    }, (r) => `${r.household}: care paid by ${CARE_FUNDING_TEXT[r.choice] ?? r.choice}.`);
+    setFundingConfirm(false);
+    if (ok) setFunding(NEW_FUNDING);
   }
 
   const policyReady = policy.person_id && policy.provider.trim() && policy.amount && policy.source_document.trim().length >= 3;
@@ -293,6 +321,53 @@ export function ProtectionView({ household = null }: { household?: string | null
           </div>
         </Card>
       )}
+
+      <h2 className="mb-2 text-sm font-medium text-ink">How care will be paid</h2>
+      <Card className="mb-4" data-testid="protection-care-funding">
+        <div className="space-y-1.5">
+          {homes.map((h: any) => (
+            <div key={h.household_id} className="flex flex-wrap items-center gap-1.5">
+              {!one && <span className="text-sm text-ink">{h.household}</span>}
+              <CareFundingChips funding={h.care_funding} />
+              {h.care_funding?.superseded ? <span className="chip text-ink-muted">{h.care_funding.superseded} earlier</span> : null}
+            </div>
+          ))}
+        </div>
+        {one && canDecideCare && (
+          <div className="mt-3 grid gap-3 cq-md:grid-cols-3" data-testid="protection-care-funding-form">
+            <label className="block"><div className="tile-label">Care paid by</div>
+              <select className="input w-full" aria-label="Care paid by" value={funding.choice}
+                onChange={(e) => { setFunding({ ...funding, choice: e.target.value }); setFundingConfirm(false); }}>
+                <option value="">Choose</option>
+                {Object.entries(CARE_FUNDING_TEXT).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </select>
+            </label>
+            {EARMARKED.includes(funding.choice) && (
+              <label className="block"><div className="tile-label">Earmarked{funding.choice === "hybrid" ? " (optional)" : ""}</div>
+                <input className="input w-full" inputMode="decimal" aria-label="Earmarked" value={funding.earmark_amount}
+                  onChange={(e) => setFunding({ ...funding, earmark_amount: e.target.value })} />
+              </label>
+            )}
+            <label className="block cq-md:col-span-3"><div className="tile-label">Adviser&apos;s reason</div>
+              <input className="input w-full" aria-label="Reason" value={funding.reason}
+                onChange={(e) => setFunding({ ...funding, reason: e.target.value })} />
+            </label>
+            <div className="flex items-center gap-2 cq-md:col-span-3">
+              {nav.say ? (
+                <button className="btn-primary text-xs" disabled={!fundingReady} onClick={askFunding} data-testid="protection-care-funding-ask">Ask Astra</button>
+              ) : !fundingConfirm ? (
+                <button className="btn-primary text-xs" disabled={!fundingReady || busy} onClick={() => setFundingConfirm(true)} data-testid="protection-care-funding-record">Record</button>
+              ) : (
+                <>
+                  <span className="chip text-ink-muted">supersedes the decision on file</span>
+                  <button className="btn-primary text-xs" disabled={busy} onClick={saveFunding}>{busy ? "Recording…" : "Confirm"}</button>
+                  <button className="btn-outline text-xs" disabled={busy} onClick={() => setFundingConfirm(false)}>Not now</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
 
       <h2 className="mb-2 text-sm font-medium text-ink">Policies on file</h2>
       {policies.length === 0 ? <Empty>No policies on file.</Empty> : (

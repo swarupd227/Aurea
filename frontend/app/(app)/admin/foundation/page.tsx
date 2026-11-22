@@ -201,6 +201,8 @@ function AIGovernancePanel() {
   }
 
   const overdueKeys = new Set((data.overdue_review as any[]).map((r) => r.use_case_key));
+  // A planning engine shows the assumption version it runs on today, beside its review (B-189).
+  const modelOf = new Map(((data.models ?? []) as any[]).map((m) => [m.use_case_key, m]));
 
   return (
     <Card className="mb-6">
@@ -209,7 +211,7 @@ function AIGovernancePanel() {
         <span className="text-xs text-ink-muted">{data.active} active · {data.by_risk_tier.high} high-risk · {data.entitlement_violations.total} violation(s) logged</span>
       </div>
       <p className="text-xs text-ink-muted mb-3">
-        Every agent and high-stakes tool, with its owner and risk tier.
+        Every agent, high-stakes tool and planning engine, with its owner and risk tier.
       </p>
       <div className="divide-y divide-border-soft max-h-96 overflow-y-auto">
         {(useCases?.items || []).map((u: any) => (
@@ -222,6 +224,12 @@ function AIGovernancePanel() {
                 <span className="font-medium text-ink text-sm">{u.name}</span>
                 <span className={`chip ${TIER_COLOR[u.risk_tier]}`}>{u.risk_tier}</span>
                 <span className="chip bg-border-soft text-ink-muted">{u.category}</span>
+                {modelOf.has(u.use_case_key) && (
+                  <span className="chip bg-border-soft text-ink-muted font-mono" data-testid={`ai-model-assumptions-${u.use_case_key}`}
+                    title={modelOf.get(u.use_case_key).method}>
+                    {modelOf.get(u.use_case_key).assumptions.source} assumptions · v{modelOf.get(u.use_case_key).assumptions.version}
+                  </span>
+                )}
               </div>
               <div className="text-xs text-ink-muted mt-0.5">
                 {u.owner} · {u.last_reviewed_at ? `reviewed ${u.last_reviewed_at.slice(0, 10)}` : "never reviewed"}

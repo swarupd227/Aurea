@@ -208,6 +208,8 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE mandate ADD COLUMN IF NOT EXISTS exit_hold VARCHAR(16)"))
         await conn.execute(text("ALTER TABLE person ADD COLUMN IF NOT EXISTS deceased_on DATE"))
         await conn.execute(text("ALTER TABLE household ADD COLUMN IF NOT EXISTS left_on DATE"))
+        # B-182: every planning fact carries a date, a policy's too.
+        await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS as_of DATE"))
         await conn.execute(text("ALTER TABLE product_decision ADD COLUMN IF NOT EXISTS diversified BOOLEAN NOT NULL DEFAULT FALSE"))
         # A questionnaire can be one person's or one entity's, not only the household's.
         await conn.execute(text("ALTER TABLE risk_assessment ADD COLUMN IF NOT EXISTS person_id UUID REFERENCES person(id) ON DELETE SET NULL"))

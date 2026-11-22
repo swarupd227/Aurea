@@ -145,6 +145,8 @@ _TOOLS = [
      "Records a client's answer from the evidence; a yes places orders. Confirm-gated, and bound to the exact orders."),
     ("record_income", "Record Income (tool)", "tool", "Head of Advice", "medium",
      "Records a person's income from a document. It changes their protection gap and the tax planning that reads it. Confirm-gated; income is never estimated."),
+    ("record_care_funding", "Record Care Funding (tool)", "tool", "Head of Advice", "low",
+     "Records how a household will pay for care with the adviser's reason; a new decision supersedes the last and none on file is no decision. Moves no figure. Confirm-gated, adviser or paraplanner (B-186)."),
     ("decide_risk_profile", "Decide Risk Profile (tool)", "tool", "Head of Advice", "high",
      "Records an adviser's decision on a client's questionnaire. Adopting changes the mandate's suitability record and the rebalancer's equity ceiling. Confirm-gated, adviser only, and it never chooses for the adviser."),
     ("record_client_review", "Record Client Review (tool)", "tool", "Head of Advice", "medium",
@@ -205,6 +207,8 @@ _TOOLS = [
      "Records that an estate document exists and when it was signed. Confirm-gated."),
     ("record_life_event", "Record Life Event (tool)", "tool", "Head of Advice", "medium",
      "Records a life event and raises a review task. It changes no figure. Confirm-gated."),
+    ("raise_estate_review", "Raise Estate Review (tool)", "tool", "Head of Advice", "low",
+     "Gives the recorded adviser one task with an unfunded trust, a minor with no will on file and the titling-fix list. It retitles nothing and sends nothing. Confirm-gated (B-185)."),
     ("read_client_file", "Read Client File (tool)", "tool", "Head of Advice", "low",
      "Reads trusted contacts, estate documents, life events and designation issues."),
     ("request_cash_movement", "Request Cash Movement (tool)", "tool", "Head of Operations", "high",
@@ -364,28 +368,44 @@ _TOOLS = [
      "Sets the model a task runs on, refused while the enforced eval gates are not green, with a reason. Confirm-gated."),
 ]
 
+# The planning engines (B-189): owned by the head of advice, who sets the assumptions they run on. Retirement and
+# goal likelihoods reach a client on Canvas, so they are high risk.
+_MODELS = [
+    ("retirement_engine", "Retirement income engine", "model", "Head of Advice", "high",
+     "Whether a household's retirement income lasts: Monte Carlo over the firm's assumptions (aurea_core/retirement.py)."),
+    ("goal_likelihood_engine", "Goal likelihood engine", "model", "Head of Advice", "high",
+     "The one answer to whether a goal will be met: Monte Carlo per goal (aurea_core/goal_tradeoff.py)."),
+    ("financial_plan_engine", "Financial plan", "model", "Head of Advice", "medium",
+     "The plan assembled from what is on file over the retirement engine and goal likelihoods (aurea_core/financial_plan.py)."),
+    ("protection_engine", "Protection needs", "model", "Head of Advice", "medium",
+     "Life, income and care needs from what is recorded, nothing estimated (aurea_core/protection.py)."),
+]
+
+
+async def seed_firm(session, firm) -> int:
+    """Add the inventory rows a firm does not have yet; returns how many were added. Idempotent by key."""
+    have = set((await session.execute(
+        select(AIUseCase.use_case_key).where(AIUseCase.firm_id == firm.id))).scalars().all())
+    added = 0
+    for key, name, category, owner, risk_tier, description in _AGENTS + _TOOLS + _MODELS:
+        if key in have:
+            continue
+        session.add(AIUseCase(
+            firm_id=firm.id, use_case_key=key, name=name, category=category, owner=owner,
+            risk_tier=risk_tier, description=description, status="active",
+        ))
+        added += 1
+    if added:
+        log.info("ai_use_cases_seeded", firm=firm.slug, count=added)
+    return added
+
 
 async def backfill() -> None:
     async with SessionLocal() as s:
         firms = (await s.execute(select(Firm))).scalars().all()
         created = 0
-
         for firm in firms:
-            have = set((await s.execute(
-                select(AIUseCase.use_case_key).where(AIUseCase.firm_id == firm.id))).scalars().all())
-            added = 0
-            for key, name, category, owner, risk_tier, description in _AGENTS + _TOOLS:
-                if key in have:
-                    continue
-                s.add(AIUseCase(
-                    firm_id=firm.id, use_case_key=key, name=name, category=category, owner=owner,
-                    risk_tier=risk_tier, description=description, status="active",
-                ))
-                created += 1
-                added += 1
-            if added:
-                log.info("ai_use_cases_seeded", firm=firm.slug, count=added)
-
+            created += await seed_firm(s, firm)
         await s.commit()
         print(f"\nSeeded {created} AI use-case inventory row(s) across {len(firms)} firm(s).\n")
 

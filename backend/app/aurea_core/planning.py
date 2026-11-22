@@ -101,6 +101,17 @@ def default_of(brain: dict | None, key: str, platform):
     return type(platform)(got) if got is not None else platform
 
 
+def assumption_version(firm_settings: dict | None = None) -> str:
+    """A short fingerprint of the assumption set a firm's projections run on (B-189). It changes whenever a return,
+    a volatility or an inflation rate does, so the model inventory can say which assumptions a review saw. It stands in
+    until the assumption set is one versioned record (B-174)."""
+    import hashlib
+    import json
+
+    blob = json.dumps(assumption_set(firm_settings), sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()[:10]
+
+
 def cma_of(brain: dict | None) -> dict | None:
     """The CMAs a client brain carries (`assumption_set`), or None for the platform's."""
     return ((brain or {}).get("planning") or {}).get("cma")

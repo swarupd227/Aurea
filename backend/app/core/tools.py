@@ -294,7 +294,7 @@ TOOLS: dict[str, Tool] = {
         key="read_protection",
         name="Read Protection",
         speaking_agent="astra",
-        description="What happens to a household if an earner dies or cannot work, or someone needs long-term care: for each person, what would be needed, the life, TPD, income and care cover on file, the household's assets, and the gap. Give a household_id for one household, or none for the whole book with the largest gaps first. 'not_assessed' means something is not on file, named in `missing`, and it is a finding, not a zero; a missing care_cost means the firm has set no cost of care, which only a branch leader or administrator can do. 'not_yet' means too young for care to be the question. No cover on file does not mean the client has none. Care is one person at a time against the same assets, so two people's care gaps do not add up to the household's. `not_modelled` says what is left out; say so when it matters.",
+        description="What happens to a household if an earner dies or cannot work, or someone needs long-term care: for each person, what would be needed, the life, TPD, income and care cover on file, the household's assets, and the gap. care_funding is how the household means to pay for care as its adviser recorded it; 'no_decision' means none is on file, never that it self-funds. Give a household_id for one household, or none for the whole book with the largest gaps first. 'not_assessed' means something is not on file, named in `missing`, and it is a finding, not a zero; a missing care_cost means the firm has set no cost of care, which only a branch leader or administrator can do. 'not_yet' means too young for care to be the question. No cover on file does not mean the client has none. Care is one person at a time against the same assets, so two people's care gaps do not add up to the household's. `not_modelled` says what is left out; say so when it matters.",
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
@@ -424,6 +424,24 @@ TOOLS: dict[str, Tool] = {
         ],
         output=ToolOutput("object", "The recorded income and what it replaced"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    # B-186: how a household means to pay for care, a decision its adviser records with a reason.
+    "record_care_funding": Tool(
+        key="record_care_funding",
+        name="Record Care Funding",
+        speaking_agent="astra",
+        description="Record how a household means to pay for long-term care, as its adviser decided with the client: self_fund (with the amount earmarked), care_insurance, hybrid (an earmark optional), medicaid_planning (a US household only) or undecided, with the adviser's reason. It is added and never edited: a new decision supersedes the last. None on file reads 'no decision on file', never self-fund. It moves no figure in the care need. Use only a choice and reason the user gives you; never suggest one.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record how this household will pay for care? It supersedes any earlier decision.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household, from read_protection", required=True),
+            ToolInput("choice", "string", "self_fund, care_insurance, hybrid, medicaid_planning or undecided", required=True),
+            ToolInput("reason", "string", "The adviser's reason for the choice", required=True),
+            ToolInput("earmark_amount", "number", "What is set aside for care, in the firm's currency: needed to self-fund, optional for a hybrid", required=False),
+        ],
+        output=ToolOutput("object", "The decision as recorded, and what it superseded"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
     ),
 
     "read_risk_profiles": Tool(
@@ -686,7 +704,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("start_age", "number", "The age it starts, or they plan to claim", required=True),
             ToolInput("source_document", "string", "The statement", required=True),
             ToolInput("name", "string", "A name for it", required=False),
-            ToolInput("inflation_linked", "boolean", "Whether it rises with inflation", required=False),
+            ToolInput("inflation_linked", "boolean", "Whether it rises with inflation, as the statement says. Leave out for the kind's default, shown on the card: Social Security and state pensions rise, the rest do not", required=False),
             ToolInput("lump_sum", "number", "A pension's cash alternative", required=False),
             ToolInput("joint_annual", "number", "A pension's joint-life yearly amount", required=False),
             ToolInput("joint_survivor_share_pct", "number", "The percent a survivor keeps on the joint option", required=False),
@@ -733,7 +751,7 @@ TOOLS: dict[str, Tool] = {
         key="read_client_file",
         name="Read Client File",
         speaking_agent="astra",
-        description="What is on file about a client beyond their money: trusted contacts, estate documents and whether they are out of date, life events, and beneficiaries who have died, are a former spouse or do not add up. Give household_id for one client. Not on file does not mean none exists: an attorney may hold the document.",
+        description="What is on file about a client beyond their money: trusted contacts, estate documents and whether they are out of date, life events, and beneficiaries who have died, are a former spouse or do not add up. For one client, estate_gaps adds a revocable trust that may be unfunded (no account registered to a trust), a minor in a household with no will on file (age of majority assumed, named in `assumed`), and the titling-fix list of accounts whose registration or beneficiaries disagree with what is on file, each with its evidence. Give household_id for one client. Not on file does not mean none exists: an attorney may hold the document.",
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[ToolInput("household_id", "uuid", "One household, or leave out for the firm", required=False)],
@@ -797,6 +815,19 @@ TOOLS: dict[str, Tool] = {
             ToolInput("note", "string", "A short note", required=False),
         ],
         output=ToolOutput("object", "The client file"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    # B-185: the estate gaps go to the client's recorded adviser as one task. Nothing is retitled or sent.
+    "raise_estate_review": Tool(
+        key="raise_estate_review",
+        name="Raise Estate Review",
+        speaking_agent="astra",
+        description="Give the client's recorded adviser one task carrying the household's estate gaps from read_client_file: a revocable trust that may be unfunded, a minor with no will on file, and the titling-fix list. It retitles no account, changes no designation and contacts nobody, and there is no referral draft: a referral to an attorney is the adviser's to write. Refused when nothing is on file to raise, or the review is already an open task.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Raise this estate review as a task for the client's adviser? It changes nothing on any account.",
+        inputs=[ToolInput("household_id", "uuid", "The household, from read_client_file", required=True)],
+        output=ToolOutput("object", "The client file, with the task raised"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
@@ -2713,7 +2744,7 @@ TOOLS: dict[str, Tool] = {
         key="update_goal",
         name="Update Goal",
         speaking_agent="astra",
-        description="Update a household goal's parameters (target, timeline, priority).",
+        description="Update a household goal's parameters (target, timeline, priority), or say whether its target is in today's money (target_basis today, grown to its date with its index) or a fixed sum (nominal), as the adviser states it.",
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
         confirmation="This will update the goal and may trigger plan recalculations. Continue?",
         inputs=[
@@ -2721,6 +2752,8 @@ TOOLS: dict[str, Tool] = {
             ToolInput("target", "number", "New target amount", required=False),
             ToolInput("timeline", "string", "New timeline (e.g., 2030, 5 years)", required=False),
             ToolInput("priority", "string", "New priority (high/medium/low)", required=False),
+            ToolInput("target_basis", "string", "today (the target is in today's money) or nominal (a fixed sum)", required=False),
+            ToolInput("index", "string", "What a today's-money target grows with: cpi, education or healthcare", required=False),
         ],
         output=ToolOutput("object", "Updated goal with recalculated progress"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Play, TrendingUp, Users2, Target, GitBranch, Building2, PiggyBank, SlidersHorizontal,
   CalendarClock, FileText, Sparkles, RefreshCw, Layers, AlertTriangle, Check } from "lucide-react";
 import { Breadcrumb, Card, SkeletonCard, StatTile, Empty } from "@/components/ui";
@@ -14,7 +13,7 @@ import { api } from "@/lib/api";
 import { money, pct, titleCase } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
-import { useViewNav } from "./ViewNav";
+import { ViewLink, useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 
 const HOUSEHOLD_AGENTS = [
@@ -304,9 +303,10 @@ export function ClientView({ id }: { id: string }) {
               onClick={() => run("research_reporting", "household", id, "Research note")}>
               <FileText size={15} /> Research note
             </button>
-            <Link href={`/canvas?household_id=${id}`} className="btn-ghost">
+            {/* In the pane it opens beside the conversation, as every other move in a view does; it used to leave it. */}
+            <ViewLink href={`/canvas?household=${id}`} className="btn-ghost" data-testid="client-view-as-client">
               <Sparkles size={15} /> View as client
-            </Link>
+            </ViewLink>
           </>
         }
       />

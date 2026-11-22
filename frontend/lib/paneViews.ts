@@ -289,6 +289,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_protection_policy":
     case "end_protection_policy":
     case "record_income":
+    case "record_care_funding":
       return onClient("/studio/protection");
     case "read_risk_profiles":
     case "decide_risk_profile":
@@ -368,6 +369,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_trusted_contact":
     case "record_estate_document":
     case "record_life_event":
+    case "raise_estate_review":
       return onClient("/studio/client-file");
     case "read_financial_plan":
     case "record_income_stream":

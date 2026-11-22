@@ -71,6 +71,8 @@ import { RulebookView } from "@/components/views/RulebookView";
 import { BookIntegrationView } from "@/components/views/BookIntegrationView";
 import { BookBatchView } from "@/components/views/BookBatchView";
 import { PANE_PARENT, matchPaneView, withView, type PaneMatch } from "@/lib/paneViews";
+import { SectionTabs } from "@/components/SectionTabs";
+import { getUser } from "@/lib/api";
 import { useWorkspace } from "../context";
 
 /** A view that throws stays inside the pane; the conversation beside it keeps working. */
@@ -346,6 +348,11 @@ export function WorkPane({ pane }: { pane: PaneMatch }) {
             ))}
           </nav>
         )}
+        {/* The pages of this view's section, or this client's sections: one click between them, in the pane.
+            Under the breadcrumb, so where you are reads before where else you can go. */}
+        <div className="px-2 pb-2 empty:hidden">
+          <SectionTabs route={route} role={getUser()?.role ?? ""} open={(href) => openView(href)} />
+        </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="px-4 py-4 sm:px-5">
