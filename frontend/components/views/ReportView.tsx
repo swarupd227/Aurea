@@ -35,8 +35,12 @@ export function ReportView({ id }: { id: string }) {
   if (error || !r) return <Card><ErrorState what="this report" message={error ?? "Not found"} onRetry={refetch} /></Card>;
 
   function redraft() {
-    if (nav.say) return nav.say(withRef(`Draft a fresh client report for ${r.household_name}.`, "household", r.household_id));
-    runner.run({ agentKey: "research_reporting", subjectType: "household", subjectId: r.household_id, label: "Research note" });
+    // A plan summary (B-196) is redrafted by its own agent, from the plan of record's frozen figures.
+    const summary = r.kind === "plan_summary";
+    if (nav.say) return nav.say(withRef(summary ? `Draft the plan summary for ${r.household_name} again.` : `Draft a fresh client report for ${r.household_name}.`,
+      "household", r.household_id));
+    runner.run(summary ? { agentKey: "plan_summary", subjectType: "household", subjectId: r.household_id, label: "Plan summary" }
+      : { agentKey: "research_reporting", subjectType: "household", subjectId: r.household_id, label: "Research note" });
   }
 
   async function withdraw() {

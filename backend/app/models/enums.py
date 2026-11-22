@@ -131,6 +131,8 @@ class AgentKey(StrEnum):
     PROTECTION_PLANNING = "protection_planning"
     # Distribution (B-228)
     PRODUCT_MATCH = "product_match"
+    # The plan of record's client summary (B-196)
+    PLAN_SUMMARY = "plan_summary"
 
 
 class ActivityKind(StrEnum):

@@ -8,7 +8,7 @@ import { ScenariosTable } from "@/app/workspace/components/artifacts/ScenarioCar
 import { SocialSecurityTable } from "@/app/workspace/components/artifacts/SocialSecurityCard";
 import { agesOfLabel, basisLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
 import { PlanInputsChips, SequenceIllustration } from "@/components/PlanInputs";
-import { FiguresTable, FreshnessChip, PlanStateChip, ReviewNeedChip } from "@/app/workspace/components/artifacts/PlanRecordCard";
+import { FiguresTable, FreshnessChip, PlanStateChip, ReviewNeedChip, SummaryChip } from "@/app/workspace/components/artifacts/PlanRecordCard";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
@@ -79,6 +79,11 @@ function PlanRecordSection({ household }: { household: string }) {
   const canDeliver = data.can_prepare && (st === "reviewed" || (["baseline", "scenarios"].includes(st) && !data.review_need?.needed));
   const record = data.plan_of_record;
   const c = data.complexity;
+  // The client's summary (B-196) is drafted by its agent from the frozen figures; a new draft is offered when the plan
+  // may go to the client and none is drafted, or the newest is a draft or of an earlier baseline.
+  const summary = data.summary;
+  const summaryCurrent = summary && data.baseline && summary.baseline_id === data.baseline.id;
+  const canSummarise = data.can_prepare && data.summary_ready?.ok && !(summaryCurrent && (summary.with_client || summary.awaiting_decision));
   return (
     <Card className="mb-4 overflow-hidden p-0" data-testid="plan-record">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-4 py-2.5">
@@ -89,9 +94,12 @@ function PlanRecordSection({ household }: { household: string }) {
           <span className="chip text-ink-muted">{data.owner} next</span>
           <ReviewNeedChip need={data.review_need} />
           <FreshnessChip f={data.freshness} />
+          <SummaryChip summary={summary} baselineId={data.baseline?.id} />
         </div>
         {say && (
           <div className="flex flex-wrap gap-1.5">
+            {summary && <ViewLink href={`/studio/reports/${summary.report_id}`} className="btn-outline text-xs" data-testid="plan-record-summary-open">Open summary</ViewLink>}
+            {canSummarise && <button className="btn-outline text-xs" data-testid="plan-record-summary" onClick={() => ask(`Draft the plan summary for ${name}.`)}>Draft summary</button>}
             {canBaseline && <button className="btn-outline text-xs" data-testid="plan-record-baseline" onClick={() => ask(`Record a plan baseline for ${name}.`)}>Record baseline</button>}
             {canReview && <button className="btn-outline text-xs" data-testid="plan-record-review" onClick={() => ask(`Record my review of ${name}'s plan baseline.`)}>Record review</button>}
             {canDeliver && <button className="btn-outline text-xs" data-testid="plan-record-deliver" onClick={() => ask(`Record that ${name}'s plan was delivered.`)}>Record delivery</button>}

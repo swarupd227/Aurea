@@ -385,7 +385,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         now = await figures_of(session, household.id, firm_id=firm_id)
         diffs = differences(frozen, now)
     review = st["review"]
-    return {
+    out = {
         "household_id": str(household.id), "household": household.name, "as_of": today.isoformat(),
         "state": st["state"], "step": STATES.index(st["state"]) + 1, "steps": len(STATES), "owner": OWNERS[st["state"]],
         "version": st["version"], "data": data, "complexity": complexity,
@@ -403,6 +403,12 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         "assumption_version": planning.assumption_version(firm.settings or {}),
         "line": line_of(firm), "estimate": True,
     }
+    # The client's summary of the plan (B-196): the newest one drafted and whether one may be drafted now.
+    from app.aurea_core import plan_summary
+
+    out["summary"] = await plan_summary.latest(session, firm_id, household.id)
+    out["summary_ready"] = {k: v for k, v in plan_summary.ready(out).items() if k in ("ok", "why")}
+    return out
 
 
 async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, role: Any = None, user_id: uuid.UUID | None = None,

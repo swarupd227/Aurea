@@ -81,6 +81,8 @@ _AGENTS = [
      "Reads each mandate against the IPS its client accepted and puts each breach to a person. Never trades or changes an IPS; approving accepts a breach for a limited time under the approver's name."),
     ("protection_planning", "Protection Planner", "agent", "Head of Advice", "medium",
      "Reads each household's cover against what it would need if someone died, could not work or needed care, and puts a measured gap to a person. Approving adds a review task; it buys nothing and recommends no product."),
+    ("plan_summary", "Plan Summary", "agent", "Head of Advice", "medium",
+     "Sets out a client's plan summary from the plan of record's frozen figures alone, no model writing it, and proposes it. The client reads it only once their adviser approves; approving checks the plan is still current."),
 ]
 
 _TOOLS = [

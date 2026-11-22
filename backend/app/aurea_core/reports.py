@@ -22,6 +22,9 @@ from app.models.graph import Household
 STATUSES = ("all", "draft", "client_ready")
 LIST_LIMIT = 200
 _AGENT = AgentKey.RESEARCH_REPORTING.value
+# The agents that draft a client report and propose it: the portfolio review, and the plan summary (B-196), which is
+# drafted from the plan of record alone (plan_summary.py). Each keeps its own draft per household.
+REPORT_AGENTS: tuple[str, ...] = (_AGENT, AgentKey.PLAN_SUMMARY.value)
 _PUBLISHED = (RecommendationStatus.APPROVED.value, RecommendationStatus.MODIFIED.value,
               RecommendationStatus.EXECUTED.value)
 
@@ -89,20 +92,27 @@ async def of_proposal(session: AsyncSession, firm_id: uuid.UUID, payload: dict |
 async def proposals(session: AsyncSession, firm_id: uuid.UUID) -> dict[str, Recommendation]:
     """The newest proposal about each report, by report id. A seeded report has none."""
     rows = (await session.execute(
-        select(Recommendation).where(Recommendation.firm_id == firm_id, Recommendation.agent_key == _AGENT)
+        select(Recommendation).where(Recommendation.firm_id == firm_id, Recommendation.agent_key.in_(REPORT_AGENTS))
         .order_by(Recommendation.created_at.desc()))).scalars().all()
     out: dict[str, Recommendation] = {}
     for rec in rows:
         report_id = (rec.payload or {}).get("report_id")
-        if report_id:
-            out.setdefault(str(report_id), rec)
+        if not report_id:
+            continue
+        held = out.get(str(report_id))
+        # Two raised in one transaction share its timestamp: the one a redraft superseded is not the newest.
+        if held is None or (held.created_at == rec.created_at and str(held.status) == RecommendationStatus.EXPIRED.value
+                            and str(rec.status) != RecommendationStatus.EXPIRED.value):
+            out[str(report_id)] = rec
     return out
 
 
-async def waiting_draft(session: AsyncSession, firm_id: uuid.UUID, household_id: uuid.UUID) -> ClientReport | None:
-    """The household's draft still waiting for a decision, if it has one."""
+async def waiting_draft(session: AsyncSession, firm_id: uuid.UUID, household_id: uuid.UUID, *,
+                        agent: str = _AGENT) -> ClientReport | None:
+    """The household's draft from `agent` still waiting for a decision, if it has one. A portfolio review and a plan
+    summary each keep their own, so redrafting one never rewrites the other."""
     rows = (await session.execute(
-        select(Recommendation).where(Recommendation.firm_id == firm_id, Recommendation.agent_key == _AGENT,
+        select(Recommendation).where(Recommendation.firm_id == firm_id, Recommendation.agent_key == agent,
                                      Recommendation.subject_id == household_id,
                                      Recommendation.status == RecommendationStatus.PROPOSED)
         .order_by(Recommendation.created_at.desc()))).scalars().all()
@@ -121,6 +131,7 @@ def withdrawable(report: ClientReport, rec: Recommendation | None) -> bool:
 def _view(r: ClientReport, household: str | None, rec: Recommendation | None, *, full: bool) -> dict:
     out = {
         "id": str(r.id), "title": r.title, "period": r.period, "status": str(r.status),
+        "kind": (r.data or {}).get("kind") or "portfolio_review",
         "household_id": str(r.household_id), "household_name": household, "n_sections": len(r.sections or []),
         "published_at": r.published_at.isoformat() if r.published_at else None,
         "recommendation_id": str(rec.id) if rec else None,

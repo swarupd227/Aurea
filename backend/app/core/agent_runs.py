@@ -63,6 +63,7 @@ _ONLY_RUN_ROLES: dict[AgentKey, frozenset[UserRole]] = {
 SUBJECT_REQUIRED: dict[AgentKey, str] = {
     AgentKey.DRIFT_REBALANCING: "mandate",
     AgentKey.RESEARCH_REPORTING: "household",
+    AgentKey.PLAN_SUMMARY: "household",
     AgentKey.MEETING_PREP: "household",
     AgentKey.MEETING_COMPANION: "meeting",
     **{k: "onboarding_case" for k in CASE_AGENTS},
@@ -122,14 +123,14 @@ def forced_to_proposal(agent_key: str | AgentKey) -> bool:
     The decision to approve stays with decision_rights - this only keeps the agent from
     approving for itself. Escalating a reconciliation break to a custodian is held the same way:
     nothing moves, but it is a judgement the agent proposes and a person makes. So is accepting a
-    breach of a client's IPS, and so is a client report: acting would put it in front of the
+    breach of a client's IPS, and so is a client report or a plan summary: acting would put it in front of the
     client with nobody having read it. A review of a client's cover is an adviser's to take on. Committing an
     acquired book writes clients and holdings, and operations validates the mappings first (B-119)."""
     key = str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key)
     return (decision_rights.moves_the_book(agent_key) or decision_rights.moves_client_cash(agent_key)
             or key in decision_rights.RECON_AGENTS or key in decision_rights.IPS_AGENTS
             or decision_rights.commits_a_book(agent_key)
-            or key in decision_rights.DISTRIBUTION_AGENTS
+            or key in decision_rights.DISTRIBUTION_AGENTS or key in decision_rights.PLAN_SUMMARY_AGENTS
             or key in (AgentKey.RESEARCH_REPORTING.value, AgentKey.PROTECTION_PLANNING.value))
 
 

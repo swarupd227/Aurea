@@ -138,6 +138,16 @@ CATALOGUE: dict[str, dict] = {
         "acts": "Drafts client-ready performance summaries and commentary grounded in firm research.",
         "checkpoint": "Adviser/research reviews before anything is client-facing.",
     },
+    AgentKey.PLAN_SUMMARY: {
+        "name": "Plan Summary", "stage": "Advise & engage",
+        "default_tier": AutonomyTier.TIER_1, "subject": "household",
+        "senses": "The household's plan of record: a baseline that passed its review, or needs none under the firm's "
+                  "line, with the figures frozen on it.",
+        "acts": "Sets out the client's plan summary from those frozen figures alone, as a draft report; nothing is "
+                "worked out again and no model writes it.",
+        "checkpoint": "The household's adviser approves before the client can read it; approving checks the plan is "
+                      "still the current one, and records no delivery.",
+    },
     AgentKey.DRIFT_REBALANCING: {
         "name": "Drift & Tax-Managed Rebalancing", "stage": "Manage & optimise",
         "default_tier": AutonomyTier.TIER_2, "subject": "mandate", "lighthouse": True,

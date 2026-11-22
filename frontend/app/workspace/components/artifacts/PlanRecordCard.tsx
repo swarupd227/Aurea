@@ -42,6 +42,17 @@ export function FreshnessChip({ f }: { f: any }) {
   );
 }
 
+/** The client's plan summary (B-196): drafted from the frozen figures, with the client once its adviser approves. */
+export function SummaryChip({ summary, baselineId }: { summary: any; baselineId?: string | null }) {
+  if (!summary) return null;
+  const earlier = baselineId && summary.baseline_id !== baselineId;
+  const [tone, words] = summary.with_client ? (earlier ? ["text-warn", "summary with client · earlier baseline"] : ["text-ok", "summary with client"])
+    : earlier ? ["text-warn", "summary of an earlier baseline"]
+    : summary.awaiting_decision ? ["text-info", "summary drafted · adviser to approve"]
+    : ["text-ink-muted", "summary draft"];
+  return <span className={`chip ${tone}`} data-testid="plan-summary-chip">{words}</span>;
+}
+
 /** The headline figures a baseline freezes, as rows: frozen, and today beside it where it differs. */
 export function figureRows(frozen: any, today: any | null, differences: any[] = []): { key: string; label: string; frozen: string; today: string | null }[] {
   if (!frozen) return [];
@@ -145,6 +156,7 @@ export function PlanRecordCard({ result }: { result: any }) {
           {result?.tasks ? <span className="chip text-ink-muted">{result.open_tasks}/{result.tasks} tasks open</span> : null}
           {(result?.data?.missing ?? []).map((m: any) => <span key={m.text} className="chip text-warn">missing {m.text}</span>)}
           {result?.sent_back && <span className="chip text-warn" title={result.sent_back.findings}>sent back {reviewDay(result.sent_back.happened_on)}</span>}
+          <SummaryChip summary={result?.summary} baselineId={result?.baseline?.id} />
         </div>
         {frozen && <div className="-mx-3"><FiguresTable frozen={frozen} today={result?.today} differences={result?.differences} /></div>}
       </div>

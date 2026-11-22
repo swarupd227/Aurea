@@ -15,6 +15,7 @@ from app.models.graph import Household, LegalEntity, Mandate, Person
 INTENTS = [
     (("rebalance", "drift", "rebalanc", "trade", "trim", "tax-loss", "harvest"), AgentKey.DRIFT_REBALANCING, "mandate"),
     (("meeting", "prep", "brief", "agenda"), AgentKey.MEETING_PREP, "household"),
+    (("plan summary", "summary of the plan", "summarise the plan", "summarize the plan"), AgentKey.PLAN_SUMMARY, "household"),
     (("report", "commentary", "performance", "review note", "statement"), AgentKey.RESEARCH_REPORTING, "household"),
     (("outreach", "reassure", "care", "volatility", "check in", "check-in", "retention"), AgentKey.CLIENT_CARE, "household"),
     (("opportunit", "next best", "next-best", "scan", "risk", "anomal", "wallet"), AgentKey.NEXT_BEST_ACTION, "household"),

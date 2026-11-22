@@ -2860,7 +2860,8 @@ TOOLS: dict[str, Tool] = {
             "proposal is waiting for a decision. Give report_id to read one report's sections. A draft reaches a client "
             "only by approving its proposal (recommendation_id) with decide_recommendation. A draft whose proposal was "
             "dismissed, or that has none, cannot be published: draft a fresh one by running research_reporting on the "
-            "household."
+            "household, or plan_summary for a plan summary (kind plan_summary), which is drafted from the plan of "
+            "record's frozen figures alone and approved only by the client's adviser."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,

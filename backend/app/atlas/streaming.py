@@ -32,12 +32,17 @@ THINK_LABELS = {
     "pipeline_follow_up": "Reading each open deal against the last time anyone logged a touch",
     "warm_introduction": "Tracing who the firm knows who knows each prospect",
     "product_match": "Reading each client against the product's target market",
+    "plan_summary": "Setting out the client's plan summary from the plan of record's frozen figures",
 }
 
 
 def _sense_summary(sensed: dict) -> str:
     if not sensed:
         return "Read the client brain"
+    if "record" in sensed:
+        return "Read the plan of record and the figures frozen on its baseline"
+    if sensed.get("why"):
+        return str(sensed["why"])
     if "positions" in sensed:
         return f"Read {len(sensed['positions'])} positions, target model and tax lots — with lineage"
     if "documents" in sensed:

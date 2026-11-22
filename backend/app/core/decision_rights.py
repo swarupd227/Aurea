@@ -76,6 +76,12 @@ SUPERVISION_READERS: frozenset[UserRole] = SUPERVISORS | {UserRole.ADMIN, UserRo
 DISTRIBUTION_AGENTS: frozenset[str] = frozenset({AgentKey.PRODUCT_MATCH.value})
 DISTRIBUTION_DECIDERS: frozenset[UserRole] = frozenset({UserRole.ADVISER, UserRole.BRANCH_LEADER})
 
+# Agents whose proposals put a client's plan summary in front of them (B-196). The plan is advice the adviser gives, so an
+# adviser approves it, and the household's recorded adviser when it has one (`named_decider`); compliance may stop it
+# or withdraw it, not approve it.
+PLAN_SUMMARY_AGENTS: frozenset[str] = frozenset({AgentKey.PLAN_SUMMARY.value})
+PLAN_SUMMARY_DECIDERS: frozenset[UserRole] = frozenset({UserRole.ADVISER})
+
 
 def may_see(role: UserRole | str, agent_key: str | AgentKey) -> bool:
     """Whether a proposal from `agent_key` appears in this role's lists. Every proposal does, except supervision,
@@ -145,6 +151,12 @@ def roles_for(agent_key: str | AgentKey, decision: str) -> frozenset[UserRole]:
         if decision in (HumanAction.DISMISS.value, "rollback"):
             return DISTRIBUTION_DECIDERS | TRADE_VETO
         return frozenset()
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in PLAN_SUMMARY_AGENTS:
+        if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
+            return PLAN_SUMMARY_DECIDERS
+        if decision in (HumanAction.DISMISS.value, "rollback"):
+            return PLAN_SUMMARY_DECIDERS | TRADE_VETO
+        return frozenset()
     if not moves_the_book(agent_key) and not _sets_aside_an_ips(agent_key):
         return STAFF
     if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
@@ -168,7 +180,7 @@ def queue_action(role: UserRole | str, agent_key: str | AgentKey) -> str | None:
     Recommendations page and in read_recommendations."""
     role = UserRole(role) if not isinstance(role, UserRole) else role
     approve = role in roles_for(agent_key, "approve")
-    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in SUPERVISION_AGENTS | DISTRIBUTION_AGENTS:
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in SUPERVISION_AGENTS | DISTRIBUTION_AGENTS | PLAN_SUMMARY_AGENTS:
         return "decide" if approve else None
     if role in TRADE_VETO | BILLING_VETO:
         return "veto" if role in roles_for(agent_key, "dismiss") and not approve else None
@@ -201,6 +213,9 @@ def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> Non
         who = ("an adviser, a branch leader or compliance" if decision in ("dismiss", "rollback")
                else "the adviser it names or a branch leader")
         raise DecisionForbidden(f"This list chooses which clients are offered a product, so only {who} may {decision} it.")
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in PLAN_SUMMARY_AGENTS:
+        who = "an adviser or compliance" if decision in ("dismiss", "rollback") else "the client's adviser"
+        raise DecisionForbidden(f"This puts a client's plan summary in front of them, so only {who} may {decision} it.")
     if _sets_aside_an_ips(agent_key):
         who = ("an adviser, the portfolio team or compliance" if decision in ("dismiss", "rollback")
                else "an adviser or the portfolio team")
@@ -218,10 +233,18 @@ def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> Non
 
 def named_decider(role: UserRole | str, user_id, agent_key: str | AgentKey, payload: dict | None, decision: str) -> None:
     """A product list is one adviser's clients: only that adviser approves or changes it, or a branch leader. The
-    role check above cannot see whose list it is, so this is asked beside it wherever a decision is taken."""
-    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) not in DISTRIBUTION_AGENTS:
+    role check above cannot see whose list it is, so this is asked beside it wherever a decision is taken. A plan
+    summary is one household's: its recorded adviser approves it, and any adviser when it has none on record."""
+    key = str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key)
+    if key not in DISTRIBUTION_AGENTS | PLAN_SUMMARY_AGENTS:
         return
     if decision not in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
+        return
+    if key in PLAN_SUMMARY_AGENTS:
+        named = (payload or {}).get("adviser_id")
+        if named and str(user_id) != str(named):
+            raise DecisionForbidden(f"This is {(payload or {}).get('adviser') or 'another adviser'}'s client, so only they may "
+                                    f"{decision} the plan summary.")
         return
     if UserRole(role) == UserRole.BRANCH_LEADER:
         return

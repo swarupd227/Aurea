@@ -5017,13 +5017,37 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         if rec is None or rec.firm_id != self.firm_id:
             return None
         action, note = str(inputs.get("action") or ""), inputs.get("note")
-        if str(rec.agent_key) != AgentKey.RESEARCH_REPORTING.value:
+        if str(rec.agent_key) not in reports.REPORT_AGENTS:
             return card(await self._proposal_preview(rec, action, note))
         report = await reports.of_proposal(self.session, self.firm_id, rec.payload)
         if report is None:
             return card(await self._proposal_preview(rec, action, note))
         if str(rec.status) != "proposed":
             raise ExecutorError(f"Already {rec.status}")
+        from app.aurea_core import plan_summary
+
+        if plan_summary.is_summary(report):
+            # Only the client's adviser approves it, and it goes out only while its baseline is the plan's current one
+            # and still deliverable (B-196).
+            from app.core import decision_rights
+
+            try:
+                decision_rights.check(self.role, rec.agent_key, action)
+                decision_rights.named_decider(self.role, self.user_id, rec.agent_key, rec.payload, action)
+            except decision_rights.DecisionForbidden as exc:
+                raise ExecutorError(str(exc))
+            if action in ("approve", "modify"):
+                why = await plan_summary.still_current(self.session, self.firm_id, report)
+                if why:
+                    raise ExecutorError(f"Not published: {why}")
+            household = await self.session.get(Household, report.household_id)
+            d = report.data or {}
+            return {"rows": [{"label": k, "value": str(v)} for k, v in (
+                ("Plan summary", household.name if household else report.title), ("Plan", f"v{d.get('plan_version')}"),
+                ("Figures frozen on", d.get("as_of")), ("Assumptions", (d.get("figures") or {}).get("assumption_version")),
+                ("Sections", len(report.sections or [])),
+                ("Decision", "Approve, and the client can read it; no delivery is recorded" if action == "approve" else action.title()),
+            ) if v]}
         household = await self.session.get(Household, report.household_id)
         action = str(inputs.get("action") or "")
         # How old its figures are at the moment of approval, and a warning past a month (B-55): approving puts them in
