@@ -259,6 +259,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             "read_outside_agents": self.read_outside_agents,
             "revoke_outside_agent": self.revoke_outside_agent,
             "read_assumption_set": self.read_assumption_set,
+            "read_social_security": self.read_social_security,
+            "read_tax_returns": self.read_tax_returns,
+            "record_tax_return": self.record_tax_return,
             "run_plan_scenario": self.run_plan_scenario,
             "save_plan_scenario": self.save_plan_scenario,
             "read_plan_scenarios": self.read_plan_scenarios,
@@ -4990,6 +4993,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             return rows(*await self._outside_agent_preview(inputs))
         if tool_key == "record_assumption_set":
             return rows(*await self._assumption_preview(inputs))
+        if tool_key == "record_tax_return":
+            return rows(*await self._return_preview(inputs))
         if tool_key == "save_plan_scenario":
             return rows(*await self._scenario_preview(inputs))
         if tool_key == "import_linkedin_connections":
@@ -6563,6 +6568,99 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             raise ExecutorError(str(exc))
         out["message"] = f"Revoked the key for {out['label']} (ending {out['key_ends']})."
         return out
+
+    # ── Social Security for a couple, laid out (B-184) ───────────────────────────────────────
+
+    async def read_social_security(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import social_security
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            out = await social_security.couple(self.session, household_id, firm_id=self.firm_id)
+        except ValueError as exc:
+            raise ExecutorError(str(exc))
+        if out["status"] == "not_assessed":
+            out["message"] = f"{out['household']}: not assessed. {out['reason']}"
+            return out
+        names = {p["id"]: p["name"] for p in out["people"]}
+        on_file = next((p for p in out["pairs"] if p["on_file"]), None)
+        best = max(out["pairs"], key=lambda p: p.get("retirement_success") or 0)
+        said = lambda p: " and ".join(f"{names[i]} at {a}" for i, a in p["claim"].items())  # noqa: E731
+        out["message"] = (
+            f"{out['household']}: {len(out['pairs'])} pairs of claim ages laid out in today's money, to age {out['plan_to_age']}."
+            + (f" As on file ({said(on_file)}): ${on_file['both']:,.0f} a year while both live, ${on_file['lifetime_today']:,.0f} in total."
+               if on_file else "")
+            + (f" The retirement plan is likeliest with {said(best)} ({best['retirement_success']:.0%})." if best.get("retirement_success") is not None else "")
+            + (" Spousal and survivor benefits are not assessed: one statement is on file." if out["status"] == "one_statement" else "")
+            + " Tax on benefits and the earnings test are not modelled. This lays the choices out; the claim is the client's.")
+        return out
+
+    # ── A filed tax return, recorded from the document (B-183) ───────────────────────────────
+
+    RETURN_FACTS = ("person_ids", "tax_year", "filing_status", "agi", "taxable_income", "marginal_rate", "effective_rate",
+                    "qbi_deduction", "carryforwards", "basis_8606", "state", "source_document")
+
+    async def read_tax_returns(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tax_returns
+        from app.models.graph import Household
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        household = await self.session.get(Household, household_id)
+        if household is None or household.firm_id != self.firm_id:
+            raise ExecutorError("That household is not one of this firm's.")
+        rows = await tax_returns.for_household(self.session, household_id, firm_id=self.firm_id)
+        standing = {r["id"] for r in tax_returns.standing(rows)}
+        for r in rows:
+            r["standing"] = r["id"] in standing
+        return {"household_id": str(household_id), "household": household.name, "returns": rows,
+                "message": (f"{household.name}: {len(rows)} return(s) on file"
+                            + (", latest " + ", ".join(f"{r['tax_year']} ({r['filing_label']}, {' & '.join(r['people'])})"
+                                                       for r in rows if r["standing"]) if rows else "")
+                            + ". No return on file does not mean none was filed.")}
+
+    async def _return_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import tax_returns
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            r = await tax_returns.prepare(self.session, await self._firm(), household_id,
+                                          **{k: inputs.get(k) for k in self.RETURN_FACTS})
+        except tax_returns.TaxReturnError as exc:
+            raise ExecutorError(str(exc))
+        usd = lambda v: f"${v:,.0f}"  # noqa: E731
+        out: list[tuple[str, Any]] = [
+            ("Client", r["household"].name), ("Return", f"{r['tax_year']} · {tax_returns.FILING_STATUSES[r['filing_status']]}"),
+            ("On it", " & ".join(p.full_name for p in r["people"])), ("AGI", usd(r["agi"])), ("Taxable income", usd(r["taxable_income"]))]
+        if r["marginal_rate"] is not None:
+            out.append(("Marginal rate", f"{r['marginal_rate']:.1%}"))
+        if r["effective_rate"] is not None:
+            out.append(("Effective rate", f"{r['effective_rate']:.1%}"))
+        if r["qbi_deduction"] is not None:
+            out.append(("QBI deduction", usd(r["qbi_deduction"])))
+        for c in r["carryforwards"]:
+            out.append((f"Carryforward, {c['kind'].replace('_', ' ')}", usd(c["amount"])))
+        names = {str(p.id): p.full_name for p in r["people"]}
+        for pid, amt in r["basis_8606"].items():
+            out.append((f"Form 8606 basis, {names[pid]}", usd(amt)))
+        if r["state"]:
+            out.append(("State", r["state"]))
+        out += [("Document", r["document"]), ("After this", "Added, never edited; the Roth room and harvesting read it and name its year")]
+        return out
+
+    async def record_tax_return(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import tax_returns
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        me = await self._me()
+        try:
+            row = await tax_returns.record(self.session, await self._firm(), household_id, by=me.full_name or me.email,
+                                           **{k: inputs.get(k) for k in self.RETURN_FACTS})
+        except tax_returns.TaxReturnError as exc:
+            raise ExecutorError(str(exc))
+        rows = await tax_returns.for_household(self.session, household_id, firm_id=self.firm_id)
+        r = next(x for x in rows if x["id"] == str(row.id))
+        return {**r, "household_id": str(household_id), "standing": True,
+                "message": f"Recorded the {r['tax_year']} return ({r['filing_label']}) from {r['document']}."}
 
     # ── Plan scenarios, saved and ranked (B-179) ─────────────────────────────────────────────
 

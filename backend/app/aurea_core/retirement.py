@@ -319,7 +319,7 @@ async def for_household(
     from app.aurea_core import financial_plan  # local import avoids a cycle
 
     on_file = await financial_plan.retirement_inputs(session, household_id, firm_id=firm_id, retirement_age=retirement_age, current_age=current_age,
-                                                     claim_age=overrides.get("claim_age"))
+                                                     claim_age=overrides.get("claim_age"), claim_ages=overrides.get("claim_ages"))
     recorded = on_file["spending"] + on_file["debt_payments"] if on_file["spending"] else None
     default_income = a.get("annual_income") or recorded or current_value * 0.05
     income_need = float(overrides.get("annual_income") or default_income)

@@ -142,8 +142,13 @@ async def household_brain(
 
     adviser = await adviser_of(session, firm_id, household_id)
     from app.aurea_core.planning import assumption_set
+    from app.aurea_core import tax_returns
+
+    # The return that stands for each set of people, as a person recorded it from the document (B-183).
+    returns_on_file = tax_returns.standing(await tax_returns.for_household(session, household.id, firm_id=firm_id))
 
     return {
+        "tax_returns": returns_on_file,
         "currency": firm.base_currency if firm else None,
         # The firm's returns and inflation indexes, so every engine reading the brain projects on them (B-167).
         "planning": assumption_set(firm.settings if firm else None, firm.jurisdiction if firm else None),

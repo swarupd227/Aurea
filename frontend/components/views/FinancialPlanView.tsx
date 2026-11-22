@@ -5,6 +5,7 @@ import { money } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { bandChip, pct1 } from "@/app/workspace/components/artifacts/PlanCard";
 import { ScenariosTable } from "@/app/workspace/components/artifacts/ScenarioCard";
+import { SocialSecurityTable } from "@/app/workspace/components/artifacts/SocialSecurityCard";
 import { agesOfLabel, basisLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
 import { PlanInputsChips, SequenceIllustration } from "@/components/PlanInputs";
 import { ViewLink } from "./ViewNav";
@@ -20,6 +21,23 @@ function Tile({ label, value, tone = "text-ink" }: { label: string; value: strin
 }
 
 const th = "px-4 py-2 font-medium";
+
+/** Social Security for a US couple, pair by pair (B-184). It lays the claims out; the claim is the client's. */
+function PlanSocialSecurity({ household }: { household: string }) {
+  const { data } = useApi<any>(`/api/plan/social-security?household=${household}`, [household]);
+  if (!data || data.status === "not_assessed" || !(data.pairs ?? []).length) return null;
+  return (
+    <Card className="mb-4 overflow-hidden p-0" data-testid="plan-social-security">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border-soft px-4 py-2.5">
+        <div className="text-sm font-medium text-ink">Social Security</div>
+        <span className="chip text-ink-muted">today&rsquo;s money</span>
+        <span className="chip text-ink-muted">lays out · the claim is the client&rsquo;s</span>
+        {data.status === "one_statement" && <span className="chip text-warn">one statement · spousal and survivor not assessed</span>}
+      </div>
+      <SocialSecurityTable result={data} />
+    </Card>
+  );
+}
 
 /** The household's saved scenarios, ranked (B-179). They are run and saved in the conversation. */
 function PlanScenarios({ household }: { household: string }) {
@@ -219,6 +237,7 @@ export function FinancialPlanView({ household = null }: { household?: string | n
         </div>
       </Card>
 
+      <PlanSocialSecurity household={household} />
       <PlanScenarios household={household} />
 
       {data.education.length > 0 && (

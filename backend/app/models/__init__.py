@@ -61,3 +61,5 @@ from app.models import product_distribution  # noqa: F401,E402
 from app.models import assumptions  # noqa: F401,E402
 # Plan scenarios a person saved on a household (B-179).
 from app.models import scenarios  # noqa: F401,E402
+# A filed tax return's facts, recorded from the document (B-183).
+from app.models import tax_return  # noqa: F401,E402

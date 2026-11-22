@@ -478,6 +478,24 @@ def _nz_tax_report(brain: dict, lots: list[dict], *, today: date) -> dict:
 # US MODULES
 # ════════════════════════════════════════════════════════════════════════════════
 
+def _us_marginal(brain: dict, person: dict) -> float:
+    """A person's marginal rate: the one read off their standing return (B-183), else their profile's, else the top."""
+    from app.aurea_core import tax_returns
+
+    ret = tax_returns.covering(brain, person["id"])
+    if ret and ret.get("marginal_rate") is not None:
+        return float(ret["marginal_rate"])
+    return float(((person.get("profile") or {}).get("tax") or {}).get("marginal_rate", 0.37))
+
+
+def _us_carryforwards(brain: dict) -> dict:
+    """Capital losses carried forward on the standing returns (B-183): they offset gains before any harvest does."""
+    rows = [{"tax_year": r["tax_year"], "people": r["people"], "amount": c["amount"], "document": r["document"]}
+            for r in (brain.get("tax_returns") or []) for c in r.get("carryforwards") or [] if c["kind"] == "capital_loss"]
+    return {"capital_loss": round(sum(x["amount"] for x in rows), 2), "on_returns": rows,
+            "basis": "returns_on_file" if brain.get("tax_returns") else "no_return_on_file"}
+
+
 def _us_cgt_analysis(lots: list[dict], brain: dict) -> dict:
     """CGT classification, NIIT threshold alerts, and wash-sale warnings."""
     persons = brain.get("persons", [])
@@ -524,7 +542,7 @@ def _us_cgt_analysis(lots: list[dict], brain: dict) -> dict:
         "st_conversion_action": (
             f"${total_st_gains:,.0f} in short-term gains will be taxed at ordinary income rates. "
             "Holding these positions for 12+ months converts them to long-term capital gains "
-            f"(15–20% vs up to {adults[0].get('profile',{}).get('tax',{}).get('marginal_rate',0.37)*100:.0f}% ordinary). "
+            f"(15–20% vs up to {_us_marginal(brain, adults[0])*100:.0f}% ordinary). "
             f"Potential saving: ~${potential_rate_saving:,.0f}."
         ) if total_st_gains > 10_000 else None,
         "niit_action": (
@@ -668,70 +686,107 @@ def _us_roth_conversion(brain: dict, *, today: date) -> dict:
     """Room for a Roth conversion, laid out and not recommended (B-171, L200-2 §5.3).
 
     Taxable income is counted once per return: a couple filing jointly has one return and one bracket, so its room is
-    the couple's, not each adult's against the joint brackets as it used to be. The filing status is the one recorded
-    (a person's `profile.tax.filing_status`, or the household's `values.filing_status`), else assumed from the adults on
-    file and named. The income is the `annual_income` on the profiles, which is not a return's taxable income (B-183),
-    and says so. The brackets are the tax year the firm's `today` falls in; a year with none on file is not assessed."""
+    the couple's. Where a filed return is on file (B-183, `brain["tax_returns"]`, recorded from the document), its
+    filing status, taxable income and each person's Form 8606 basis are read, and the return's year is named: last
+    year's income against this year's brackets is a starting point, and says so. Without one, the filing status is the
+    one recorded on a profile or the household, else assumed from the adults, and the income is the profiles'
+    `annual_income`, which is not a return's taxable income, and says so. The brackets are the tax year the firm's
+    `today` falls in; a year with none on file is not assessed."""
+    from app.aurea_core import tax_returns
+
     persons = brain.get("persons", [])
-    adults = [p for p in persons if not p.get("is_next_gen")]
+    # A person with no id (a brain built by hand) still has a place on a return.
+    adults = [{**p, "id": p.get("id") or f"_{i}"} for i, p in enumerate(persons) if not p.get("is_next_gen")]
+    by_id = {p["id"]: p for p in adults}
     tax_of = lambda p: (p.get("profile") or {}).get("tax") or {}  # noqa: E731
+    label_of = lambda f: tax_returns.FILING_STATUSES.get(f, f)  # noqa: E731
+    filed = sorted((r for r in (brain.get("tax_returns") or []) if any(i in by_id for i in r["person_ids"])),
+                   key=lambda r: -r["tax_year"])
     recorded = (((brain.get("household") or {}).get("values") or {}).get("filing_status")
                 or next((tax_of(p).get("filing_status") for p in adults if tax_of(p).get("filing_status")), None))
-    filing = recorded or ("married_filing_jointly" if len(adults) >= 2 else "single")
-    assumed = {} if recorded else {
-        "filing_status": f"{_FILING_LABEL[filing]}, from the {len(adults)} adult(s) on file; no filing status is recorded"}
-    assumed["taxable_income"] = "the annual income on each profile; no tax return is on file"
-    base = {"tax_year": today.year, "filing_status": filing, "filing_status_recorded": bool(recorded), "assumed": assumed,
+    filing = filed[0]["filing_status"] if filed else (recorded or ("married_filing_jointly" if len(adults) >= 2 else "single"))
+
+    # Each return: a filed one, for the people on it; the adults on none are grouped as their filing status says.
+    groups: list[tuple[list[dict], dict | None]] = []
+    covered: set[str] = set()
+    for r in filed:
+        ids = [i for i in r["person_ids"] if i in by_id]
+        if ids and not covered & set(ids):
+            groups.append(([by_id[i] for i in ids], r))
+            covered |= set(ids)
+    rest = [p for p in adults if p["id"] not in covered]
+    rest_filing = recorded or ("married_filing_jointly" if len(rest) >= 2 else "single")
+    if rest:
+        groups += [(rest, None)] if rest_filing == "married_filing_jointly" and len(rest) >= 2 else [([p], None) for p in rest]
+
+    assumed = {}
+    if any(r is None for _, r in groups):
+        if not recorded:
+            assumed["filing_status"] = (f"{label_of(rest_filing)}, from the {len(rest)} adult(s) on file with no return; "
+                                        "no filing status is recorded")
+        assumed["taxable_income"] = "the annual income on each profile, for the adults with no return on file"
+    base = {"tax_year": today.year, "filing_status": filing, "filing_status_recorded": bool(filed or recorded),
+            "assumed": assumed, "returns_on_file": [{"tax_year": r["tax_year"], "people": r["people"],
+                                                     "filing_status": r["filing_status"], "document": r["document"]} for r in filed],
             "total_ira_balance": round(sum(tax_of(p).get("ira_value", 0) or 0 for p in adults), 2)}
 
     def not_assessed(reason: str) -> dict:
         return {**base, "status": "not_assessed", "reason": reason, "candidates": [], "count": 0, "law": [],
                 "guidance": reason}
 
-    bracket_key = _BRACKETS_FOR.get(filing)
-    if bracket_key is None:
-        return not_assessed(f"Brackets on file are for joint and single returns; the recorded status is {filing}.")
-    figure = law_figures.get(bracket_key, today)
-    if figure.status(today) != "in_force":
-        return not_assessed(f"No {_FILING_LABEL[filing]} brackets are on file for {today.year}.")
-    brackets = law_figures.bands(bracket_key, today)
-
-    # One return for a joint filer; one each for single filers.
-    returns = [adults] if filing == "married_filing_jointly" else [[p] for p in adults]
-    candidates = []
-    for people in returns:
+    candidates, keys, skipped = [], set(), []
+    for people, ret in groups:
+        status = ret["filing_status"] if ret else ("married_filing_jointly" if len(people) > 1 else
+                                                    (rest_filing if rest_filing != "married_filing_jointly" else "single"))
         ira = sum(tax_of(p).get("ira_value", 0) or 0 for p in people)
         if not ira:
             continue
-        roth = sum(tax_of(p).get("roth_value", 0) or 0 for p in people)
-        income = sum(tax_of(p).get("annual_income", 0) or 0 for p in people)
         names = [p.get("preferred_name") or p["full_name"] for p in people]
+        bracket_key = _BRACKETS_FOR.get(status)
+        if bracket_key is None or law_figures.get(bracket_key, today).status(today) != "in_force":
+            skipped.append(f"{' & '.join(names)}: no {label_of(status)} brackets are on file for {today.year}")
+            continue
+        keys.add(bracket_key)
+        brackets = law_figures.bands(bracket_key, today)
+        roth = sum(tax_of(p).get("roth_value", 0) or 0 for p in people)
+        income = float(ret["taxable_income"]) if ret else sum(tax_of(p).get("annual_income", 0) or 0 for p in people)
+        basis = sum(float((ret or {}).get("basis_8606", {}).get(p["id"]) or 0) for p in people) if ret else None
         label = f"Joint return: {' & '.join(names)}" if len(people) > 1 else names[0]
         top, rate = next((bound, r) for bound, r in brackets if income < bound)
         room = 0.0 if top == float("inf") else top - income
+        # Pro-rata (Form 8606): with nondeductible basis on file, only the rest of a conversion is taxed. The IRA here is
+        # the balance on file; every traditional, SEP and SIMPLE IRA the person holds counts in the law's sum.
+        share = round(max(0.0, 1 - basis / ira), 4) if basis else None
+        where = f"on the {ret['tax_year']} return" if ret else "on file (no return on file)"
         candidates.append({
-            "person_name": label, "people": names, "filing_status": filing,
+            "person_name": label, "people": names, "filing_status": status,
             "ira_balance": ira, "roth_balance": roth,
-            "taxable_income": income, "income_source": "profile",
+            "taxable_income": income, "income_source": "return" if ret else "profile",
+            "return_year": ret["tax_year"] if ret else None, "return_document": ret["document"] if ret else None,
+            "basis_8606": basis, "taxable_share": share,
             "marginal_rate_pct": round(rate * 100, 1),
             "bracket_top": None if top == float("inf") else top,
             "room_to_bracket_top": round(room, 2),
             "in_low_bracket": rate <= 0.24,
             "action": (
-                f"Taxable income on file of ${income:,.0f} sits in the {rate * 100:.0f}% bracket for {today.year}"
+                f"Taxable income {where} of ${income:,.0f} sits in the {rate * 100:.0f}% bracket for {today.year}"
                 + (f", ${room:,.0f} below its top of ${top:,.0f}. Income converted within that room is taxed at {rate * 100:.0f}%."
                    if top != float("inf") else ", the top bracket.")
+                + (f" With ${basis:,.0f} of Form 8606 basis, {share:.0%} of a conversion is taxable." if share is not None else "")
+                + (f" The {ret['tax_year']} return's income is read against {today.year}'s brackets." if ret and ret["tax_year"] != today.year else "")
             ),
         })
 
+    if not candidates and skipped:
+        return not_assessed("; ".join(skipped) + ".")
     return {
-        **base, "status": "assessed", "candidates": candidates, "count": len(candidates),
+        **base, "status": "assessed", "candidates": candidates, "count": len(candidates), "not_assessed": skipped,
         "guidance": (
-            f"Each row is one {_FILING_LABEL[filing]} return for {today.year}: its taxable income, the bracket its last dollar "
-            "falls in and the room to that bracket's top. A conversion is ordinary income that year. This lays the room "
-            "out; whether to convert is the client's decision with their adviser."
+            f"Each row is one return for {today.year}'s brackets: its taxable income, the bracket its last dollar falls in "
+            "and the room to that bracket's top. A conversion is ordinary income that year. This lays the room out; whether "
+            "to convert is the client's decision with their adviser."
         ),
-        "law": law_figures.cited((bracket_key,), today),
+        "law": law_figures.cited(tuple(sorted(keys)), today),
     }
 
 
@@ -827,6 +882,10 @@ def _us_tax_report(brain: dict, lots: list[dict], *, today: date) -> dict:
         "gift_tracker": gift,
         "roth_conversion": roth,
         "withdrawal_sequencing": withdrawal,
+        # The returns a person recorded from the documents, and what they carry forward (B-183).
+        "returns_on_file": [{"tax_year": r["tax_year"], "people": r["people"], "filing_status": r["filing_status"],
+                             "document": r["document"]} for r in (brain.get("tax_returns") or [])],
+        "carryforwards": _us_carryforwards(brain),
         "summary": {
             "total_flags": total_flags,
             "harvestable_loss": cgt["total_harvestable_losses"],

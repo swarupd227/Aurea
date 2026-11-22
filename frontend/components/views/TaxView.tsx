@@ -493,14 +493,19 @@ function UnitedStates({ data, ccy }: { data: any; ccy: string }) {
           {roth.filing_status && <Chip tone={roth.filing_status_recorded ? "text-ink-muted" : "text-warn"} title={roth.assumed?.filing_status}>
             {String(roth.filing_status).replace(/_/g, " ")}{roth.filing_status_recorded ? "" : " · assumed"}</Chip>}
           {roth.total_ira_balance > 0 && <Chip>IRA {m(roth.total_ira_balance)}</Chip>}
+          {(data.carryforwards?.capital_loss ?? 0) > 0 && <Chip testId="tax-us-carryforward">capital loss carried forward {m(data.carryforwards.capital_loss)}</Chip>}
           {withRoom > 0 && <Chip>room in a ≤24% bracket {withRoom}</Chip>}
         </>}>
         {roth.status === "not_assessed" ? <None>{roth.reason}</None> : roth.candidates.length === 0 ? <None>No IRA on file</None> : (
           <Rows>
             {roth.candidates.map((c: any, i: number) => (
               <Row key={i} hint={c.action} title={c.person_name}
-                sub={`taxable income ${m(c.taxable_income)} (profile) · IRA ${m(c.ira_balance)} · Roth ${m(c.roth_balance)}`}
-                chips={<Chip tone="text-ink-muted">{pctFig(c.marginal_rate_pct)} bracket</Chip>}
+                sub={`taxable income ${m(c.taxable_income)} (${c.return_year ? `${c.return_year} return` : "profile, no return on file"}) · IRA ${m(c.ira_balance)} · Roth ${m(c.roth_balance)}`}
+                chips={<>
+                  <Chip tone="text-ink-muted">{pctFig(c.marginal_rate_pct)} bracket</Chip>
+                  {c.return_year ? <Chip tone="text-ink-muted" title={c.return_document}>{c.return_year} return</Chip> : <Chip tone="text-warn">no return on file</Chip>}
+                  {c.taxable_share != null && <Chip tone="text-ink-muted">8606 basis {m(c.basis_8606)} · {Math.round(c.taxable_share * 100)}% taxable</Chip>}
+                </>}
                 figure={c.room_to_bracket_top > 0 ? m(c.room_to_bracket_top) : undefined}
                 caption={c.room_to_bracket_top > 0 && c.bracket_top ? `room to ${m(c.bracket_top)}` : undefined} />
             ))}

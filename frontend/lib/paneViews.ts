@@ -184,6 +184,8 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
       return "/studio/workforce";
     case "read_tax_book":
       return "/studio/tax";
+    case "read_tax_returns":
+    case "record_tax_return":
     case "read_tax_position":
     case "check_household_wash_sale":
       return onClient("/studio/tax");
@@ -372,6 +374,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "raise_estate_review":
       return onClient("/studio/client-file");
     case "read_financial_plan":
+    case "read_social_security":
     case "run_plan_scenario":
     case "save_plan_scenario":
     case "read_plan_scenarios":

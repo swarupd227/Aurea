@@ -10,6 +10,8 @@ import { PreferencesCard } from "./PreferencesCard";
 import { OutsideAgentsCard } from "./OutsideAgentsCard";
 import { AssumptionSetCard } from "./AssumptionSetCard";
 import { ScenarioCard, ScenariosCard } from "./ScenarioCard";
+import { TaxReturnsCard } from "./TaxReturnsCard";
+import { SocialSecurityCard } from "./SocialSecurityCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
@@ -161,6 +163,15 @@ export function artifactCard(artifact: Artifact) {
       case "revoke_outside_agent":
         if (typeof artifact.result?.label !== "string" || typeof artifact.result?.state !== "string") return null;
         return <OutsideAgentsCard result={artifact.result as any} />;
+      case "read_social_security":
+        if (!Array.isArray(artifact.result?.pairs)) return null;
+        return <SocialSecurityCard result={artifact.result as any} />;
+      case "read_tax_returns":
+        if (!Array.isArray(artifact.result?.returns)) return null;
+        return <TaxReturnsCard result={artifact.result as any} />;
+      case "record_tax_return":
+        if (typeof artifact.result?.tax_year !== "number") return null;
+        return <TaxReturnsCard result={artifact.result as any} />;
       case "run_plan_scenario":
       case "save_plan_scenario":
         if (!(artifact.result?.before || artifact.result?.result?.before)) return null;

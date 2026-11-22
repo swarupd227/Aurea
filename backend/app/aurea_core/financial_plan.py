@@ -246,7 +246,7 @@ def _education(goals: list[dict], planned: dict, saved: dict) -> list[dict]:
 
 
 async def retirement_inputs(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, retirement_age: int, current_age: int,
-                            claim_age: int | None = None) -> dict:
+                            claim_age: int | None = None, claim_ages: dict | None = None) -> dict:
     """What is on file that bears on the income to plan for: recorded spending, debts that outlast the working
     years, and income that has started by retirement. Empty when nothing is recorded, so nothing changes."""
     firm = await session.get(Firm, firm_id)
@@ -259,6 +259,9 @@ async def retirement_inputs(session: AsyncSession, household_id: uuid.UUID, *, f
     streams = await streams_of(session, household_id, firm, today)
     if claim_age is not None:
         streams = [_claimed_at(s, claim_age) for s in streams]
+    if claim_ages:
+        # Each person's own claim age (B-184): a couple's pair of claims, laid out.
+        streams = [_claimed_at(s, int(claim_ages[s["person_id"]])) if s["person_id"] in claim_ages else s for s in streams]
     acc = max(retirement_age - current_age, 0)
     # When each is paid, from today, on its own person's age; with no date of birth on file, on the plan's.
     timed = [{"annual": s["planned_annual"], "inflation_linked": bool(s["inflation_linked"]), "name": s["name"], "person": s["person"],

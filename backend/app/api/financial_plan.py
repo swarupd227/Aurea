@@ -45,3 +45,14 @@ async def scenarios(household: uuid.UUID, user: User = ReaderDep, firm: Firm = D
         return await sc.saved(session, firm, household)
     except sc.ScenarioError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+
+@router.get("/social-security")
+async def social_security(household: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                          session: AsyncSession = Depends(get_db)) -> dict:
+    """Social Security for a couple, laid out pair by pair (B-184). It reads and decides nothing."""
+    from app.aurea_core import social_security as ss
+
+    try:
+        return await ss.couple(session, household, firm_id=firm.id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
