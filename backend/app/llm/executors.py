@@ -265,6 +265,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "read_outside_agents": self.read_outside_agents,
             "revoke_outside_agent": self.revoke_outside_agent,
             "read_assumption_set": self.read_assumption_set,
+            "read_roth_window": self.read_roth_window,
             "read_social_security": self.read_social_security,
             "read_tax_returns": self.read_tax_returns,
             "record_tax_return": self.record_tax_return,
@@ -677,7 +678,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
 
         household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
         firm = await self.session.get(Firm, self.firm_id)
-        result = await tax_intelligence.for_household(self.session, household_id, firm.jurisdiction, firm_id=self.firm_id)
+        result = await tax_intelligence.for_household(self.session, household_id, firm.jurisdiction, firm_id=self.firm_id, window=True)
         if result is None:
             raise ExecutorError(f"Household {household_id} not found or access denied")
         if result.get("supported") is False:
@@ -6764,6 +6765,35 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         except oa.OutsideAgentError as exc:
             raise ExecutorError(str(exc))
         out["message"] = f"Revoked the key for {out['label']} (ending {out['key_ends']})."
+        return out
+
+    # ── The Roth window, year by year (B-190) ───────────────────────────────────────────────
+
+    async def read_roth_window(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import roth_window
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            out = await roth_window.for_household(self.session, household_id, firm_id=self.firm_id)
+        except ValueError as exc:
+            raise ExecutorError(str(exc))
+        if out["status"] != "assessed":
+            out["message"] = f"{out['household']}: {out['status'].replace('_', ' ')}. {out['reason']}"
+            return out
+        w, t, yrs = out["window"], out["totals"], out["years"]
+        first = yrs[0]
+        room = first["room_in_bracket"]
+        crossing = [y["year"] for y in yrs if y["bracket_room_crosses_irmaa"]]
+        out["message"] = (
+            f"{out['household']}: {t['years']} year(s) from {w['from_year']} to {w['to_year']}, {w['ends']}, in today's money, "
+            f"filing {out['filing_label']} ({out['filing_basis']})."
+            + (f" In {first['year']} taxable income of ${first['taxable_income']:,.0f} sits in the {first['bracket']:.0%} bracket; "
+               f"converting ${room['room']:,.0f} reaches its top and adds ${room['tax']:,.0f} of tax." if room else
+               f" In {first['year']} taxable income is in the top bracket.")
+            + f" The room to each year's bracket top totals ${t['room_in_brackets']:,.0f} against ${t['ira_balance']:,.0f} in traditional IRAs."
+            + (f" In {', '.join(map(str, crossing))} that room crosses a Medicare IRMAA line two years on." if crossing else "")
+            + (" " + "; ".join(out["assumed"]) + "." if out["assumed"] else "")
+            + " ACA credits and state tax are not modelled. This lays the window out; whether to convert is the client's.")
         return out
 
     # ── Social Security for a couple, laid out (B-184) ───────────────────────────────────────

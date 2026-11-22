@@ -790,8 +790,11 @@ def _us_roth_conversion(brain: dict, *, today: date) -> dict:
     }
 
 
-def _us_withdrawal_seq(brain: dict) -> dict:
-    """US-optimal withdrawal sequencing: taxable → Traditional → Roth."""
+def _us_withdrawal_seq(brain: dict, window: dict | None = None) -> dict:
+    """Where the money is, and the order to draw it. With the Roth window worked (B-190), the order is each year's
+    bracket room: a traditional draw inside the room is taxed at that bracket's rate, and the rest of the year's draw is
+    laid out beside it, so the fixed taxable-traditional-Roth rule is not used. Without it the usual order stands, and
+    says why."""
     mandates = brain.get("mandates", [])
     accounts = brain.get("accounts", [])
     persons = brain.get("persons", [])
@@ -849,7 +852,28 @@ def _us_withdrawal_seq(brain: dict) -> dict:
             })
 
     sequences.sort(key=lambda x: x["withdrawal_priority"])
+    if window and window.get("status") == "assessed":
+        role = {"ira": (1, "traditional · inside each year's room"), "401k": (1, "traditional · inside each year's room"),
+                "traditional": (1, "traditional · inside each year's room"), "roth": (3, "Roth · no RMD, tax-free")}
+        for s in sequences:
+            s["withdrawal_priority"], s["priority_label"] = role.get(s["account_type"], (2, "taxable · beyond the room"))
+            s["rationale"] = None
+        sequences.sort(key=lambda x: x["withdrawal_priority"])
+        by_year = [{"year": y["year"], "draw": y["draw"], "bracket": y["bracket"],
+                    "room": (y["room_in_bracket"] or {}).get("room"), "within_room": y["draw_within_room"],
+                    "beyond_room": y["draw_beyond_room"]} for y in window["years"]]
+        return {
+            "sequences": sequences, "count": len(sequences), "basis": "room_each_year", "by_year": by_year,
+            "money_basis": "today", "decides": window["decides"],
+            "guidance": (
+                "Each year a traditional draw inside the bracket's room is taxed at that bracket's rate; the rest of the "
+                "year's draw is laid out beside it, from taxable money or above the room. The room is the Roth window's, "
+                "year by year in today's money. This lays the order out; which account to draw from is the client's."
+            ),
+        }
     return {
+        "basis": "usual_order",
+        "not_by_year": (window or {}).get("reason") if window else None,
         "sequences": sequences, "count": len(sequences),
         "guidance": (
             "US optimal withdrawal order: (1) taxable accounts — use annual CGT exempt amounts and loss-harvesting; "
@@ -859,12 +883,12 @@ def _us_withdrawal_seq(brain: dict) -> dict:
     }
 
 
-def _us_tax_report(brain: dict, lots: list[dict], *, today: date) -> dict:
+def _us_tax_report(brain: dict, lots: list[dict], *, today: date, window: dict | None = None) -> dict:
     cgt = _us_cgt_analysis(lots, brain)
     rmd = _us_rmd_planning(brain, today=today)
     gift = _us_gift_tracker(brain, today=today)
     roth = _us_roth_conversion(brain, today=today)
-    withdrawal = _us_withdrawal_seq(brain)
+    withdrawal = _us_withdrawal_seq(brain, window)
 
     total_flags = (
         (1 if cgt["total_short_term_gains"] > 10_000 else 0)
@@ -882,6 +906,8 @@ def _us_tax_report(brain: dict, lots: list[dict], *, today: date) -> dict:
         "gift_tracker": gift,
         "roth_conversion": roth,
         "withdrawal_sequencing": withdrawal,
+        # The Roth window year by year, from retirement to the first RMD (B-190), when the caller asked for it.
+        "roth_window": window,
         # The returns a person recorded from the documents, and what they carry forward (B-183).
         "returns_on_file": [{"tax_year": r["tax_year"], "people": r["people"], "filing_status": r["filing_status"],
                              "document": r["document"]} for r in (brain.get("tax_returns") or [])],
@@ -1235,7 +1261,10 @@ async def for_household(
     firm_jurisdiction: str | None,
     *,
     firm_id: uuid.UUID,
+    window: bool = False,
 ) -> dict | None:
+    """A household's tax report in its own market. `window` adds the US Roth window year by year (B-190), which runs the
+    retirement plan, so the page and the conversation ask for it and a firm-wide scan does not."""
     brain = await household_brain(session, household_id, firm_id=firm_id)
     if not brain:
         return None
@@ -1259,7 +1288,12 @@ async def for_household(
     elif jurisdiction == "IN":
         result = await tax_india.report(session, brain, firm=await session.get(Firm, firm_id))
     elif jurisdiction == "US":
-        result = _us_tax_report(brain, await _load_lots(session, brain, today=today), today=today)
+        rw = None
+        if window:
+            from app.aurea_core import roth_window
+
+            rw = await roth_window.for_household(session, household_id, firm_id=firm_id)
+        result = _us_tax_report(brain, await _load_lots(session, brain, today=today), today=today, window=rw)
     elif jurisdiction == "UK":
         result = _uk_tax_report(brain, await _load_lots(session, brain, today=today))
     else:

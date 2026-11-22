@@ -151,7 +151,7 @@ async def household_tax_intel(
 ):
     """Tax intelligence: jurisdiction-dispatched modules (NZ / US / UK)."""
     result = await tax_intelligence.for_household(
-        db, household_id, firm.jurisdiction, firm_id=firm.id)
+        db, household_id, firm.jurisdiction, firm_id=firm.id, window=True)
     if not result:
         raise HTTPException(status_code=404, detail="Household not found")
     return result

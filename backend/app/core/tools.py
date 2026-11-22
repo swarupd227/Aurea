@@ -3340,6 +3340,19 @@ TOOLS: dict[str, Tool] = {
                         UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.RESEARCH_CIO, UserRole.ADMIN},
     ),
 
+    "read_roth_window": Tool(
+        key="read_roth_window",
+        name="Read Roth window",
+        speaking_agent="astra",
+        description="The Roth conversion window for a US household, year by year from retirement to the year before the first required minimum distribution, in today's money: each year's income on file (recorded streams, Social Security at the claim on file), how much Social Security is taxed, AGI, the standard deduction with its additions at 65 and the deduction for seniors while the law has it, taxable income, the bracket and the conversion that reaches its top (and the tops of the 12%, 22% and 24% brackets) with the tax it adds, the Medicare IRMAA tier two years on and the conversion that would cross the next line, and the draw the retirement plan needs that year with how much a traditional IRA could supply inside the room. The law's figures for each year; a later year holds the last on file in today's money. ACA credits and state tax are not modelled. It recommends nothing: whether to convert is the client's.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "The household (from search_households)", required=True)],
+        output=ToolOutput("object", "The window, year by year"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                        UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
     "read_social_security": Tool(
         key="read_social_security",
         name="Read Social Security",

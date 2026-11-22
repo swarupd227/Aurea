@@ -11,7 +11,8 @@ the firm's today (`firm_time.today`), which picks the version in force. Reading 
 so a new year can never silently be answered with last year's figure.
 
 Adding or updating a figure is a code change with its citation, as a rule is in aurea_core/rulebook.py. The figures
-below were checked against their sources on 20 Nov 2026 (B-197).
+below were checked against their sources on 20 Nov 2026 (B-197); the deductions, Social Security's base
+amounts and Medicare's IRMAA tiers on 22 Nov 2026 (B-190).
 """
 from __future__ import annotations
 
@@ -26,7 +27,9 @@ class LawFigure:
     # A number; None for a figure that is only a date; for unit "bands", a table of (upper bound, rate) with the top
     # band's bound None (it has none), read through bands().
     value: float | tuple[tuple[float | None, float], ...] | None
-    unit: str                   # "USD", "GBP", "NZD", "INR", "rate", "date" or "bands" (USD bounds)
+    # "USD", "GBP", "NZD", "INR", "rate", "date", "bands" (USD bounds) or "tiers" (USD bounds, then the monthly amounts
+    # each tier adds, read through tiers())
+    unit: str
     source: str                 # the instrument or the official publication it was read from
     as_of: date                 # the day the figure was taken from that source
     applies_from: date | None = None
@@ -79,6 +82,72 @@ ALL: tuple[LawFigure, ...] = (
               ((12_800, 0.10), (52_025, 0.12), (109_125, 0.22), (208_325, 0.24), (264_550, 0.32), (661_375, 0.35), (None, 0.37)),
               "bands", "IRS Rev. Proc. 2026-35 §3.01, Table 3 (2027; IR-2026-133, 5 Nov 2026)", date(2026, 11, 5),
               applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
+    # The standard deduction and its additions, which turn income into taxable income (IRC §63; B-190).
+    LawFigure("us_standard_deduction_mfj", "Standard deduction, married filing jointly", 32_200, "USD",
+              "IRS Rev. Proc. 2025-32 §4.14(1) (2026)", date(2025, 10, 9), applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_standard_deduction_mfj", "Standard deduction, married filing jointly", 33_200, "USD",
+              "IRS Rev. Proc. 2026-35 §3.15(1) (2027; IR-2026-133, 5 Nov 2026)", date(2026, 11, 5),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
+    LawFigure("us_standard_deduction_single", "Standard deduction, single", 16_100, "USD",
+              "IRS Rev. Proc. 2025-32 §4.14(1) (2026)", date(2025, 10, 9), applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_standard_deduction_single", "Standard deduction, single", 16_600, "USD",
+              "IRS Rev. Proc. 2026-35 §3.15(1) (2027; IR-2026-133, 5 Nov 2026)", date(2026, 11, 5),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
+    LawFigure("us_aged_addition_married", "Additional standard deduction at 65 or over, married, per person", 1_650, "USD",
+              "IRS Rev. Proc. 2025-32 §4.14(3), IRC §63(f) (2026)", date(2025, 10, 9),
+              applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_aged_addition_married", "Additional standard deduction at 65 or over, married, per person", 1_700, "USD",
+              "IRS Rev. Proc. 2026-35 §3.15(3), IRC §63(f) (2027)", date(2026, 11, 5),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
+    LawFigure("us_aged_addition_unmarried", "Additional standard deduction at 65 or over, unmarried", 2_050, "USD",
+              "IRS Rev. Proc. 2025-32 §4.14(3), IRC §63(f) (2026)", date(2025, 10, 9),
+              applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_aged_addition_unmarried", "Additional standard deduction at 65 or over, unmarried", 2_100, "USD",
+              "IRS Rev. Proc. 2026-35 §3.15(3), IRC §63(f) (2027)", date(2026, 11, 5),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
+    # The deduction for seniors: $6,000 for each person 65 or over, 2025 to 2028 only, less 6% of modified AGI over the
+    # line. The line is not indexed. It ends with 2028, so a year after reads it as expired and adds nothing.
+    LawFigure("us_senior_deduction", "Deduction for seniors, per person 65 or over", 6_000, "USD",
+              "P.L. 119-21 §70103, IRC §151(d)(5)(C) (IRS: One Big Beautiful Bill Act, tax deductions for working Americans "
+              "and seniors)", date(2025, 7, 4), applies_from=date(2025, 1, 1), applies_to=date(2028, 12, 31)),
+    LawFigure("us_senior_deduction_line_mfj", "Deduction for seniors: reduced above this modified AGI, joint return", 150_000, "USD",
+              "P.L. 119-21 §70103, IRC §151(d)(5)(C)(ii)", date(2025, 7, 4), applies_from=date(2025, 1, 1), applies_to=date(2028, 12, 31)),
+    LawFigure("us_senior_deduction_line_single", "Deduction for seniors: reduced above this modified AGI, other returns", 75_000, "USD",
+              "P.L. 119-21 §70103, IRC §151(d)(5)(C)(ii)", date(2025, 7, 4), applies_from=date(2025, 1, 1), applies_to=date(2028, 12, 31)),
+    LawFigure("us_senior_deduction_taper", "Deduction for seniors: reduced by this share of modified AGI over the line", 0.06, "rate",
+              "P.L. 119-21 §70103, IRC §151(d)(5)(C)(ii)", date(2025, 7, 4), applies_from=date(2025, 1, 1), applies_to=date(2028, 12, 31)),
+    # How much of a Social Security benefit is taxed (IRC §86): the base amounts are fixed in the statute, not indexed.
+    LawFigure("us_ss_base_mfj", "Social Security taxed above this provisional income, joint return (base amount)", 32_000, "USD",
+              "IRC §86(c)(1)(B)", date(1993, 8, 10)),
+    LawFigure("us_ss_adjusted_base_mfj", "Social Security taxed at up to 85% above this, joint return (adjusted base amount)", 44_000, "USD",
+              "IRC §86(c)(2)(B), added by OBRA 1993 §13215", date(1993, 8, 10)),
+    LawFigure("us_ss_base_single", "Social Security taxed above this provisional income, single (base amount)", 25_000, "USD",
+              "IRC §86(c)(1)(A)", date(1993, 8, 10)),
+    LawFigure("us_ss_adjusted_base_single", "Social Security taxed at up to 85% above this, single (adjusted base amount)", 34_000, "USD",
+              "IRC §86(c)(2)(A), added by OBRA 1993 §13215", date(1993, 8, 10)),
+    # Medicare's income-related monthly adjustment (IRMAA), by premium year: each tier's upper bound of modified AGI from
+    # the tax return two years before, then the monthly Part B and Part D amounts it adds per person. A bound is "at or
+    # below", except the last finite one, which is "below" (the top tier starts at it).
+    LawFigure("us_irmaa_mfj", "Medicare IRMAA tiers, joint return (premium year)",
+              ((218_000, 0.0, 0.0), (274_000, 81.20, 14.50), (342_000, 202.90, 37.50), (410_000, 324.60, 60.40),
+               (750_000, 446.30, 83.30), (None, 487.00, 91.00)),
+              "tiers", "CMS fact sheet, 2026 Medicare Parts A & B Premiums and Deductibles (14 Nov 2025); 42 CFR 418.2115",
+              date(2025, 11, 14), applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_irmaa_mfj", "Medicare IRMAA tiers, joint return (premium year)",
+              ((224_000, 0.0, 0.0), (282_000, 83.70, 15.40), (354_000, 209.40, 39.70), (424_000, 335.00, 64.00),
+               (750_000, 460.60, 88.30), (None, 502.40, 96.40)),
+              "tiers", "CMS fact sheet, 2027 Medicare Parts A & B Premiums and Deductibles (17 Nov 2026); 42 CFR 418.2115",
+              date(2026, 11, 17), applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
+    LawFigure("us_irmaa_single", "Medicare IRMAA tiers, individual return (premium year)",
+              ((109_000, 0.0, 0.0), (137_000, 81.20, 14.50), (171_000, 202.90, 37.50), (205_000, 324.60, 60.40),
+               (500_000, 446.30, 83.30), (None, 487.00, 91.00)),
+              "tiers", "CMS fact sheet, 2026 Medicare Parts A & B Premiums and Deductibles (14 Nov 2025); 42 CFR 418.2115",
+              date(2025, 11, 14), applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_irmaa_single", "Medicare IRMAA tiers, individual return (premium year)",
+              ((112_000, 0.0, 0.0), (141_000, 83.70, 15.40), (177_000, 209.40, 39.70), (212_000, 335.00, 64.00),
+               (500_000, 460.60, 88.30), (None, 502.40, 96.40)),
+              "tiers", "CMS fact sheet, 2027 Medicare Parts A & B Premiums and Deductibles (17 Nov 2026); 42 CFR 418.2115",
+              date(2026, 11, 17), applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
     LawFigure("us_annual_gift_exclusion", "Annual gift exclusion, per donor per recipient", 19_000, "USD",
               "IRS Rev. Proc. 2025-32 §4.42(1) (2026 inflation adjustments)", date(2025, 10, 9),
               applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
@@ -151,8 +220,8 @@ def value(key: str, today: date | None = None) -> float:
     figure = get(key, today)
     if figure.value is None:
         raise ValueError(f"{key} is a date, not an amount")
-    if figure.unit == "bands":
-        raise ValueError(f"{key} is a table of bands: read it with bands()")
+    if figure.unit in ("bands", "tiers"):
+        raise ValueError(f"{key} is a table of {figure.unit}: read it with {figure.unit}()")
     return figure.value
 
 
@@ -162,6 +231,14 @@ def bands(key: str, today: date | None = None) -> list[tuple[float, float]]:
     if figure.unit != "bands":
         raise ValueError(f"{key} is not a table of bands")
     return [(float("inf") if bound is None else float(bound), rate) for bound, rate in figure.value]
+
+
+def tiers(key: str, today: date | None = None) -> list[tuple[float, ...]]:
+    """A table of tiers, lowest first: (upper bound, then the amounts the tier adds); the top tier's bound is infinity."""
+    figure = get(key, today)
+    if figure.unit != "tiers":
+        raise ValueError(f"{key} is not a table of tiers")
+    return [(float("inf") if row[0] is None else float(row[0]), *row[1:]) for row in figure.value]
 
 
 def cited(keys: list[str] | tuple[str, ...], today: date) -> list[dict]:
