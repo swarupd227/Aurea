@@ -321,6 +321,8 @@ async def for_household(
         streams=on_file["streams"], cma=planning.cma_of(brain),
         # The firm's inflation, or its market's: this used the 2.5% default whatever the firm had set.
         inflation=float((((brain.get("planning") or {}).get("inflation")) or {}).get("cpi", 0.025)),
+        # The firm's retirement success target, from the assumption set (B-174); the platform's 85% without one.
+        target_success=planning.target_of(brain, "retirement"),
     )
     acc = plan["years_to_retirement"]
     plan["household"] = {"id": str(household_id), "name": brain["household"]["name"]}
@@ -341,6 +343,7 @@ async def for_household(
     # Whose returns these are: the firm's capital market assumptions, or the platform's (B-167).
     plan["assumptions_source"] = planning.source_of(brain)
     plan["assumptions"]["source"] = plan["assumptions_source"]
+    plan["assumptions_version"] = plan["assumptions"]["version"] = planning.version_of(brain)
     plan["goal"] = rgoal["name"] if rgoal else "Retirement"
     plan["funding_share"] = funding_share
     if plan["income_basis"] == "assumed_draw":

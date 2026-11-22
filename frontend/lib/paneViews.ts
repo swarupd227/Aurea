@@ -454,6 +454,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_outside_agents":
     case "revoke_outside_agent":
       return null;
+    // The planning assumptions (B-174) are a card in the conversation; the administrator's capital market table is
+    // one way to the same record, on a page only the administrator opens.
+    case "read_assumption_set":
+    case "record_assumption_set":
+      return null;
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";

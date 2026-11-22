@@ -3142,6 +3142,32 @@ TOOLS: dict[str, Tool] = {
                         UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.RESEARCH_CIO, UserRole.ADMIN},
     ),
 
+    "read_assumption_set": Tool(
+        key="read_assumption_set",
+        name="Read Assumption Set",
+        speaking_agent="astra",
+        description="The firm's planning assumptions, one versioned record (aurea_core/assumptions.py): every figure a projection runs on, each with whose it is (the firm's, its market's suggestion or the platform's default) and its source. Figures: return.<class> and volatility.<class> for equity, fixed_income, cash, alternatives, property, commodity, multi_asset; inflation.cpi, inflation.education, inflation.healthcare; retirement_age; plan_to_age; success_target.goals and success_target.retirement (the success that reads on track); reserve_months; plan_input_days (how old a planning input may be); refresh_line (how far a household's likelihood may move before a new version asks for its review). Rates are yearly fractions (0.07 for 7%). Also the version standing, who recorded it and why, and the recent versions with the households each one moved.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The assumption set, its version and its history"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER,
+                        UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.RESEARCH_CIO, UserRole.ADMIN},
+    ),
+
+    "record_assumption_set": Tool(
+        key="record_assumption_set",
+        name="Record Assumption Set",
+        speaking_agent="astra",
+        description="Record a new version of the firm's planning assumptions: research and the portfolio team. Each change names the figure (as read_assumption_set lists them), its new value (a yearly fraction for a rate: 0.065 for 6.5%; whole years, months or days otherwise) and its source, in the person's words: where the figure comes from. Never supply a value or a source the person did not give. The reason is the person's. The version is added and never edited; every projection then runs on it and names it. Recording it compares each active household's goal likelihoods on the old set and the new, and a household that moved by more than the refresh line gets a review task for its adviser; no goal, mandate or plan is changed.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will record a new version of the firm's planning assumptions. Continue?",
+        inputs=[ToolInput("changes", "list[object]", "Each figure to change: {figure, value, source}", required=True),
+                ToolInput("reason", "string", "Why, in the person's words", required=True)],
+        output=ToolOutput("object", "The new version and the households it moved"),
+        roles_required={UserRole.RESEARCH_CIO, UserRole.PORTFOLIO_TEAM},
+    ),
+
     "create_crm_contact": Tool(
         key="create_crm_contact",
         name="Create CRM Contact",

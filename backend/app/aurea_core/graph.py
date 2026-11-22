@@ -57,7 +57,15 @@ async def household_brain(
     household routes, and through running any agent against it as a subject. An optional
     argument would leave that one forgotten keyword away; the conversation gateway will
     pass ids that came from a language model, so the omission has to be impossible.
+
+    An id given as text (agents read them from `list_households`) is made a UUID here, because SQLite
+    refuses text where Postgres casts it (B-226); text that is no id is not found.
     """
+    if not isinstance(household_id, uuid.UUID):
+        try:
+            household_id = uuid.UUID(str(household_id))
+        except ValueError:
+            return None
     household = await session.get(Household, household_id)
     if household is None or household.firm_id != firm_id:
         return None

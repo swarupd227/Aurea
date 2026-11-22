@@ -238,5 +238,7 @@ async def ad_hoc_projection(
         years=int(body["years"]),
         target_amount=float(body["target_amount"]),
         cma=planning.effective_cma(firm.settings),
+        success_target=planning.assumption_set(firm.settings, firm.jurisdiction)["success_target"]["goals"],
     )
-    return {**proj.__dict__, "assumptions_source": planning.cma_source(firm.settings)}
+    return {**proj.__dict__, "assumptions_source": planning.cma_source(firm.settings),
+            "assumptions_version": (firm.settings or {}).get("assumption_version")}

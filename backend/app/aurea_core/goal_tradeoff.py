@@ -62,6 +62,7 @@ def run_tradeoff(
     sims: int = 2500,
     seed: int = 42,
     cma: dict | None = None,
+    success_target: float = _TARGET_SUCCESS,
 ) -> dict:
     """
     Multi-goal Monte Carlo over the household's capital.
@@ -138,7 +139,7 @@ def run_tradeoff(
                 "target_amount": round(target, 2),
                 "years": y,
                 "success_probability": round(success, 3),
-                "on_track": success >= _TARGET_SUCCESS,
+                "on_track": success >= success_target,
                 "projected_median": round(med, 2),
                 "projected_p10": round(float(np.percentile(avail, 10)), 2),
                 "projected_p90": round(float(np.percentile(avail, 90)), 2),
@@ -191,6 +192,7 @@ def compute_tradeoff_matrix(
     human_capital_value: float = 0.0,
     ccy: str | None = None,
     cma: dict | None = None,
+    success_target: float = _TARGET_SUCCESS,
 ) -> list[dict]:
     """
     For each goal compute three what-if levers and show cross-goal impact.
@@ -203,7 +205,7 @@ def compute_tradeoff_matrix(
     base = run_tradeoff(
         goals=goals, total_portfolio=total_portfolio, allocation=allocation,
         annual_contribution_total=annual_contribution_total,
-        human_capital_value=human_capital_value, sims=1200, cma=cma,
+        human_capital_value=human_capital_value, sims=1200, cma=cma, success_target=success_target,
     )
     base_by_id = {g["id"]: g["success_probability"] for g in base["goals"]}
 
@@ -223,14 +225,14 @@ def compute_tradeoff_matrix(
                 result = run_tradeoff(
                     goals=modified, total_portfolio=total_portfolio, allocation=allocation,
                     annual_contribution_total=annual_contribution_total + 5000,
-                    human_capital_value=human_capital_value, sims=1200, cma=cma,
+                    human_capital_value=human_capital_value, sims=1200, cma=cma, success_target=success_target,
                 )
             else:
                 modified[i] = mod_fn(g)
                 result = run_tradeoff(
                     goals=modified, total_portfolio=total_portfolio, allocation=allocation,
                     annual_contribution_total=annual_contribution_total,
-                    human_capital_value=human_capital_value, sims=1200, cma=cma,
+                    human_capital_value=human_capital_value, sims=1200, cma=cma, success_target=success_target,
                 )
             res_by_id = {r["id"]: r["success_probability"] for r in result["goals"]}
             levers.append({
@@ -379,10 +381,12 @@ def likelihoods(brain: dict, today: date, *, sims: int = 2500, **overrides) -> d
     allocation = {k: v for k, v in brain["totals"]["by_asset_class"].items() if v}
     base = run_tradeoff(goals=inputs["goals"], total_portfolio=total, allocation=allocation,
                         annual_contribution_total=inputs["contributions"],
-                        human_capital_value=inputs["earnings"]["value"], sims=sims, cma=planning.cma_of(brain))
+                        human_capital_value=inputs["earnings"]["value"], sims=sims, cma=planning.cma_of(brain),
+                        success_target=planning.target_of(brain, "goals"))
     source = planning.source_of(brain)
     return {**base, "goals": _annotate(base["goals"], inputs["goals"]), "earnings": inputs["earnings"],
             "assumed": inputs["assumed"], "what_if": inputs["what_if"], "assumptions_source": source,
+            "assumptions_version": planning.version_of(brain), "success_target": planning.target_of(brain, "goals"),
             "assumptions": {**base["assumptions"], "source": source} if base["assumptions"] else {}}
 
 
@@ -416,6 +420,7 @@ async def for_household(
         "household": {"id": str(household_id), "name": brain["household"]["name"]},
         "currency": brain.get("currency"), "invested": round(total, 2), "earnings": earned, "assumed": inputs["assumed"], "what_if": inputs["what_if"],
         "assumptions_source": planning.source_of(brain),
+        "assumptions_version": planning.version_of(brain), "success_target": planning.target_of(brain, "goals"),
         # The figures the page lays out; None where nothing is on file, never a stand-in.
         "current_age": lead["age"] if lead else None,
         "retirement_age": lead["retirement_age"] if lead else None,
@@ -428,10 +433,12 @@ async def for_household(
 
     cma = planning.cma_of(brain)
     base = run_tradeoff(goals=inputs["goals"], total_portfolio=total, allocation=allocation,
-                        annual_contribution_total=inputs["contributions"], human_capital_value=earned["value"], cma=cma)
+                        annual_contribution_total=inputs["contributions"], human_capital_value=earned["value"], cma=cma,
+                        success_target=shared["success_target"])
     matrix = compute_tradeoff_matrix(goals=inputs["goals"], total_portfolio=total, allocation=allocation,
                                      annual_contribution_total=inputs["contributions"],
-                                     human_capital_value=earned["value"], ccy=brain.get("currency"), cma=cma)
+                                     human_capital_value=earned["value"], ccy=brain.get("currency"), cma=cma,
+                                     success_target=shared["success_target"])
     return {
         **shared,
         "goals": _annotate(base["goals"], inputs["goals"]),

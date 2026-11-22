@@ -279,7 +279,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         "household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "currency": firm.base_currency,
         # Gratuity is a lump sum on leaving work, and the retirement pot here starts from the book alone (India row 5).
         "not_modelled": NOT_MODELLED + (["gratuity"] if (markets.for_firm(firm) and markets.for_firm(firm).code == "IN") else []),
-        "assumptions_source": planning.source_of(brain),
+        "assumptions_source": planning.source_of(brain), "assumptions_version": planning.version_of(brain),
         # The market's suggested figures this plan used where the firm set none, each with its source (India row 5).
         "assumption_basis": [b for b in ((brain.get("planning") or {}).get("market_basis") or [])
                              if ((brain.get("planning") or {}).get("sources") or {}).get(b["key"].replace("inflation", "cpi_inflation")

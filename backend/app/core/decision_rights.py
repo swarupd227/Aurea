@@ -37,6 +37,11 @@ BOOK_MOVING_AGENTS: frozenset[str] = frozenset({AgentKey.DRIFT_REBALANCING.value
 TRADE_APPROVERS: frozenset[UserRole] = frozenset({UserRole.ADVISER, UserRole.PORTFOLIO_TEAM})
 TRADE_VETO: frozenset[UserRole] = frozenset({UserRole.COMPLIANCE})
 
+# Who records a new version of the firm's planning assumptions (aurea_core/assumptions.py, B-174): research and the
+# portfolio team, as with the house view and the model portfolios. The administrator's capital market table writes a
+# version through the same record.
+ASSUMPTION_OWNERS: frozenset[UserRole] = frozenset({UserRole.RESEARCH_CIO, UserRole.PORTFOLIO_TEAM})
+
 # Agents whose approved proposals issue fees and take them from client cash.
 CASH_MOVING_AGENTS: frozenset[str] = frozenset({AgentKey.BILLING.value})
 BILLING_APPROVERS: frozenset[UserRole] = frozenset({UserRole.OPERATIONS, UserRole.BRANCH_LEADER})

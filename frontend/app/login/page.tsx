@@ -15,6 +15,9 @@ const INDIA = [
 const DEMO = [
   { role: "Adviser", email: "sophie.adviser@aurea.demo", desc: "Studio cockpit", subtitle: "Welcome back to your cockpit." },
   { role: "Compliance", email: "compliance@aurea.demo", desc: "Provenance & governance", subtitle: "Your governance dashboard." },
+  // The shelf, a product's target market and the models are research's and the portfolio team's (B-235).
+  { role: "Research", email: "research@aurea.demo", desc: "Product shelf & target markets", subtitle: "Your research desk." },
+  { role: "Portfolio", email: "portfolio@aurea.demo", desc: "Models, rebalancing & the shelf", subtitle: "Your portfolio desk." },
   { role: "Operations", email: "operations@aurea.demo", desc: "Onboarding, billing & corporate actions", subtitle: "Your operations desk." },
   { role: "Branch", email: "branch@aurea.demo", desc: "Capacity, growth & fee approval", subtitle: "Your branch overview." },
   { role: "Admin", email: "admin@aurea.demo", desc: "Platform configuration", subtitle: "Platform configuration." },
