@@ -64,8 +64,9 @@ def pure() -> None:
     check("for the right reason", "no rules" in outcome["fails"][0]["finding"], True)
 
     print("\n=== Which documents a case needs ===")
-    check("India has its own set", disclosures.required_for("IN", "individual"),
-          ["in_advisory_agreement", "in_mitc", "in_ai_use_disclosure", "privacy_notice"])
+    check("India has its own set, the charter and a single holder's nomination or opt-out included",
+          disclosures.required_for("IN", "individual"),
+          ["in_advisory_agreement", "in_mitc", "in_ai_use_disclosure", "in_investor_charter", "privacy_notice", "in_nomination_choice"])
     check("the NZ set is unchanged", disclosures.required_for("NZ", "individual"),
           ["disclosure_statement", "soa", "privacy_notice"])
     check("no set for a country means a case cannot activate",

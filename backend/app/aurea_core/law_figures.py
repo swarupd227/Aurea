@@ -26,7 +26,7 @@ class LawFigure:
     # A number; None for a figure that is only a date; for unit "bands", a table of (upper bound, rate) with the top
     # band's bound None (it has none), read through bands().
     value: float | tuple[tuple[float | None, float], ...] | None
-    unit: str                   # "USD", "GBP", "NZD", "rate", "date" or "bands" (USD bounds)
+    unit: str                   # "USD", "GBP", "NZD", "INR", "rate", "date" or "bands" (USD bounds)
     source: str                 # the instrument or the official publication it was read from
     as_of: date                 # the day the figure was taken from that source
     applies_from: date | None = None
@@ -115,6 +115,15 @@ ALL: tuple[LawFigure, ...] = (
     LawFigure("nz_ks_govt_income_limit", "KiwiSaver government contribution: none for taxable income above this", 180_000, "NZD",
               "Income Tax Act 2007 ss MK 1-MK 3, as amended by the Taxation (Budget Measures) Act 2025 (2025 No 26): "
               "from 1 Jul 2025", date(2025, 5, 29), applies_from=date(2025, 7, 1)),
+    # ── India ────────────────────────────────────────────────────────────────────────────────────────
+    # An Investment Adviser's fee to an individual or HUF who is not an accredited investor, per family of client
+    # across all services, a year. Statutory charges are outside it, and AUA is the value of securities in SEBI's
+    # purview, shown by demat or unit statements. The fixed limit is revised by IAASB every three years on the
+    # Cost Inflation Index, so it is checked against the circular before a client relies on it.
+    LawFigure("in_ia_fee_fixed_cap", "Investment Adviser fee cap, fixed-fee mode, per family a year", 151_000, "INR",
+              "SEBI Master Circular for Investment Advisers (6 Feb 2026) para 1(iii)", date(2026, 2, 6)),
+    LawFigure("in_ia_fee_aua_cap", "Investment Adviser fee cap, AUA mode, share of AUA per family a year", 0.025, "rate",
+              "SEBI Master Circular for Investment Advisers (6 Feb 2026) para 1(iii)", date(2026, 2, 6)),
 )
 
 VERSIONS: dict[str, tuple[LawFigure, ...]] = {}

@@ -4,11 +4,12 @@ import { useState } from "react";
 import { Check, X } from "lucide-react";
 import { Card, Empty, Spinner } from "@/components/ui";
 import { CHANNEL_TEXT, ConsentChips, ConsentPanel } from "@/components/ConsentPanel";
-import { getUser } from "@/lib/api";
+import { api, getUser } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { money, titleCase } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { LicenceChips } from "@/app/workspace/components/artifacts/LicenceCard";
+import { FeeCapChips, PreAdviceChecks } from "@/app/workspace/components/artifacts/SebiCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -73,6 +74,87 @@ function ConsentAsk({ consent, demonstration, say }: { consent: any; demonstrati
   );
 }
 
+const CAL_TONE: Record<string, string> = { overdue: "text-crit", due_soon: "text-warn", upcoming: "text-ink-muted", filed: "text-ok" };
+const CAL_TEXT: Record<string, string> = { overdue: "Overdue", due_soon: "Due soon", upcoming: "Upcoming", filed: "Filed" };
+
+/** One owed period. Compliance records it filed: in the work pane through the conversation's
+ * record_compliance_filing tool behind its Confirm card, on a page directly. */
+function FilingRow({ item, onDone }: { item: any; onDone: () => void }) {
+  const nav = useViewNav();
+  const [reference, setReference] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const canRecord = getUser()?.role === "compliance" && item.state !== "filed";
+
+  async function record() {
+    setError(null);
+    if (nav.say) {
+      nav.say(`Record that the ${item.label.toLowerCase()} for ${item.period} was filed today, reference ${reference.trim()}.`);
+      setReference("");
+      return;
+    }
+    try {
+      await api("/api/licences/filings", { body: { obligation: item.obligation, period: item.period, reference: reference.trim() } });
+      setReference("");
+      onDone();
+    } catch (e: any) {
+      setError(e?.message ?? "Not recorded");
+    }
+  }
+
+  return (
+    <div className="space-y-1.5 py-2" title={`${item.citation} · due day: ${item.due_basis}`}>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-sm text-ink mr-auto">{item.label}</span>
+        <span className="chip text-ink-muted">{item.period}</span>
+        <span className="chip text-ink-muted tabular-nums">{item.due_on}</span>
+        <span className={`chip ${CAL_TONE[item.state]}`} data-testid="calendar-state">{CAL_TEXT[item.state]}</span>
+        {item.reference && <span className="chip text-ink-muted">{item.reference}</span>}
+      </div>
+      {canRecord && (
+        <div className="flex flex-wrap items-end gap-2">
+          <input className="input flex-1 min-w-[12rem] text-sm" value={reference} aria-label="Acknowledgement or reference"
+            placeholder="Acknowledgement or reference" data-testid="filing-reference" onChange={(e) => setReference(e.target.value)} />
+          <button className="btn-outline" data-testid="filing-record" disabled={reference.trim().length < 4} onClick={record}>
+            <Check size={15} /> Filed
+          </button>
+          {error && <span className="chip text-crit">{error}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CalendarSection({ calendar, onDone }: { calendar: any; onDone: () => void }) {
+  const c = calendar.counts;
+  return (
+    <>
+      <Card className="mb-4">
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="tile-label mr-auto">Compliance calendar</span>
+          {c.overdue > 0 && <span className="chip text-crit">{c.overdue} overdue</span>}
+          {c.due_soon > 0 && <span className="chip text-warn">{c.due_soon} due soon</span>}
+          <span className="chip text-ok">{c.filed} filed</span>
+          <span className="chip text-ink-muted">since {calendar.since}</span>
+        </div>
+        <div className="divide-y divide-border-soft" data-testid="licence-calendar">
+          {calendar.items.map((i: any) => <FilingRow key={`${i.obligation}-${i.period}`} item={i} onDone={onDone} />)}
+        </div>
+      </Card>
+      <Card className="mb-4">
+        <div className="tile-label mb-2">Registered details</div>
+        <div className="divide-y divide-border-soft" data-testid="licence-officers">
+          {calendar.officers.map((o: any) => (
+            <div key={o.key} className="flex flex-wrap items-center gap-1.5 py-1.5">
+              <span className="text-sm text-ink-soft mr-auto">{o.label}</span>
+              {o.value ? <span className="chip text-ink">{o.value}</span> : <span className="chip text-warn">Not recorded</span>}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </>
+  );
+}
+
 /** What each licence lets an agent do, client by client, and the approved proposals waiting for a
  * client's consent. In the work pane a client's answer goes through the conversation's
  * record_client_consent tool; on a page ConsentPanel records it directly. */
@@ -126,6 +208,39 @@ export function LicencesView() {
           ))}
         </div>
       </Card>
+
+      {(data.pre_advice ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="tile-label mb-2">Before advice</div>
+          <div className="divide-y divide-border-soft" data-testid="licence-pre-advice">
+            {data.pre_advice.map((g: any) => (
+              <div key={g.household_id} className="space-y-1.5 py-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-sm text-ink mr-auto">{g.household}</span>
+                  <span className={`chip ${g.met ? "text-ok" : "text-warn"}`}>{g.met ? "May advise" : "No advice yet"}</span>
+                </div>
+                <PreAdviceChecks gate={g} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {(data.fee_caps ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="tile-label mb-2">Fees against SEBI's cap, per family</div>
+          <div className="divide-y divide-border-soft" data-testid="licence-fee-caps">
+            {data.fee_caps.map((c: any) => (
+              <div key={c.household_id} className="flex flex-wrap items-center gap-1.5 py-2">
+                <span className="text-sm text-ink mr-auto">{c.household}</span>
+                <FeeCapChips cap={c} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {data.calendar?.applies && <CalendarSection calendar={data.calendar} onDone={() => { refetch(); nav.changed(); }} />}
 
       <Card className="mb-4">
         <div className="tile-label mb-2">Waiting on clients</div>

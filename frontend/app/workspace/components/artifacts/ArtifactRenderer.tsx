@@ -21,6 +21,7 @@ import { PriceFreshnessCard } from "./PriceFreshnessCard";
 import { ReconciliationCard } from "./ReconciliationCard";
 import { CareFundingChips, ProtectionCard } from "./ProtectionCard";
 import { LicenceCard } from "./LicenceCard";
+import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
@@ -378,6 +379,14 @@ export function artifactCard(artifact: Artifact) {
       case "record_client_consent":
         if (!artifact.result?.client_consent) return null;
         return <LicenceCard result={artifact.result as any} />;
+      case "read_pre_advice":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.checks)) return null;
+        return <PreAdviceCard result={artifact.result as any} />;
+      case "read_compliance_calendar":
+      case "record_compliance_filing":
+      case "record_sebi_registration":
+        if (!Array.isArray(artifact.result?.items)) return null;
+        return <ComplianceCalendarCard result={artifact.result as any} />;
       case "read_reconciliation":
         if (!Array.isArray(artifact.result?.accounts) || !Array.isArray(artifact.result?.breaks)) return null;
         return <ReconciliationCard result={artifact.result as any} />;

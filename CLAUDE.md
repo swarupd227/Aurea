@@ -244,6 +244,15 @@ pages are artifact views the agents open. Full guideline, including what is buil
   nominee on a life policy is beneficially entitled (s.39(7)), any other holds for the legal heirs, and an MWP policy is
   outside the estate. A demat takes three nominees, and a nominee the will does not name is flagged, never changed
   (`aurea_core/nominations.py`). Gratuity is not modelled.
+- **An Indian adviser advises nobody before the paperwork, bills within the cap, and files on time.** `aurea_core/pre_advice.py`:
+  a household on the adviser's track needs the signed agreement with the MITC, the AI use disclosure, the investor charter,
+  a complete risk profile consented by registered email or a signed document after the answers, and the non-SEBI
+  declaration where something outside SEBI is on file, each from an onboarding case or the consent registry's India kinds.
+  Until then `runtime.decide` refuses a book-moving approval and the billing run holds the fee. `fee_cap.py` holds a
+  family's year to Rs 1,51,000 or 2.5% of its securities (`law_figures`), and lowers no fee: the bill is held. The
+  household stands in for SEBI's family of client. `compliance_calendar.py` works each licence's filings from its
+  circular, names a day it assumes, and asks nothing from before the firm came on; compliance records a filing with its
+  reference, the admin the registered officers with a reason. None of it says the firm is compliant.
 - **Whose client a household is, is what a person recorded.** `aurea_core/advisers.py` is the one reading of the
   "adviser" edges, the household's own outranking one to a member; nothing works out an adviser from activity, and
   unassigned says so. `assign_adviser` changes it with a reason, replacing every earlier edge, on the audit log. An

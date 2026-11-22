@@ -69,6 +69,9 @@ async def main() -> None:
         from seed import india_row5
 
         row5 = await india_row5.add(s, firm)
+        from seed import india_row6
+
+        row6 = await india_row6.add(s, firm)
         await s.commit()
         from app.conduit.service import sync_market_data
         priced = await sync_market_data(s, firm.id)
@@ -76,7 +79,7 @@ async def main() -> None:
         await run_agent(s, firm=firm, agent_key=AgentKey.TAX_INTELLIGENCE, trigger="seed_scan",
                         subject=Subject("firm", firm.id, firm.name), require_human=True)
         await s.commit()
-    print(f"\nReset {changed} goal(s), added {funds} fund(s) and {row5} row 5 record(s), priced {priced['resolved']} instrument(s) "
+    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5 and {row6} row 6 record(s), priced {priced['resolved']} instrument(s) "
           f"({len(priced['failed'])} failed), and refreshed the tax positions.\n")
 
 
