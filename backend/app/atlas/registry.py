@@ -42,6 +42,8 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
     from app.agents.reconciliation import ReconciliationAgent
     from app.agents.ips_monitoring import IpsMonitoringAgent
     from app.agents.protection_planning import ProtectionPlanningAgent
+    # Distribution
+    from app.agents.product_match import ProductMatchAgent
 
     agents: list[BaseAgent] = [
         ProtectionPlanningAgent(),
@@ -79,6 +81,8 @@ def build_registry() -> dict[AgentKey, BaseAgent]:
         BillingAgent(),
         ReconciliationAgent(),
         IpsMonitoringAgent(),
+        # Distribution
+        ProductMatchAgent(),
     ]
     return {a.key: a for a in agents}
 

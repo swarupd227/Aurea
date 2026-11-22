@@ -34,6 +34,8 @@ MEETING_AGENTS: frozenset[AgentKey] = frozenset({AgentKey.MEETING_PREP, AgentKey
 _DEFAULT_RUN_ROLES: frozenset[UserRole] = frozenset({R.ADVISER, R.PARAPLANNER, R.PORTFOLIO_TEAM, R.BRANCH_LEADER})
 _ALSO_RUN_ROLES: dict[AgentKey, frozenset[UserRole]] = {
     AgentKey.RESEARCH_REPORTING: frozenset({R.RESEARCH_CIO}),
+    # The research team, once it has made a product offerable, may ask who it fits.
+    AgentKey.PRODUCT_MATCH: frozenset({R.RESEARCH_CIO}),
 }
 # The agents that work on one onboarding case, named by the case's id (read_onboarding_cases).
 CASE_AGENTS: frozenset[AgentKey] = frozenset({
@@ -127,6 +129,7 @@ def forced_to_proposal(agent_key: str | AgentKey) -> bool:
     return (decision_rights.moves_the_book(agent_key) or decision_rights.moves_client_cash(agent_key)
             or key in decision_rights.RECON_AGENTS or key in decision_rights.IPS_AGENTS
             or decision_rights.commits_a_book(agent_key)
+            or key in decision_rights.DISTRIBUTION_AGENTS
             or key in (AgentKey.RESEARCH_REPORTING.value, AgentKey.PROTECTION_PLANNING.value))
 
 

@@ -385,6 +385,16 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_product_decision":
     case "set_approved_products_only":
       return "/studio/products";
+    // A product's target market and who it fits open the shelf on that product.
+    case "add_product":
+    case "record_target_market":
+    case "approve_distribution":
+    case "read_target_market":
+    case "read_product_fit":
+    case "read_distribution":
+      return typeof r.symbol === "string" ? `/studio/products?symbol=${encodeURIComponent(r.symbol)}` : "/studio/products";
+    case "record_pitch_outcome":
+      return onClient("/studio/tasks");
     case "read_client_exits":
     case "start_client_departure":
     case "record_client_death":

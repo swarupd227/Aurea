@@ -66,6 +66,11 @@ SUPERVISORS: frozenset[UserRole] = frozenset({UserRole.COMPLIANCE, UserRole.BRAN
 # Who sees a supervision proposal in a list at all: the supervisors, and the administrators who keep the platform.
 SUPERVISION_READERS: frozenset[UserRole] = SUPERVISORS | {UserRole.ADMIN, UserRole.SUPERADMIN}
 
+# Agents whose proposals choose which clients are offered a product. Choosing is advice: the adviser the list names
+# approves it, or a branch leader (`named_decider`); compliance may stop a list or withdraw one, not approve it.
+DISTRIBUTION_AGENTS: frozenset[str] = frozenset({AgentKey.PRODUCT_MATCH.value})
+DISTRIBUTION_DECIDERS: frozenset[UserRole] = frozenset({UserRole.ADVISER, UserRole.BRANCH_LEADER})
+
 
 def may_see(role: UserRole | str, agent_key: str | AgentKey) -> bool:
     """Whether a proposal from `agent_key` appears in this role's lists. Every proposal does, except supervision,
@@ -129,6 +134,12 @@ def roles_for(agent_key: str | AgentKey, decision: str) -> frozenset[UserRole]:
                         "revise", "rollback"):
             return BOOK_INTEGRATION_DECIDERS
         return frozenset()
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in DISTRIBUTION_AGENTS:
+        if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
+            return DISTRIBUTION_DECIDERS
+        if decision in (HumanAction.DISMISS.value, "rollback"):
+            return DISTRIBUTION_DECIDERS | TRADE_VETO
+        return frozenset()
     if not moves_the_book(agent_key) and not _sets_aside_an_ips(agent_key):
         return STAFF
     if decision in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
@@ -152,7 +163,7 @@ def queue_action(role: UserRole | str, agent_key: str | AgentKey) -> str | None:
     Recommendations page and in read_recommendations."""
     role = UserRole(role) if not isinstance(role, UserRole) else role
     approve = role in roles_for(agent_key, "approve")
-    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in SUPERVISION_AGENTS:
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in SUPERVISION_AGENTS | DISTRIBUTION_AGENTS:
         return "decide" if approve else None
     if role in TRADE_VETO | BILLING_VETO:
         return "veto" if role in roles_for(agent_key, "dismiss") and not approve else None
@@ -181,6 +192,10 @@ def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> Non
         raise DecisionForbidden(
             f"This proposal commits an acquired book's clients and holdings, so only operations may {decision} it."
         )
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) in DISTRIBUTION_AGENTS:
+        who = ("an adviser, a branch leader or compliance" if decision in ("dismiss", "rollback")
+               else "the adviser it names or a branch leader")
+        raise DecisionForbidden(f"This list chooses which clients are offered a product, so only {who} may {decision} it.")
     if _sets_aside_an_ips(agent_key):
         who = ("an adviser, the portfolio team or compliance" if decision in ("dismiss", "rollback")
                else "an adviser or the portfolio team")
@@ -194,3 +209,20 @@ def check(role: UserRole | str, agent_key: str | AgentKey, decision: str) -> Non
             f"This proposal moves money on a client's book, so only {who} may {decision} it."
         )
     raise DecisionForbidden(f"Your role may not {decision} this proposal.")
+
+
+def named_decider(role: UserRole | str, user_id, agent_key: str | AgentKey, payload: dict | None, decision: str) -> None:
+    """A product list is one adviser's clients: only that adviser approves or changes it, or a branch leader. The
+    role check above cannot see whose list it is, so this is asked beside it wherever a decision is taken."""
+    if str(agent_key.value if isinstance(agent_key, AgentKey) else agent_key) not in DISTRIBUTION_AGENTS:
+        return
+    if decision not in (HumanAction.APPROVE.value, HumanAction.MODIFY.value, "revise"):
+        return
+    if UserRole(role) == UserRole.BRANCH_LEADER:
+        return
+    named = (payload or {}).get("adviser_id")
+    if not named:
+        raise DecisionForbidden(f"These clients have no adviser on record, so only a branch leader may {decision} this list.")
+    if str(user_id) != str(named):
+        raise DecisionForbidden(f"This list is {(payload or {}).get('adviser') or 'another adviser'}'s clients, so only they "
+                                f"or a branch leader may {decision} it.")

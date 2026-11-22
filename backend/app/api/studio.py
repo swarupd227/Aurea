@@ -153,6 +153,7 @@ def _require_right(user: User, rec: Recommendation, decision: str) -> None:
 
     try:
         decision_rights.check(user.role, rec.agent_key, decision)
+        decision_rights.named_decider(user.role, user.id, rec.agent_key, rec.payload, decision)
     except decision_rights.DecisionForbidden as exc:
         raise HTTPException(status_code=403, detail=str(exc))
 

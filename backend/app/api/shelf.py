@@ -47,6 +47,32 @@ async def read_shelf(user: User = ReaderDep, firm: Firm = Depends(current_firm),
     return {**await shelf.for_firm(session, firm.id), "can_decide": user.role in DECIDERS, "can_switch": user.role in SWITCHERS}
 
 
+@router.get("/products/{symbol}")
+async def read_product(symbol: str, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                       session: AsyncSession = Depends(get_db)) -> dict:
+    """One product: its target market, whether it may be offered, and who it fits. An adviser reads their own
+    clients, as `read_product_fit` does; only compliance learns how many were left off for monitoring."""
+    from app.aurea_core import product_distribution as pd, product_fit
+
+    try:
+        inst = await pd.instrument(session, firm.id, symbol)
+    except pd.DistributionError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    state = await pd.offerable(session, firm, inst)
+    signed = state["signoff"]
+    role = UserRole(user.role)
+    fit = await product_fit.for_book(session, firm, inst, adviser_id=user.id if role == UserRole.ADVISER else None)
+    if role != UserRole.COMPLIANCE:
+        fit.pop("withheld", None)
+        fit["counts"].pop("withheld", None)
+    fit["scope"] = "your clients" if role == UserRole.ADVISER else "the firm"
+    return {"target": {"symbol": inst.symbol, "product": inst.name, "asset_class": str(inst.asset_class),
+                       "target_market": pd.tm_view(state["target_market"]), "offerable": state["offerable"], "why_not": state["why_not"],
+                       "shelf_status": state["decision"].status if state["decision"] else None,
+                       "signoff": {"by": signed.decided_by, "on": signed.decided_on.isoformat(), "reason": signed.reason} if signed else None},
+            "fit": fit}
+
+
 @router.post("/decisions")
 async def record_decision(body: DecisionIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), session: AsyncSession = Depends(get_db)) -> dict:
     if user.role not in DECIDERS:

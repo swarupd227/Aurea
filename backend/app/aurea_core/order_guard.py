@@ -2,7 +2,8 @@
 
 A proposal is measured by its agent and again at approval. An adviser's direct order from the conversation
 has no proposal, so it answers here, before its Confirm card and again when it is confirmed: what the
-account can do, whether the client is leaving, what the mandate excludes, the client's IPS, and the household's tax window. The rules stay
+account can do, whether the client is leaving, what the mandate excludes, the client's IPS, a product's negative target
+market, and the household's tax window. The rules stay
 in their own modules, so a direct order and the rebalancer cannot come to read them differently.
 
 A refusal covers the whole set, as it does at approval: a set is read as a whole, and a sale may be funding
@@ -16,7 +17,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import cash_movement, exits, firm_time, harvest_guard, ips, shelf, wash_sale
+from app.aurea_core import cash_movement, exits, firm_time, harvest_guard, ips, product_fit, shelf, wash_sale
 from app.aurea_core import orders as order_engine
 from app.aurea_core.equity_comp import CONCENTRATED
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX
@@ -133,6 +134,14 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
     refused += fit
     off_shelf, watched = await shelf.order_refusals(session, firm, mandate, filling)
     refused += off_shelf
+    # A product's target market: a buy into who it is not for is refused by the shelf's bar above; a buy outside it
+    # otherwise goes ahead, named on the card.
+    outside: list[str] = []
+    for o in filling:
+        if o["side"] == "buy":
+            stop, named = await product_fit.order_check(session, firm, mandate, instruments[o["symbol"]])
+            refused += [stop] if stop else []
+            outside += [named] if named else []
 
     today = firm_time.today(firm)
     household_id = await wash_sale.household_of(session, mandate)
@@ -143,4 +152,5 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
         refused += [c["say"] for c in harvest_guard.conflicts(filling, rules)]
         flags = harvest_guard.flags(filling, rules)
     refused += [_wash_said(c) for c in wash_sale.conflicts(filling, await wash_sale.guard(session, firm, mandate, today=today))]
-    return {"refused": refused, "flags": flags, "policy": policy, "watched": watched, "concentrated": concentrated}
+    return {"refused": refused, "flags": flags, "policy": policy, "watched": watched, "concentrated": concentrated,
+            "outside_target_market": outside}

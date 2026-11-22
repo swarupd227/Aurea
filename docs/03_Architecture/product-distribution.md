@@ -77,7 +77,7 @@ prospectus or offering memorandum in the US, scheme information document in Indi
 | `complexity` | simple, complex | complex needs compliance sign-off and the client's knowledge on file |
 | `liquidity` | daily, weekly, monthly, quarterly, locked (years) | the horizon; the client's liquidity need |
 | `markets` | NZ, US, UK, EU, IN | the household's market (`markets`) |
-| `account_types` | as each market defines them | the mandate's accounts |
+| `mandate_types` | discretionary, advisory, execution only | the mandate's type (accounts carry no registration type here) |
 | `negative_market` | conditions it is *not* for | a hard stop |
 | `distribution` | advised only, or also execution only | whether it may be offered without advice |
 | `conflict` | none, proprietary, third-party payment | the conflicts inventory; disclosure on every message |
@@ -157,11 +157,12 @@ A pitch is a record, `product_pitch`: household, product, adviser, the fit snaps
 version, the status (to discuss, discussed, interested, declined, not suitable after all), the adviser's reason, and
 any message sent. It is added to, never edited.
 
-- **Discussing:** the meeting brief for the household (`meeting_prep`) carries the product, its fit lines and its
-  document, shaped for the adviser like the rest of the brief.
+- **Discussing:** the adviser's task carries the fit lines and the document. The meeting brief does not read pitches
+  yet (B-238).
 - **Writing to the client:** only through `send_client_message`, in the adviser's name, behind the Confirm card with
-  the exact words. The over-promising rule runs. The product's document is named in the message, and a conflicted
-  product's disclosure line is required: the card refuses a message without it.
+  the exact words. The over-promising rule runs. A message that names a product with a target market has the
+  product's document, and a conflicted product's disclosure word for word, added after the adviser's words
+  (`product_distribution.with_disclosures`); the card shows the result, so what is confirmed is what is sent.
 - **The outcome:** `record_pitch_outcome` (adviser, Confirm card). A decline suppresses the product for that client
   for six months unless something the fit check reads changes, the same rule protection uses so a standing offer is
   not raised monthly.
@@ -211,10 +212,13 @@ A client sees none of this. Canvas is unchanged, and a client's assistant holds 
 |---|---|---|
 | `product_target_market` | the target market, versioned | research, portfolio team |
 | `product_distribution_signoff` | compliance's sign-off for a complex or conflicted product | compliance (not the recorder) |
-| `product_fit_snapshot` | one assessment of one client against one product version, as of a date | the fit check, on a list or a pitch |
-| `product_pitch` | the pitch and its outcomes | the adviser |
+| `product_pitch` | each step of offering a product to a household, with the fit it rested on as of that day (`fit`) | the adviser; the agent on approval |
 
-All four are new tables, so `create_all` adds them; no column is added to an existing table.
+All three are new tables, so `create_all` adds them; no column is added to an existing table. The fit snapshot is kept
+on the pitch it supports rather than in a table of its own: nothing reads one without its pitch.
+
+The negative target market is read in one place, `product_distribution.negative_findings`, and barred through
+`shelf.barred`, so the rebalancer, a direct order and the fit check all refuse the same buys.
 
 ## Phases
 
@@ -232,20 +236,30 @@ them.
 
 ## Decisions for the firm
 
-1. **Outside the target market:** refuse the buy, or allow it with the adviser's recorded reason (PROD allows the
-   second; many firms choose the first).
-2. **Who records a target market:** the research team by hand from the document, or also an import of the
-   manufacturer's EMT where one exists.
-3. **Approving a list:** tasks only, or also a line in each client's next meeting brief.
-4. **How often a client may be offered products:** a firm-wide limit on open pitches per household.
-5. **India:** whether an investment-adviser firm uses Product Match at all, given it is fee-only.
+Taken 22 Nov 2026 on the recommendations below, and built that way:
+
+1. **Outside the target market:** a buy into the negative target market is refused, for the rebalancer and a direct
+   order alike; a buy outside the target market otherwise goes ahead and is named on its Confirm card.
+2. **Who records a target market:** the research team by hand from the document. An EMT import is later (B-240).
+3. **Approving a list:** a task per client who still fits, and a pitch carrying the fit. The meeting brief does not
+   read pitches yet (B-238).
+4. **How often a client may be offered products:** at most two open pitches per household (`MAX_OPEN_PITCHES`).
+5. **India:** lists run; a firm licensed only as an investment adviser is fee-only and offers no product that pays
+   a third party; the licence's plan rule (`plan_bars`) stands.
+
+Not modelled: a client's knowledge and experience of complex products is not recorded anywhere here, so complexity
+is governed by compliance's sign-off, not read against the client.
 
 ## Proving it
 
-- `tests.verify_product_fit`: each gate refuses, each missing fact is "needs a fact" and never a no, signals order
-  but never admit, a fee never moves the order, a monitored household is left off with no reason shown, firm scope.
-- `tests.verify_product_match`: one list per adviser per product, refreshed not stacked; forced to a proposal;
-  approve gives tasks, modify keeps reasons, rollback withdraws; another adviser cannot approve.
-- `tests.verify_product_pitch`: the message needs the document and, if conflicted, the disclosure; a decline
-  suppresses for six months unless a fact changes; a buy in the negative target market is refused.
-- A real-model check in the conversation, as for the chapters of the adviser's day.
+`tests.verify_product_distribution` (71 checks): adding a product and its target market, with every refusal; the
+second-person sign-off; offerable only when everything is on file, and never for a firm with no market's rules; each
+gate refuses with its rule, a missing fact is "needs a fact" and never a no, signals order those who fit, a monitored
+household is left off with no count shown to an adviser; the negative target market barred for the shelf and a direct
+order, and a buy outside it named; Product Match raises one list per adviser per product, refreshed not stacked,
+forced to a proposal, approved only by the adviser it names or a branch leader, approving gives tasks and pitches,
+removing keeps the reason, rolling back withdraws, a closed product raises none; outcomes need reasons, a decline
+keeps the product away, a message carries the document and the disclosure; the report; the fee-only rule; the rule
+that reads a list. On the real model (22 Nov), research's "add the fund", an adviser's "which of my clients does it
+suit?" and "why not the Chens?", and compliance's "has anyone bought it outside its target market?" each reached the
+right tool, two in two.
