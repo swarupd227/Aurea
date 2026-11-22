@@ -298,9 +298,15 @@ def _clean_cmas(cmas: dict) -> dict:
 
 async def set_cmas(session: AsyncSession, firm: Firm, actor: User, cmas: dict, reason: str | None = None) -> dict:
     """Replace the firm's capital market assumption overrides (PUT /api/admin/foundation/cmas): only the planning
-    asset classes, each [expected_return, volatility]."""
+    asset classes, each [expected_return, volatility]. It is a new version of the firm's planning assumptions, kept
+    with the rest (aurea_core/assumptions.py, B-174), so the table and the assumption set never disagree."""
+    from app.aurea_core import assumptions
+
     clean = _clean_cmas(cmas)
-    firm.settings = {**(firm.settings or {}), "cmas": clean}
+    try:
+        clean = await assumptions.record_cma_table(session, firm, actor, clean, reason)
+    except assumptions.AssumptionError as e:
+        raise AdminError(str(e)) from None
     audit(session, firm.id, actor, "cmas.updated", subject=firm.name, detail=_with_reason({"classes": sorted(clean)}, reason))
     await session.flush()
     return clean

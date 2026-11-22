@@ -20,6 +20,13 @@ class Subject:
     id: uuid.UUID | None = None
     label: str | None = None
 
+    def __post_init__(self) -> None:
+        # Agents read ids from the household brain as text. A subject's id is a UUID column, which Postgres
+        # casts and SQLite refuses, so it is made one here, for every agent at once (B-226). Text that is
+        # not an id raises ValueError rather than reaching the database.
+        if self.id is not None and not isinstance(self.id, uuid.UUID):
+            self.id = uuid.UUID(str(self.id))
+
 
 @dataclass
 class RecommendationDraft:

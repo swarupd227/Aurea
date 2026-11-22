@@ -251,6 +251,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             "end_preference": self.end_preference,
             "read_outside_agents": self.read_outside_agents,
             "revoke_outside_agent": self.revoke_outside_agent,
+            "read_assumption_set": self.read_assumption_set,
+            "record_assumption_set": self.record_assumption_set,
             "create_crm_contact": self.create_crm_contact,
             "create_crm_opportunity": self.create_crm_opportunity,
             "log_crm_activity": self.log_crm_activity,
@@ -4755,6 +4757,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             return rows(*await self._preference_preview(tool_key, inputs))
         if tool_key == "revoke_outside_agent":
             return rows(*await self._outside_agent_preview(inputs))
+        if tool_key == "record_assumption_set":
+            return rows(*await self._assumption_preview(inputs))
         if tool_key == "import_linkedin_connections":
             return rows(*await self._linkedin_preview(inputs))
         if tool_key == "set_brief_profile":
@@ -6322,6 +6326,57 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         except oa.OutsideAgentError as exc:
             raise ExecutorError(str(exc))
         out["message"] = f"Revoked the key for {out['label']} (ending {out['key_ends']})."
+        return out
+
+    # ── The firm's planning assumptions, one versioned record (B-174) ─────────────────────────
+
+    @staticmethod
+    def _assumption_value(unit: str, value) -> str:
+        if value is None:
+            return "—"
+        if unit == "rate":
+            return f"{float(value) * 100:.2f}".rstrip("0").rstrip(".") + "%"
+        return f"{int(value)} {'years' if unit == 'age' else unit}" if unit != "age" else str(int(value))
+
+    async def read_assumption_set(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import assumptions
+
+        out = await assumptions.read(self.session, await self._firm())
+        firm_set = [f for f in out["figures"] if f["whose"] == "firm"]
+        head = f"Version {out['version']}, recorded by {out['by']}" if out["version"] else "No version recorded yet"
+        out["message"] = (f"{head}. {len(firm_set)} of {len(out['figures'])} figures are the firm's; the rest are "
+                          "its market's suggestions or the platform's defaults, each named with its source.")
+        return out
+
+    async def _assumption_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import assumptions
+
+        try:
+            plan = await assumptions.prepare(self.session, await self._firm(), await self._me(),
+                                             changes=inputs.get("changes"), reason=inputs.get("reason"))
+        except assumptions.AssumptionError as exc:
+            raise ExecutorError(str(exc))
+        out: list[tuple[str, Any]] = [("Version", str(plan["version"]))]
+        for c in plan["changes"]:
+            out.append((c["label"], f"{self._assumption_value(c['unit'], c['before'])} → "
+                                    f"{self._assumption_value(c['unit'], c['after'])}"))
+            out.append(("Source", c["source"]))
+        line = self._assumption_value("rate", plan["refresh_line"]) + (" (platform default)" if plan["refresh_line_assumed"] else "")
+        out += [("Reason", plan["reason"]), ("Refresh line", line),
+                ("After this", "Every projection runs on this version; a household that moves past the line gets a review task")]
+        return out
+
+    async def record_assumption_set(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import assumptions
+
+        try:
+            out = await assumptions.record(self.session, await self._firm(), await self._me(),
+                                           changes=inputs.get("changes"), reason=inputs.get("reason"))
+        except assumptions.AssumptionError as exc:
+            raise ExecutorError(str(exc))
+        r = out["recorded"]["refresh"]
+        out["message"] = (f"Recorded version {out['version']}. Measured {r.get('measured', 0)} households; "
+                          f"{r.get('tasks', 0)} moved past the line and have a review task for their adviser.")
         return out
 
     @staticmethod

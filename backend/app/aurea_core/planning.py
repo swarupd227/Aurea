@@ -61,6 +61,10 @@ INFLATION_INDEXES = {"cpi": ("inflation", 0.025), "education": ("education_infla
 # When work stops and how long a plan runs, without one on file: the platform's, unless the market suggests its own.
 PLATFORM_RETIREMENT_AGE = 65
 PLATFORM_PLAN_TO_AGE = 95
+# The success a projection must reach to read "on track", by engine, and the firm setting each is read from. Goals and
+# retirement have had different bars (70% and 85%) since they were built; both now live in the assumption set, named,
+# and a firm sets either with its source (B-174). Unchanged here, because moving one moves every client's figure.
+SUCCESS_TARGETS = {"goals": ("goal_success_target", 0.70), "retirement": ("retirement_success_target", 0.85)}
 
 
 def assumption_set(firm_settings: dict | None = None, jurisdiction: str | None = None) -> dict:
@@ -89,10 +93,27 @@ def assumption_set(firm_settings: dict | None = None, jurisdiction: str | None =
             source = "firm" if source == "firm" else "market"
     retirement_age, sources["retirement_age"] = market_assumptions.value(s, jurisdiction, "retirement_age", PLATFORM_RETIREMENT_AGE)
     plan_to_age, sources["plan_to_age"] = market_assumptions.value(s, jurisdiction, "plan_to_age", PLATFORM_PLAN_TO_AGE)
+    targets = {}
+    for engine, (key, default) in SUCCESS_TARGETS.items():
+        targets[engine], sources[f"{engine}_success_target"] = market_assumptions.value(s, jurisdiction, key, float(default))
+    version = s.get("assumption_version")
     return {"cma": {k: list(v) for k, v in cma.items()}, "source": source,
             "inflation": inflation, "inflation_assumed": assumed,
-            "retirement_age": retirement_age, "plan_to_age": plan_to_age, "sources": sources,
+            "retirement_age": retirement_age, "plan_to_age": plan_to_age, "success_target": targets, "sources": sources,
+            # The recorded version these figures are (B-174); None while the firm has recorded none.
+            "version": int(version) if version not in (None, "") else None,
             "market_basis": [a.view() for a in suggested.values()]}
+
+
+def target_of(brain: dict | None, engine: str) -> float:
+    """The success an engine's projection must reach to read on track: the firm's, else the platform's (B-174)."""
+    got = (((brain or {}).get("planning") or {}).get("success_target") or {}).get(engine)
+    return float(got) if got is not None else float(SUCCESS_TARGETS[engine][1])
+
+
+def version_of(brain: dict | None) -> int | None:
+    """The recorded assumption-set version a brain's projections run on, or None while the firm has recorded none."""
+    return ((brain or {}).get("planning") or {}).get("version")
 
 
 def default_of(brain: dict | None, key: str, platform):
@@ -102,11 +123,15 @@ def default_of(brain: dict | None, key: str, platform):
 
 
 def assumption_version(firm_settings: dict | None = None) -> str:
-    """A short fingerprint of the assumption set a firm's projections run on (B-189). It changes whenever a return,
-    a volatility or an inflation rate does, so the model inventory can say which assumptions a review saw. It stands in
-    until the assumption set is one versioned record (B-174)."""
+    """Which assumptions a firm's projections run on, so the model inventory can say which a review saw (B-189): the
+    recorded version ("v3") once the firm has one (B-174), else a short fingerprint that changes whenever a return, a
+    volatility or an inflation rate does."""
     import hashlib
     import json
+
+    recorded = (firm_settings or {}).get("assumption_version")
+    if recorded not in (None, ""):
+        return f"v{int(recorded)}"
 
     blob = json.dumps(assumption_set(firm_settings), sort_keys=True, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()[:10]
@@ -178,8 +203,10 @@ def project_goal(
     sims: int = 2000,
     seed: int = 7,
     cma: dict | None = None,
+    success_target: float = SUCCESS_TARGETS["goals"][1],
 ) -> GoalProjection:
-    """Monte-Carlo projection of a goal funded by a portfolio (handles decumulation)."""
+    """Monte-Carlo projection of a goal funded by a portfolio (handles decumulation). `success_target` is the success that
+    reads on track: the firm's goal target (`target_of(brain, "goals")`)."""
     mu, sigma = _blended_assumptions(allocation, cma=cma)
     rng = np.random.default_rng(seed)
     years = max(1, int(years))
@@ -193,7 +220,7 @@ def project_goal(
     prob = float(np.mean(paths >= target_amount)) if target_amount > 0 else 1.0
     shortfall = max(0.0, target_amount - median)
     return GoalProjection(
-        on_track=prob >= 0.70,
+        on_track=prob >= success_target,
         probability_of_success=round(prob, 3),
         projected_median=round(float(median), 2),
         projected_p10=round(float(p10), 2),

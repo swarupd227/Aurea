@@ -8,6 +8,7 @@ import { LinkedInImportCard, NetworkMapCard } from "./NetworkMapCard";
 import { BriefProfileCard } from "./BriefProfileCard";
 import { PreferencesCard } from "./PreferencesCard";
 import { OutsideAgentsCard } from "./OutsideAgentsCard";
+import { AssumptionSetCard } from "./AssumptionSetCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
@@ -158,6 +159,10 @@ export function artifactCard(artifact: Artifact) {
       case "revoke_outside_agent":
         if (typeof artifact.result?.label !== "string" || typeof artifact.result?.state !== "string") return null;
         return <OutsideAgentsCard result={artifact.result as any} />;
+      case "read_assumption_set":
+      case "record_assumption_set":
+        if (!Array.isArray(artifact.result?.figures)) return null;
+        return <AssumptionSetCard result={artifact.result as any} />;
       case "read_corporate_actions":
         if (!Array.isArray(artifact.result?.actions)) return null;
         return <CorporateActionsCard result={artifact.result as any} />;
