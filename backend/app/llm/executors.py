@@ -249,6 +249,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             "read_agent_preferences": self.read_agent_preferences,
             "remember_preference": self.remember_preference,
             "end_preference": self.end_preference,
+            "read_outside_agents": self.read_outside_agents,
+            "revoke_outside_agent": self.revoke_outside_agent,
             "create_crm_contact": self.create_crm_contact,
             "create_crm_opportunity": self.create_crm_opportunity,
             "log_crm_activity": self.log_crm_activity,
@@ -4751,6 +4753,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             return rows(*await self._relationship_preview(inputs))
         if tool_key in ("remember_preference", "end_preference"):
             return rows(*await self._preference_preview(tool_key, inputs))
+        if tool_key == "revoke_outside_agent":
+            return rows(*await self._outside_agent_preview(inputs))
         if tool_key == "import_linkedin_connections":
             return rows(*await self._linkedin_preview(inputs))
         if tool_key == "set_brief_profile":
@@ -6281,6 +6285,43 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         except decision_memory.PreferenceError as exc:
             raise ExecutorError(str(exc))
         out["message"] = f"Ended: {out['kind']} '{out['text']}' for {out['subject']}."
+        return out
+
+    # ── Outside agents through MCP (B-166) ──────────────────────────────────────────────────
+
+    async def read_outside_agents(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import outside_agents as oa
+
+        firm, me = await self._firm(), await self._me()
+        keys = await oa.listing(self.session, firm, me)
+        active = [k for k in keys if k["state"] == "active"]
+        return {"on": oa.switched_on(firm), "keys": keys, "active": len(active),
+                "message": ("Outside agents are " + ("on" if oa.switched_on(firm) else "off") + " for the firm. "
+                            + (f"{len(active)} active key(s): " + "; ".join(
+                                f"{k['label']} (ends {k['key_ends']}, {k['calls']} calls)" for k in active[:6])
+                               if active else "No active key.")
+                            + " A key is made, and shown once, on the Outside agents page.")}
+
+    async def _outside_agent_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import outside_agents as oa
+
+        try:
+            row, why = await oa.prepare_revoke(self.session, await self._firm(), await self._me(),
+                                               access_id=inputs.get("access_id"), reason=inputs.get("reason"))
+        except oa.OutsideAgentError as exc:
+            raise ExecutorError(str(exc))
+        return [("Agent", row.label), ("Key ends", row.token_hint), ("Calls made", str(row.calls or 0)),
+                ("Reason", why), ("After this", "It can call nothing; what it waits on is declined")]
+
+    async def revoke_outside_agent(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import outside_agents as oa
+
+        try:
+            out = await oa.revoke(self.session, await self._firm(), await self._me(),
+                                  access_id=inputs.get("access_id"), reason=inputs.get("reason"))
+        except oa.OutsideAgentError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = f"Revoked the key for {out['label']} (ending {out['key_ends']})."
         return out
 
     @staticmethod

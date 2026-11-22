@@ -2986,6 +2986,35 @@ TOOLS: dict[str, Tool] = {
                         UserRole.COMPLIANCE, UserRole.OPERATIONS},
     ),
 
+    # Outside agents calling Astra's tools through MCP with a person's key (B-166, aurea_core/outside_agents.py). A key
+    # is made on the page and shown once there, never in the conversation, because it is a secret.
+    "read_outside_agents": Tool(
+        key="read_outside_agents",
+        name="Read Outside Agents",
+        speaking_agent="astra",
+        description="The outside agents that may call Astra's tools through MCP with this person's key (aurea_core/outside_agents.py): each key's name, last four characters, state (active, expired, revoked), when it was last used and how many calls, and whether the firm has outside agents switched on. The administrator sees every key in the firm, with whose it is. A key's own value is never shown here: it is made, and shown once, on the person's Outside agents page. An outside agent's state-changing calls wait as Confirm cards on its own conversation.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The keys and the firm's switch"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER,
+                        UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.RESEARCH_CIO, UserRole.ADMIN},
+    ),
+
+    "revoke_outside_agent": Tool(
+        key="revoke_outside_agent",
+        name="Revoke Outside Agent",
+        speaking_agent="astra",
+        description="Revoke an outside agent's key (access_id from read_outside_agents), with the person's reason, so it can call nothing more; any confirmation it is still waiting on is declined. The key's own person, or the administrator.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="This will revoke that outside agent's key. Continue?",
+        inputs=[ToolInput("access_id", "uuid", "The key", required=True),
+                ToolInput("reason", "string", "Why, in the person's words", required=True)],
+        output=ToolOutput("object", "The key, revoked"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.BRANCH_LEADER,
+                        UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.RESEARCH_CIO, UserRole.ADMIN},
+    ),
+
     "create_crm_contact": Tool(
         key="create_crm_contact",
         name="Create CRM Contact",

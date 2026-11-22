@@ -53,3 +53,5 @@ from app.models import (  # noqa: F401
 from app.models import foundation  # noqa: F401,E402
 # Holdings held elsewhere, line by line (B-198).
 from app.models import held_away  # noqa: F401,E402
+# Keys a person gives an outside agent to call Astra's tools through MCP (B-166).
+from app.models import outside_agent  # noqa: F401,E402

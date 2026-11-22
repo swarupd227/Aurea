@@ -41,6 +41,8 @@ SETTINGS: dict[str, tuple[str, str, UserRole]] = {
     # compliance switches it on with the basis in the privacy notice's words.
     "persona_profiling": ("Persona from public sources runs (needs a lawful basis)", "bool", UserRole.COMPLIANCE),
     "persona_basis": ("Lawful basis for profiling, in the privacy notice's words", "text", UserRole.COMPLIANCE),
+    # Outside agents calling Astra's tools as a named person, through MCP (B-166, aurea_core/outside_agents.py).
+    "outside_agents": ("Outside agents may call Astra's tools through MCP, with a person's key", "bool", UserRole.ADMIN),
     "fallback_enabled": ("Fall back to the second model provider", "bool", UserRole.ADMIN),
     "monthly_cost_cap_usd": ("Monthly model cost cap, USD (0 is none)", "number", UserRole.ADMIN),
     "max_tokens_default": ("Most tokens per model call", "number", UserRole.ADMIN),
