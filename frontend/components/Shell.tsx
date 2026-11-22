@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Sparkles, LogOut, PiggyBank, Target, KeyRound, Eye, EyeOff, Bell, AlertTriangle, CheckCircle2,
-  Shield, Copy, Check, MessageSquare, ChevronRight, Search, Menu, X,
+  Shield, Copy, Check, MessageSquare, ChevronRight, Search, Menu, X, Bot,
 } from "lucide-react";
 import { clearSession, getToken, getUser } from "@/lib/api";
 import { isViewActive, moreViews, pinnedViews, viewsForRole, hasWorkspace, type View } from "@/lib/nav";
@@ -12,6 +12,7 @@ import RoleSwitcher from "./RoleSwitcher";
 import PageAsk from "./PageAsk";
 import { CommandPalette } from "./CommandPalette";
 import { BrandMark } from "./BrandMark";
+import OutsideAgentsDialog from "./OutsideAgentsDialog";
 
 // The pages ("Views") live in lib/nav.ts, shared with the Astra workspace rail and the palette.
 // The conversation is the home; the sidebar carries a role's handful of everyday views and tucks
@@ -65,6 +66,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   const [pwdLoading, setPwdLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showAgents, setShowAgents] = useState(false);
   const [notifItems, setNotifItems] = useState<any[]>([]);
   const [notifCount, setNotifCount] = useState(0);
 
@@ -451,6 +453,12 @@ export default function Shell({ children }: { children: ReactNode }) {
                 <span aria-hidden className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-ok" />
               )}
             </button>
+            {isStaff && (
+              <button type="button" onClick={() => setShowAgents(true)} className={iconButton} title="Outside agents"
+                aria-label="Outside agents" data-testid="outside-agents-open">
+                <Bot size={15} aria-hidden />
+              </button>
+            )}
             <button type="button" onClick={() => setShowChangePwd(true)} className={iconButton} title="Change password" aria-label="Change password">
               <KeyRound size={15} aria-hidden />
             </button>
@@ -563,6 +571,8 @@ export default function Shell({ children }: { children: ReactNode }) {
           </div>
         </div>
       )}
+
+      {showAgents && <OutsideAgentsDialog onClose={() => setShowAgents(false)} />}
 
       {/* Change password modal */}
       {showChangePwd && (

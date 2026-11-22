@@ -26,6 +26,9 @@ DEFAULTS: dict = {
     # A persona from public sources (B-202): off until compliance records the lawful basis and switches it on
     "persona_profiling": False,
     "persona_basis": "",
+    # Outside agents calling Astra's tools through MCP (B-166, aurea_core/outside_agents.py): off until the administrator
+    # switches them on. Off, no key is made and every key already made is refused.
+    "outside_agents": False,
 }
 
 

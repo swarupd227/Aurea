@@ -7,6 +7,7 @@ import { PersonaCard } from "./PersonaCard";
 import { LinkedInImportCard, NetworkMapCard } from "./NetworkMapCard";
 import { BriefProfileCard } from "./BriefProfileCard";
 import { PreferencesCard } from "./PreferencesCard";
+import { OutsideAgentsCard } from "./OutsideAgentsCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
@@ -150,6 +151,12 @@ export function artifactCard(artifact: Artifact) {
       case "end_preference":
         if (typeof artifact.result?.kind !== "string" || typeof artifact.result?.text !== "string") return null;
         return <PreferencesCard result={artifact.result as any} />;
+      case "read_outside_agents":
+        if (!Array.isArray(artifact.result?.keys)) return null;
+        return <OutsideAgentsCard result={artifact.result as any} />;
+      case "revoke_outside_agent":
+        if (typeof artifact.result?.label !== "string" || typeof artifact.result?.state !== "string") return null;
+        return <OutsideAgentsCard result={artifact.result as any} />;
       case "read_corporate_actions":
         if (!Array.isArray(artifact.result?.actions)) return null;
         return <CorporateActionsCard result={artifact.result as any} />;

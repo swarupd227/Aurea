@@ -70,3 +70,7 @@ api_router.include_router(vault.router)
 from app.api import held_away as held_away_api  # noqa: E402
 
 api_router.include_router(held_away_api.router)
+# Outside agents call Astra's tools through MCP, with a person's key (B-166).
+from app.api import outside_agents as outside_agents_api  # noqa: E402
+
+api_router.include_router(outside_agents_api.router)

@@ -438,6 +438,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "remember_preference":
     case "end_preference":
       return "/studio/workforce";
+    // Outside agents (B-166): a person's keys live in their own account panel, which has no page of its own.
+    case "read_outside_agents":
+    case "revoke_outside_agent":
+      return null;
     case "explain_invoice":
     case "credit_invoice":
       return typeof r.id === "string" ? `/studio/billing?invoice=${r.id}` : "/studio/billing";
