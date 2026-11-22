@@ -28,6 +28,7 @@ import { ReconciliationView } from "@/components/views/ReconciliationView";
 import { EquityCompView } from "@/components/views/EquityCompView";
 import { CashMovementsView } from "@/components/views/CashMovementsView";
 import { ClientFileView } from "@/components/views/ClientFileView";
+import { AdviceFileView } from "@/components/views/AdviceFileView";
 import { ExitsView } from "@/components/views/ExitsView";
 import { FinancialPlanView } from "@/components/views/FinancialPlanView";
 import { ProductsView } from "@/components/views/ProductsView";
@@ -145,6 +146,8 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <FinancialPlanView household={pane.query.household ?? null} />;
     case "client_file":
       return <ClientFileView household={pane.query.household ?? null} />;
+    case "advice_file":
+      return <AdviceFileView household={pane.query.household ?? null} />;
     case "cash":
       return <CashMovementsView household={pane.query.household ?? null} />;
     case "onboarding_queues":

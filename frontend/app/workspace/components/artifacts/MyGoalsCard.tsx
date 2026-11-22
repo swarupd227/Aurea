@@ -1,6 +1,7 @@
 import { money, pct } from "@/lib/format";
 import { RATE_ASSUMED, returnsLabel, targetBasisLabel } from "@/lib/planBasis";
 import { CardHead, CardShell, Chip, LikelihoodBar, Tile, obj } from "./CanvasCardParts";
+import { TierChip, TiersRow, type Tiers } from "@/components/GoalTiers";
 
 // The client's goals side by side (`read_my_goals`): aurea_core/goal_tradeoff.for_household, the engine every
 // screen reads. A goal with a share of wealth set aside is funded from it; the rest share the pool. Every
@@ -26,6 +27,7 @@ export interface TradeoffGoal {
   target_today?: number | null;
   index?: string | null;
   inflation?: number | null;
+  tier?: string | null;
 }
 
 export interface MyGoalsPayload {
@@ -43,6 +45,7 @@ export interface MyGoalsPayload {
   current_age: number | null;
   retirement_age: number | null;
   annual_income: number | null;
+  tiers?: Tiers | null;
   message?: string;
 }
 
@@ -73,6 +76,7 @@ export function MyGoalsCard({ result }: { result: MyGoalsPayload }) {
         <Tile label="Career earnings" value={r.earnings?.basis === "not_on_file" ? "not on file" : money(r.human_capital)} sub="not counted toward goals" />
         <Tile label="Shared pool" value={money(r.shared_capital)} sub="not set aside for a goal" />
       </div>
+      {r.goals.length > 0 && <div className="border-b border-border-soft px-3 py-2"><TiersRow tiers={r.tiers} /></div>}
       {r.goals.length === 0 ? (
         <div className="px-3 py-2"><Chip>no goals on file</Chip></div>
       ) : (
@@ -88,6 +92,7 @@ export function MyGoalsCard({ result }: { result: MyGoalsPayload }) {
                 <Chip>target {money(g.target_amount)}</Chip>
                 <Chip>{g.years}y</Chip>
                 {g.share != null ? <Chip>{pct(g.share, 0)} set aside</Chip> : <Chip>shares the pool</Chip>}
+                <TierChip tier={g.tier} />
                 {targetBasisLabel(g) && <Chip>{targetBasisLabel(g)}</Chip>}
                 {g.assumed?.includes("years") && <Chip tone="text-warn">assumed horizon</Chip>}
                 {(g.assumed || []).filter((k) => RATE_ASSUMED[k]).map((k) => <Chip key={k} tone="text-warn">{RATE_ASSUMED[k]}</Chip>)}

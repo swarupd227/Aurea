@@ -49,9 +49,10 @@ def goals(brain: dict, today) -> dict:
     result = goal_tradeoff.likelihoods(brain, today)
     return {"goals": [{"name": g["name"], "kind": g["kind"], "target_amount": g["target_amount"], "on_track": g["on_track"],
                        "probability": g["success_probability"], "projected_median": g["projected_median"],
-                       "horizon_years": g["years"], "horizon": g["horizon"], "assumed": g["assumed"], "estimate": True}
+                       "horizon_years": g["years"], "horizon": g["horizon"], "assumed": g["assumed"], "estimate": True,
+                       "tier": g.get("tier")}
                       for g in result["goals"]],
-            "assumed": result["assumed"], "earnings": result["earnings"]["basis"]}
+            "assumed": result["assumed"], "earnings": result["earnings"]["basis"], "tiers": result.get("tiers")}
 
 
 async def reports(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, limit: int = 5) -> list[dict]:
@@ -102,6 +103,7 @@ async def home(session: AsyncSession, household_id: uuid.UUID, *, firm: Firm) ->
         "goals": projected,
         "goals_on_track": sum(1 for g in projected if g["on_track"]),
         "goals_assumed": planned["assumed"],
+        "goals_tiers": planned.get("tiers"),
         "earnings": planned["earnings"],
         "stress": {"scenario": STRESS_SCENARIO, "impact_pct": stress["impact_pct"], "estimate": True} if stress else None,
         "values": brain["household"].get("values", {}),

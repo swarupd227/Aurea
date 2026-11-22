@@ -13,7 +13,7 @@ from app.agents.catalogue import CATALOGUE
 from app.atlas import activity, proposals
 from app.atlas.base import AgentContext, Subject
 from app.atlas.registry import get_agent
-from app.aurea_core import consent
+from app.aurea_core import consent, pre_advice
 from app.core.db import utcnow
 from app.core.logging import get_logger
 from app.models.enums import (
@@ -296,6 +296,11 @@ async def decide(
     )).scalar_one()
     if rec.status != RecommendationStatus.PROPOSED:
         raise AlreadyDecidedError(rec.status)
+    if action != HumanAction.DISMISS:
+        # In India an adviser advises nobody before the client's paperwork is on file; dismissing stays open.
+        why = await pre_advice.refusal(session, firm, rec)
+        if why:
+            raise pre_advice.PreAdviceError(why)
     rec.decided_by = actor_id
     rec.decided_at = utcnow()
     rec.decision_note = note

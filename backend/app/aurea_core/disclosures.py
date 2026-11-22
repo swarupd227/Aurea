@@ -80,6 +80,21 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
         "Disclosure of AI use", "IN SEBI",
         "IA Regulations, Reg 18(9) — the extent of AI use is disclosed at the agreement stage.",
     ),
+    "in_investor_charter": (
+        "Investor charter", "IN SEBI",
+        "SEBI circular of 2 Jun 2025 on the investor charter and complaints, consolidated in the IA Master Circular "
+        "(6 Feb 2026) — the charter goes to the client at onboarding.",
+    ),
+    "in_nomination_choice": (
+        "Nomination, or a signed opt-out", "IN SEBI",
+        "SEBI's nomination norms for demat accounts and fund folios — a single-holder account opened from 1 Sep 2026 "
+        "carries a nomination or a signed opt-out declaration; leaving the field blank is not an opt-out.",
+    ),
+    "in_non_sebi_declaration": (
+        "Declaration on products outside SEBI's purview", "IN SEBI",
+        "IA Master Circular para 1(xi) and Reg 18(8) — where a plan covers a product SEBI does not regulate, the client "
+        "declares that SEBI offers no recourse on it.",
+    ),
     # What a case in a country with no document set must evidence, and cannot: it holds activation.
     "jurisdiction_not_supported": (
         "No disclosure set for this jurisdiction", "—",
@@ -94,8 +109,12 @@ _BY_JURISDICTION: dict[str, list[str]] = {
     "NZ": ["disclosure_statement", "soa", "privacy_notice"],
     # Australia had a set here, but it has no market in markets.py and no regime in the ontology, so a
     # set of its own made its cases look supported. It holds activation like any other country with none.
-    "IN": ["in_advisory_agreement", "in_mitc", "in_ai_use_disclosure", "privacy_notice"],
+    "IN": ["in_advisory_agreement", "in_mitc", "in_ai_use_disclosure", "in_investor_charter", "privacy_notice"],
 }
+
+# An Indian account held by one person carries a nomination or an opt-out; an HUF's karta cannot nominate for it,
+# and a joint or entity account is outside the single-holder rule.
+_IN_SINGLE_HOLDER = {"individual"}
 
 # Registration types that add a conditional disclosure on top of the baseline.
 _ROLLOVER_TYPES = {"employer_rollover", "traditional_ira", "roth_ira"}
@@ -126,6 +145,8 @@ def required_for(jurisdiction: str | None, registration_type: str | None, engage
     # US rollovers carry the PTE 2020-02 best-interest disclosure as well as the memo.
     if (registration_type or "") in _ROLLOVER_TYPES and code == "US":
         base.append("pte_rollover_disclosure")
+    if code == "IN" and (registration_type or "individual") in _IN_SINGLE_HOLDER:
+        base.append("in_nomination_choice")
 
     return base
 

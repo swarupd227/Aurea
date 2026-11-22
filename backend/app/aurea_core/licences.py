@@ -137,4 +137,18 @@ async def overview(session: AsyncSession, firm) -> dict:
         "mandates": rows,
         "awaiting_consent": await consent.awaiting(session, firm),
         "recent_consents": await consent.recent(session, firm),
+        **(await _india_pack(session, firm) if licences else {}),
     }
+
+
+async def _india_pack(session: AsyncSession, firm) -> dict:
+    """Before advice, the fee cap per family and the filing calendar, for a firm whose licences are India's."""
+    from app.aurea_core import billing, compliance_calendar, pre_advice
+
+    caps: dict[str, dict] = {}
+    for e in (await billing.preview(session, firm.id))["arrangements"]:
+        if e.get("fee_cap") and e["household_id"] not in caps:
+            caps[e["household_id"]] = {"household_id": e["household_id"], "household": e["household_name"], **e["fee_cap"]}
+    return {"pre_advice": await pre_advice.for_firm(session, firm),
+            "fee_caps": sorted(caps.values(), key=lambda c: c["household"] or ""),
+            "calendar": await compliance_calendar.overview(session, firm)}

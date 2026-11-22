@@ -123,6 +123,7 @@ async def decide_recommendation(
 ):
     """The approve / modify / dismiss surface — the HITL gate (spec Table 13)."""
     from app.atlas.runtime import AlreadyDecidedError, decide  # local import to avoid cycle
+    from app.aurea_core import pre_advice
 
     rec = await db.get(Recommendation, rec_id)
     if not rec or rec.firm_id != firm.id:
@@ -139,6 +140,9 @@ async def decide_recommendation(
         )
     except AlreadyDecidedError as exc:
         # Lost a race with a concurrent decision — it took the proposal first.
+        raise HTTPException(status_code=409, detail=str(exc))
+    except pre_advice.PreAdviceError as exc:
+        # An Indian adviser's client whose paperwork is not complete: nothing was decided.
         raise HTTPException(status_code=409, detail=str(exc))
     return _rec_dict(rec, user.role)
 

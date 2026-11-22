@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.graph import household_brain
 from app.llm.admin_executors import AdminToolExecutors
+from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
 from app.models.enums import UserRole
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person
@@ -43,7 +44,7 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID:
 _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "proposals", "recommendation", "recommendations"}
 
 
-class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
+class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -72,6 +73,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             "read_tax_position": self.read_tax_position,
             "read_licences": self.read_licences,
             "record_client_consent": self.record_client_consent,
+            "read_pre_advice": self.read_pre_advice,
+            "read_compliance_calendar": self.read_compliance_calendar,
+            "record_compliance_filing": self.record_compliance_filing,
+            "record_sebi_registration": self.record_sebi_registration,
             "read_protection": self.read_protection,
             "record_protection_policy": self.record_protection_policy,
             "end_protection_policy": self.end_protection_policy,
@@ -301,6 +306,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             "sync_foundation_source": self.sync_foundation_source,
             # The estate gaps (B-185) and how care will be paid (B-186): app/llm/estate_care_executors.py.
             **self._estate_care_map(),
+            # The advice file (B-175): app/llm/advice_file_executors.py.
+            **self._advice_file_map(),
         }
 
         executor = executor_map.get(tool_key)
@@ -692,8 +699,107 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             result["message"] = "This firm has no licences on file, so nothing here limits its agents by licence."
             return result
         names = ", ".join(l["name"] for l in result["licences"])
+        open_gates = sum(1 for g in result.get("pre_advice", []) if not g["met"])
         result["message"] = (f"Licensed as {names}. {len(result['mandates'])} mandate(s); "
-                             f"{len(result['awaiting_consent'])} proposal(s) waiting for a client's consent.")
+                             f"{len(result['awaiting_consent'])} proposal(s) waiting for a client's consent; "
+                             f"{open_gates} adviser client(s) with paperwork missing before advice.")
+        return result
+
+    async def read_pre_advice(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import pre_advice
+        from app.models.tenant import Firm
+
+        firm = await self.session.get(Firm, self.firm_id)
+        if inputs.get("household_id"):
+            try:
+                result = await pre_advice.status(self.session, firm, _parse_uuid(inputs["household_id"], "household_id"))
+            except ValueError as exc:
+                raise ExecutorError(str(exc))
+            result["message"] = (f"{result['household']} is not on the adviser's track, so the gate does not apply."
+                                 if not result["applies"] else f"{result['household']}: nothing missing before advice." if result["met"]
+                                 else f"{result['household']}: missing {', '.join(result['missing'])}.")
+            return result
+        households = await pre_advice.for_firm(self.session, firm)
+        missing = [h for h in households if not h["met"]]
+        return {"households": households, "citation": pre_advice.CITATION, "stands_in": pre_advice.STANDS_IN,
+                "message": (f"{len(households)} household(s) on the adviser's track; {len(missing)} with paperwork missing before advice."
+                            if households else "No household is on an Investment Adviser's track here.")}
+
+    async def read_compliance_calendar(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import compliance_calendar
+        from app.models.tenant import Firm
+
+        result = await compliance_calendar.overview(self.session, await self.session.get(Firm, self.firm_id))
+        if not result["applies"]:
+            result["message"] = "This firm holds no Indian licence, so it has no SEBI calendar here."
+            return result
+        c = result["counts"]
+        result["message"] = (f"{c['overdue']} overdue, {c['due_soon']} due within {compliance_calendar.DUE_SOON_DAYS} days, "
+                             f"{c['upcoming']} upcoming, {c['filed']} filed; {len(result['officers_missing'])} registration detail(s) not recorded.")
+        return result
+
+    async def _filing_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"obligation": inputs.get("obligation"), "period": inputs.get("period"),
+                "filed_on": self._exit_day(inputs.get("filed_on"), "filed_on") if inputs.get("filed_on") else None,
+                "reference": inputs.get("reference")}
+
+    async def _filing_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import compliance_calendar, firm_time
+
+        if self.role != UserRole.COMPLIANCE:
+            raise ExecutorError("A filing is recorded by compliance.")
+        firm = await self._firm()
+        try:
+            p = await compliance_calendar.prepare_filing(self.session, firm, **await self._filing_args(inputs))
+        except compliance_calendar.CalendarError as exc:
+            raise ExecutorError(str(exc))
+        late = (p["filed_on"] - p["due_on"]).days
+        return [("Obligation", p["obligation"].label), ("Period", p["period"]), ("Due", firm_time.spoken(p["due_on"])),
+                ("Filed", firm_time.spoken(p["filed_on"]) + (f", {late} day(s) after it was due" if late > 0 else "")),
+                ("Reference", p["reference"]), ("Rests on", p["obligation"].citation)]
+
+    async def record_compliance_filing(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import compliance_calendar
+
+        if self.role != UserRole.COMPLIANCE:
+            raise ExecutorError("A filing is recorded by compliance.")
+        try:
+            result = await compliance_calendar.record_filing(self.session, await self._firm(), by=await self._shelf_user(),
+                                                             note=inputs.get("note"), **await self._filing_args(inputs))
+        except compliance_calendar.CalendarError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _registration_details(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import compliance_calendar
+
+        return {k: inputs.get(k) for k in compliance_calendar.OFFICER_KEYS if inputs.get(k)}
+
+    async def _sebi_registration_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import compliance_calendar
+
+        if self.role != UserRole.ADMIN:
+            raise ExecutorError("The firm's registration and officers are its administrator's to record.")
+        try:
+            p = compliance_calendar.prepare_officers(await self._firm(), await self._registration_details(inputs), inputs.get("reason"))
+        except compliance_calendar.CalendarError as exc:
+            raise ExecutorError(str(exc))
+        labels = dict(compliance_calendar.OFFICERS)
+        return [*((labels[c["field"]], f"{c['before'] or 'not recorded'} → {c['after']}") for c in p["changes"]), ("Reason", p["reason"])]
+
+    async def record_sebi_registration(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import compliance_calendar
+        from app.models.identity import User
+
+        if self.role != UserRole.ADMIN:
+            raise ExecutorError("The firm's registration and officers are its administrator's to record.")
+        try:
+            result = await compliance_calendar.record_officers(self.session, await self._firm(), await self.session.get(User, self.user_id),
+                                                               details=await self._registration_details(inputs), reason=inputs.get("reason"))
+        except compliance_calendar.CalendarError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
         return result
 
     async def _consent_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -2098,7 +2204,12 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             r = await consents.prepare(self.session, self.firm_id, **self._consent_args(inputs))
         except consents.ConsentError as exc:
             raise ExecutorError(str(exc))
-        effect = {"e_delivery": "Disclosures may be delivered by email or portal", "fee_debit": "Fees may be debited from the account"}.get(r["kind"])
+        before_advice = "One of the five things on file before an adviser advises or bills this client"
+        effect = {"e_delivery": "Disclosures may be delivered by email or portal", "fee_debit": "Fees may be debited from the account",
+                  "advisory_agreement": before_advice + "; fees may be charged once it stands",
+                  "ai_use_disclosure": before_advice, "investor_charter": before_advice,
+                  "risk_profile": before_advice + "; it covers the answers on file on this day",
+                  "non_sebi_declaration": before_advice + ", where the plan covers a product SEBI does not regulate"}.get(r["kind"])
         return [("Client", r["whose"]), ("Consent", consents.LABELS[r["kind"]]), ("Status", r["status"].capitalize()), ("Given by", r["given_by"]),
                 ("Given on", firm_time.spoken(r["given_on"])), ("How", r["method"].replace("_", " ")), ("Evidence", r["evidence"]),
                 ("Effect", (effect if r["status"] == "granted" else "No longer stands") if effect else None)]
@@ -4883,6 +4994,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         rec = await self.session.get(Recommendation, _parse_uuid(inputs.get("recommendation_id") or "", "recommendation_id"))
         if rec is None or rec.firm_id != self.firm_id:
             raise ExecutorError("That is not a proposal on file here. Look it up with read_recommendations this turn and use its id.")
+        if str(inputs.get("action") or "") in ("approve", "modify"):
+            from app.aurea_core import pre_advice
+            from app.models.tenant import Firm
+
+            why = await pre_advice.refusal(self.session, await self.session.get(Firm, self.firm_id), rec)
+            if why:
+                raise ExecutorError(why)
         if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.IPS_MONITORING.value:
             return self._ips_decision_preview(rec, inputs)
         if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.PROTECTION_PLANNING.value:
@@ -4973,6 +5091,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             return rows(*await self._file_preview(tool_key, inputs))
         if tool_key in ("raise_estate_review", "record_care_funding"):
             return rows(*await self._estate_care_preview(tool_key, inputs))
+        if tool_key in ("record_recommendation", "record_advice_outcome"):
+            return rows(*await self._advice_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
             return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):
@@ -5060,6 +5180,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             return rows(*await self._aml_preview(tool_key, inputs))
         named = {"record_tax_document": self._tax_document_preview, "execute_orders": self._orders_preview, "credit_invoice": self._credit_preview,
                  "record_valuation": self._valuation_preview, "record_client_consent": self._consent_preview,
+                 "record_compliance_filing": self._filing_preview, "record_sebi_registration": self._sebi_registration_preview,
                  "refresh_prices": self._refresh_preview, "run_billing": self._billing_preview,
                  "set_account_registration": self._registration_preview, "add_account_beneficiary": self._beneficiary_preview,
                  "update_goal": self._goal_preview, "mark_conflict_reviewed": self._conflict_preview,
@@ -5458,6 +5579,24 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
 
     # ─── The client's Canvas (B-95). Staff read what a client sees; a client's tools read only their own.
     @staticmethod
+    def _tiers_said(tiers: dict | None) -> str:
+        """The household's success as its tiers read it (B-176): every needs goal met, the tier that falls short, and
+        the goals with no tier on file, which count as no tier."""
+        if not tiers or not tiers.get("by_tier"):
+            return " No goal is tiered as a need, want or wish yet, so there is no household success figure." if tiers else ""
+        out = ""
+        if tiers.get("success") is not None:
+            out += f" Every needs goal is met together in {tiers['success']:.0%} of the paths."
+        else:
+            out += " No goal is tiered as a need, so there is no household success figure."
+        if tiers.get("failed_tier"):
+            short = tiers["by_tier"][tiers["failed_tier"]]["short"]
+            out += f" The {tiers['failed_tier']} are not on track" + (f": {', '.join(short)}." if short else " together.")
+        if tiers.get("not_tiered"):
+            out += f" Not tiered: {', '.join(tiers['not_tiered'])}."
+        return out
+
+    @staticmethod
     def _goals_basis(assumed: list[str]) -> str:
         """What a goal likelihood rests on, for the model to say: the one engine every screen reads, and
         what it had to assume (B-131)."""
@@ -5504,7 +5643,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             raise ExecutorError(f"Household {household.id} not found or access denied")
         return {**view, "message": f"What {household.name} see: {len(view['goals'])} goal(s), "
                                    f"{view['goals_on_track']} on track by the planning estimate. "
-                                   + self._goals_basis(view["goals_assumed"])}
+                                   + self._goals_basis(view["goals_assumed"]) + self._tiers_said(view.get("goals_tiers"))}
 
     async def _questionnaire(self, inputs: dict[str, Any]) -> tuple[Household, dict[str, str], Any]:
         """The household, the answers matched to the form's own options, and who answers. Raises what
@@ -5586,7 +5725,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         adviser = (view.get("adviser") or {}).get("name")
         return {**view, "message": f"{view['goals_on_track']} of {len(view['goals'])} goal(s) on track by the planning "
                                    f"estimate.{f' Looked after by {adviser}.' if adviser else ''} "
-                                   + self._goals_basis(view["goals_assumed"])}
+                                   + self._goals_basis(view["goals_assumed"]) + self._tiers_said(view.get("goals_tiers"))}
 
     async def read_my_net_worth(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import balance_sheet
@@ -5645,7 +5784,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             raise ExecutorError("No goals are on file for you yet.")
         return {**plan, "household_id": str(hid),
                 "message": "Your goals side by side. Every likelihood is an estimate. "
-                           + self._goals_basis(plan["assumed"])}
+                           + self._goals_basis(plan["assumed"]) + self._tiers_said(plan.get("tiers"))}
 
     async def read_my_fees(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import client_view
@@ -5721,6 +5860,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         """Approve, modify, or dismiss a recommendation via the same exactly-once,
         role-checked path the Studio review page uses (app.atlas.runtime.decide)."""
         from app.atlas.runtime import AlreadyDecidedError, decide
+        from app.aurea_core import pre_advice
         from app.core import decision_rights
         from app.models.enums import HumanAction, RecommendationStatus
         from app.models.governance import Recommendation
@@ -5767,10 +5907,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
                 actor_id=self.user_id, actor_label=f"{user.full_name} ({user.role})",
                 note=note,
             )
-        except AlreadyDecidedError as exc:
+        except (AlreadyDecidedError, pre_advice.PreAdviceError) as exc:
             raise ExecutorError(str(exc))
 
-        past_tense = {"approve": "Approved", "modify": "Modified", "dismiss": "Dismissed"}[action_str]
+        past_tense ={"approve": "Approved", "modify": "Modified", "dismiss": "Dismissed"}[action_str]
         return {
             "recommendation_id": str(rec.id),
             "action": action_str,
@@ -5992,8 +6132,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
                 raise ExecutorError("priority must be high, medium or low.")
             changes["priority"] = mapped
         changes.update(self._goal_basis_changes(goal, basis, index))
+        changes.update(self._goal_tier_change(goal, inputs.get("tier")))
         if not changes:
-            raise ExecutorError("Say what to change on this goal: its target, year, priority, target basis or index.")
+            raise ExecutorError("Say what to change on this goal: its target, year, priority, target basis, index or tier.")
         return goal, changes
 
     @staticmethod
@@ -6031,6 +6172,25 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             changes["index"] = None   # a fixed sum grows with nothing
         return changes
 
+    @staticmethod
+    def _goal_tier_change(goal: Any, tier: Any) -> dict[str, Any]:
+        """The goal's tier as a person states it (B-176): needs, wants or wishes, or none to clear it. Written in the
+        goal's `assumptions`, where `goal_tradeoff` reads it. Naming what is already on file is no change."""
+        from app.aurea_core.goal_tradeoff import TIERS
+
+        if tier in (None, ""):
+            return {}
+        said = str(tier).strip().lower()
+        said = {"need": "needs", "want": "wants", "wish": "wishes"}.get(said, said)
+        if said in ("none", "not tiered", "clear"):
+            said = None
+        elif said not in TIERS:
+            raise ExecutorError("tier must be needs, wants or wishes (or none to clear it).")
+        on_file = (goal.assumptions or {}).get("tier")
+        if said == on_file:
+            raise ExecutorError(f"This goal is already {'not tiered' if said is None else 'tiered as ' + said}.")
+        return {"tier": said}
+
     async def _goal_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core import firm_time, markets
 
@@ -6043,7 +6203,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
                 ("Date", f"{firm_time.spoken(goal.target_date) if goal.target_date else 'None'} becomes {firm_time.spoken(c['target_date'])}"
                  if "target_date" in c else None),
                 ("Priority", f"{rank.get(goal.priority, goal.priority)} becomes {rank[c['priority']]}" if "priority" in c else None),
-                *self._goal_basis_rows(goal, c)]
+                *self._goal_basis_rows(goal, c),
+                ("Tier", f"{self._tier_word((goal.assumptions or {}).get('tier'))} becomes {self._tier_word(c['tier'])}"
+                 if "tier" in c else None)]
+
+    @staticmethod
+    def _tier_word(tier: Any) -> str:
+        return {"needs": "Needs", "wants": "Wants", "wishes": "Wishes"}.get(tier, "Not tiered")
 
     @staticmethod
     def _goal_basis_rows(goal: Any, c: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -6063,7 +6229,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         """Update a household goal's target, timeline, priority, or whether its target is in today's money and the
         index it grows with (B-211)."""
         goal, changes = await self._goal_changes(inputs)
-        basis = {k: changes.pop(k) for k in ("target_basis", "index") if k in changes}
+        basis = {k: changes.pop(k) for k in ("target_basis", "index", "tier") if k in changes}
         for field, value in changes.items():
             setattr(goal, field, value)
         if basis:
@@ -6088,13 +6254,15 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         say = markets.money_for(await self._firm())
         plan = await goal_tradeoff.for_household(self.session, goal.household_id, firm_id=self.firm_id) if goal.household_id else None
         row = next((g for g in (plan or {}).get("goals", []) if g.get("id") == str(goal.id)), None)
-        keep = ("name", "target_amount", "target_basis", "target_today", "index", "inflation", "success_probability", "on_track", "years", "assumed")
+        keep = ("name", "target_amount", "target_basis", "target_today", "index", "inflation", "tier", "success_probability", "on_track", "years", "assumed")
         return {
             "goal_id": str(goal.id),
             "updates": updates,
             "goal": {k: row.get(k) for k in keep} if row else None,
             "assumptions_source": (plan or {}).get("assumptions_source"),
+            "tiers": (plan or {}).get("tiers"),
             "message": f"Updated goal '{goal.name}'."
+                       + (f" Tiered as {basis['tier']}." if basis.get("tier") else " No longer tiered." if "tier" in basis else "")
                        + (f" It is now {row['success_probability']:.0%} likely, on a target of {say(row['target_amount'])} by its date"
                           + (f" ({say(row['target_today'])} in today's money, grown with {row['index']})" if row.get("target_basis") == "today" else "") + "."
                           if row and row.get("success_probability") is not None else ""),

@@ -60,7 +60,7 @@ async def household_planning(
         {"goal": g["name"], "kind": g["kind"], "on_track": g["on_track"], "probability_of_success": g["success_probability"],
          "projected_median": g["projected_median"], "projected_p10": g["projected_p10"], "projected_p90": g["projected_p90"],
          "target_amount": g["target_amount"], "years": g["years"], "shortfall": g["shortfall"],
-         "horizon": g["horizon"], "assumed": g["assumed"], "estimate": True}
+         "horizon": g["horizon"], "assumed": g["assumed"], "estimate": True, "tier": g.get("tier")}
         for g in planned["goals"]]
 
     return {
@@ -71,6 +71,7 @@ async def household_planning(
         "stress_test": stress,
         "goals": goal_projections,
         "goals_assumed": planned["assumed"],
+        "goals_tiers": planned.get("tiers"),
         "earnings": planned["earnings"]["basis"],
         "assumptions_source": planning.source_of(brain),
     }

@@ -1,5 +1,6 @@
 import { money } from "@/lib/format";
 import { returnsLabel, targetBasisLabel } from "@/lib/planBasis";
+import { TierChip, TiersRow } from "@/components/GoalTiers";
 
 // A goal after `update_goal`, as the goals page now reads it (goal_tradeoff.likelihoods): one goal, one likelihood.
 
@@ -30,9 +31,11 @@ export function GoalUpdatedCard({ result }: { result: any }) {
         ))}
       </div>
       <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-2" data-testid="goal-updated-basis">
+        <TierChip tier={g.tier} />
         {basis ? <span className="chip text-ink-muted">{basis}</span> : <span className="chip text-ink-muted">target as stated</span>}
         {Object.keys(result.updates || {}).map((k) => <span key={k} className="chip text-ink-muted">{k.replace(/_/g, " ")} changed</span>)}
       </div>
+      {result.tiers && <div className="border-t border-border-soft px-3 py-2"><TiersRow tiers={result.tiers} /></div>}
     </div>
   );
 }

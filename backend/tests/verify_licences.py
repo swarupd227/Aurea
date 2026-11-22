@@ -25,7 +25,8 @@ import app.models  # noqa: F401  - registers every table on Base.metadata
 from app.agents import drift_rebalancing as drift
 from app.atlas import runtime
 from app.atlas.base import Subject
-from app.aurea_core import consent, firm_time, licences
+from app.aurea_core import consent, firm_time, licences, pre_advice, risk_profile
+from app.models.consent_registry import ConsentRecord
 from app.compliance.rules import CheckContext, client_consent
 from app.core.db import Base
 from app.llm.executors import ExecutorError, ToolExecutors
@@ -126,7 +127,7 @@ async def main() -> int:
             s.add_all([adviser, manager])
             await s.flush()
 
-            async def book(f, name, *, track=None, mandate_type="advisory"):
+            async def book(f, name, *, track=None, mandate_type="advisory", paperwork=True):
                 eq = Instrument(id=uuid.uuid4(), firm_id=f.id, symbol=f"EQ{uuid.uuid4().hex[:12]}", name="Equity", asset_class="equity",
                                 market_type=MarketType.PUBLIC, currency=f.base_currency, values_tags={"tax_class": "listed_equity"})
                 fi = Instrument(id=uuid.uuid4(), firm_id=f.id, symbol=f"FI{uuid.uuid4().hex[:12]}", name="Gilt", asset_class="fixed_income",
@@ -164,6 +165,14 @@ async def main() -> int:
                 await s.flush()
                 s.add(TaxLot(firm_id=f.id, holding_id=hold.id, quantity=1000, cost_per_unit=80, acquired_on=today - timedelta(days=800)))
                 await s.flush()
+                if paperwork and (f.settings or {}).get("licences"):
+                    # What an Indian adviser needs on file before advising (pre_advice): this suite is about consent to trades.
+                    await risk_profile.submit(s, h.id, {q["key"]: q["options"][1] for q in risk_profile.QUESTIONS},
+                                              firm_id=f.id, by="test", role="adviser")
+                    for kind in ("advisory_agreement", "ai_use_disclosure", "investor_charter", "risk_profile"):
+                        s.add(ConsentRecord(firm_id=f.id, household_id=h.id, kind=kind, status="granted", given_by=name,
+                                            given_on=firm_time.today(f), method="e_signature", evidence="Signed pack", recorded_by="test"))
+                    await s.flush()
                 return m, a
 
             async def propose(f, m):
@@ -192,6 +201,16 @@ async def main() -> int:
             await s.flush()
             tier, _ = await policy.resolve_tier(s, nz.id, AgentKey.DRIFT_REBALANCING, None)
             check("on a firm with no licences it reads what was set", tier, AutonomyTier.TIER_3)
+
+            print("\n=== Investment Adviser: no advice before the paperwork ===")
+            m_bare, _ = await book(firm, "Bare", track="investment_adviser", paperwork=False)
+            bare = await propose(firm, m_bare)
+            try:
+                await approve(firm, bare)
+                check("an adviser's client with nothing on file is not advised", "approved", "refused")
+            except pre_advice.PreAdviceError as exc:
+                check("an adviser's client with nothing on file is not advised", "Agreement signed" in str(exc), True)
+            check("and the proposal is left for a person", bare.status, "proposed")
 
             print("\n=== Investment Adviser: approval places nothing ===")
             m_ia, a_ia = await book(firm, "Sharma", track="investment_adviser")

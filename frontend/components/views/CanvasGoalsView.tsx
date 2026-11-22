@@ -8,6 +8,7 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { api } from "@/lib/api";
 import { money, num, pct } from "@/lib/format";
 import { RATE_ASSUMED, returnsLabel, targetBasisLabel } from "@/lib/planBasis";
+import { TierChip, TiersRow } from "@/components/GoalTiers";
 import { CanvasHouseholdPicker } from "./CanvasView";
 import { useRole } from "./CanvasRetirementView";
 import { AllClients, ViewHeader } from "./ViewHeader";
@@ -101,6 +102,7 @@ function GoalCard({ goal, rank, total, onMoveUp, onMoveDown, onOverride, overrid
                 {goal.share != null
                   ? <span className="chip bg-border-soft text-ink-soft tabular-nums" data-testid="canvas-goal-share">{pct(goal.share, 0)} of wealth set aside</span>
                   : <span className="chip bg-border-soft text-ink-muted" data-testid="canvas-goal-share">shares the pool</span>}
+                <TierChip tier={goal.tier} />
                 {targetBasisLabel(goal) && <span className="chip bg-border-soft text-ink-muted tabular-nums" data-testid="canvas-goal-target-basis">{targetBasisLabel(goal)}</span>}
                 {goal.assumed?.includes("years") && <span className="chip bg-warn-bg text-warn">assumed horizon</span>}
                 {(goal.assumed || []).filter((k: string) => RATE_ASSUMED[k]).map((k: string) => <span key={k} className="chip bg-warn-bg text-warn">{RATE_ASSUMED[k]}</span>)}
@@ -321,6 +323,7 @@ function Goals({ householdId, staff }: { householdId: string | null; staff: bool
           </Card>
         ))}
       </div>
+      {goals.length > 0 && <div className="mb-4"><TiersRow tiers={plan.tiers} /></div>}
 
       <div className="grid gap-4 cq-md:grid-cols-5">
         <div className="space-y-3 cq-md:col-span-3" data-testid="canvas-goals-list">

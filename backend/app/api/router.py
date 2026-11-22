@@ -74,3 +74,7 @@ api_router.include_router(held_away_api.router)
 from app.api import outside_agents as outside_agents_api  # noqa: E402
 
 api_router.include_router(outside_agents_api.router)
+# An adviser's own recommendations to a client, and what became of each (B-175).
+from app.api import advice_file as advice_file_api  # noqa: E402
+
+api_router.include_router(advice_file_api.router)
