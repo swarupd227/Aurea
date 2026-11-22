@@ -129,6 +129,8 @@ def run_tradeoff(
             funded[gid] = met
             success = float(np.mean(met))
             med = float(np.median(avail))
+            # How bad a failure is (B-177): the median gap on the paths that fall short, in the money of the goal's date.
+            short = target - avail[avail < target] if target > 0 else np.array([])
             goal_results[gid] = {
                 "id": gid,
                 "name": g.get("name") or _kind_label(g.get("kind", "other")),
@@ -145,6 +147,7 @@ def run_tradeoff(
                 "projected_p90": round(float(np.percentile(avail, 90)), 2),
                 "shortfall": round(max(0.0, target - med), 2) if target > 0 else 0.0,
                 "funded_amount": round(min(med, target) if target > 0 else med, 2),
+                "failed_shortfall": round(float(np.median(short)), 2) if short.size else None,
             }
 
     return {
@@ -384,9 +387,12 @@ def likelihoods(brain: dict, today: date, *, sims: int = 2500, **overrides) -> d
                         human_capital_value=inputs["earnings"]["value"], sims=sims, cma=planning.cma_of(brain),
                         success_target=planning.target_of(brain, "goals"))
     source = planning.source_of(brain)
-    return {**base, "goals": _annotate(base["goals"], inputs["goals"]), "earnings": inputs["earnings"],
+    floor, ceiling = planning.target_of(brain, "goals"), planning.ceiling_of(brain)
+    goals = [{**g, "band": planning.band(g["success_probability"], floor, ceiling)}
+             for g in _annotate(base["goals"], inputs["goals"])]
+    return {**base, "goals": goals, "earnings": inputs["earnings"],
             "assumed": inputs["assumed"], "what_if": inputs["what_if"], "assumptions_source": source,
-            "assumptions_version": planning.version_of(brain), "success_target": planning.target_of(brain, "goals"),
+            "assumptions_version": planning.version_of(brain), "success_target": floor, "success_ceiling": ceiling,
             "assumptions": {**base["assumptions"], "source": source} if base["assumptions"] else {}}
 
 
@@ -441,7 +447,9 @@ async def for_household(
                                      success_target=shared["success_target"])
     return {
         **shared,
-        "goals": _annotate(base["goals"], inputs["goals"]),
+        "goals": [{**g, "band": planning.band(g["success_probability"], shared["success_target"], planning.ceiling_of(brain))}
+                  for g in _annotate(base["goals"], inputs["goals"])],
+        "success_ceiling": planning.ceiling_of(brain),
         "shared_capital": base["shared_capital"],
         "human_capital": base["human_capital"],
         "total_effective_capital": base["total_effective_capital"],

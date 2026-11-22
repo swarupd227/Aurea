@@ -328,6 +328,12 @@ async def preview(session: AsyncSession, firm_id: uuid.UUID, *, as_of: date | No
                                  "household_name": household_names.get(hh), "value": round(value, 2),
                                  "pending_confirmation": any(p.mandate_id == mid for p in pending)})
 
+    # An Indian adviser's family: no fee before the agreement, and none over SEBI's cap for the year.
+    from app.aurea_core import fee_cap
+    from app.models.tenant import Firm
+
+    await fee_cap.apply(session, await session.get(Firm, firm_id), entries, as_of)
+
     by_currency: dict[str, float] = defaultdict(float)
     for e in entries:
         if not e["blocked"] and e["currency"]:

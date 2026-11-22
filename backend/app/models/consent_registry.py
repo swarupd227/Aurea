@@ -10,7 +10,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
-KINDS = ("e_delivery", "householding", "data_aggregation", "trusted_contact", "discretionary_authority", "fee_debit")
+# What an Indian adviser needs from a client before advising them (IA Master Circular, 6 Feb 2026): the signed agreement
+# carrying Annexure A and the MITC, the disclosure of AI use, the investor charter, the client's consent to their risk
+# profile, and their declaration on products outside SEBI's purview. Each is the client's act, from its evidence.
+INDIA_KINDS = ("advisory_agreement", "ai_use_disclosure", "investor_charter", "risk_profile", "non_sebi_declaration")
+KINDS = ("e_delivery", "householding", "data_aggregation", "trusted_contact", "discretionary_authority", "fee_debit", *INDIA_KINDS)
 METHODS = ("e_signature", "signed_form", "portal", "email", "recorded_call")
 
 

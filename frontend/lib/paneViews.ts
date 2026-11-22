@@ -378,6 +378,9 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_advice_outcome":
       return onClient("/studio/advice-file");
     case "read_financial_plan":
+    case "run_plan_scenario":
+    case "save_plan_scenario":
+    case "read_plan_scenarios":
     case "record_income_stream":
     case "end_income_stream":
     case "record_education_goal":
@@ -430,6 +433,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_beneficiary_audit":
       return "/studio/beneficiary-audit";
     case "read_licences":
+    case "read_pre_advice":
+    case "read_compliance_calendar":
+    case "record_compliance_filing":
+    case "record_sebi_registration":
       return "/studio/licences";
     case "read_corporate_actions":
     case "compute_corporate_action_entitlements":

@@ -20,14 +20,22 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import firm_time, markets
-from app.models.consent_registry import KINDS, METHODS, ConsentRecord
+from app.models.consent_registry import INDIA_KINDS, KINDS, METHODS, ConsentRecord
 from app.models.graph import Household
 from app.models.onboarding import DisclosureDelivery, OnboardingCase
 from app.models.tenant import Firm
 from app.provenance import ledger
 
 LABELS = {"e_delivery": "Electronic delivery", "householding": "Householding", "data_aggregation": "Data aggregation",
-          "trusted_contact": "Contact a trusted contact", "discretionary_authority": "Discretionary authority", "fee_debit": "Fee debit"}
+          "trusted_contact": "Contact a trusted contact", "discretionary_authority": "Discretionary authority", "fee_debit": "Fee debit",
+          "advisory_agreement": "Advisory agreement signed (with MITC)", "ai_use_disclosure": "AI use disclosure received",
+          "investor_charter": "Investor charter received", "risk_profile": "Risk profile consented",
+          "non_sebi_declaration": "Non-SEBI products declaration"}
+# How an Indian client's act is evidenced. The risk profile is consented "either through registered email or physical
+# document" (IA Master Circular para 2.2), read here to include an e-signed document; the agreement is signed.
+INDIA_METHODS = {"advisory_agreement": ("e_signature", "signed_form"),
+                 "risk_profile": ("email", "signed_form", "e_signature"),
+                 "non_sebi_declaration": ("e_signature", "signed_form", "email")}
 ELECTRONIC = {"email", "portal"}
 ANNUAL = {"US": ("form_adv_2a", "privacy_notice")}   # what falls due again each year after it was delivered
 
@@ -120,8 +128,15 @@ async def registry(session: AsyncSession, firm_id: uuid.UUID, *, household_id: u
     records = [{**_view(r), "client": households.get(r.household_id) or names.get(r.case_id)} for r in rows]
     return {"records": records, "standing": {k: _view(v) for k, v in stands.items()} if stands else None,
             "from_agreements": from_agreements, "redeliveries_due": await _redeliveries(session, firm, [c for c in cases if c.activated_at], today),
-            "kinds": [{"kind": k, "label": LABELS[k]} for k in KINDS], "household_id": str(household_id) if household_id else None,
+            "kinds": [{"kind": k, "label": LABELS[k]} for k in kinds_for(firm)], "household_id": str(household_id) if household_id else None,
             "case_id": str(case_id) if case_id else None, "as_of": today.isoformat()}
+
+
+def kinds_for(firm: Firm | None) -> tuple[str, ...]:
+    """The kinds a firm records: India's own only for a firm in India."""
+    if markets.code(getattr(firm, "jurisdiction", None)) == "IN":
+        return KINDS
+    return tuple(k for k in KINDS if k not in INDIA_KINDS)
 
 
 async def prepare(session: AsyncSession, firm_id: uuid.UUID, *, case_id: uuid.UUID | None, household_id: uuid.UUID | None, kind: str | None,
@@ -141,14 +156,19 @@ async def prepare(session: AsyncSession, firm_id: uuid.UUID, *, case_id: uuid.UU
             raise ConsentError("Household not found.")
         whose = household.name
     kind = (kind or "").strip().lower()
-    if kind not in KINDS:
-        raise ConsentError(f"The consent is one of {', '.join(KINDS)}.")
+    if kind not in kinds_for(firm):
+        if kind in INDIA_KINDS:
+            raise ConsentError(f"{LABELS[kind]} is recorded for a firm in India only.")
+        raise ConsentError(f"The consent is one of {', '.join(kinds_for(firm))}.")
     status = (status or "granted").strip().lower()
     if status not in ("granted", "withdrawn"):
         raise ConsentError("Granted or withdrawn.")
     method = (method or "").strip().lower()
     if method not in METHODS:
         raise ConsentError(f"How it was given: one of {', '.join(METHODS)}.")
+    if kind in INDIA_METHODS and method not in INDIA_METHODS[kind]:
+        raise ConsentError(f"{LABELS[kind]} is evidenced by {', '.join(m.replace('_', ' ') for m in INDIA_METHODS[kind])}, "
+                           f"not {method.replace('_', ' ')} (IA Master Circular, 6 Feb 2026).")
     who, named = (given_by or "").strip(), (evidence or "").strip()
     if len(who) < 2:
         raise ConsentError("Say who gave it.")

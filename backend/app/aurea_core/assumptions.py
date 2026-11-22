@@ -60,7 +60,7 @@ class Figure:
 
 
 def _figures() -> dict[str, Figure]:
-    from app.aurea_core.planning import CMA, INFLATION_INDEXES, SUCCESS_TARGETS
+    from app.aurea_core.planning import CMA, DISCOUNT_SETTING, INFLATION_INDEXES, SUCCESS_CEILING, SUCCESS_TARGETS
 
     out: list[Figure] = []
     for cls in CMA:
@@ -74,6 +74,8 @@ def _figures() -> dict[str, Figure]:
     out.append(Figure("plan_to_age", "Plan to age", "age", 70, 120, ("plan_to_age",)))
     for engine, (setting, _default) in SUCCESS_TARGETS.items():
         out.append(Figure(f"success_target.{engine}", f"Success target, {engine}", "rate", 0.5, 0.99, (setting,)))
+    out.append(Figure("success_ceiling", "Top of the success band", "rate", 0.5, 1.0, (SUCCESS_CEILING[0],)))
+    out.append(Figure("discount_rate", "Discount rate for future needs", "rate", -0.05, 0.15, (DISCOUNT_SETTING,)))
     out.append(Figure("reserve_months", "Cash reserve", "months", 0, 36, ("reserve_months",)))
     out.append(Figure("plan_input_days", "Oldest planning input", "days", 1, 1825, ("plan_input_days",)))
     out.append(Figure("refresh_line", "Refresh line", "rate", 0.01, 0.5, ("assumption_refresh_line",)))
@@ -156,6 +158,11 @@ def figures_now(firm: Firm, recorded: AssumptionSetVersion | None, *, sources: d
             engine = key.split(".", 1)[1]
             value, whose = aset["success_target"][engine], aset["sources"][f"{engine}_success_target"]
             msrc = None
+        elif key == "success_ceiling":
+            value, whose, msrc = aset["success_ceiling"], aset["sources"]["success_ceiling"], None
+        elif key == "discount_rate":
+            value, whose, msrc = aset["discount_rate"], aset["sources"]["discount_rate"], None
+            whose = "platform" if whose == "cash_return" else whose
         elif key == "plan_input_days":
             line = plan_inputs.line_of(firm)
             value, whose, msrc = line["days"], "platform" if line["assumed"] else "firm", None
@@ -165,7 +172,8 @@ def figures_now(firm: Firm, recorded: AssumptionSetVersion | None, *, sources: d
             whose = "firm" if raw not in (None, "") else "platform"
             value, msrc = (raw if whose == "firm" else default), None
         source = (sources.get(key) or "Set before the assumption set kept versions") if whose == "firm" \
-            else msrc if whose == "market" else "Platform default"
+            else msrc if whose == "market" \
+            else "Platform default: the cash return in this set" if key == "discount_rate" else "Platform default"
         out[key] = {"key": key, "label": f.label, "unit": f.unit, "value": _num(f.unit, value), "whose": whose, "source": source}
     return out
 
@@ -240,6 +248,9 @@ async def prepare(session: AsyncSession, firm: Firm, actor: User, *, changes: li
     recorded = await latest(session, firm.id)
     now = figures_now(firm, recorded)
     clean = _clean(changes, now)
+    after = {k: v["value"] for k, v in now.items()} | {c["key"]: c["after"] for c in clean}
+    if not after["success_ceiling"] > max(after["success_target.goals"], after["success_target.retirement"]):
+        raise AssumptionError("The top of the success band must be above both success targets.")
     line = next((c["after"] for c in clean if c["key"] == "refresh_line"), now["refresh_line"]["value"])
     return {"version": (recorded.version if recorded else 0) + 1, "changes": clean, "reason": reason,
             "refresh_line": line, "refresh_line_assumed": now["refresh_line"]["whose"] == "platform"

@@ -73,6 +73,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "read_tax_position": self.read_tax_position,
             "read_licences": self.read_licences,
             "record_client_consent": self.record_client_consent,
+            "read_pre_advice": self.read_pre_advice,
+            "read_compliance_calendar": self.read_compliance_calendar,
+            "record_compliance_filing": self.record_compliance_filing,
+            "record_sebi_registration": self.record_sebi_registration,
             "read_protection": self.read_protection,
             "record_protection_policy": self.record_protection_policy,
             "end_protection_policy": self.end_protection_policy,
@@ -260,6 +264,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "read_outside_agents": self.read_outside_agents,
             "revoke_outside_agent": self.revoke_outside_agent,
             "read_assumption_set": self.read_assumption_set,
+            "run_plan_scenario": self.run_plan_scenario,
+            "save_plan_scenario": self.save_plan_scenario,
+            "read_plan_scenarios": self.read_plan_scenarios,
             "record_assumption_set": self.record_assumption_set,
             "create_crm_contact": self.create_crm_contact,
             "create_crm_opportunity": self.create_crm_opportunity,
@@ -689,8 +696,107 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             result["message"] = "This firm has no licences on file, so nothing here limits its agents by licence."
             return result
         names = ", ".join(l["name"] for l in result["licences"])
+        open_gates = sum(1 for g in result.get("pre_advice", []) if not g["met"])
         result["message"] = (f"Licensed as {names}. {len(result['mandates'])} mandate(s); "
-                             f"{len(result['awaiting_consent'])} proposal(s) waiting for a client's consent.")
+                             f"{len(result['awaiting_consent'])} proposal(s) waiting for a client's consent; "
+                             f"{open_gates} adviser client(s) with paperwork missing before advice.")
+        return result
+
+    async def read_pre_advice(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import pre_advice
+        from app.models.tenant import Firm
+
+        firm = await self.session.get(Firm, self.firm_id)
+        if inputs.get("household_id"):
+            try:
+                result = await pre_advice.status(self.session, firm, _parse_uuid(inputs["household_id"], "household_id"))
+            except ValueError as exc:
+                raise ExecutorError(str(exc))
+            result["message"] = (f"{result['household']} is not on the adviser's track, so the gate does not apply."
+                                 if not result["applies"] else f"{result['household']}: nothing missing before advice." if result["met"]
+                                 else f"{result['household']}: missing {', '.join(result['missing'])}.")
+            return result
+        households = await pre_advice.for_firm(self.session, firm)
+        missing = [h for h in households if not h["met"]]
+        return {"households": households, "citation": pre_advice.CITATION, "stands_in": pre_advice.STANDS_IN,
+                "message": (f"{len(households)} household(s) on the adviser's track; {len(missing)} with paperwork missing before advice."
+                            if households else "No household is on an Investment Adviser's track here.")}
+
+    async def read_compliance_calendar(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import compliance_calendar
+        from app.models.tenant import Firm
+
+        result = await compliance_calendar.overview(self.session, await self.session.get(Firm, self.firm_id))
+        if not result["applies"]:
+            result["message"] = "This firm holds no Indian licence, so it has no SEBI calendar here."
+            return result
+        c = result["counts"]
+        result["message"] = (f"{c['overdue']} overdue, {c['due_soon']} due within {compliance_calendar.DUE_SOON_DAYS} days, "
+                             f"{c['upcoming']} upcoming, {c['filed']} filed; {len(result['officers_missing'])} registration detail(s) not recorded.")
+        return result
+
+    async def _filing_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"obligation": inputs.get("obligation"), "period": inputs.get("period"),
+                "filed_on": self._exit_day(inputs.get("filed_on"), "filed_on") if inputs.get("filed_on") else None,
+                "reference": inputs.get("reference")}
+
+    async def _filing_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import compliance_calendar, firm_time
+
+        if self.role != UserRole.COMPLIANCE:
+            raise ExecutorError("A filing is recorded by compliance.")
+        firm = await self._firm()
+        try:
+            p = await compliance_calendar.prepare_filing(self.session, firm, **await self._filing_args(inputs))
+        except compliance_calendar.CalendarError as exc:
+            raise ExecutorError(str(exc))
+        late = (p["filed_on"] - p["due_on"]).days
+        return [("Obligation", p["obligation"].label), ("Period", p["period"]), ("Due", firm_time.spoken(p["due_on"])),
+                ("Filed", firm_time.spoken(p["filed_on"]) + (f", {late} day(s) after it was due" if late > 0 else "")),
+                ("Reference", p["reference"]), ("Rests on", p["obligation"].citation)]
+
+    async def record_compliance_filing(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import compliance_calendar
+
+        if self.role != UserRole.COMPLIANCE:
+            raise ExecutorError("A filing is recorded by compliance.")
+        try:
+            result = await compliance_calendar.record_filing(self.session, await self._firm(), by=await self._shelf_user(),
+                                                             note=inputs.get("note"), **await self._filing_args(inputs))
+        except compliance_calendar.CalendarError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def _registration_details(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import compliance_calendar
+
+        return {k: inputs.get(k) for k in compliance_calendar.OFFICER_KEYS if inputs.get(k)}
+
+    async def _sebi_registration_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import compliance_calendar
+
+        if self.role != UserRole.ADMIN:
+            raise ExecutorError("The firm's registration and officers are its administrator's to record.")
+        try:
+            p = compliance_calendar.prepare_officers(await self._firm(), await self._registration_details(inputs), inputs.get("reason"))
+        except compliance_calendar.CalendarError as exc:
+            raise ExecutorError(str(exc))
+        labels = dict(compliance_calendar.OFFICERS)
+        return [*((labels[c["field"]], f"{c['before'] or 'not recorded'} → {c['after']}") for c in p["changes"]), ("Reason", p["reason"])]
+
+    async def record_sebi_registration(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import compliance_calendar
+        from app.models.identity import User
+
+        if self.role != UserRole.ADMIN:
+            raise ExecutorError("The firm's registration and officers are its administrator's to record.")
+        try:
+            result = await compliance_calendar.record_officers(self.session, await self._firm(), await self.session.get(User, self.user_id),
+                                                               details=await self._registration_details(inputs), reason=inputs.get("reason"))
+        except compliance_calendar.CalendarError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
         return result
 
     async def _consent_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -1607,8 +1713,24 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         result["message"] = (f"{result['household']}: {r['success_probability']:.0%} probability of success, sustainable income {say(r['sustainable_income'])} a year "
                              f"in today's money, as are the withdrawal rates and the 4% rule. {self._plan_to_words(r)} {self._returns_words(result['assumptions_source'])} "
                              "These are estimates from what is on file." if r else f"{result['household']}: no retirement projection.")
-        result["message"] += " " + self._inputs_words(result.get("inputs"))
+        result["message"] += " " + self._inputs_words(result.get("inputs")) + " " + self._funded_words(result, say)
         return result
+
+    @staticmethod
+    def _funded_words(result: dict, say) -> str:
+        """How well funded the needs are and how bad a failure is, beside the likelihood (B-177)."""
+        f, r, said = result.get("funded") or {}, result.get("retirement") or {}, []
+        if f.get("ratio") is not None:
+            rate = f"{f['discount_rate']:.2%}" + (" (the firm's rate)" if f["discount_whose"] == "firm" else " (the cash return in the assumption set)")
+            said.append(f"Funded ratio {f['ratio']:.2f}: the managed book of {say(f['assets'])} over needs worth {say(f['pv_needs'])} today, "
+                        f"discounted at {rate}; contributions, future earnings and money held elsewhere are not counted"
+                        + ("; goal tiers are not on file, so every goal counts." if f["tiers"] == "not_on_file" else "."))
+        if r.get("band") == "above":
+            said.append(f"Retirement success is above the firm's band ({r['success_ceiling']:.0%}): possibly over-saving.")
+        if r.get("failed_shortfall_today"):
+            said.append(f"Where the money runs out, it does at {r['median_depletion_age']} at the median, leaving "
+                        f"{say(r['failed_shortfall_today'])} in today's money unpaid.")
+        return " ".join(said)
 
     @staticmethod
     def _inputs_words(inputs: dict | None) -> str:
@@ -2079,7 +2201,12 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             r = await consents.prepare(self.session, self.firm_id, **self._consent_args(inputs))
         except consents.ConsentError as exc:
             raise ExecutorError(str(exc))
-        effect = {"e_delivery": "Disclosures may be delivered by email or portal", "fee_debit": "Fees may be debited from the account"}.get(r["kind"])
+        before_advice = "One of the five things on file before an adviser advises or bills this client"
+        effect = {"e_delivery": "Disclosures may be delivered by email or portal", "fee_debit": "Fees may be debited from the account",
+                  "advisory_agreement": before_advice + "; fees may be charged once it stands",
+                  "ai_use_disclosure": before_advice, "investor_charter": before_advice,
+                  "risk_profile": before_advice + "; it covers the answers on file on this day",
+                  "non_sebi_declaration": before_advice + ", where the plan covers a product SEBI does not regulate"}.get(r["kind"])
         return [("Client", r["whose"]), ("Consent", consents.LABELS[r["kind"]]), ("Status", r["status"].capitalize()), ("Given by", r["given_by"]),
                 ("Given on", firm_time.spoken(r["given_on"])), ("How", r["method"].replace("_", " ")), ("Evidence", r["evidence"]),
                 ("Effect", (effect if r["status"] == "granted" else "No longer stands") if effect else None)]
@@ -4864,6 +4991,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         rec = await self.session.get(Recommendation, _parse_uuid(inputs.get("recommendation_id") or "", "recommendation_id"))
         if rec is None or rec.firm_id != self.firm_id:
             raise ExecutorError("That is not a proposal on file here. Look it up with read_recommendations this turn and use its id.")
+        if str(inputs.get("action") or "") in ("approve", "modify"):
+            from app.aurea_core import pre_advice
+            from app.models.tenant import Firm
+
+            why = await pre_advice.refusal(self.session, await self.session.get(Firm, self.firm_id), rec)
+            if why:
+                raise ExecutorError(why)
         if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.IPS_MONITORING.value:
             return self._ips_decision_preview(rec, inputs)
         if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.PROTECTION_PLANNING.value:
@@ -4976,6 +5110,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._outside_agent_preview(inputs))
         if tool_key == "record_assumption_set":
             return rows(*await self._assumption_preview(inputs))
+        if tool_key == "save_plan_scenario":
+            return rows(*await self._scenario_preview(inputs))
         if tool_key == "import_linkedin_connections":
             return rows(*await self._linkedin_preview(inputs))
         if tool_key == "set_brief_profile":
@@ -5039,6 +5175,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._aml_preview(tool_key, inputs))
         named = {"record_tax_document": self._tax_document_preview, "execute_orders": self._orders_preview, "credit_invoice": self._credit_preview,
                  "record_valuation": self._valuation_preview, "record_client_consent": self._consent_preview,
+                 "record_compliance_filing": self._filing_preview, "record_sebi_registration": self._sebi_registration_preview,
                  "refresh_prices": self._refresh_preview, "run_billing": self._billing_preview,
                  "set_account_registration": self._registration_preview, "add_account_beneficiary": self._beneficiary_preview,
                  "update_goal": self._goal_preview, "mark_conflict_reviewed": self._conflict_preview,
@@ -5718,6 +5855,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         """Approve, modify, or dismiss a recommendation via the same exactly-once,
         role-checked path the Studio review page uses (app.atlas.runtime.decide)."""
         from app.atlas.runtime import AlreadyDecidedError, decide
+        from app.aurea_core import pre_advice
         from app.core import decision_rights
         from app.models.enums import HumanAction, RecommendationStatus
         from app.models.governance import Recommendation
@@ -5764,10 +5902,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 actor_id=self.user_id, actor_label=f"{user.full_name} ({user.role})",
                 note=note,
             )
-        except AlreadyDecidedError as exc:
+        except (AlreadyDecidedError, pre_advice.PreAdviceError) as exc:
             raise ExecutorError(str(exc))
 
-        past_tense = {"approve": "Approved", "modify": "Modified", "dismiss": "Dismissed"}[action_str]
+        past_tense ={"approve": "Approved", "modify": "Modified", "dismiss": "Dismissed"}[action_str]
         return {
             "recommendation_id": str(rec.id),
             "action": action_str,
@@ -6592,6 +6730,85 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         except oa.OutsideAgentError as exc:
             raise ExecutorError(str(exc))
         out["message"] = f"Revoked the key for {out['label']} (ending {out['key_ends']})."
+        return out
+
+    # ── Plan scenarios, saved and ranked (B-179) ─────────────────────────────────────────────
+
+    SCENARIO_LEVERS = ("retire_at", "spending", "claim_age", "goal_id", "goal_years_delta", "goal_target", "extra_contribution")
+
+    def _levers(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {k: inputs.get(k) for k in self.SCENARIO_LEVERS if inputs.get(k) not in (None, "")}
+
+    async def run_plan_scenario(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import markets, scenarios
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            out = await scenarios.run(self.session, await self._firm(), household_id, self._levers(inputs))
+        except scenarios.ScenarioError as exc:
+            raise ExecutorError(str(exc))
+        say = markets.money_for(await self._firm())
+        c, b, a = out["change"], out["before"], out["after"]
+        said = []
+        if b["retirement_success"] is not None:
+            said.append(f"Retirement success {b['retirement_success']:.0%} to {a['retirement_success']:.0%}")
+        moved = [g for g in c["goals"] if g["points"]]
+        if moved:
+            said.append("; ".join(f"{g['goal']} {g['before']:.0%} to {g['after']:.0%}" for g in moved))
+        if c["funded_ratio"] is not None:
+            said.append(f"funded ratio {b['funded_ratio']:.2f} to {a['funded_ratio']:.2f}")
+        given = out["given_up"]
+        out["message"] = (f"{out['household']}: " + "; ".join(said) + f". It gives up {say(given['today'])} in today's money ("
+                          + "; ".join(p["basis"] for p in given["parts"]) + ")"
+                          + (f", {out['points_per_10k']:+.1f} success points per {say(10_000)} given up." if out["points_per_10k"] is not None else ".")
+                          + " An estimate on the firm's assumptions; nothing is saved or changed.")
+        return out
+
+    async def _scenario_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import markets, scenarios
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            plan = await scenarios.prepare_save(self.session, await self._firm(), household_id, name=inputs.get("name"),
+                                                levers=self._levers(inputs))
+        except scenarios.ScenarioError as exc:
+            raise ExecutorError(str(exc))
+        r, say = plan["result"], markets.money_for(await self._firm())
+        out: list[tuple[str, Any]] = [("Scenario", plan["name"]), ("Client", r["household"])]
+        if r["before"]["retirement_success"] is not None:
+            out.append(("Retirement success", f"{r['before']['retirement_success']:.0%} → {r['after']['retirement_success']:.0%}"))
+        for g in r["change"]["goals"]:
+            if g["points"]:
+                out.append((g["goal"], f"{g['before']:.0%} → {g['after']:.0%}"))
+        if r["change"]["funded_ratio"] is not None:
+            out.append(("Funded ratio", f"{r['before']['funded_ratio']:.2f} → {r['after']['funded_ratio']:.2f}"))
+        out.append(("Given up, today's money", say(r["given_up"]["today"])))
+        out.append(("After this", "Kept on the household's scenarios; no record changes"))
+        return out
+
+    async def save_plan_scenario(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import scenarios
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            out = await scenarios.save(self.session, await self._firm(), await self._me(), household_id,
+                                       name=inputs.get("name"), levers=self._levers(inputs))
+        except scenarios.ScenarioError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = f"Saved '{out['name']}' on {out['result']['household']}'s scenarios. No record was changed."
+        return out
+
+    async def read_plan_scenarios(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import scenarios
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            out = await scenarios.saved(self.session, await self._firm(), household_id)
+        except scenarios.ScenarioError as exc:
+            raise ExecutorError(str(exc))
+        top = out["scenarios"][:3]
+        out["message"] = (f"{out['household']}: {len(out['scenarios'])} saved scenario(s)"
+                          + (", best first: " + "; ".join(f"{r['rank']}. {r['name']}" for r in top) if top else "") + ".")
         return out
 
     # ── The firm's planning assumptions, one versioned record (B-174) ─────────────────────────

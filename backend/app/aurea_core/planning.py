@@ -65,6 +65,12 @@ PLATFORM_PLAN_TO_AGE = 95
 # retirement have had different bars (70% and 85%) since they were built; both now live in the assumption set, named,
 # and a firm sets either with its source (B-174). Unchanged here, because moving one moves every client's figure.
 SUCCESS_TARGETS = {"goals": ("goal_success_target", 0.70), "retirement": ("retirement_success_target", 0.85)}
+# The top of the band: a likelihood above it reads "above the band: possibly over-saving" (B-177). The platform's,
+# named, until a firm records its own.
+SUCCESS_CEILING = ("success_ceiling", 0.95)
+# What future needs are discounted at for the funded ratio (B-177): the firm's rate, else the cash return in the same
+# assumption set, named as such. Never a figure of its own made up here.
+DISCOUNT_SETTING = "planning_discount_rate"
 
 
 def assumption_set(firm_settings: dict | None = None, jurisdiction: str | None = None) -> dict:
@@ -97,9 +103,15 @@ def assumption_set(firm_settings: dict | None = None, jurisdiction: str | None =
     for engine, (key, default) in SUCCESS_TARGETS.items():
         targets[engine], sources[f"{engine}_success_target"] = market_assumptions.value(s, jurisdiction, key, float(default))
     version = s.get("assumption_version")
+    ceiling, sources["success_ceiling"] = market_assumptions.value(s, jurisdiction, SUCCESS_CEILING[0], float(SUCCESS_CEILING[1]))
+    if s.get(DISCOUNT_SETTING) not in (None, ""):
+        discount, sources["discount_rate"] = float(s[DISCOUNT_SETTING]), "firm"
+    else:
+        discount, sources["discount_rate"] = float(cma["cash"][0]), "cash_return"
     return {"cma": {k: list(v) for k, v in cma.items()}, "source": source,
             "inflation": inflation, "inflation_assumed": assumed,
-            "retirement_age": retirement_age, "plan_to_age": plan_to_age, "success_target": targets, "sources": sources,
+            "retirement_age": retirement_age, "plan_to_age": plan_to_age, "success_target": targets,
+            "success_ceiling": ceiling, "discount_rate": discount, "sources": sources,
             # The recorded version these figures are (B-174); None while the firm has recorded none.
             "version": int(version) if version not in (None, "") else None,
             "market_basis": [a.view() for a in suggested.values()]}
@@ -109,6 +121,27 @@ def target_of(brain: dict | None, engine: str) -> float:
     """The success an engine's projection must reach to read on track: the firm's, else the platform's (B-174)."""
     got = (((brain or {}).get("planning") or {}).get("success_target") or {}).get(engine)
     return float(got) if got is not None else float(SUCCESS_TARGETS[engine][1])
+
+
+def ceiling_of(brain: dict | None) -> float:
+    got = ((brain or {}).get("planning") or {}).get("success_ceiling")
+    return float(got) if got is not None else float(SUCCESS_CEILING[1])
+
+
+def band(success: float | None, floor: float, ceiling: float) -> str | None:
+    """Where a likelihood sits against the firm's band (B-177): below the target, within it, or above the ceiling,
+    which reads "possibly over-saving"."""
+    if success is None:
+        return None
+    return "below" if success < floor else "above" if success > ceiling else "within"
+
+
+def discount_of(brain: dict | None) -> tuple[float, str]:
+    """The rate future needs are discounted at, and whose: the firm's, or the cash return in its assumption set."""
+    p = (brain or {}).get("planning") or {}
+    if p.get("discount_rate") is not None:
+        return float(p["discount_rate"]), (p.get("sources") or {}).get("discount_rate", "cash_return")
+    return float(CMA["cash"][0]), "cash_return"
 
 
 def version_of(brain: dict | None) -> int | None:

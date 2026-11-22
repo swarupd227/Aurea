@@ -9,6 +9,7 @@ import { BriefProfileCard } from "./BriefProfileCard";
 import { PreferencesCard } from "./PreferencesCard";
 import { OutsideAgentsCard } from "./OutsideAgentsCard";
 import { AssumptionSetCard } from "./AssumptionSetCard";
+import { ScenarioCard, ScenariosCard } from "./ScenarioCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
@@ -21,6 +22,7 @@ import { ReconciliationCard } from "./ReconciliationCard";
 import { CareFundingChips, ProtectionCard } from "./ProtectionCard";
 import { AdviceFileCard } from "./AdviceFileCard";
 import { LicenceCard } from "./LicenceCard";
+import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
@@ -161,6 +163,13 @@ export function artifactCard(artifact: Artifact) {
       case "revoke_outside_agent":
         if (typeof artifact.result?.label !== "string" || typeof artifact.result?.state !== "string") return null;
         return <OutsideAgentsCard result={artifact.result as any} />;
+      case "run_plan_scenario":
+      case "save_plan_scenario":
+        if (!(artifact.result?.before || artifact.result?.result?.before)) return null;
+        return <ScenarioCard result={artifact.result as any} />;
+      case "read_plan_scenarios":
+        if (!Array.isArray(artifact.result?.scenarios)) return null;
+        return <ScenariosCard result={artifact.result as any} />;
       case "read_assumption_set":
       case "record_assumption_set":
         if (!Array.isArray(artifact.result?.figures)) return null;
@@ -376,6 +385,14 @@ export function artifactCard(artifact: Artifact) {
       case "record_client_consent":
         if (!artifact.result?.client_consent) return null;
         return <LicenceCard result={artifact.result as any} />;
+      case "read_pre_advice":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.checks)) return null;
+        return <PreAdviceCard result={artifact.result as any} />;
+      case "read_compliance_calendar":
+      case "record_compliance_filing":
+      case "record_sebi_registration":
+        if (!Array.isArray(artifact.result?.items)) return null;
+        return <ComplianceCalendarCard result={artifact.result as any} />;
       case "read_reconciliation":
         if (!Array.isArray(artifact.result?.accounts) || !Array.isArray(artifact.result?.breaks)) return null;
         return <ReconciliationCard result={artifact.result as any} />;

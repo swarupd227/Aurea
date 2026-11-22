@@ -134,6 +134,8 @@ def retirement_plan(
     seed: int = 7,
     streams: list[dict] | None = None,
     cma: dict | None = None,
+    discount_rate: float | None = None,
+    success_ceiling: float | None = None,
 ) -> dict:
     """Full retirement projection + sustainable income + sequence risk + levers.
 
@@ -163,6 +165,13 @@ def retirement_plan(
 
     failed = base["depletion"][base["depletion"] >= 0]
     median_depletion_age = int(retirement_age + np.median(failed) + 1) if failed.size else None
+    # How bad a failure is (B-177): on the paths that run out, what is left unpaid from that year to the end, in
+    # today's money, and its median. The age it starts is the median depletion age.
+    deflated = np.array([d / (1 + inflation) ** (acc + k + 1) for k, d in enumerate(draws)])
+    unpaid_from = np.cumsum(deflated[::-1])[::-1]
+    failed_shortfall_today = round(float(np.median(unpaid_from[failed.astype(int)]))) if failed.size else None
+    # What the portfolio must pay over retirement, discounted to today at the assumption set's rate.
+    pv_spending = round(sum(d / (1 + discount_rate) ** (acc + k + 1) for k, d in enumerate(draws)))         if discount_rate is not None else None
     proj_at_ret = float(np.median(base["at_retirement"]))
 
     # Sustainable income (today's money) achieving target_success — binary search over the need, reported as
@@ -221,6 +230,11 @@ def retirement_plan(
         "on_track": base["success"] >= target_success,
         "target_success": target_success,
         "median_depletion_age": median_depletion_age,
+        "failed_shortfall_today": failed_shortfall_today,
+        "band": (None if success_ceiling is None
+                 else "below" if base["success"] < target_success else "above" if base["success"] > success_ceiling else "within"),
+        "success_ceiling": success_ceiling,
+        "pv_spending": pv_spending, "discount_rate": discount_rate,
         "sustainable_income": round(sustainable),
         "income_gap": round(income_target - sustainable),
         "sequence_risk": {
@@ -304,7 +318,8 @@ async def for_household(
     # is taken off it year by year, from when each stream starts. With nothing recorded this changes nothing.
     from app.aurea_core import financial_plan  # local import avoids a cycle
 
-    on_file = await financial_plan.retirement_inputs(session, household_id, firm_id=firm_id, retirement_age=retirement_age, current_age=current_age)
+    on_file = await financial_plan.retirement_inputs(session, household_id, firm_id=firm_id, retirement_age=retirement_age, current_age=current_age,
+                                                     claim_age=overrides.get("claim_age"))
     recorded = on_file["spending"] + on_file["debt_payments"] if on_file["spending"] else None
     default_income = a.get("annual_income") or recorded or current_value * 0.05
     income_need = float(overrides.get("annual_income") or default_income)
@@ -312,6 +327,8 @@ async def for_household(
         assumed.append("stream_start")
     annual_contribution = float(overrides.get("annual_contribution") if overrides.get("annual_contribution") is not None
                                 else a.get("annual_contribution", 0.0))
+    # A scenario's extra saving each year (B-179), on top of what is on file.
+    annual_contribution += float(overrides.get("extra_contribution") or 0.0)
 
     retire_at = max(retirement_age, current_age + 1)
     plan = retirement_plan(
@@ -323,6 +340,7 @@ async def for_household(
         inflation=float((((brain.get("planning") or {}).get("inflation")) or {}).get("cpi", 0.025)),
         # The firm's retirement success target, from the assumption set (B-174); the platform's 85% without one.
         target_success=planning.target_of(brain, "retirement"),
+        success_ceiling=planning.ceiling_of(brain), discount_rate=planning.discount_of(brain)[0],
     )
     acc = plan["years_to_retirement"]
     plan["household"] = {"id": str(household_id), "name": brain["household"]["name"]}

@@ -32,3 +32,16 @@ async def read(household: uuid.UUID | None = None, user: User = ReaderDep, firm:
     if result is None:
         raise HTTPException(status_code=404, detail="Household not found.")
     return {**result, "can_record": user.role in WRITERS}
+
+
+@router.get("/scenarios")
+async def scenarios(household: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                    session: AsyncSession = Depends(get_db)) -> dict:
+    """A household's saved plan scenarios, ranked by success points per 10,000 given up (B-179). Saving one is the
+    conversation's, behind a Confirm card; this reads them."""
+    from app.aurea_core import scenarios as sc
+
+    try:
+        return await sc.saved(session, firm, household)
+    except sc.ScenarioError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None

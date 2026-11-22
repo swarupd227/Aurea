@@ -454,6 +454,139 @@ async def main() -> int:
             await s.flush()
             check("a fourth nominee on a demat is refused", "at most 3" in (await nominations.refusal(s, firm, meera_demat) or ""), True)
 
+            print("\n=== Row 6: the disclosure pack ===")
+            from datetime import date as _d, timedelta as _td
+            from types import SimpleNamespace as _NS
+            from app.aurea_core import billing as billing_core, compliance_calendar, consents as consents_core, law_figures, pre_advice
+            from app.models.compliance_calendar import ComplianceFiling
+            from app.models.consent_registry import ConsentRecord
+
+            check("an Indian single holder needs the charter and a nomination or opt-out",
+                  {"in_investor_charter", "in_nomination_choice"} <= set(disclosures.required_for("IN", "individual")), True)
+            check("an HUF has no nomination to make", "in_nomination_choice" in disclosures.required_for("IN", "huf"), False)
+            check("and New Zealand's set is untouched", disclosures.required_for("NZ", "individual"),
+                  ["disclosure_statement", "soa", "privacy_notice"])
+
+            print("\n=== Row 6: nothing advised before the paperwork ===")
+            households = {h.name: h for h in (await s.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all()}
+            gate = {n: await pre_advice.status(s, firm, households[n].id) for n in households}
+            check("the adviser's households are gated, the portfolio manager's are not",
+                  sorted(n for n, g in gate.items() if g["applies"]), ["The Banerjee Household", "The D'Souza Household", "The Sharma Family"])
+            check("the Sharmas have all five on file, the declaration included because they hold policies",
+                  (gate["The Sharma Family"]["met"], [c["state"] for c in gate["The Sharma Family"]["checks"]]), (True, ["pass"] * 5))
+            check("the D'Souzas hold nothing outside SEBI's purview, so no declaration is asked",
+                  (gate["The D'Souza Household"]["met"], gate["The D'Souza Household"]["checks"][-1]["state"]), (True, "n/a"))
+            check("the Banerjees have not consented to their risk profile",
+                  gate["The Banerjee Household"]["missing"], ["Risk profile complete and consented"])
+            banerjee_mandates = [m.id for m in await pre_advice.adviser_mandates(s, firm, households["The Banerjee Household"].id)]
+            banerjee_rec = (await s.execute(select(Recommendation).where(
+                Recommendation.agent_key == AgentKey.DRIFT_REBALANCING, Recommendation.subject_id.in_(banerjee_mandates),
+                Recommendation.status == RecommendationStatus.PROPOSED))).scalars().first()
+            check("a rebalance was raised for the Banerjees", banerjee_rec is not None, True)
+            if banerjee_rec is not None:
+                adviser = (await s.execute(select(User).where(User.email == "adviser@astra-india.demo"))).scalar_one()
+                try:
+                    await runtime.decide(s, firm=firm, recommendation=banerjee_rec, action=HumanAction.APPROVE,
+                                         actor_id=adviser.id, actor_label=adviser.email)
+                    check("approving it is refused", "approved", "refused")
+                except pre_advice.PreAdviceError as exc:
+                    check("approving it is refused, naming what is missing", "Risk profile complete and consented" in str(exc), True)
+                await s.refresh(banerjee_rec)
+                check("and nothing was decided", (banerjee_rec.status, banerjee_rec.decided_by), (RecommendationStatus.PROPOSED, None))
+                tools = ToolExecutors(s, adviser.id, UserRole.ADVISER, firm.id)
+                try:
+                    await tools.preview_change("decide_recommendation", {"recommendation_id": str(banerjee_rec.id), "action": "approve"})
+                    check("the Confirm card is not offered", "offered", "refused")
+                except Exception as exc:
+                    check("the Confirm card is not offered either", "before the client's paperwork" in str(exc), True)
+            for method, ok in (("portal", False), ("recorded_call", False), ("email", True)):
+                try:
+                    await consents_core.prepare(s, firm.id, case_id=None, household_id=households["The Banerjee Household"].id, kind="risk_profile",
+                                                status="granted", given_by="Subir Banerjee", method=method, evidence="Reply on file, ref 22", given_on=None)
+                    check(f"a risk profile consented by {method} is accepted", ok, True)
+                except consents_core.ConsentError as exc:
+                    check(f"a risk profile consented by {method} is refused", (ok, "registered email" in str(exc) or "evidenced by" in str(exc)), (False, True))
+            check("India's kinds are not offered to a firm elsewhere",
+                  "risk_profile" in consents_core.kinds_for(_NS(jurisdiction="NZ")), False)
+            await consents_core.record(s, firm.id, by="test", case_id=None, household_id=households["The Banerjee Household"].id, kind="risk_profile",
+                                       status="granted", given_by="Subir Banerjee", method="email", evidence="Reply on file, ref 22", given_on=None)
+            check("once the consent is recorded the gate opens", (await pre_advice.status(s, firm, households["The Banerjee Household"].id))["met"], True)
+            dsouza_consent = (await s.execute(select(ConsentRecord).where(ConsentRecord.household_id == households["The D'Souza Household"].id,
+                                                                          ConsentRecord.kind == "risk_profile"))).scalar_one()
+            dsouza_consent.given_on = dsouza_consent.given_on - _td(days=30)
+            await s.flush()
+            check("a consent given before the answers it would cover does not count",
+                  "predates" in next(c["detail"] for c in (await pre_advice.status(s, firm, households["The D'Souza Household"].id))["checks"]
+                                     if c["key"] == "risk_profile"), True)
+            dsouza_consent.given_on = dsouza_consent.given_on + _td(days=30)
+            await s.flush()
+
+            print("\n=== Row 6: fees per family, against SEBI's cap ===")
+            check("the caps carry their circular", all("para 1(iii)" in f["source"] for f in law_figures.cited(["in_ia_fee_fixed_cap", "in_ia_fee_aua_cap"], firm_time.today(firm))), True)
+            pv = await billing_core.preview(s, firm.id)
+            bills = {}
+            for e in pv["arrangements"]:
+                bills.setdefault(e["household_name"], []).append(e)
+            check("the three adviser families are billed", sorted(n for n in bills if n in gate and gate[n]["applies"]),
+                  ["The Banerjee Household", "The D'Souza Household", "The Sharma Family"])
+            dsouza_bill = bills["The D'Souza Household"][0]
+            check("a fixed fee above the cap is held, at the fixed cap",
+                  (dsouza_bill["blocked"], dsouza_bill["fee_cap"]["cap"], dsouza_bill["fee_cap"]["basis"], "sebi_fee_cap" in [c["code"] for c in dsouza_bill["checks"]]),
+                  (True, 151000.0, "fixed-fee mode", True))
+            sharma_bills = bills["The Sharma Family"]
+            check("1% of assets sits within 2.5% of the family's securities, the HUF's included",
+                  (any(c["code"] == "sebi_fee_cap" for e in sharma_bills for c in e["checks"]), sharma_bills[0]["fee_cap"]["over"],
+                   len(sharma_bills), sharma_bills[0]["fee_cap"]["basis"].startswith("AUA mode")), (False, False, 3, True))
+            check("AUA is the securities alone, cash left out", sharma_bills[0]["fee_cap"]["aua"] < sum(e["billable_value"] for e in sharma_bills), True)
+            s.add(ConsentRecord(firm_id=firm.id, household_id=households["The Banerjee Household"].id, kind="advisory_agreement", status="withdrawn",
+                                given_by="Subir Banerjee", given_on=firm_time.today(firm), method="signed_form", evidence="Termination letter", recorded_by="test"))
+            await s.flush()
+            withdrawn = [e for e in (await billing_core.preview(s, firm.id))["arrangements"] if e["household_name"] == "The Banerjee Household"]
+            check("no fee with no signed agreement standing", all(any(c["code"] == "no_signed_agreement" for c in e["checks"]) and e["blocked"] for e in withdrawn), True)
+            overview = await licences.overview(s, firm)
+            check("the licences page carries the gate, the caps and the calendar",
+                  (len(overview["pre_advice"]), len(overview["fee_caps"]), overview["calendar"]["applies"]), (3, 3, True))
+
+            print("\n=== Row 6: the compliance calendar ===")
+            firm.created_at = firm.created_at.replace(year=2026, month=10, day=31)
+            cal = await compliance_calendar.overview(s, firm)
+            states = {(i["obligation"], i["period"]): i["state"] for i in cal["items"]}
+            check("October's complaint data reads filed", states.get(("complaints_monthly", "2026-10")), "filed")
+            check("October's portfolio-manager report, due seven working days after the month, reads overdue",
+                  (states.get(("pms_monthly_report", "2026-10")),
+                   next(i["due_on"] for i in cal["items"] if (i["obligation"], i["period"]) == ("pms_monthly_report", "2026-10"))),
+                  ("overdue", "2026-11-10"))
+            check("the next of each obligation is listed once, and nothing before the firm came on",
+                  (sum(1 for i in cal["items"] if i["obligation"] == "deposit_revision"), any(i["due_on"] < "2026-10-31" for i in cal["items"])), (1, False))
+            check("a day the circular does not give is named as assumed",
+                  next(i["due_basis"] for i in cal["items"] if i["obligation"] == "saas_undertaking").startswith("assumed"), True)
+            check("officers not recorded say so", {"Designated Director", "Chief Information Security Officer"} <= set(cal["officers_missing"]), True)
+            await compliance_calendar.record_filing(s, firm, by="compliance@astra-india.demo", obligation="pms_monthly_report", period="2026-10",
+                                                    filed_on=None, reference="SEBI SI portal ack 0001")
+            check("recording the filing clears it", {(i["obligation"], i["period"]): i["state"] for i in (await compliance_calendar.overview(s, firm))["items"]}
+                  .get(("pms_monthly_report", "2026-10")), "filed")
+            for label, terms, contains in (("twice", {"period": "2026-10"}, "was recorded filed"),
+                                           ("in the future", {"period": "2026-11", "filed_on": firm_time.today(firm) + _td(days=2)}, "future"),
+                                           ("for a period it does not have", {"period": "Q9"}, "No monthly report")):
+                try:
+                    await compliance_calendar.prepare_filing(s, firm, obligation="pms_monthly_report", reference="SEBI SI portal ack 0002",
+                                                             **{"filed_on": None, **terms})
+                    check(f"a filing {label} is refused", "recorded", "refused")
+                except compliance_calendar.CalendarError as exc:
+                    check(f"a filing {label} is refused", contains in str(exc), True)
+            compliance = (await s.execute(select(User).where(User.firm_id == firm.id, User.role == UserRole.COMPLIANCE))).scalars().first()
+            if compliance is not None:
+                tools = ToolExecutors(s, compliance.id, UserRole.COMPLIANCE, firm.id)
+                card = await tools.preview_change("record_compliance_filing", {"obligation": "complaints_monthly", "period": "2026-11",
+                                                                               "reference": "Website update ref 7"})
+                check("the filing's Confirm card names the obligation, its due day and its law",
+                      [r["label"] for r in card["rows"]][:3] + ["Rests on" in [r["label"] for r in card["rows"]]], ["Obligation", "Period", "Due", True])
+            try:
+                compliance_calendar.prepare_officers(firm, {"ciso": "Asha Pillai (demonstration)"}, "")
+                check("a registration change with no reason is refused", "recorded", "refused")
+            except compliance_calendar.CalendarError:
+                check("a registration change with no reason is refused", True, True)
+
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)
 
