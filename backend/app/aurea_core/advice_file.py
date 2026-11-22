@@ -144,7 +144,8 @@ async def _owner(session: AsyncSession, firm_id: uuid.UUID, ref: Any, household_
 
 
 async def assumption_version_of(session: AsyncSession, firm_id: uuid.UUID) -> str:
-    """The fingerprint of the firm's assumption set as it stands (planning.assumption_version)."""
+    """The firm's assumption set as it stands (planning.assumption_version): its recorded version ("v3", B-174) once it
+    has one, else a fingerprint of the figures."""
     from app.aurea_core import planning
 
     firm = await session.get(Firm, firm_id)
