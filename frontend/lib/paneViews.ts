@@ -11,7 +11,7 @@ import { viewsForRole } from "./nav";
 export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
-  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "document_matrix" | "transfers" | "monitoring" | "money_in" | "account_features" | "onboarding_scoreboard" | "repapering" | "onboarding_queues"
+  | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "advice_file" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "document_matrix" | "transfers" | "monitoring" | "money_in" | "account_features" | "onboarding_scoreboard" | "repapering" | "onboarding_queues"
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
   | "corporate_actions" | "pipeline" | "tax" | "estate" | "family" | "behavioural" | "regulatory_countdown" | "workforce"
   | "skills" | "book_integration" | "book_batch" | "rulebook"
@@ -55,6 +55,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "equity_comp", pattern: /^\/studio\/equity-comp\/?$/, base: "/studio/equity-comp", label: "Equity compensation" },
   { key: "plan", pattern: /^\/studio\/plan\/?$/, base: "/studio/plan", label: "Financial plan" },
   { key: "client_file", pattern: /^\/studio\/client-file\/?$/, base: "/studio/client-file", label: "Client file" },
+  { key: "advice_file", pattern: /^\/studio\/advice-file\/?$/, base: "/studio/advice-file", label: "Advice file" },
   { key: "cash", pattern: /^\/studio\/cash\/?$/, base: "/studio/cash", label: "Cash movements" },
   { key: "trades", pattern: /^\/studio\/trades\/?$/, base: "/studio/trades", label: "Trades" },
   { key: "tax_documents", pattern: /^\/studio\/tax-documents\/?$/, base: "/studio/tax-documents", label: "Tax documents" },
@@ -371,6 +372,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_life_event":
     case "raise_estate_review":
       return onClient("/studio/client-file");
+    // The advice file (B-175): one recommendation or one client's opens on that client.
+    case "read_advice_file":
+    case "record_recommendation":
+    case "record_advice_outcome":
+      return onClient("/studio/advice-file");
     case "read_financial_plan":
     case "record_income_stream":
     case "end_income_stream":

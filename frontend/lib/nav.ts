@@ -12,7 +12,7 @@ import {
   BarChart3, Workflow, PiggyBank, Scale, Wand2, History, UserCircle, Landmark, Target, Receipt,
   Brain, Timer, TrendingUp, Repeat, UserCheck, LineChart, Banknote, Building2, ArrowLeftRight, Umbrella,
   SlidersHorizontal, BadgeCheck, CalendarCheck, ScrollText, Wallet, DoorOpen, PackageCheck, Gem, Compass, FolderOpen,
-  Sprout, ClipboardList,
+  Sprout, ClipboardList, Lightbulb,
 } from "lucide-react";
 
 export type ViewIntent = "decide" | "clients" | "operate" | "govern" | "configure" | "platform";
@@ -70,6 +70,7 @@ export const VIEWS: View[] = [
   { href: "/studio/equity-comp", label: "Equity compensation", icon: Gem, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["rsu", "iso", "espp", "stock options", "concentrated stock", "vesting", "10b5-1", "collar"] },
   { href: "/studio/plan", label: "Financial plan", icon: Compass, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["retirement", "social security", "pension", "withdrawal", "emergency fund", "debt", "education", "529", "monte carlo"] },
   { href: "/studio/client-file", label: "Client file", icon: FolderOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["trusted contact", "will", "power of attorney", "health directive", "life event", "marriage", "divorce"] },
+  { href: "/studio/advice-file", label: "Advice file", icon: Lightbulb, roles: [A, P, PT, C, B], intent: "clients", keywords: ["recommendation", "advice given", "declined", "accepted", "implementation rate", "alternatives", "suitability record"] },
   { href: "/studio/cash", label: "Cash movements", icon: Banknote, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["withdrawal", "wire", "standing instruction", "sloa", "rmd", "distribution", "phasing", "dollar cost"] },
   { href: "/studio/trades", label: "Trades", icon: ArrowLeftRight, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["blotter", "confirmation", "settlement", "block", "allocation", "orders"] },
   { href: "/studio/tax-documents", label: "Tax documents", icon: FileText, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["1099", "k-1", "tax forms", "tax summary"] },
@@ -140,7 +141,7 @@ export const CLIENT_ONLY = new Set([
 /** Views that read one household when given `?household=`; a client's tabs carry it between them. */
 export const TAKES_HOUSEHOLD = new Set([
   ...CLIENT_ONLY, "/studio/ips", "/studio/reviews", "/studio/protection", "/studio/risk-profiles", "/studio/net-worth",
-  "/studio/equity-comp", "/studio/client-file", "/studio/cash", "/studio/trades", "/studio/tax-documents",
+  "/studio/equity-comp", "/studio/client-file", "/studio/advice-file", "/studio/cash", "/studio/trades", "/studio/tax-documents",
   "/studio/consents", "/studio/exits", "/studio/tax",
 ]);
 
@@ -156,7 +157,7 @@ export interface Section {
 export const SECTIONS: Section[] = [
   { key: "advice", label: "Advice checks", icon: CalendarCheck, intent: "clients", members: [
     "/studio/reviews", "/studio/ips", "/studio/risk-profiles", "/studio/protection", "/studio/net-worth", "/studio/tax",
-    "/studio/equity-comp", "/studio/client-file", "/studio/exits", "/studio/beneficiary-audit"] },
+    "/studio/equity-comp", "/studio/client-file", "/studio/advice-file", "/studio/exits", "/studio/beneficiary-audit"] },
   { key: "onboarding", label: "Onboarding", icon: UserPlus, intent: "operate", members: [
     "/studio/onboarding", "/studio/onboarding-queues", "/studio/document-matrix", "/studio/consents", "/studio/transfers",
     "/studio/money-in", "/studio/account-features", "/studio/aml", "/studio/onboarding-scoreboard"] },
@@ -203,6 +204,7 @@ const CLIENT_SECTION_PAIRS: [string, string][] = [
   ["/studio/family", "Family"],
   ["/studio/equity-comp", "Equity comp"],
   ["/studio/client-file", "Client file"],
+  ["/studio/advice-file", "Advice file"],
   ["/studio/cash", "Cash"],
   ["/studio/trades", "Trades"],
   ["/studio/behavioural", "Behavioural"],
