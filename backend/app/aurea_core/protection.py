@@ -41,7 +41,7 @@ from app.aurea_core.goal_tradeoff import human_capital_pv
 from app.aurea_core.graph import household_brain, list_households
 from app.core.db import utcnow
 from app.models.graph import Person
-from app.models.protection import POLICY_KINDS, ProtectionPolicy
+from app.models.protection import COVER_BASES, POLICY_KINDS, ProtectionPolicy
 from app.models.tenant import Firm
 from app.provenance import ledger
 
@@ -194,7 +194,41 @@ def _goals_due(goals: list[dict], *, today: date, years: int, rate: float) -> fl
     return total
 
 
-def _policy_row(p: ProtectionPolicy, names: dict, today: date) -> dict:
+# A nominee on a life policy who is the insured's parent, spouse or child is beneficially entitled to the money
+# (Insurance Act 1938, s.39(7)); any other nominee receives it for the legal heirs. Indian law: shown only there.
+BENEFICIAL_NOMINEES = {"spouse", "wife", "husband", "child", "son", "daughter", "parent", "mother", "father"}
+
+
+def payee_of(p: ProtectionPolicy, market: str | None) -> dict:
+    """Who is paid, as the policy says, and what that means where the law is known. Nothing is inferred."""
+    if p.mwp:
+        return {"to": "Married Women's Property Act trust", "means": "outside the estate, for the spouse and children"}
+    if not p.nominee:
+        return {"to": None, "means": "no nominee on file"}
+    rel = (p.nominee_relationship or "").strip().lower()
+    means = None
+    if market == "IN" and p.kind == "life":
+        means = ("beneficially entitled (Insurance Act s.39(7))" if rel in BENEFICIAL_NOMINEES
+                 else "receives it for the legal heirs: nomination is not inheritance")
+    return {"to": p.nominee, "relationship": p.nominee_relationship, "means": means}
+
+
+def not_counted_for(kind: str, cover_basis: str | None) -> str | None:
+    """Why cover in force does not count against a gap. The gaps are for death and disability of any cause, and
+    for income: accident-only cover pays on some of those events and not others, and no critical-illness need is
+    modelled, so they are listed and never added."""
+    if kind == "critical_illness":
+        return "critical illness: no need is modelled for it"
+    if kind == "personal_accident" or (cover_basis or "any_cause") == "accident_only":
+        return "accident only, so it is not counted against a gap for any cause"
+    return None
+
+
+def not_counted(p: ProtectionPolicy) -> str | None:
+    return not_counted_for(p.kind, p.cover_basis)
+
+
+def _policy_row(p: ProtectionPolicy, names: dict, today: date, market: str | None = None) -> dict:
     lapsed = p.expires_on is not None and p.expires_on < today
     return {
         "id": str(p.id), "person_id": str(p.person_id), "person": names.get(p.person_id), "kind": p.kind,
@@ -205,8 +239,11 @@ def _policy_row(p: ProtectionPolicy, names: dict, today: date) -> dict:
         "annual_premium": float(p.annual_premium) if p.annual_premium is not None else None,
         "expires_on": p.expires_on.isoformat() if p.expires_on else None,
         "status": "expired" if p.status == "in_force" and lapsed else str(p.status),
-        "counted": p.status == "in_force" and not lapsed, "source_document": p.source_document,
-        "recorded_by": p.recorded_by,
+        "counted": p.status == "in_force" and not lapsed and not_counted(p) is None,
+        "not_counted": not_counted(p), "source_document": p.source_document,
+        "recorded_by": p.recorded_by, "cover_basis": p.cover_basis or "any_cause",
+        "rider_of": str(p.rider_of) if p.rider_of else None, "group_cover": bool(p.group_cover),
+        "payee": payee_of(p, market),
     }
 
 
@@ -224,7 +261,10 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         select(ProtectionPolicy).where(ProtectionPolicy.household_id == household_id, ProtectionPolicy.firm_id == firm_id)
     )).scalars().all()
     names = {p.id: p.full_name for p in persons}
-    rows = [_policy_row(p, names, today) for p in policies]
+    from app.aurea_core import markets
+
+    market = markets.of_household(firm, (brain.get("household") or {}).get("values"))
+    rows = [_policy_row(p, names, today, market.code if market else None) for p in policies]
     in_force = [p for p, r in zip(policies, rows) if r["counted"]]
 
     managed = float(brain["totals"]["total_value"])
@@ -250,10 +290,10 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
             retirement_age=retirement_age, retirement_stated=basis != "assumed", assets=assets, rules=rules,
             goals_due=_goals_due(brain["goals"], today=today, years=years, rate=rules["discount_rate"]),
             debts=balance_sheet.debts_of(usable, p.id),
-            life=sum(float(x.sum_insured or 0) for x in mine if x.kind == "life"),
-            tpd=sum(float(x.sum_insured or 0) for x in mine if x.kind == "tpd"),
+            life=sum(float(x.sum_insured or 0) for x in mine if x.kind == "life" and not not_counted(x)),
+            tpd=sum(float(x.sum_insured or 0) for x in mine if x.kind == "tpd" and not not_counted(x)),
             income_benefits=[(float(x.annual_benefit or 0), x.benefit_to_age) for x in mine
-                             if x.kind == "income_protection"],
+                             if x.kind == "income_protection" and not not_counted(x)],
         )
         people.append({
             "person_id": str(p.id), "name": p.full_name, "age": age, "income": income,
@@ -362,6 +402,8 @@ async def prepare_policy(
     session: AsyncSession, firm_id: uuid.UUID, *, person_id: uuid.UUID, kind: str, provider: str,
     source_document: str, sum_insured=None, annual_benefit=None, benefit_to_age=None, benefit_years=None,
     annual_premium=None, expires_on: date | None = None, today: date | None = None,
+    cover_basis: str | None = None, rider_of: uuid.UUID | None = None, group_cover: bool = False,
+    nominee: str | None = None, nominee_relationship: str | None = None, mwp: bool = False,
 ) -> dict:
     """Everything recording a policy would refuse, refused without writing, so a Confirm card that
     would only fail is not shown. Returns what would be written."""
@@ -390,21 +432,36 @@ async def prepare_policy(
     paid_for = _years(benefit_years, "The benefit period") if kind == "long_term_care" and benefit_years not in (None, "") else None
     if expires_on is not None and expires_on < today:
         raise ProtectionError(f"This policy expired on {expires_on.isoformat()}, so it is not cover.")
+    basis = "accident_only" if kind == "personal_accident" else (cover_basis or "any_cause").strip().lower()
+    if basis not in COVER_BASES:
+        raise ProtectionError("Say whether it pays on any cause or on an accident only.")
+    parent = None
+    if rider_of:
+        parent = await session.get(ProtectionPolicy, rider_of)
+        if parent is None or parent.firm_id != firm_id or parent.person_id != person.id or parent.status != "in_force":
+            raise ProtectionError("A rider attaches to a policy in force on the same person's life.")
+        if kind == "life" or parent.rider_of:
+            raise ProtectionError("A rider is a benefit added to a base policy, not a policy of its own.")
+    if mwp and kind != "life":
+        raise ProtectionError("Only a policy on the insured's own life is written under the Married Women's Property Act.")
+    named = (nominee or "").strip()[:200] or None
     return {"person": person, "kind": kind, "provider": provider.strip()[:120], "source": source, "sum_insured": lump,
             "annual_benefit": benefit, "benefit_to_age": int(benefit_to_age) if benefit_to_age else None,
-            "benefit_years": paid_for, "annual_premium": premium, "expires_on": expires_on}
+            "benefit_years": paid_for, "annual_premium": premium, "expires_on": expires_on,
+            "cover_basis": basis, "rider_of": parent, "group_cover": bool(group_cover), "nominee": named,
+            "nominee_relationship": (nominee_relationship or "").strip()[:40] or None if named else None, "mwp": bool(mwp)}
 
 
 async def record_policy(
     session: AsyncSession, firm_id: uuid.UUID, *, person_id: uuid.UUID, kind: str, provider: str,
     source_document: str, recorded_by: str, sum_insured=None, annual_benefit=None, benefit_to_age=None,
     benefit_years=None, annual_premium=None, policy_number: str | None = None, expires_on: date | None = None,
-    currency: str | None = None, today: date | None = None,
+    currency: str | None = None, today: date | None = None, **india,
 ) -> dict:
     ready = await prepare_policy(session, firm_id, person_id=person_id, kind=kind, provider=provider,
                                  source_document=source_document, sum_insured=sum_insured, annual_benefit=annual_benefit,
                                  benefit_to_age=benefit_to_age, benefit_years=benefit_years, annual_premium=annual_premium,
-                                 expires_on=expires_on, today=today)
+                                 expires_on=expires_on, today=today, **india)
     person = ready["person"]
     firm = await session.get(Firm, firm_id)
     row = ProtectionPolicy(
@@ -414,6 +471,9 @@ async def record_policy(
         benefit_years=ready["benefit_years"],
         annual_premium=ready["annual_premium"], currency=(currency or firm.base_currency or "NZD").upper()[:3],
         expires_on=expires_on, status="in_force", source_document=ready["source"], recorded_by=recorded_by,
+        cover_basis=ready["cover_basis"], rider_of=ready["rider_of"].id if ready["rider_of"] else None,
+        group_cover=ready["group_cover"], nominee=ready["nominee"], nominee_relationship=ready["nominee_relationship"],
+        mwp=ready["mwp"],
     )
     session.add(row)
     await session.flush()

@@ -39,6 +39,13 @@ class PolicyIn(BaseModel):
     annual_premium: float | None = None
     policy_number: str | None = None
     expires_on: date | None = None
+    # India row 5: what it pays on, a rider's base policy, group cover and who is paid.
+    cover_basis: str | None = None
+    rider_of: uuid.UUID | None = None
+    group_cover: bool = False
+    nominee: str | None = None
+    nominee_relationship: str | None = None
+    mwp: bool = False
 
 
 class EndIn(BaseModel):

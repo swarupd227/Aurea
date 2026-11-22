@@ -9,7 +9,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
-STREAM_KINDS = ("social_security", "state_pension", "employer_pension", "annuity", "rental", "other")
+STREAM_KINDS = ("social_security", "state_pension", "employer_pension", "annuity", "rental", "other",
+                "eps_pension", "nps_annuity")
+# India's own (row 5): the Employees' Pension Scheme pension, and the annuity an NPS corpus buys at exit.
+INDIA_STREAM_KINDS = ("eps_pension", "nps_annuity")
 
 
 class IncomeStream(Base):

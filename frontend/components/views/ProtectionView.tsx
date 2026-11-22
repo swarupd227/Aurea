@@ -5,11 +5,12 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { withRef } from "@/lib/refs";
-import { KIND_TEXT, Scenario, money } from "@/app/workspace/components/artifacts/ProtectionCard";
+import { KIND_TEXT, Scenario, money, payeeText } from "@/app/workspace/components/artifacts/ProtectionCard";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
-const NEW_POLICY = { person_id: "", kind: "life", provider: "", amount: "", benefit_years: "", expires_on: "", source_document: "" };
+const NEW_POLICY = { person_id: "", kind: "life", provider: "", amount: "", benefit_years: "", expires_on: "", source_document: "",
+  nominee: "", nominee_relationship: "" };
 const NEW_INCOME = { person_id: "", annual_income: "", source_document: "" };
 
 /** What happens to a household if an earner dies or cannot work, or someone needs care: every client,
@@ -90,6 +91,7 @@ export function ProtectionView({ household = null }: { household?: string | null
       sum_insured: isYearly ? null : amount, annual_benefit: isYearly ? amount : null,
       benefit_years: isCare && policy.benefit_years ? Number(policy.benefit_years) : null,
       expires_on: policy.expires_on || null,
+      nominee: policy.nominee.trim() || null, nominee_relationship: policy.nominee_relationship.trim() || null,
     }, (r) => `Recorded ${KIND_TEXT[r.kind] ?? r.kind} cover with ${r.provider} for ${r.person}.`);
     if (ok) setPolicy(NEW_POLICY);
   }
@@ -165,7 +167,19 @@ export function ProtectionView({ household = null }: { household?: string | null
                 <option value="tpd">Total and permanent disablement</option>
                 <option value="income_protection">Income protection</option>
                 <option value="long_term_care">Long-term care</option>
+                <option value="critical_illness">Critical illness</option>
+                <option value="personal_accident">Personal accident</option>
               </select>
+            </label>
+            <label className="block">
+              <div className="tile-label">Nominee</div>
+              <input className="input w-full" value={policy.nominee} aria-label="Nominee" data-testid="protection-nominee"
+                onChange={(e) => setPolicy({ ...policy, nominee: e.target.value })} />
+            </label>
+            <label className="block">
+              <div className="tile-label">Nominee&rsquo;s relationship</div>
+              <input className="input w-full" value={policy.nominee_relationship} aria-label="Nominee's relationship"
+                onChange={(e) => setPolicy({ ...policy, nominee_relationship: e.target.value })} />
             </label>
             <label className="block">
               <div className="tile-label">{isYearly ? "Annual benefit" : "Sum insured"}</div>
@@ -303,7 +317,11 @@ export function ProtectionView({ household = null }: { household?: string | null
                     </td>
                     <td className="px-4 py-2 text-ink-muted">{KIND_TEXT[p.kind] ?? p.kind} · {p.provider}</td>
                     <td className="px-4 py-2 text-right font-mono tabular-nums text-ink-muted">{p.currency} {money(p.sum_insured ?? p.annual_benefit)}{p.annual_benefit != null ? " /yr" : ""}{p.benefit_years != null ? ` · ${p.benefit_years}y` : ""}</td>
-                    <td className="px-4 py-2"><span className={`chip ${p.counted ? "text-ok" : "text-ink-muted"}`}>{p.status.replace("_", " ")}</span>{p.expires_on && <span className="chip ml-1 text-ink-muted">to {p.expires_on}</span>}</td>
+                    <td className="px-4 py-2"><span className={`chip ${p.counted ? "text-ok" : "text-ink-muted"}`}>{p.status.replace("_", " ")}</span>{p.expires_on && <span className="chip ml-1 text-ink-muted">to {p.expires_on}</span>}
+                      {p.not_counted && p.status === "in_force" && <span className="chip ml-1 text-warn" title={p.not_counted}>not counted</span>}
+                      {p.group_cover && <span className="chip ml-1 text-ink-muted">group</span>}
+                      {p.rider_of && <span className="chip ml-1 text-ink-muted">rider</span>}
+                      {payeeText(p) && <span className="chip ml-1 text-ink-muted" title={p.payee?.means ?? undefined} data-testid="protection-payee">{payeeText(p)}</span>}</td>
                     <td className="px-4 py-2 text-right">
                       {canRecord && p.status !== "ended" && (ending?.id === p.id ? (
                         <div className="flex flex-wrap items-center justify-end gap-2" data-testid="protection-end">

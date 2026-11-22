@@ -63,6 +63,14 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE person ADD COLUMN IF NOT EXISTS pan VARCHAR(10)"))
         await conn.execute(text("ALTER TABLE legal_entity ADD COLUMN IF NOT EXISTS pan VARCHAR(10)"))
         await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS benefit_years INTEGER"))
+        # India row 5: cover basis, riders, group cover and who is paid (aurea_core/protection.py).
+        await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS cover_basis VARCHAR(16) DEFAULT 'any_cause'"))
+        await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS rider_of UUID"))
+        await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS group_cover BOOLEAN DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS nominee VARCHAR(200)"))
+        await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS nominee_relationship VARCHAR(40)"))
+        await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS mwp BOOLEAN DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE estate_document ADD COLUMN IF NOT EXISTS named JSON"))
         # Wave F: MFA columns on app_user
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(64)"))
         await conn.execute(text("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE"))

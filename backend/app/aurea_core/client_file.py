@@ -20,7 +20,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, registration, tasks
+from app.aurea_core import firm_time, nominations, registration, tasks
 from app.models.client_file import DOCUMENT_KINDS, LIFE_EVENTS, EstateDocument, LifeEvent, TrustedContact
 from app.models.graph import Account, AccountBeneficiary, Household, Mandate, Person
 from app.models.tenant import Firm
@@ -97,12 +97,28 @@ async def _designation_issues(session: AsyncSession, firm_id: uuid.UUID, househo
         Mandate.person_id.in_([p.id for p in people] or [uuid.uuid4()]), Account.status == "active"))).scalars().all()
     if accounts:
         names = {a.id: a.name for a in accounts}
+        nominees: dict = defaultdict(list)
         for b in (await session.execute(select(AccountBeneficiary).where(AccountBeneficiary.account_id.in_(list(names))))).scalars().all():
+            nominees[b.account_id].append(b.beneficiary_name)
             who = b.beneficiary_name.strip().lower()
             if who in gone:
                 issues.append({"account": names[b.account_id], "issue": "beneficiary has died", "name": b.beneficiary_name})
             elif who in former:
                 issues.append({"account": names[b.account_id], "issue": "beneficiary is a former spouse", "name": b.beneficiary_name})
+        firm = await session.get(Firm, firm_id)
+        if nominations.cap_for(firm) is not None:
+            # India: every demat wants a nomination, and a nominee is read against the owner's will (aurea_core/nominations.py).
+            owners = {m.id: m.person_id for m in (await session.execute(select(Mandate).where(
+                Mandate.id.in_([a.mandate_id for a in accounts])))).scalars().all()}
+            wills = {d.person_id: d for d in (await session.execute(select(EstateDocument).where(
+                EstateDocument.person_id.in_([p.id for p in people] or [uuid.uuid4()]), EstateDocument.kind == "will")
+                .order_by(EstateDocument.signed_on))).scalars().all()}
+            for a in accounts:
+                if not nominees.get(a.id):
+                    issues.append({"account": a.name, "issue": "no nomination on file (an opt-out is not modelled)", "name": None})
+                    continue
+                will = wills.get(owners.get(a.mandate_id))
+                issues += nominations.will_issues(a.name, nominees[a.id], will.named if will else None)
     return issues
 
 
@@ -185,7 +201,7 @@ async def record_contact(session: AsyncSession, person_id: uuid.UUID, *, firm_id
 
 
 async def prepare_estate_document(session: AsyncSession, person_id: uuid.UUID, *, firm_id: uuid.UUID, kind: str | None, signed_on: date | None, source_document: str | None,
-                                  held_by: str | None = None) -> dict:
+                                  held_by: str | None = None, named_heirs=None) -> dict:
     person = await _person(session, person_id, firm_id)
     if kind not in DOCUMENT_KINDS:
         raise ClientFileError(f"The kind must be one of {', '.join(DOCUMENT_KINDS)}.")
@@ -193,12 +209,17 @@ async def prepare_estate_document(session: AsyncSession, person_id: uuid.UUID, *
         raise ClientFileError("Give the date it was signed.")
     if signed_on > await _today(session, firm_id):
         raise ClientFileError("It cannot be signed in the future.")
-    return {"person": person, "kind": kind, "signed_on": signed_on, "held_by": (held_by or "").strip() or None, "document": _document(source_document)}
+    heirs = [h.strip() for h in (named_heirs.split(",") if isinstance(named_heirs, str) else (named_heirs or [])) if str(h).strip()]
+    if heirs and kind != "will":
+        raise ClientFileError("Only a will names who inherits.")
+    return {"person": person, "kind": kind, "signed_on": signed_on, "held_by": (held_by or "").strip() or None, "document": _document(source_document),
+            "named": heirs or None}
 
 
 async def record_estate_document(session: AsyncSession, person_id: uuid.UUID, *, firm_id: uuid.UUID, by: str, **terms) -> EstateDocument:
     ready = await prepare_estate_document(session, person_id, firm_id=firm_id, **terms)
-    row = EstateDocument(firm_id=firm_id, person_id=person_id, kind=ready["kind"], signed_on=ready["signed_on"], held_by=ready["held_by"], source_document=ready["document"], recorded_by=by)
+    row = EstateDocument(firm_id=firm_id, person_id=person_id, kind=ready["kind"], signed_on=ready["signed_on"], held_by=ready["held_by"], source_document=ready["document"], recorded_by=by,
+                         named=ready["named"])
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="estate_document_recorded", actor=by, content={"person_id": str(person_id), "kind": row.kind, "signed_on": row.signed_on.isoformat()})

@@ -138,7 +138,7 @@ async def household_brain(
     return {
         "currency": firm.base_currency if firm else None,
         # The firm's returns and inflation indexes, so every engine reading the brain projects on them (B-167).
-        "planning": assumption_set(firm.settings if firm else None),
+        "planning": assumption_set(firm.settings if firm else None, firm.jurisdiction if firm else None),
         "household": {
             "id": str(household.id),
             "name": household.name,

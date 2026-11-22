@@ -247,13 +247,13 @@ async def for_household(
     if default_ret_age is None and rgoal and (rgoal.get("target_date") or a.get("years")):
         default_ret_age = current_age + goal_tradeoff.horizon(rgoal, today)[0]
     if default_ret_age is None:
-        default_ret_age = max(65, current_age + 5)
+        default_ret_age = max(planning.default_of(brain, "retirement_age", 65), current_age + 5)
         assumed.append("retirement_age")
     retirement_age = int(overrides.get("retirement_age") or default_ret_age)
     if not overrides.get("longevity_age") and not a.get("longevity_age"):
         assumed.append("longevity_age")
     # The plan-to age is the last survivor's: the youngest adult's. On the eldest's ages it falls the gap between them later.
-    plan_to_age = int(overrides.get("longevity_age") or a.get("longevity_age", ASSUMED_LONGEVITY))
+    plan_to_age = int(overrides.get("longevity_age") or a.get("longevity_age", planning.default_of(brain, "plan_to_age", ASSUMED_LONGEVITY)))
     gap = adults[0][0] - adults[-1][0] if adults else 0
     end_age = plan_to_age + gap
     if a.get("funding_share") is None:
@@ -282,6 +282,8 @@ async def for_household(
         retirement_age=retire_at, longevity_age=max(end_age, retire_at + 1),
         annual_income=income_need, annual_contribution=annual_contribution,
         streams=on_file["streams"], cma=planning.cma_of(brain),
+        # The firm's inflation, or its market's: this used the 2.5% default whatever the firm had set.
+        inflation=float((((brain.get("planning") or {}).get("inflation")) or {}).get("cpi", 0.025)),
     )
     acc = plan["years_to_retirement"]
     plan["household"] = {"id": str(household_id), "name": brain["household"]["name"]}

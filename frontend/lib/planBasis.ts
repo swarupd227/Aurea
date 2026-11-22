@@ -3,7 +3,13 @@ import { money, pct } from "@/lib/format";
 // What a plan or a goal's figures rest on, as chip text, so every surface says it the same way.
 
 /** Whose capital market assumptions the returns are (B-167). */
-export const returnsLabel = (source?: string | null) => (source === "firm" ? "firm's return assumptions" : "platform's return assumptions");
+export const returnsLabel = (source?: string | null) =>
+  source === "firm" ? "firm's return assumptions" : source === "market" ? "the market's suggested returns" : "platform's return assumptions";
+
+/** A market's suggested planning figure (India row 5), as chip text: its label and value. The source is the chip's title. */
+export function basisLabel(b: { key: string; label: string; value: number }): string {
+  return /return|inflation/.test(b.key) ? `${b.label} ${(b.value * 100).toFixed(1)}%` : `${b.label} ${b.value}`;
+}
 
 /** Where a retirement plan ends: the younger adult's plan-to age for a couple, and whose ages it counts (B-173). */
 export function planToLabel(p: any): string {

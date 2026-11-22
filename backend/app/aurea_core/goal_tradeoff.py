@@ -271,7 +271,7 @@ def earnings(brain: dict, today: date, *, annual_income: float | None = None) ->
         elif ret and (ret.get("target_date") or (ret.get("assumptions") or {}).get("years")):
             stops = age + horizon(ret, today)[0]
         else:
-            stops = ASSUMED_RETIREMENT_AGE
+            stops = planning.default_of(brain, "retirement_age", ASSUMED_RETIREMENT_AGE)
             assumed.add("retirement_age")
         earners.append({"name": name, "age": age, "annual_income": income, "retirement_age": stops,
                         "value": human_capital_pv(age, stops, income)})
