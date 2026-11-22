@@ -28,6 +28,9 @@ from app.aurea_core.planning import _blended_assumptions
 
 _DISCOUNT_RATE = 0.04   # risk-free rate used to PV human capital
 _TARGET_SUCCESS = 0.70  # "on track" threshold
+# What a goal is to the client (B-176, L200-2 §2.3), recorded by a person on the goal. A household's success is every
+# needs goal funded; a goal with no tier on file is "not tiered", never read as a need.
+TIERS = ("needs", "wants", "wishes")
 
 
 # ── Human capital ─────────────────────────────────────────────────────────────
@@ -75,7 +78,8 @@ def run_tradeoff(
     effective = round(total_portfolio + human_capital_value, 2)
     if not goals:
         return {"goals": [], "shared_capital": round(total_portfolio, 2), "human_capital": round(human_capital_value, 2),
-                "total_effective_capital": effective, "assumptions": {}, "shares_scaled": False}
+                "total_effective_capital": effective, "assumptions": {}, "shares_scaled": False,
+                "tiers": {"by_tier": {}, "not_tiered": [], "success": None, "success_basis": "not tiered", "failed_tier": None}}
 
     mu, sigma = _blended_assumptions(allocation, cma=cma)
     rng = np.random.default_rng(seed)
@@ -104,6 +108,7 @@ def run_tradeoff(
         due.setdefault(min(int(g.get("years") or ASSUMED_YEARS), max_years), []).append(g)
 
     goal_results: dict[str, dict] = {}
+    funded: dict[str, np.ndarray] = {}   # per goal, the futures in which it is met
     for y in range(1, max_years + 1):
         growth = 1 + shocks[:, y - 1]
         shared = np.maximum(shared * growth + shared_add, 0.0)
@@ -119,13 +124,16 @@ def run_tradeoff(
                 own_add.pop(gid, None)
             else:
                 shared = np.maximum(shared - drawn, 0.0)
-            success = float(np.mean(avail >= target)) if target > 0 else 1.0
+            met = avail >= target if target > 0 else np.ones(sims, dtype=bool)
+            funded[gid] = met
+            success = float(np.mean(met))
             med = float(np.median(avail))
             goal_results[gid] = {
                 "id": gid,
                 "name": g.get("name") or _kind_label(g.get("kind", "other")),
                 "kind": g.get("kind", "other"),
                 "priority": g.get("priority", 99),
+                "tier": g.get("tier"),
                 "share": round(shares[gid], 4) if gid in shares else None,
                 "target_amount": round(target, 2),
                 "years": y,
@@ -145,6 +153,30 @@ def run_tradeoff(
         "total_effective_capital": effective,
         "assumptions": {"expected_return": round(mu, 4), "volatility": round(sigma, 4), "sims": sims},
         "shares_scaled": scaled,
+        "tiers": _tiers(sorted_goals, funded, goal_results),
+    }
+
+
+def _tiers(goals: list[dict], funded: dict, results: dict) -> dict:
+    """Each tier's goals read together: how often all of them are met in the same future. The household's success
+    is that figure for its needs; the first tier, most important first, that is not on track is the one that failed.
+    Goals with no tier on file are listed as not tiered and count towards no tier."""
+    out: dict = {}
+    for tier in TIERS:
+        ids = [str(g["id"]) for g in goals if g.get("tier") == tier and str(g["id"]) in funded]
+        if not ids:
+            continue
+        together = float(np.mean(np.all(np.vstack([funded[i] for i in ids]), axis=0)))
+        out[tier] = {"goals": len(ids), "all_met": round(together, 3), "on_track": together >= _TARGET_SUCCESS,
+                     "short": [results[i]["name"] for i in ids if not results[i]["on_track"]]}
+    not_tiered = [results[str(g["id"])]["name"] for g in goals if g.get("tier") not in TIERS and str(g["id"]) in results]
+    needs = out.get("needs")
+    return {
+        "by_tier": out,
+        "not_tiered": not_tiered,
+        "success": needs["all_met"] if needs else None,
+        "success_basis": "every needs goal met" if needs else ("no goal is tiered as a need" if out else "not tiered"),
+        "failed_tier": next((t for t in TIERS if t in out and not out[t]["on_track"]), None),
     }
 
 
@@ -317,6 +349,7 @@ def prepare(brain: dict, today: date, *, priority_overrides: dict | None = None,
         grown = grown_target(g, target, years, today, brain.get("planning"), years_delta=int(ov.get("years_delta", 0)))
         goals.append({"id": gid, "name": g.get("name") or _kind_label(g.get("kind", "other")),
                       "kind": g.get("kind", "other"), "priority": priority, "target_amount": round(grown["target"], 2),
+                      "tier": a.get("tier") if a.get("tier") in TIERS else None,
                       "years": years, "horizon": basis, "assumptions": a,
                       "target_basis": grown["target_basis"], "target_today": grown["target_today"], "index": grown["index"],
                       "inflation": grown["inflation"], "rates_assumed": grown["assumed"],
@@ -333,7 +366,7 @@ def prepare(brain: dict, today: date, *, priority_overrides: dict | None = None,
 def _annotate(results: list[dict], goals: list[dict]) -> list[dict]:
     by_id = {g["id"]: g for g in goals}
     return [{**r, "horizon": by_id[r["id"]]["horizon"],
-             **{k: by_id[r["id"]][k] for k in ("target_basis", "target_today", "index", "inflation")},
+             **{k: by_id[r["id"]][k] for k in ("target_basis", "target_today", "index", "inflation", "tier")},
              "assumed": (["years"] if by_id[r["id"]]["horizon"] == "assumed" else []) + by_id[r["id"]]["rates_assumed"],
              "estimate": True} for r in results]
 
@@ -390,7 +423,8 @@ async def for_household(
     }
     if not inputs["goals"]:
         return {**shared, "goals": [], "shared_capital": round(total, 2), "human_capital": earned["value"],
-                "total_effective_capital": round(total + earned["value"], 2), "tradeoff_matrix": [], "assumptions": {}}
+                "total_effective_capital": round(total + earned["value"], 2), "tradeoff_matrix": [], "assumptions": {},
+                "tiers": {"by_tier": {}, "not_tiered": [], "success": None, "success_basis": "not tiered", "failed_tier": None}}
 
     cma = planning.cma_of(brain)
     base = run_tradeoff(goals=inputs["goals"], total_portfolio=total, allocation=allocation,
@@ -405,6 +439,7 @@ async def for_household(
         "human_capital": base["human_capital"],
         "total_effective_capital": base["total_effective_capital"],
         "tradeoff_matrix": matrix,
+        "tiers": base["tiers"],
         "assumptions": {**base["assumptions"], "source": shared["assumptions_source"]},
     }
 

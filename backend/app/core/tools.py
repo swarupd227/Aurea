@@ -2870,7 +2870,7 @@ TOOLS: dict[str, Tool] = {
         key="update_goal",
         name="Update Goal",
         speaking_agent="astra",
-        description="Update a household goal's parameters (target, timeline, priority), or say whether its target is in today's money (target_basis today, grown to its date with its index) or a fixed sum (nominal), as the adviser states it.",
+        description="Update a household goal's parameters (target, timeline, priority), say whether its target is in today's money (target_basis today, grown to its date with its index) or a fixed sum (nominal), or record its tier (needs, wants or wishes; none clears it), as the adviser states it. A household's success is every needs goal met.",
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
         confirmation="This will update the goal and may trigger plan recalculations. Continue?",
         inputs=[
@@ -2880,6 +2880,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("priority", "string", "New priority (high/medium/low)", required=False),
             ToolInput("target_basis", "string", "today (the target is in today's money) or nominal (a fixed sum)", required=False),
             ToolInput("index", "string", "What a today's-money target grows with: cpi, education or healthcare", required=False),
+            ToolInput("tier", "string", "What the goal is to the client: needs, wants or wishes; none clears it", required=False),
         ],
         output=ToolOutput("object", "Updated goal with recalculated progress"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},

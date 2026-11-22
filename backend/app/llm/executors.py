@@ -5428,6 +5428,24 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
 
     # ─── The client's Canvas (B-95). Staff read what a client sees; a client's tools read only their own.
     @staticmethod
+    def _tiers_said(tiers: dict | None) -> str:
+        """The household's success as its tiers read it (B-176): every needs goal met, the tier that falls short, and
+        the goals with no tier on file, which count as no tier."""
+        if not tiers or not tiers.get("by_tier"):
+            return " No goal is tiered as a need, want or wish yet, so there is no household success figure." if tiers else ""
+        out = ""
+        if tiers.get("success") is not None:
+            out += f" Every needs goal is met together in {tiers['success']:.0%} of the paths."
+        else:
+            out += " No goal is tiered as a need, so there is no household success figure."
+        if tiers.get("failed_tier"):
+            short = tiers["by_tier"][tiers["failed_tier"]]["short"]
+            out += f" The {tiers['failed_tier']} are not on track" + (f": {', '.join(short)}." if short else " together.")
+        if tiers.get("not_tiered"):
+            out += f" Not tiered: {', '.join(tiers['not_tiered'])}."
+        return out
+
+    @staticmethod
     def _goals_basis(assumed: list[str]) -> str:
         """What a goal likelihood rests on, for the model to say: the one engine every screen reads, and
         what it had to assume (B-131)."""
@@ -5474,7 +5492,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             raise ExecutorError(f"Household {household.id} not found or access denied")
         return {**view, "message": f"What {household.name} see: {len(view['goals'])} goal(s), "
                                    f"{view['goals_on_track']} on track by the planning estimate. "
-                                   + self._goals_basis(view["goals_assumed"])}
+                                   + self._goals_basis(view["goals_assumed"]) + self._tiers_said(view.get("goals_tiers"))}
 
     async def _questionnaire(self, inputs: dict[str, Any]) -> tuple[Household, dict[str, str], Any]:
         """The household, the answers matched to the form's own options, and who answers. Raises what
@@ -5556,7 +5574,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         adviser = (view.get("adviser") or {}).get("name")
         return {**view, "message": f"{view['goals_on_track']} of {len(view['goals'])} goal(s) on track by the planning "
                                    f"estimate.{f' Looked after by {adviser}.' if adviser else ''} "
-                                   + self._goals_basis(view["goals_assumed"])}
+                                   + self._goals_basis(view["goals_assumed"]) + self._tiers_said(view.get("goals_tiers"))}
 
     async def read_my_net_worth(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import balance_sheet
@@ -5615,7 +5633,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             raise ExecutorError("No goals are on file for you yet.")
         return {**plan, "household_id": str(hid),
                 "message": "Your goals side by side. Every likelihood is an estimate. "
-                           + self._goals_basis(plan["assumed"])}
+                           + self._goals_basis(plan["assumed"]) + self._tiers_said(plan.get("tiers"))}
 
     async def read_my_fees(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import client_view
@@ -5962,8 +5980,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
                 raise ExecutorError("priority must be high, medium or low.")
             changes["priority"] = mapped
         changes.update(self._goal_basis_changes(goal, basis, index))
+        changes.update(self._goal_tier_change(goal, inputs.get("tier")))
         if not changes:
-            raise ExecutorError("Say what to change on this goal: its target, year, priority, target basis or index.")
+            raise ExecutorError("Say what to change on this goal: its target, year, priority, target basis, index or tier.")
         return goal, changes
 
     @staticmethod
@@ -6001,6 +6020,25 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             changes["index"] = None   # a fixed sum grows with nothing
         return changes
 
+    @staticmethod
+    def _goal_tier_change(goal: Any, tier: Any) -> dict[str, Any]:
+        """The goal's tier as a person states it (B-176): needs, wants or wishes, or none to clear it. Written in the
+        goal's `assumptions`, where `goal_tradeoff` reads it. Naming what is already on file is no change."""
+        from app.aurea_core.goal_tradeoff import TIERS
+
+        if tier in (None, ""):
+            return {}
+        said = str(tier).strip().lower()
+        said = {"need": "needs", "want": "wants", "wish": "wishes"}.get(said, said)
+        if said in ("none", "not tiered", "clear"):
+            said = None
+        elif said not in TIERS:
+            raise ExecutorError("tier must be needs, wants or wishes (or none to clear it).")
+        on_file = (goal.assumptions or {}).get("tier")
+        if said == on_file:
+            raise ExecutorError(f"This goal is already {'not tiered' if said is None else 'tiered as ' + said}.")
+        return {"tier": said}
+
     async def _goal_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core import firm_time, markets
 
@@ -6013,7 +6051,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
                 ("Date", f"{firm_time.spoken(goal.target_date) if goal.target_date else 'None'} becomes {firm_time.spoken(c['target_date'])}"
                  if "target_date" in c else None),
                 ("Priority", f"{rank.get(goal.priority, goal.priority)} becomes {rank[c['priority']]}" if "priority" in c else None),
-                *self._goal_basis_rows(goal, c)]
+                *self._goal_basis_rows(goal, c),
+                ("Tier", f"{self._tier_word((goal.assumptions or {}).get('tier'))} becomes {self._tier_word(c['tier'])}"
+                 if "tier" in c else None)]
+
+    @staticmethod
+    def _tier_word(tier: Any) -> str:
+        return {"needs": "Needs", "wants": "Wants", "wishes": "Wishes"}.get(tier, "Not tiered")
 
     @staticmethod
     def _goal_basis_rows(goal: Any, c: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -6033,7 +6077,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         """Update a household goal's target, timeline, priority, or whether its target is in today's money and the
         index it grows with (B-211)."""
         goal, changes = await self._goal_changes(inputs)
-        basis = {k: changes.pop(k) for k in ("target_basis", "index") if k in changes}
+        basis = {k: changes.pop(k) for k in ("target_basis", "index", "tier") if k in changes}
         for field, value in changes.items():
             setattr(goal, field, value)
         if basis:
@@ -6058,13 +6102,15 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         say = markets.money_for(await self._firm())
         plan = await goal_tradeoff.for_household(self.session, goal.household_id, firm_id=self.firm_id) if goal.household_id else None
         row = next((g for g in (plan or {}).get("goals", []) if g.get("id") == str(goal.id)), None)
-        keep = ("name", "target_amount", "target_basis", "target_today", "index", "inflation", "success_probability", "on_track", "years", "assumed")
+        keep = ("name", "target_amount", "target_basis", "target_today", "index", "inflation", "tier", "success_probability", "on_track", "years", "assumed")
         return {
             "goal_id": str(goal.id),
             "updates": updates,
             "goal": {k: row.get(k) for k in keep} if row else None,
             "assumptions_source": (plan or {}).get("assumptions_source"),
+            "tiers": (plan or {}).get("tiers"),
             "message": f"Updated goal '{goal.name}'."
+                       + (f" Tiered as {basis['tier']}." if basis.get("tier") else " No longer tiered." if "tier" in basis else "")
                        + (f" It is now {row['success_probability']:.0%} likely, on a target of {say(row['target_amount'])} by its date"
                           + (f" ({say(row['target_today'])} in today's money, grown with {row['index']})" if row.get("target_basis") == "today" else "") + "."
                           if row and row.get("success_probability") is not None else ""),
