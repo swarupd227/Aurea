@@ -193,9 +193,15 @@ def costs_disclosed(c: CheckContext) -> RuleResult:
 
 
 def target_market(c: CheckContext) -> RuleResult:
-    if c.mandate_type:
-        return RuleResult("pass", f"Action within the {c.mandate_type} mandate's target market.")
-    return RuleResult("na", "No product target-market assessment applies.")
+    """A product list carries the target-market version every client on it was read against (aurea_core/product_fit).
+    Anything else is not assessed here: a mandate type is not a target market, and this used to pass on one."""
+    p = c.payload or {}
+    if p.get("signal") == "product_match":
+        if not p.get("target_market_version"):
+            return RuleResult("fail", "The list does not say which target market its clients were read against.")
+        return RuleResult("pass", f"Every client on the list was read against target market version {p['target_market_version']}"
+                                  f" ({p.get('document') or 'its document'}).")
+    return RuleResult("na", "No product with a target market is offered in this action.")
 
 
 def best_execution(c: CheckContext) -> RuleResult:

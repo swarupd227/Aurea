@@ -33,6 +33,7 @@ import { ClientFileCard } from "./ClientFileCard";
 import { ExitsCard } from "./ExitsCard";
 import { PlanCard } from "./PlanCard";
 import { ShelfCard } from "./ShelfCard";
+import { DistributionCard, ProductFitCard, TargetMarketCard } from "./ProductFitCard";
 import { TaxDocumentsCard, TradesCard } from "./TradesCard";
 import { AmlCard } from "./AmlCard";
 import { ConsentsCard } from "./ConsentsCard";
@@ -338,6 +339,19 @@ export function artifactCard(artifact: Artifact) {
       case "set_approved_products_only":
         if (!Array.isArray(artifact.result?.products)) return null;
         return <ShelfCard result={artifact.result as any} />;
+      case "add_product":
+      case "record_target_market":
+      case "approve_distribution":
+      case "read_target_market":
+        if (!artifact.result?.symbol) return null;
+        return <TargetMarketCard result={artifact.result as any} />;
+      case "read_product_fit":
+        if (!Array.isArray(artifact.result?.fits)) return null;
+        return <ProductFitCard result={artifact.result as any} />;
+      case "read_distribution":
+      case "record_pitch_outcome":
+        if (!Array.isArray(artifact.result?.pitches)) return null;
+        return <DistributionCard result={artifact.result as any} />;
       case "read_client_exits":
       case "start_client_departure":
       case "record_client_death":

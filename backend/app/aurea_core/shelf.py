@@ -98,6 +98,11 @@ async def barred(session: AsyncSession, firm: Firm, mandate: Mandate) -> dict[uu
                 out[instrument_id] = "not on the approved list"
     for instrument_id, reason in (await plan_bars(session, firm, mandate)).items():
         out.setdefault(instrument_id, reason)
+    # A product's negative target market, on facts on file: the rebalancer and a direct order read it here alike.
+    from app.aurea_core import product_distribution
+
+    for instrument_id, reason in (await product_distribution.negative_bars(session, firm, mandate)).items():
+        out.setdefault(instrument_id, reason)
     return out
 
 

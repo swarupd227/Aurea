@@ -172,7 +172,7 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
     case "tax_documents":
       return <TaxDocumentsView household={pane.query.household ?? null} />;
     case "products":
-      return <ProductsView />;
+      return <ProductsView symbol={pane.query.symbol ?? null} />;
     case "exits":
       return <ExitsView household={pane.query.household ?? null} />;
     case "analytics":

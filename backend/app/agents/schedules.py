@@ -82,6 +82,11 @@ DEFAULT_SCHEDULES: dict[str, tuple[str, str]] = {
         "A prospect's silence is measured in weeks, and the follow-up is a person's morning call, so "
         "a weekday look before the day starts is enough and a weekend one is noise.",
     ),
+    AgentKey.PRODUCT_MATCH: (
+        "0 7 * * 1",
+        "A product's fit changes when its target market, the shelf or a client's facts are recorded; a Monday look "
+        "puts new lists in front of the week's meetings, and refreshes rather than stacks the ones still open.",
+    ),
     AgentKey.WARM_INTRODUCTION: (
         "30 7 * * 1",
         "Who knows a prospect changes when someone records a link, which is weekly at most; a Monday look "

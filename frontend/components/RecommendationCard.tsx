@@ -358,6 +358,19 @@ export default function RecommendationCard({
               {(payload.gaps ?? []).some((g: any) => g.retirement_assumed) && <span className={chipMuted}>retirement age assumed</span>}
             </div>
           )}
+          {payload.signal === "product_match" && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2" data-testid="rec-product-match">
+              <span className={chipMuted}>{payload.symbol} · target market v{payload.target_market_version}</span>
+              {payload.conflict && payload.conflict !== "none" && <span className="chip text-warn">{String(payload.conflict).replace(/_/g, " ")}</span>}
+              {(payload.fits ?? []).map((f: any) => (
+                <span key={f.household_id} className="chip bg-ok-bg text-ok" title={(f.signals ?? []).map((s: any) => s.said).join("; ") || "fits its target market"}>
+                  {f.household}{f.points ? ` · ${f.points}` : ""}
+                </span>
+              ))}
+              {(payload.needs_fact ?? []).length > 0 && <span className="chip text-warn">{payload.needs_fact.length} need a fact first</span>}
+              {payload.not_for > 0 && <span className={chipMuted}>{payload.not_for} not for them</span>}
+            </div>
+          )}
           {isDrift && (
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               {harvested > 0 && (
@@ -482,7 +495,7 @@ export default function RecommendationCard({
 
           {orders.length === 0 && payload.brief && <MeetingBriefView brief={payload.brief} />}
 
-          {orders.length === 0 && !payload.brief && payload.signal !== "ips_breach" && payload.signal !== "protection_gap" && Object.keys(payload).length > 0 && (
+          {orders.length === 0 && !payload.brief && !["ips_breach", "protection_gap", "product_match"].includes(payload.signal) && Object.keys(payload).length > 0 && (
             <PayloadView payload={payload} shown={`${rec.summary ?? ""}\n${rec.rationale ?? ""}`} />
           )}
 

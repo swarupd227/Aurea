@@ -55,5 +55,7 @@ from app.models import foundation  # noqa: F401,E402
 from app.models import held_away  # noqa: F401,E402
 # Keys a person gives an outside agent to call Astra's tools through MCP (B-166).
 from app.models import outside_agent  # noqa: F401,E402
+# Who a product is for, its distribution sign-off, and who it was offered to (B-226 to B-231).
+from app.models import product_distribution  # noqa: F401,E402
 # The firm's planning assumptions, one versioned record (B-174).
 from app.models import assumptions  # noqa: F401,E402

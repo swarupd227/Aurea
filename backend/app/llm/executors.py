@@ -153,6 +153,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             "record_concentration_plan": self.record_concentration_plan,
             "read_product_shelf": self.read_product_shelf,
             "record_product_decision": self.record_product_decision,
+            "add_product": self.add_product,
+            "record_target_market": self.record_target_market,
+            "approve_distribution": self.approve_distribution,
+            "read_target_market": self.read_target_market,
+            "read_product_fit": self.read_product_fit,
+            "read_distribution": self.read_distribution,
+            "record_pitch_outcome": self.record_pitch_outcome,
             "record_investor_status": self.record_investor_status,
             "set_approved_products_only": self.set_approved_products_only,
             "start_client_departure": self.start_client_departure,
@@ -1273,6 +1280,204 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             raise ExecutorError(str(exc))
         result["message"] = f"Approved products only is {'on' if result['approved_products_only'] else 'off'}."
         return result
+
+    # ── A new product, who it is for, and who it was offered to (B-226 to B-231) ──────────────────
+
+    def _target_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"symbol": inputs.get("symbol"), "document": inputs.get("document"), "objectives": inputs.get("objectives"),
+                "risk_profiles": inputs.get("risk_profiles"), "min_capacity": inputs.get("min_capacity"),
+                "min_horizon_years": inputs.get("min_horizon_years"), "min_investment": inputs.get("min_investment"),
+                "complexity": inputs.get("complexity"), "liquidity": inputs.get("liquidity"), "lock_years": inputs.get("lock_years"),
+                "markets_for": inputs.get("markets"), "mandate_types": inputs.get("mandate_types"),
+                "negative_market": inputs.get("negative_market"), "distribution": inputs.get("distribution"),
+                "conflict": inputs.get("conflict"), "disclosure": inputs.get("disclosure"),
+                "as_of": self._exit_day(inputs.get("as_of"), "as_of")}
+
+    def _product_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {k: inputs.get(k) for k in ("symbol", "name", "asset_class", "currency", "market_symbol")}
+
+    async def _target_view(self, inst) -> dict[str, Any]:
+        from app.aurea_core import product_distribution as pd
+
+        state = await pd.offerable(self.session, await self._firm(), inst)
+        signed = state["signoff"]
+        return {"symbol": inst.symbol, "product": inst.name, "asset_class": str(inst.asset_class),
+                "target_market": pd.tm_view(state["target_market"]), "offerable": state["offerable"], "why_not": state["why_not"],
+                "shelf_status": state["decision"].status if state["decision"] else None,
+                "signoff": {"by": signed.decided_by, "on": signed.decided_on.isoformat(), "reason": signed.reason} if signed else None}
+
+    async def add_product(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import product_distribution as pd
+
+        try:
+            inst = await pd.add_product(self.session, self.firm_id, by=await self._shelf_user(), **self._product_args(inputs))
+        except pd.DistributionError as exc:
+            raise ExecutorError(str(exc))
+        view = await self._target_view(inst)
+        view["message"] = (f"Added {inst.symbol}. It is offered to nobody until its shelf decision and target market are "
+                           "recorded, and nothing values it until it has a real price.")
+        return view
+
+    async def record_target_market(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import product_distribution as pd
+
+        try:
+            row = await pd.record_target_market(self.session, self.firm_id, by=await self._shelf_user(), role=str(self.role),
+                                                **self._target_args(inputs))
+        except pd.DistributionError as exc:
+            raise ExecutorError(str(exc))
+        view = await self._target_view(await self.session.get(Instrument, row.instrument_id))
+        view["message"] = (f"Recorded version {row.version} of {view['symbol']}'s target market. "
+                           + ("It may be offered now." if view["offerable"] else f"It is not offered yet: {view['why_not']}."))
+        return view
+
+    async def approve_distribution(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import product_distribution as pd
+
+        try:
+            await pd.record_signoff(self.session, self.firm_id, by=await self._shelf_user(), role=str(self.role),
+                                    symbol=inputs.get("symbol"), reason=inputs.get("reason"))
+            inst = await pd.instrument(self.session, self.firm_id, inputs.get("symbol"))
+        except pd.DistributionError as exc:
+            raise ExecutorError(str(exc))
+        view = await self._target_view(inst)
+        view["message"] = f"Signed off. {inst.symbol} " + ("may be offered now." if view["offerable"] else f"is still not offered: {view['why_not']}.")
+        return view
+
+    async def read_target_market(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import product_distribution as pd
+
+        try:
+            inst = await pd.instrument(self.session, self.firm_id, inputs.get("symbol"))
+        except pd.DistributionError as exc:
+            raise ExecutorError(str(exc))
+        view = await self._target_view(inst)
+        tm = view["target_market"]
+        view["message"] = (f"{inst.symbol} has no target market on file." if tm is None else
+                           f"{inst.symbol}: target market version {tm['version']}, from {tm['document']}. "
+                           + ("It may be offered." if view["offerable"] else f"It is not offered: {view['why_not']}."))
+        return view
+
+    async def read_product_fit(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """One product against a book. An adviser reads their own clients; a household_id reads one client."""
+        from app.aurea_core import product_distribution as pd, product_fit, tasks
+
+        try:
+            inst = await pd.instrument(self.session, self.firm_id, inputs.get("symbol"))
+        except pd.DistributionError as exc:
+            raise ExecutorError(str(exc))
+        firm = await self._firm()
+        adviser_id, household_ids, scope = None, None, "the firm"
+        if inputs.get("household_id"):
+            household = await self._own_household(inputs["household_id"])
+            household_ids, scope = {household.id}, household.name
+        elif inputs.get("adviser_name"):
+            try:
+                adviser = await tasks.staff_named(self.session, self.firm_id, str(inputs["adviser_name"]))
+            except tasks.TaskError as exc:
+                raise ExecutorError(str(exc))
+            adviser_id, scope = adviser.id, f"{adviser.full_name}'s clients"
+        elif UserRole(self.role) == UserRole.ADVISER:
+            adviser_id, scope = self.user_id, "your clients"
+        result = await product_fit.for_book(self.session, firm, inst, adviser_id=adviser_id, household_ids=household_ids)
+        counts = result["counts"]
+        # Monitoring is never told: only compliance learns how many were left off for it.
+        if UserRole(self.role) != UserRole.COMPLIANCE:
+            result.pop("withheld", None)
+            counts.pop("withheld", None)
+        shown = {k: len(result[k]) for k in ("fits", "needs_fact", "not_for")}
+        for k in ("fits", "needs_fact", "not_for"):
+            result[k] = result[k][:25]
+        result["scope"] = scope
+        if result["target_market"] is None:
+            result["message"] = f"{inst.symbol} has no target market on file, so nobody can be read against it."
+        else:
+            result["message"] = (f"{inst.symbol} against {scope}: {shown['fits']} fit, {shown['needs_fact']} need a fact first, "
+                                 f"{shown['not_for']} it is not for. "
+                                 + ("" if result["offerable"] else f"It is not offered yet: {result['why_not']}."))
+        return result
+
+    async def read_distribution(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import product_distribution as pd
+
+        if inputs.get("household_id"):
+            household = await self._own_household(inputs["household_id"])
+            rows = list((await pd.latest_pitches(self.session, self.firm_id, household_id=household.id)).values())
+            views = await pd.pitch_views(self.session, self.firm_id, rows)
+            return {"household": household.name, "household_id": str(household.id), "pitches": views,
+                    "message": f"{household.name}: {sum(1 for v in views if v['open'])} product(s) being offered, {len(views)} on record."}
+        try:
+            inst = await pd.instrument(self.session, self.firm_id, inputs.get("symbol"))
+        except pd.DistributionError as exc:
+            raise ExecutorError(str(exc))
+        result = await pd.report(self.session, await self._firm(), inst)
+        result["pitches"] = result["pitches"][:40]
+        outside = len(result["bought_outside_target_market"])
+        result["message"] = (f"{inst.symbol}: offered to {result['offered']}, bought by {result['bought']}, "
+                             f"{outside} of them outside its target market as assessed today.")
+        return result
+
+    async def record_pitch_outcome(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import product_distribution as pd
+
+        household = await self._own_household(inputs.get("household_id") or "")
+        try:
+            row = await pd.record_outcome(self.session, self.firm_id, by=await self._shelf_user(), household_id=household.id,
+                                          symbol=inputs.get("symbol"), outcome=inputs.get("outcome"), reason=inputs.get("reason"))
+        except pd.DistributionError as exc:
+            raise ExecutorError(str(exc))
+        result = await self.read_distribution({"household_id": str(household.id)})
+        result["message"] = f"Recorded {row.status.replace('_', ' ')} for {household.name}."
+        return result
+
+    async def _distribution_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, markets, product_distribution as pd
+
+        say = markets.money_for(await self._firm())
+
+        def listed(values) -> str | None:
+            return ", ".join(str(v).replace("_", " ") for v in values) if values else None
+
+        try:
+            if tool_key == "add_product":
+                r = await pd.prepare_product(self.session, self.firm_id, **self._product_args(inputs))
+                return [("Product", f"{r['symbol']} · {r['name']}"), ("Asset class", r["asset_class"].replace("_", " ")),
+                        ("Currency", r["currency"]), ("Offered", "To nobody until its shelf decision and target market are recorded")]
+            if tool_key == "record_target_market":
+                r = await pd.prepare_target_market(self.session, self.firm_id, **self._target_args(inputs))
+                inst = r["instrument"]
+                kind = "complex" if r["complexity"] == "complex" else None
+                return [("Product", f"{inst.symbol} · {inst.name}"),
+                        ("Version", f"{r['version']}, replacing {r['was'].version}" if r["was"] else "1"),
+                        ("Objectives", listed(r["objectives"])), ("Risk profiles", listed(r["risk_profiles"])),
+                        ("Capacity for loss", f"{r['min_capacity']} or more" if r["min_capacity"] else None),
+                        ("Horizon", f"{r['min_horizon_years']} years or more" if r["min_horizon_years"] else None),
+                        ("Minimum", say(r["min_investment"]) if r["min_investment"] is not None else None),
+                        ("Complexity", r["complexity"]),
+                        ("Liquidity", f"locked {r['lock_years']} years" if r["liquidity"] == "locked" else r["liquidity"]),
+                        ("Markets", listed(r["markets"]) or "Every market the firm serves"),
+                        ("Mandate types", listed(r["mandate_types"]) or "Any"),
+                        ("Not for", listed(r["negative_market"])), ("Distribution", r["distribution"].replace("_", " ")),
+                        ("Conflict", r["conflict"].replace("_", " ")), ("Disclosure", r["disclosure"]), ("Document", r["document"]),
+                        ("As at", firm_time.spoken(r["as_of"])),
+                        ("Sign-off", "Compliance signs it off before it is offered" if kind or r["conflict"] != "none" else None)]
+            if tool_key == "approve_distribution":
+                r = await pd.prepare_signoff(self.session, self.firm_id, symbol=inputs.get("symbol"), reason=inputs.get("reason"),
+                                             by=await self._shelf_user())
+                tm = r["target_market"]
+                return [("Product", f"{r['instrument'].symbol} · {r['instrument'].name}"), ("Target market", f"Version {tm.version}, {tm.document}"),
+                        ("Complexity", tm.complexity), ("Conflict", tm.conflict.replace("_", " ")), ("Recorded by", tm.recorded_by),
+                        ("Reason", r["reason"]), ("Effect", "Advisers' lists may offer it to clients in its target market")]
+            r = await pd.prepare_outcome(self.session, self.firm_id, household_id=(await self._own_household(inputs.get("household_id") or "")).id,
+                                         symbol=inputs.get("symbol"), outcome=inputs.get("outcome"), reason=inputs.get("reason"))
+            effect = {"declined": f"Not offered again for {pd.DECLINED_QUIET_DAYS} days unless something on file changes",
+                      "bought": "Recorded only: the purchase goes through the rebalancer or a direct order",
+                      "not_suitable": "The offer closes, with this reason kept"}.get(r["outcome"])
+            return [("Client", r["household"].name), ("Product", f"{r['instrument'].symbol} · {r['instrument'].name}"),
+                    ("Was", r["was"].status.replace("_", " ")), ("Outcome", r["outcome"].replace("_", " ")), ("Reason", r["reason"]),
+                    ("Effect", effect)]
+        except pd.DistributionError as exc:
+            raise ExecutorError(str(exc))
 
     async def _shelf_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core import firm_time, markets, shelf
@@ -4538,9 +4743,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         """The household and the words, checked. Shared by the Confirm card and the send."""
         from app.aurea_core import messages
 
+        from app.aurea_core import product_distribution
+
         household = await self._own_household(inputs.get("household_id") or "")
         try:
             body = messages.clean(inputs.get("body"))
+            # A product named in the message carries its document, and a conflicted one its disclosure.
+            body = messages.clean(await product_distribution.with_disclosures(self.session, self.firm_id, body))
         except messages.MessageError as exc:
             raise ExecutorError(str(exc))
         from app.aurea_core import txn_monitoring
@@ -4597,6 +4806,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
                                 if action == "revise" else f"Invalid action: {action}. Must be approve, modify, or dismiss")
         try:
             decision_rights.check(self.role, rec.agent_key, action)
+            decision_rights.named_decider(self.role, self.user_id, rec.agent_key, rec.payload, action)
         except decision_rights.DecisionForbidden as exc:
             raise ExecutorError(str(exc))
         if str(rec.status) != "proposed":
@@ -4747,6 +4957,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             return rows(*await self._equity_preview(tool_key, inputs))
         if tool_key in ("record_product_decision", "record_investor_status", "set_approved_products_only"):
             return rows(*await self._shelf_preview(tool_key, inputs))
+        if tool_key in ("add_product", "record_target_market", "approve_distribution", "record_pitch_outcome"):
+            return rows(*await self._distribution_preview(tool_key, inputs))
         if tool_key in ("start_client_departure", "record_client_death", "record_executor", "record_account_transfer", "close_client_exit", "withdraw_client_exit"):
             return rows(*await self._exit_preview(tool_key, inputs))
         if tool_key in ("create_crm_contact", "create_crm_opportunity", "log_crm_activity", "update_crm_opportunity_stage"):
@@ -5507,6 +5719,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
 
         try:
             decision_rights.check(self.role, rec.agent_key, action_str)
+            decision_rights.named_decider(self.role, self.user_id, rec.agent_key, rec.payload, action_str)
         except decision_rights.DecisionForbidden as exc:
             from app.aurea_core.ai_governance import record_violation
             await record_violation(
@@ -5667,6 +5880,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             rows.append(("Concentration", ", ".join(a["review"]["concentrated"]) + " of the book"))
         if a["review"]["watched"]:
             rows.append(("Under watch", ", ".join(a["review"]["watched"])))
+        if a["review"].get("outside_target_market"):
+            rows.append(("Outside its target market", "; ".join(a["review"]["outside_target_market"])))
         for flag in a["review"]["flags"]:
             rows.append((f"Review {flag['symbol']}", f"Sold at a loss in {flag['account']} on {flag['on']}"))
         venue = venue_for_firm(firm)

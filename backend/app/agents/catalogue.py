@@ -87,6 +87,16 @@ CATALOGUE: dict[str, dict] = {
                 "approving adds a task for that person, due in a week.",
         "checkpoint": "A person decides whether and how to ask; nobody is contacted and nothing is logged on the prospect.",
     },
+    AgentKey.PRODUCT_MATCH: {
+        "name": "Product Match", "stage": "Manage & optimise",
+        "default_tier": AutonomyTier.TIER_1, "subject": "firm",
+        "senses": "Each product approved on the shelf with a target market in force (and compliance's sign-off where "
+                  "it needs one), read against every client from what is on file: the shelf, the licence, the IPS, "
+                  "exclusions, the capacity ceiling, departures and the target market itself.",
+        "acts": "Raises one list per adviser per product: the clients it fits, ordered by signals on file, and those who "
+                "need a fact first. Approving gives the adviser a task per client who still fits and records the pitch.",
+        "checkpoint": "The adviser the list names, or a branch leader, decides; nothing is sent to a client or bought.",
+    },
     AgentKey.CIP_IDENTITY_VERIFIER: {
         "name": "CIP Identity Verifier", "stage": "Acquire & onboard",
         "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",

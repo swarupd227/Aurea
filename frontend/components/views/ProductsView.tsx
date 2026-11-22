@@ -7,8 +7,22 @@ import { money } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { ProductChips, type Product } from "@/app/workspace/components/artifacts/ShelfCard";
+import { ProductFitCard, TargetMarketCard } from "@/app/workspace/components/artifacts/ProductFitCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
+
+/** One product: its target market, whether it may be offered, and who it fits (B-226, B-227). */
+function ProductFocus({ symbol }: { symbol: string }) {
+  const { data, loading, error, refetch } = useApi<any>(`/api/shelf/products/${encodeURIComponent(symbol)}`, [symbol]);
+  if (error) return <Card className="mb-4"><ErrorState what={symbol} message={error} onRetry={refetch} /></Card>;
+  if (loading || !data) return <div className="mb-4"><SkeletonList count={2} /></div>;
+  return (
+    <div className="mb-4 grid gap-3 cq-lg:grid-cols-2" data-testid="product-focus">
+      <TargetMarketCard result={data.target} />
+      <ProductFitCard result={{ ...data.fit, symbol: data.target.symbol }} />
+    </div>
+  );
+}
 
 interface Panel {
   symbol: string;
@@ -21,10 +35,11 @@ interface Panel {
 
 /** The firm's product shelf. In the work pane a decision is the conversation's tool behind its Confirm
  * card; on a page the form acts directly. */
-export function ProductsView() {
+export function ProductsView({ symbol = null }: { symbol?: string | null } = {}) {
   const nav = useViewNav();
   const { data, loading, error, refetch } = useApi<any>("/api/shelf");
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [focus, setFocus] = useState<string | null>(symbol);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -68,6 +83,7 @@ export function ProductsView() {
         </button>
       ) : undefined} />
       {msg && <div className="mb-4 font-mono text-xs text-ink-muted" role="status" data-testid="shelf-status">{msg}</div>}
+      {focus && <ProductFocus symbol={focus} />}
 
       <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="shelf-summary">
         {[["Approved", s.approved, "text-ok"], ["Under watch", s.watch, s.watch ? "text-warn" : "text-ink-muted"], ["Closed, still held", s.held_while_closed, s.held_while_closed ? "text-crit" : "text-ink-muted"],
@@ -108,7 +124,8 @@ export function ProductsView() {
                   return (
                     <tr key={p.symbol} title={p.document ?? undefined}>
                       <td className="px-4 py-2">
-                        <span className="font-mono text-xs text-ink">{p.symbol}</span>
+                        <button className="font-mono text-xs text-ink hover:underline" data-testid="product-open"
+                          aria-label={`Who ${p.symbol} fits`} onClick={() => setFocus(focus === p.symbol ? null : p.symbol)}>{p.symbol}</button>
                         <span className="ml-2 text-xs text-ink-muted">{p.name}</span>
                         {p.share_class && <span className="ml-1 text-xs text-ink-muted">· {p.share_class}</span>}
                         {p.expense_ratio != null && <span className="ml-1 font-mono text-xs text-ink-muted">{(p.expense_ratio * 100).toFixed(2)}%</span>}

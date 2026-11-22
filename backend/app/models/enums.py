@@ -129,6 +129,8 @@ class AgentKey(StrEnum):
     RECONCILIATION = "reconciliation"
     IPS_MONITORING = "ips_monitoring"
     PROTECTION_PLANNING = "protection_planning"
+    # Distribution (B-228)
+    PRODUCT_MATCH = "product_match"
 
 
 class ActivityKind(StrEnum):

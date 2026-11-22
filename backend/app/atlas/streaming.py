@@ -31,6 +31,7 @@ THINK_LABELS = {
     "conduct_surveillance": "Reviewing recommendations for suitability and fair conduct",
     "pipeline_follow_up": "Reading each open deal against the last time anyone logged a touch",
     "warm_introduction": "Tracing who the firm knows who knows each prospect",
+    "product_match": "Reading each client against the product's target market",
 }
 
 
