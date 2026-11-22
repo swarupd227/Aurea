@@ -59,3 +59,5 @@ from app.models import outside_agent  # noqa: F401,E402
 from app.models import product_distribution  # noqa: F401,E402
 # The firm's planning assumptions, one versioned record (B-174).
 from app.models import assumptions  # noqa: F401,E402
+# Plan scenarios a person saved on a household (B-179).
+from app.models import scenarios  # noqa: F401,E402

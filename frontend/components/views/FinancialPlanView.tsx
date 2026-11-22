@@ -3,7 +3,8 @@
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { money } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
-import { pct1 } from "@/app/workspace/components/artifacts/PlanCard";
+import { bandChip, pct1 } from "@/app/workspace/components/artifacts/PlanCard";
+import { ScenariosTable } from "@/app/workspace/components/artifacts/ScenarioCard";
 import { agesOfLabel, basisLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
 import { PlanInputsChips, SequenceIllustration } from "@/components/PlanInputs";
 import { ViewLink } from "./ViewNav";
@@ -19,6 +20,23 @@ function Tile({ label, value, tone = "text-ink" }: { label: string; value: strin
 }
 
 const th = "px-4 py-2 font-medium";
+
+/** The household's saved scenarios, ranked (B-179). They are run and saved in the conversation. */
+function PlanScenarios({ household }: { household: string }) {
+  const { data } = useApi<any>(`/api/plan/scenarios?household=${household}`, [household]);
+  const rows: any[] = data?.scenarios ?? [];
+  if (!rows.length) return null;
+  return (
+    <Card className="mb-4 overflow-hidden p-0" data-testid="plan-scenarios">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border-soft px-4 py-2.5">
+        <div className="text-sm font-medium text-ink">Scenarios</div>
+        <span className="chip text-ink-muted">ranked by points per 10k given up</span>
+        <span className="chip text-ink-muted">saving changes no record</span>
+      </div>
+      <ScenariosTable rows={rows} />
+    </Card>
+  );
+}
 const num = "px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted";
 
 /** One household's plan, read beside the conversation. What it works from is recorded through Astra, because
@@ -49,11 +67,13 @@ export function FinancialPlanView({ household = null }: { household?: string | n
   const r = data.retirement;
   const c = data.cash;
   const reserve = c.reserve;
+  const f = data.funded;
   return (
     <div className="view-container">
       <ViewHeader title={`Financial plan · ${data.household}`} actions={<AllClients href="/studio/plan" />} />
-      <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-4" data-testid="plan-summary">
+      <div className="mb-4 grid grid-cols-2 gap-3 cq-md:grid-cols-5" data-testid="plan-summary">
         <Tile label="Probability of success" value={r ? `${Math.round(r.success_probability * 100)}%` : "—"} tone={r?.on_track ? "text-ok" : "text-warn"} />
+        <Tile label="Funded ratio" value={f?.ratio != null ? f.ratio.toFixed(2) : "—"} tone={f?.ratio != null && f.ratio < 1 ? "text-warn" : "text-ink"} />
         <Tile label="Sustainable a year" value={r ? money(r.sustainable_income) : "—"} />
         <Tile label="Withdrawal rate" value={r?.withdrawal_rate != null ? pct1(r.withdrawal_rate) : "—"} tone="text-ink-muted" />
         <Tile label="Cash reserve" value={reserve.status === "assessed" ? `${reserve.months} months` : "not assessed"} tone={reserve.status === "assessed" && reserve.months < reserve.target_months ? "text-warn" : "text-ink-muted"} />
@@ -62,6 +82,18 @@ export function FinancialPlanView({ household = null }: { household?: string | n
         <div className="flex flex-wrap gap-1.5" data-testid="plan-basis">
           <span className="chip text-ink-muted">estimates from what is on file</span>
           <span className="chip text-ink-muted" data-testid="plan-returns-source">{returnsLabel(data.assumptions_source)}</span>
+          {data.assumptions_version != null && <span className="chip tabular-nums text-ink-muted">assumptions v{data.assumptions_version}</span>}
+          {r?.band && bandChip[r.band] && <span className={`chip ${bandChip[r.band][1]}`} data-testid="plan-band">{bandChip[r.band][0]}</span>}
+          {f?.ratio != null && (
+            <span className="chip tabular-nums text-ink-muted" data-testid="plan-funded">
+              {money(f.assets)} book / {money(f.pv_needs)} needs today · {pct1(f.discount_rate)} {f.discount_whose === "firm" ? "firm rate" : "cash return"}
+            </span>
+          )}
+          {f?.ratio != null && <span className="chip text-ink-muted">contributions, earnings and held away not counted</span>}
+          {f?.tiers === "not_on_file" && <span className="chip text-ink-muted">no goal tiers · every goal counted</span>}
+          {r?.failed_shortfall_today ? (
+            <span className="chip tabular-nums text-warn">failed paths · out at {r.median_depletion_age} · {money(r.failed_shortfall_today)} unpaid</span>
+          ) : null}
           {r && <span className="chip text-ink-muted" data-testid="plan-money-basis">today&rsquo;s money</span>}
           {r && <span className="chip text-ink-muted">{{ stated: "income stated", recorded_spending: "income from recorded spending", assumed_draw: "income assumed at 5% of the pot" }[r.income_basis as string]}</span>}
           {c.basis === "assets_only" && <span className="chip text-warn">assets only</span>}
@@ -186,6 +218,8 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           </table>
         </div>
       </Card>
+
+      <PlanScenarios household={household} />
 
       {data.education.length > 0 && (
         <Card className="overflow-hidden p-0">

@@ -259,6 +259,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             "read_outside_agents": self.read_outside_agents,
             "revoke_outside_agent": self.revoke_outside_agent,
             "read_assumption_set": self.read_assumption_set,
+            "run_plan_scenario": self.run_plan_scenario,
+            "save_plan_scenario": self.save_plan_scenario,
+            "read_plan_scenarios": self.read_plan_scenarios,
             "record_assumption_set": self.record_assumption_set,
             "create_crm_contact": self.create_crm_contact,
             "create_crm_opportunity": self.create_crm_opportunity,
@@ -1604,8 +1607,24 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         result["message"] = (f"{result['household']}: {r['success_probability']:.0%} probability of success, sustainable income {say(r['sustainable_income'])} a year "
                              f"in today's money, as are the withdrawal rates and the 4% rule. {self._plan_to_words(r)} {self._returns_words(result['assumptions_source'])} "
                              "These are estimates from what is on file." if r else f"{result['household']}: no retirement projection.")
-        result["message"] += " " + self._inputs_words(result.get("inputs"))
+        result["message"] += " " + self._inputs_words(result.get("inputs")) + " " + self._funded_words(result, say)
         return result
+
+    @staticmethod
+    def _funded_words(result: dict, say) -> str:
+        """How well funded the needs are and how bad a failure is, beside the likelihood (B-177)."""
+        f, r, said = result.get("funded") or {}, result.get("retirement") or {}, []
+        if f.get("ratio") is not None:
+            rate = f"{f['discount_rate']:.2%}" + (" (the firm's rate)" if f["discount_whose"] == "firm" else " (the cash return in the assumption set)")
+            said.append(f"Funded ratio {f['ratio']:.2f}: the managed book of {say(f['assets'])} over needs worth {say(f['pv_needs'])} today, "
+                        f"discounted at {rate}; contributions, future earnings and money held elsewhere are not counted"
+                        + ("; goal tiers are not on file, so every goal counts." if f["tiers"] == "not_on_file" else "."))
+        if r.get("band") == "above":
+            said.append(f"Retirement success is above the firm's band ({r['success_ceiling']:.0%}): possibly over-saving.")
+        if r.get("failed_shortfall_today"):
+            said.append(f"Where the money runs out, it does at {r['median_depletion_age']} at the median, leaving "
+                        f"{say(r['failed_shortfall_today'])} in today's money unpaid.")
+        return " ".join(said)
 
     @staticmethod
     def _inputs_words(inputs: dict | None) -> str:
@@ -4971,6 +4990,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
             return rows(*await self._outside_agent_preview(inputs))
         if tool_key == "record_assumption_set":
             return rows(*await self._assumption_preview(inputs))
+        if tool_key == "save_plan_scenario":
+            return rows(*await self._scenario_preview(inputs))
         if tool_key == "import_linkedin_connections":
             return rows(*await self._linkedin_preview(inputs))
         if tool_key == "set_brief_profile":
@@ -6541,6 +6562,85 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors):
         except oa.OutsideAgentError as exc:
             raise ExecutorError(str(exc))
         out["message"] = f"Revoked the key for {out['label']} (ending {out['key_ends']})."
+        return out
+
+    # ── Plan scenarios, saved and ranked (B-179) ─────────────────────────────────────────────
+
+    SCENARIO_LEVERS = ("retire_at", "spending", "claim_age", "goal_id", "goal_years_delta", "goal_target", "extra_contribution")
+
+    def _levers(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {k: inputs.get(k) for k in self.SCENARIO_LEVERS if inputs.get(k) not in (None, "")}
+
+    async def run_plan_scenario(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import markets, scenarios
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            out = await scenarios.run(self.session, await self._firm(), household_id, self._levers(inputs))
+        except scenarios.ScenarioError as exc:
+            raise ExecutorError(str(exc))
+        say = markets.money_for(await self._firm())
+        c, b, a = out["change"], out["before"], out["after"]
+        said = []
+        if b["retirement_success"] is not None:
+            said.append(f"Retirement success {b['retirement_success']:.0%} to {a['retirement_success']:.0%}")
+        moved = [g for g in c["goals"] if g["points"]]
+        if moved:
+            said.append("; ".join(f"{g['goal']} {g['before']:.0%} to {g['after']:.0%}" for g in moved))
+        if c["funded_ratio"] is not None:
+            said.append(f"funded ratio {b['funded_ratio']:.2f} to {a['funded_ratio']:.2f}")
+        given = out["given_up"]
+        out["message"] = (f"{out['household']}: " + "; ".join(said) + f". It gives up {say(given['today'])} in today's money ("
+                          + "; ".join(p["basis"] for p in given["parts"]) + ")"
+                          + (f", {out['points_per_10k']:+.1f} success points per {say(10_000)} given up." if out["points_per_10k"] is not None else ".")
+                          + " An estimate on the firm's assumptions; nothing is saved or changed.")
+        return out
+
+    async def _scenario_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import markets, scenarios
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            plan = await scenarios.prepare_save(self.session, await self._firm(), household_id, name=inputs.get("name"),
+                                                levers=self._levers(inputs))
+        except scenarios.ScenarioError as exc:
+            raise ExecutorError(str(exc))
+        r, say = plan["result"], markets.money_for(await self._firm())
+        out: list[tuple[str, Any]] = [("Scenario", plan["name"]), ("Client", r["household"])]
+        if r["before"]["retirement_success"] is not None:
+            out.append(("Retirement success", f"{r['before']['retirement_success']:.0%} → {r['after']['retirement_success']:.0%}"))
+        for g in r["change"]["goals"]:
+            if g["points"]:
+                out.append((g["goal"], f"{g['before']:.0%} → {g['after']:.0%}"))
+        if r["change"]["funded_ratio"] is not None:
+            out.append(("Funded ratio", f"{r['before']['funded_ratio']:.2f} → {r['after']['funded_ratio']:.2f}"))
+        out.append(("Given up, today's money", say(r["given_up"]["today"])))
+        out.append(("After this", "Kept on the household's scenarios; no record changes"))
+        return out
+
+    async def save_plan_scenario(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import scenarios
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            out = await scenarios.save(self.session, await self._firm(), await self._me(), household_id,
+                                       name=inputs.get("name"), levers=self._levers(inputs))
+        except scenarios.ScenarioError as exc:
+            raise ExecutorError(str(exc))
+        out["message"] = f"Saved '{out['name']}' on {out['result']['household']}'s scenarios. No record was changed."
+        return out
+
+    async def read_plan_scenarios(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import scenarios
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            out = await scenarios.saved(self.session, await self._firm(), household_id)
+        except scenarios.ScenarioError as exc:
+            raise ExecutorError(str(exc))
+        top = out["scenarios"][:3]
+        out["message"] = (f"{out['household']}: {len(out['scenarios'])} saved scenario(s)"
+                          + (", best first: " + "; ".join(f"{r['rank']}. {r['name']}" for r in top) if top else "") + ".")
         return out
 
     # ── The firm's planning assumptions, one versioned record (B-174) ─────────────────────────

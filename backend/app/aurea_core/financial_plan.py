@@ -31,7 +31,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import balance_sheet, firm_time, goal_tradeoff, markets, plan_inputs, planning, retirement
+from app.aurea_core import balance_sheet, firm_time, funded, goal_tradeoff, markets, plan_inputs, planning, retirement
 from app.aurea_core.graph import household_brain
 from app.aurea_core.planning import _blended_assumptions
 from app.models.financial_plan import INDIA_STREAM_KINDS, STREAM_KINDS, IncomeStream
@@ -131,6 +131,17 @@ def _stream_view(s: IncomeStream, person: Person | None, today: date, us: bool, 
             "to_age": life_to, "joint_annual": joint, "joint_survivor_share": float(s.joint_survivor_share) if s.joint_survivor_share is not None else None,
             "cost_of_joint": round(1 - joint / annual, 4) if joint else None}
     return view
+
+
+def _claimed_at(s: dict, claim_age: int) -> dict:
+    """A scenario's claim age for Social Security (B-179): the statement's benefit at full retirement age, worked at the
+    new age by the law's table, starting that many years later or sooner. Any other stream is as it is."""
+    if s["kind"] != "social_security" or not s.get("claiming"):
+        return s
+    full = s["claiming"]["claims"][1]["months"]
+    moved = claim_age - int(s["start_age"])
+    return {**s, "start_age": claim_age, "planned_annual": round(s["annual"] * claim_factor(full, claim_age * 12), 2),
+            "starts_in": (s["starts_in"] + moved) if s["starts_in"] is not None else None}
 
 
 async def streams_of(session: AsyncSession, household_id: uuid.UUID, firm: Firm, today: date) -> list[dict]:
@@ -234,7 +245,8 @@ def _education(goals: list[dict], planned: dict, saved: dict) -> list[dict]:
     return rows
 
 
-async def retirement_inputs(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, retirement_age: int, current_age: int) -> dict:
+async def retirement_inputs(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, retirement_age: int, current_age: int,
+                            claim_age: int | None = None) -> dict:
     """What is on file that bears on the income to plan for: recorded spending, debts that outlast the working
     years, and income that has started by retirement. Empty when nothing is recorded, so nothing changes."""
     firm = await session.get(Firm, firm_id)
@@ -245,6 +257,8 @@ async def retirement_inputs(session: AsyncSession, household_id: uuid.UUID, *, f
     retire_on = today.year + max(retirement_age - current_age, 0)
     debts = sum(float(i.annual_payment or 0) for i in usable if i.side == "liability" and i.annual_payment and (i.ends_on is None or i.ends_on.year > retire_on))
     streams = await streams_of(session, household_id, firm, today)
+    if claim_age is not None:
+        streams = [_claimed_at(s, claim_age) for s in streams]
     acc = max(retirement_age - current_age, 0)
     # When each is paid, from today, on its own person's age; with no date of birth on file, on the plan's.
     timed = [{"annual": s["planned_annual"], "inflation_linked": bool(s["inflation_linked"]), "name": s["name"], "person": s["person"],
@@ -275,6 +289,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     essential = sum(i["amount"] for i in sheet["items"] if i["kind"] == "essential_spending")
     guaranteed = plan.get("guaranteed_income", 0.0) if plan else 0.0
     people = (await session.execute(select(Person).where(Person.household_id == household_id, Person.deceased_on.is_(None)).order_by(Person.full_name))).scalars().all()
+    likely = goal_tradeoff.likelihoods(brain, today)
     return {
         "household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "currency": firm.base_currency,
         # Gratuity is a lump sum on leaving work, and the retirement pot here starts from the book alone (India row 5).
@@ -287,14 +302,17 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         "people": [{"person_id": str(p.id), "name": p.full_name} for p in people], "streams": streams,
         "retirement": None if plan is None else {
             **{k: plan[k] for k in ("current_age", "retirement_age", "longevity_age", "income_target", "projected_at_retirement", "projected_at_retirement_today",
-                                    "success_probability", "on_track", "target_success", "median_depletion_age", "sustainable_income", "income_gap", "sequence_risk",
+                                    "success_probability", "on_track", "target_success", "median_depletion_age", "failed_shortfall_today", "band",
+                                    "success_ceiling", "pv_spending", "sustainable_income", "income_gap", "sequence_risk",
                                     "levers", "years_to_retirement", "years_in_retirement", "end_age", "ages_of", "plan_to", "assumptions_source", "assumed")},
             "money_basis": "today",
             "income_need": plan.get("income_need"), "income_basis": plan.get("income_basis"), "guaranteed_income": guaranteed, "starts_later": plan.get("starts_later", 0.0),
             "withdrawal_rate": round(rate, 4) if rate is not None else None, "sustainable_rate": round(plan["sustainable_income"] / projected, 4) if projected else None,
             "rule_of_thumb_rate": RULE_OF_THUMB, "rule_of_thumb_income": round(projected * RULE_OF_THUMB),
             "essential_spending": essential or None, "essentials_covered": round(guaranteed / essential, 3) if essential and guaranteed else None},
-        "cash": _cash_flow(sheet, firm, mu, today, book_cash), "education": _education(brain.get("goals", []), goal_tradeoff.likelihoods(brain, today), saved),
+        "cash": _cash_flow(sheet, firm, mu, today, book_cash), "education": _education(brain.get("goals", []), likely, saved),
+        # How well funded the needs are, beside the likelihood (B-177).
+        "funded": funded.ratio(brain, likely, plan),
         # How old its inputs are, and what it reads that is not on file (B-182).
         "inputs": plan["inputs"] if plan and plan.get("inputs") else await plan_inputs.for_household(session, household_id, firm_id=firm_id),
     }

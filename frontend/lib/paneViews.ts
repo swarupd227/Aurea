@@ -372,6 +372,9 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "raise_estate_review":
       return onClient("/studio/client-file");
     case "read_financial_plan":
+    case "run_plan_scenario":
+    case "save_plan_scenario":
+    case "read_plan_scenarios":
     case "record_income_stream":
     case "end_income_stream":
     case "record_education_goal":

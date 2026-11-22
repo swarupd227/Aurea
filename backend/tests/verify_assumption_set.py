@@ -133,6 +133,8 @@ async def main() -> int:
         await refused("a source for each figure", assumptions.prepare(s, firm, research, changes=[{"figure": "return.equity", "value": 0.02}], reason="r"))
         await refused("each figure once", assumptions.prepare(s, firm, research, changes=change + change, reason="r"))
         await refused("at least one figure", assumptions.prepare(s, firm, research, changes=[], reason="r"))
+        await refused("the band's top above both targets", assumptions.prepare(
+            s, firm, research, changes=[{"figure": "success_target.goals", "value": 0.96, "source": "x"}], reason="r"))
         plan = await assumptions.prepare(s, firm, research, changes=change, reason="Lower equity outlook")
         check("a preview names the next version", plan["version"], 1)
         check("a preview writes nothing", ((await s.execute(select(func.count(AssumptionSetVersion.id)))).scalar(),
@@ -197,6 +199,7 @@ async def main() -> int:
         got = await assumptions.record(s, firm, portfolio, changes=[
             {"figure": "success_target.goals", "value": 0.95, "source": "Investment committee, 20 Nov 2026"},
             {"figure": "success_target.retirement", "value": 0.6, "source": "Investment committee, 20 Nov 2026"},
+            {"figure": "success_ceiling", "value": 0.98, "source": "Investment committee, 20 Nov 2026"},
             {"figure": "plan_input_days", "value": 180, "source": "Planning policy 4.2"},
             {"figure": "reserve_months", "value": 12, "source": "Planning policy 4.3"},
             {"figure": "refresh_line", "value": 0.2, "source": "Planning policy 4.4"},
