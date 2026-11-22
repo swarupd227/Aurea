@@ -71,6 +71,7 @@ export const VIEWS: View[] = [
   { href: "/studio/plan", label: "Financial plan", icon: Compass, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["retirement", "social security", "pension", "withdrawal", "emergency fund", "debt", "education", "529", "monte carlo"] },
   { href: "/studio/client-file", label: "Client file", icon: FolderOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["trusted contact", "will", "power of attorney", "health directive", "life event", "marriage", "divorce"] },
   { href: "/studio/advice-file", label: "Advice file", icon: Lightbulb, roles: [A, P, PT, C, B], intent: "clients", keywords: ["recommendation", "advice given", "declined", "accepted", "implementation rate", "alternatives", "suitability record"] },
+  { href: "/studio/plans", label: "Plans of record", icon: ClipboardCheck, roles: [A, P, PT, C, B], intent: "clients", keywords: ["plan of record", "baseline", "plan review", "peer review", "qc", "delivered plan", "coverage", "freshness", "scenario depth"] },
   { href: "/studio/cash", label: "Cash movements", icon: Banknote, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["withdrawal", "wire", "standing instruction", "sloa", "rmd", "distribution", "phasing", "dollar cost"] },
   { href: "/studio/trades", label: "Trades", icon: ArrowLeftRight, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["blotter", "confirmation", "settlement", "block", "allocation", "orders"] },
   { href: "/studio/tax-documents", label: "Tax documents", icon: FileText, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["1099", "k-1", "tax forms", "tax summary"] },
@@ -157,7 +158,7 @@ export interface Section {
 export const SECTIONS: Section[] = [
   { key: "advice", label: "Advice checks", icon: CalendarCheck, intent: "clients", members: [
     "/studio/reviews", "/studio/ips", "/studio/risk-profiles", "/studio/protection", "/studio/net-worth", "/studio/tax",
-    "/studio/equity-comp", "/studio/client-file", "/studio/advice-file", "/studio/exits", "/studio/beneficiary-audit"] },
+    "/studio/equity-comp", "/studio/client-file", "/studio/advice-file", "/studio/plans", "/studio/exits", "/studio/beneficiary-audit"] },
   { key: "onboarding", label: "Onboarding", icon: UserPlus, intent: "operate", members: [
     "/studio/onboarding", "/studio/onboarding-queues", "/studio/document-matrix", "/studio/consents", "/studio/transfers",
     "/studio/money-in", "/studio/account-features", "/studio/aml", "/studio/onboarding-scoreboard"] },

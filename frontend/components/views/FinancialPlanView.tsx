@@ -8,7 +8,10 @@ import { ScenariosTable } from "@/app/workspace/components/artifacts/ScenarioCar
 import { SocialSecurityTable } from "@/app/workspace/components/artifacts/SocialSecurityCard";
 import { agesOfLabel, basisLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
 import { PlanInputsChips, SequenceIllustration } from "@/components/PlanInputs";
-import { ViewLink } from "./ViewNav";
+import { FiguresTable, FreshnessChip, PlanStateChip, ReviewNeedChip } from "@/app/workspace/components/artifacts/PlanRecordCard";
+import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
+import { withRef } from "@/lib/refs";
+import { ViewLink, useViewNav } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
 function Tile({ label, value, tone = "text-ink" }: { label: string; value: string | number; tone?: string }) {
@@ -56,6 +59,114 @@ function PlanScenarios({ household }: { household: string }) {
   );
 }
 const num = "px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted";
+
+const EVENT_KIND: Record<string, string> = { baseline: "Baseline", review: "Review", delivery: "Delivery" };
+
+/** The household's plan of record (B-181): where it stands, worked out from what is recorded; the baseline's frozen
+ * figures beside today's; the delivered plan, its freshness and tasks; and every event. A baseline, a review and a
+ * delivery are recorded through the conversation: in the pane these buttons are sentences handed to it, so each goes
+ * through its tool and Confirm card. Readers outside the record's roles get nothing back, and see nothing. */
+function PlanRecordSection({ household }: { household: string }) {
+  const nav = useViewNav();
+  const { data, error } = useApi<any>(`/api/plan-record?household=${household}`, [household]);
+  if (error || !data || data.household_id !== household) return null;
+  const st = data.state as string;
+  const say = nav.say;
+  const name = data.household as string;
+  const ask = (sentence: string) => say?.(withRef(sentence, "household", data.household_id));
+  const canBaseline = data.can_prepare && data.data.missing.length === 0 && (["data_complete", "delivered", "implementing", "complete"].includes(st) || !!data.sent_back);
+  const canReview = data.can_review && ["baseline", "scenarios", "in_review"].includes(st);
+  const canDeliver = data.can_prepare && (st === "reviewed" || (["baseline", "scenarios"].includes(st) && !data.review_need?.needed));
+  const record = data.plan_of_record;
+  const c = data.complexity;
+  return (
+    <Card className="mb-4 overflow-hidden p-0" data-testid="plan-record">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="mr-1 text-sm font-medium text-ink">Plan of record</div>
+          <PlanStateChip state={st} />
+          {data.version ? <span className="chip tabular-nums text-ink-muted">v{data.version}</span> : null}
+          <span className="chip text-ink-muted">{data.owner} next</span>
+          <ReviewNeedChip need={data.review_need} />
+          <FreshnessChip f={data.freshness} />
+        </div>
+        {say && (
+          <div className="flex flex-wrap gap-1.5">
+            {canBaseline && <button className="btn-outline text-xs" data-testid="plan-record-baseline" onClick={() => ask(`Record a plan baseline for ${name}.`)}>Record baseline</button>}
+            {canReview && <button className="btn-outline text-xs" data-testid="plan-record-review" onClick={() => ask(`Record my review of ${name}'s plan baseline.`)}>Record review</button>}
+            {canDeliver && <button className="btn-outline text-xs" data-testid="plan-record-deliver" onClick={() => ask(`Record that ${name}'s plan was delivered.`)}>Record delivery</button>}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5 px-4 py-2.5" data-testid="plan-record-facts">
+        <span className="chip tabular-nums text-ink-muted">facts {data.data.on_file}/{data.data.read}</span>
+        {data.data.missing.map((m: any) => <span key={m.text} className="chip text-warn">missing {m.text}</span>)}
+        <span className="chip tabular-nums text-ink-muted" title={c.parts.filter((p: any) => p.count).map((p: any) => `${p.count} ${p.part.replace(/_/g, " ")}`).join(", ")}>complexity {c.score}</span>
+        {data.scenarios_since_baseline > 0 && <span className="chip tabular-nums text-ink-muted">{data.scenarios_since_baseline} scenarios since baseline</span>}
+        {data.sent_back && <span className="chip text-warn" title={data.sent_back.findings ?? undefined}>sent back {reviewDay(data.sent_back.happened_on)} · new baseline needed</span>}
+        {data.review && <span className={`chip ${data.review.outcome === "passed" ? "text-ok" : "text-warn"}`}>review {data.review.outcome} · {data.review.recorded_by}</span>}
+      </div>
+      {data.baseline && (
+        <div className="border-t border-border-soft">
+          <div className="flex flex-wrap gap-1.5 px-4 pt-2.5">
+            <span className="chip text-ink-muted">baseline {reviewDay(data.baseline.happened_on)} · {data.baseline.recorded_by}</span>
+            <span className="chip text-ink-muted">assumptions {data.baseline.figures?.assumption_version}</span>
+            <span className="chip text-ink-muted">estimates</span>
+          </div>
+          <FiguresTable frozen={data.baseline.figures} today={data.today} differences={data.differences} />
+        </div>
+      )}
+      {record && (
+        <div className="border-t border-border-soft" data-testid="plan-record-delivered">
+          <div className="flex flex-wrap gap-1.5 px-4 py-2.5">
+            <span className="chip text-ok">v{record.version} delivered {reviewDay(record.happened_on)}</span>
+            <span className="chip text-ink-muted" title={record.evidence ?? undefined}>{record.evidence_kind}</span>
+            <span className="chip text-ink-muted">figures frozen · assumptions {record.figures?.assumption_version}</span>
+            <span className="chip text-ink-muted">{record.review?.needed ? `reviewed ${reviewDay(record.review.on)} · ${record.review.by}` : "no review needed"}</span>
+          </div>
+          {record.tasks.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" data-testid="plan-record-tasks">
+                <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Action item</th><th className={th}>For</th><th className={th}>Due</th><th className={th}>Status</th></tr></thead>
+                <tbody className="divide-y divide-border-soft">
+                  {record.tasks.map((t: any) => (
+                    <tr key={t.id}>
+                      <td className="px-4 py-2 text-ink">{t.title}</td>
+                      <td className="px-4 py-2 text-xs text-ink-muted">{t.assigned_to ?? "unassigned"}</td>
+                      <td className={`px-4 py-2 font-mono text-xs tabular-nums ${t.overdue ? "text-crit" : "text-ink-muted"}`}>{t.due_date ? reviewDay(t.due_date) : "—"}</td>
+                      <td className="px-4 py-2"><span className={`chip ${t.status === "open" ? "text-info" : "text-ink-muted"}`}>{t.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+      {data.history.length > 0 && (
+        <div className="overflow-x-auto border-t border-border-soft">
+          <table className="w-full text-sm" data-testid="plan-record-history">
+            <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Event</th><th className={`${th} text-right`}>Version</th><th className={th}>On</th><th className={th}>By</th><th className={th}>Outcome</th></tr></thead>
+            <tbody className="divide-y divide-border-soft">
+              {data.history.map((e: any) => (
+                <tr key={e.id}>
+                  <td className="px-4 py-2 text-ink">{EVENT_KIND[e.kind] ?? e.kind}</td>
+                  <td className={num}>v{e.version}</td>
+                  <td className="px-4 py-2 font-mono text-xs tabular-nums text-ink-muted">{reviewDay(e.happened_on)}</td>
+                  <td className="px-4 py-2 text-xs text-ink-muted">{e.recorded_by}</td>
+                  <td className="px-4 py-2">
+                    {e.outcome && <span className={`chip ${e.outcome === "passed" ? "text-ok" : "text-warn"}`} title={e.findings ?? undefined}>{e.outcome}</span>}
+                    {e.evidence_kind && <span className="chip text-ink-muted" title={e.evidence ?? undefined}>{e.evidence_kind}{e.action_items ? ` · ${e.action_items} items` : ""}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 /** One household's plan, read beside the conversation. What it works from is recorded through Astra, because
  * each figure comes from a statement; with no household it lists whom to open. */
@@ -121,6 +232,8 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           ))}
         </div>
       </Card>
+
+      <PlanRecordSection household={household} />
 
       {data.inputs && (
         <Card className="mb-4 overflow-hidden p-0" data-testid="plan-inputs-card">
