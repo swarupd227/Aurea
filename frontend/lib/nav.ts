@@ -28,6 +28,10 @@ export interface View {
   keywords?: string[];
   /** Only for firms in this market. */
   market?: string;
+  /** Not for firms in these markets: the page's rules are another market's and say "none here" for them. */
+  hiddenIn?: string[];
+  /** The name a market's own firms know the page by. */
+  labelIn?: Record<string, string>;
   /** A section's menu entry: the pages it stands for (SECTIONS). */
   members?: string[];
 }
@@ -60,14 +64,14 @@ export const VIEWS: View[] = [
   { href: "/studio/family", label: "Family aggregate", icon: UserCircle, roles: [A, P, PT], intent: "clients", keywords: ["household wealth", "aggregate"] },
   { href: "/studio/estate", label: "Estate & succession", icon: Landmark, roles: [A, P, PT], intent: "clients", keywords: ["wills", "heirs", "trust"] },
   { href: "/studio/tax", label: "Tax intelligence", icon: Receipt, roles: [A, P, PT], intent: "clients", keywords: ["harvest", "wash sale", "capital gains"] },
-  { href: "/studio/licences", label: "Licences", icon: BadgeCheck, roles: [A, P, PT, C, O, B], intent: "clients", market: "IN", keywords: ["sebi", "consent", "investment adviser", "portfolio manager", "pms", "client consent"] },
+  { href: "/studio/licences", label: "Licences & SEBI", icon: BadgeCheck, roles: [A, P, PT, C, O, B], intent: "clients", market: "IN", keywords: ["sebi", "consent", "investment adviser", "portfolio manager", "pms", "client consent", "before advice", "fee cap", "compliance calendar", "filings", "iaasb"] },
   { href: "/studio/protection", label: "Protection", icon: Umbrella, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["insurance", "life cover", "disability", "income protection", "tpd", "gap"] },
   { href: "/studio/risk-profiles", label: "Risk profiles", icon: SlidersHorizontal, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["questionnaire", "tolerance", "capacity", "suitability", "risk score"] },
   { href: "/studio/reviews", label: "Client reviews", icon: CalendarCheck, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["annual review", "cadence", "next review", "overdue", "reverse churning", "ongoing service"] },
   { href: "/studio/ips", label: "IPS monitoring", icon: ScrollText, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["investment policy", "statement", "breach", "drift", "exception", "limits", "restricted"] },
   { href: "/studio/net-worth", label: "Net worth", icon: Wallet, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["balance sheet", "liabilities", "debts", "mortgage", "held away", "expenses", "cash flow", "assets"] },
   { href: "/studio/products", label: "Product shelf", icon: PackageCheck, roles: [A, P, PT, C, O, B, R], intent: "clients", keywords: ["approved list", "due diligence", "funds", "share class", "accredited", "closed"] },
-  { href: "/studio/equity-comp", label: "Equity compensation", icon: Gem, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["rsu", "iso", "espp", "stock options", "concentrated stock", "vesting", "10b5-1", "collar"] },
+  { href: "/studio/equity-comp", label: "Equity compensation", icon: Gem, roles: [A, P, PT, C, O, B], intent: "clients", hiddenIn: ["IN"], keywords: ["rsu", "iso", "espp", "stock options", "concentrated stock", "vesting", "10b5-1", "collar"] },
   { href: "/studio/plan", label: "Financial plan", icon: Compass, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["retirement", "social security", "pension", "withdrawal", "emergency fund", "debt", "education", "529", "monte carlo"] },
   { href: "/studio/client-file", label: "Client file", icon: FolderOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["trusted contact", "will", "power of attorney", "health directive", "life event", "marriage", "divorce"] },
   { href: "/studio/advice-file", label: "Advice file", icon: Lightbulb, roles: [A, P, PT, C, B], intent: "clients", keywords: ["recommendation", "advice given", "declined", "accepted", "implementation rate", "alternatives", "suitability record"] },
@@ -75,18 +79,18 @@ export const VIEWS: View[] = [
   { href: "/studio/trades", label: "Trades", icon: ArrowLeftRight, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["blotter", "confirmation", "settlement", "block", "allocation", "orders"] },
   { href: "/studio/tax-documents", label: "Tax documents", icon: FileText, roles: [A, P, PT, C, O, B], intent: "operate", keywords: ["1099", "k-1", "tax forms", "tax summary"] },
   { href: "/studio/onboarding-queues", label: "Onboarding queues", icon: Workflow, roles: [A, P, C, O, B], intent: "operate", keywords: ["exceptions", "nigo", "clocks", "sla", "account opening", "funding"] },
-  { href: "/studio/repapering", label: "Repapering", icon: ScrollText, roles: [A, P, C, O, B], intent: "govern", keywords: ["repapering", "negative consent", "affirmative consent", "conversion", "recruitment", "bulk"] },
+  { href: "/studio/repapering", label: "Repapering", icon: ScrollText, roles: [A, P, C, O, B], intent: "govern", hiddenIn: ["IN"], keywords: ["repapering", "negative consent", "affirmative consent", "conversion", "recruitment", "bulk"] },
   { href: "/studio/onboarding-scoreboard", label: "Onboarding scoreboard", icon: Gauge, roles: [A, P, C, O, B], intent: "govern", keywords: ["days to invest", "abandonment", "nps", "raci", "fte", "scoreboard", "onboarding metrics"] },
-  { href: "/studio/account-features", label: "Account features", icon: SlidersHorizontal, roles: [A, P, C, O, B], intent: "govern", keywords: ["margin", "options", "checkwriting", "senior", "2165", "exploitation", "hold", "trusted contact"] },
-  { href: "/studio/money-in", label: "Money in", icon: Wallet, roles: [A, P, C, O, B], intent: "govern", keywords: ["ach", "deposit", "bank link", "micro-deposit", "return", "hold", "standing instruction", "revalidate"] },
+  { href: "/studio/account-features", label: "Account features", icon: SlidersHorizontal, roles: [A, P, C, O, B], intent: "govern", hiddenIn: ["IN"], keywords: ["margin", "options", "checkwriting", "senior", "2165", "exploitation", "hold", "trusted contact"] },
+  { href: "/studio/money-in", label: "Money in", icon: Wallet, roles: [A, P, C, O, B], intent: "govern", hiddenIn: ["IN"], keywords: ["ach", "deposit", "bank link", "micro-deposit", "return", "hold", "standing instruction", "revalidate"] },
   { href: "/studio/monitoring", label: "Transaction monitoring", icon: ShieldCheck, roles: [C, O], intent: "govern", keywords: ["aml", "monitoring", "sar", "str", "suspicious", "investigation", "structuring", "alerts"] },
-  { href: "/studio/transfers", label: "Transfers in", icon: ArrowLeftRight, roles: [A, P, C, O, B], intent: "govern", keywords: ["acat", "transfer", "reject", "cost basis", "rollover", "1035", "asset memo", "residual"] },
+  { href: "/studio/transfers", label: "Transfers in", icon: ArrowLeftRight, roles: [A, P, C, O, B], intent: "govern", hiddenIn: ["IN"], keywords: ["acat", "transfer", "reject", "cost basis", "rollover", "1035", "asset memo", "residual"] },
   { href: "/studio/document-matrix", label: "Document matrix", icon: ScrollText, roles: [A, P, C, O, B], intent: "govern", keywords: ["nigo", "documents", "registration", "tenancy", "custodian forms", "signatures", "beneficiaries"] },
   { href: "/studio/consents", label: "Consents", icon: BadgeCheck, roles: [A, P, C, O, B], intent: "govern", keywords: ["consent", "e-delivery", "householding", "aggregation", "fee debit", "redelivery", "brochure"] },
   { href: "/studio/aml", label: "AML reviews", icon: ShieldCheck, roles: [A, C, O, B], intent: "govern", keywords: ["screening", "sanctions", "pep", "edd", "source of wealth", "kyc", "hits"] },
   { href: "/studio/exits", label: "Departures and estates", icon: DoorOpen, roles: [A, P, PT, C, O, B], intent: "clients", keywords: ["offboarding", "leaving", "acat", "transfer out", "death", "estate settlement", "executor", "step-up", "inherited"] },
   { href: "/studio/behavioural", label: "Behavioural finance", icon: Brain, roles: [A, P, PT], intent: "clients", keywords: ["bias", "nudge"] },
-  { href: "/studio/beneficiary-audit", label: "Beneficiary audit", icon: UserCheck, roles: [A, P, PT, C], intent: "clients", keywords: ["registration", "beneficiaries"] },
+  { href: "/studio/beneficiary-audit", label: "Beneficiary audit", icon: UserCheck, roles: [A, P, PT, C], intent: "clients", labelIn: { IN: "Nominations" }, keywords: ["registration", "beneficiaries", "nominees", "nomination"] },
   { href: "/studio/pipeline", label: "Growth pipeline", icon: TrendingUp, roles: [A, P, PT, B], intent: "clients", keywords: ["crm", "prospects", "opportunities"] },
   { href: "/canvas", label: "Client portal", icon: Sparkles, roles: [A, P, B], intent: "clients", keywords: ["client experience", "wealth"] },
   { href: "/canvas/retirement", label: "Client view — Retirement", icon: PiggyBank, roles: [A, P, B], intent: "clients", keywords: ["planner"] },
@@ -108,7 +112,7 @@ export const VIEWS: View[] = [
 
   // Govern the agents
   { href: "/provenance", label: "Provenance", icon: ShieldCheck, roles: [C, B], intent: "govern", keywords: ["ledger", "audit", "decision record"] },
-  { href: "/studio/regulatory-countdown", label: "Regulatory countdown", icon: Timer, roles: [A, P, PT], intent: "govern", keywords: ["deadlines", "rules"] },
+  { href: "/studio/regulatory-countdown", label: "Regulatory countdown", icon: Timer, roles: [A, P, PT], intent: "govern", hiddenIn: ["IN"], keywords: ["deadlines", "rules"] },
   { href: "/studio/agent-history", label: "Agent history", icon: History, roles: [A, PT, C, B], intent: "govern", keywords: ["runs", "activity"] },
   { href: "/studio/workforce", label: "Workforce", icon: Workflow, roles: [A, PT, C, B], intent: "govern", keywords: ["agents", "autonomy", "tier", "kill switch"] },
   { href: "/studio/skills", label: "Skills", icon: Wand2, roles: [A, P, PT], intent: "govern", keywords: ["playbooks"] },
@@ -227,6 +231,20 @@ export const ROLE_PINNED: Record<string, string[]> = {
   admin: ["section:settings", "section:agents", "section:compliance"],
 };
 
+/** In India the licence decides what may be done for a client, so its page is pinned for the roles that work there,
+ * second, after the role's first page. Elsewhere it does not exist. */
+const MARKET_PINS: Record<string, Record<string, string>> = {
+  IN: { adviser: "/studio/licences", paraplanner: "/studio/licences", portfolio_team: "/studio/licences",
+        compliance: "/studio/licences", branch_leader: "/studio/licences", operations: "/studio/licences" },
+};
+
+function pinsFor(role: string): string[] | undefined {
+  const pins = ROLE_PINNED[role];
+  const extra = MARKET_PINS[firmMarket()]?.[role];
+  if (!pins || !extra || pins.includes(extra)) return pins;
+  return [pins[0], extra, ...pins.slice(1)];
+}
+
 /** A section as one menu entry for this role: named for the section when the role sees two or more of its pages,
  * the one page itself when it sees one, nothing when it sees none. */
 function sectionEntry(section: Section, role: string): View | null {
@@ -238,7 +256,9 @@ function sectionEntry(section: Section, role: string): View | null {
 
 /** Every view this role may open. Mirrors the old sidebar's rule exactly. */
 export function viewsForRole(role: string): View[] {
-  const inMarket = VIEWS.filter((v) => !v.market || v.market === firmMarket());
+  const market = firmMarket();
+  const inMarket = VIEWS.filter((v) => (!v.market || v.market === market) && !v.hiddenIn?.includes(market))
+    .map((v) => (v.labelIn?.[market] ? { ...v, label: v.labelIn[market] } : v));
   if (role === "superadmin") return inMarket.filter((v) => v.roles?.includes("superadmin_only"));
   if (role === "admin") return inMarket.filter((v) => !v.roles?.includes("superadmin_only"));
   return inMarket.filter((v) => !v.roles || (!v.roles.includes("superadmin_only") && v.roles.includes(role)));
@@ -246,7 +266,7 @@ export function viewsForRole(role: string): View[] {
 
 export function pinnedViews(role: string): View[] {
   const all = viewsForRole(role);
-  const pins = ROLE_PINNED[role];
+  const pins = pinsFor(role);
   if (!pins) return [];
   return pins
     .map((h) => {

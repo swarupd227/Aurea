@@ -5,11 +5,26 @@ import { login, api, setSession } from "@/lib/api";
 import { roleLanding } from "@/lib/roles";
 import { ShieldCheck } from "lucide-react";
 
+// India is the primary market: its firm comes first, with every role the backend seeds (core/personas.py).
+// Test ids stay as they were: login-persona-in-<role>.
 const INDIA = [
   { role: "Adviser", email: "adviser@astra-india.demo", desc: "Client consents to every trade", subtitle: "Investment Adviser's desk." },
   { role: "Portfolio manager", email: "portfolio@astra-india.demo", desc: "Discretionary mandates", subtitle: "Portfolio Manager's desk." },
-  { role: "Compliance", email: "compliance@astra-india.demo", desc: "Ledger & veto", subtitle: "Your governance dashboard." },
+  { role: "Compliance", email: "compliance@astra-india.demo", desc: "Ledger, veto & SEBI filings", subtitle: "Your governance dashboard." },
   { role: "Client", email: "client@astra-india.demo", desc: "Their own household", subtitle: "Your personal wealth view." },
+  { role: "Paraplanner", email: "paraplanner@astra-india.demo", desc: "Reviews & client answers", subtitle: "Your planning desk." },
+  { role: "Research", email: "research@astra-india.demo", desc: "Research & the fund shelf", subtitle: "Your research desk." },
+  { role: "Operations", email: "operations@astra-india.demo", desc: "Onboarding & settlements", subtitle: "Your operations desk." },
+  { role: "Branch", email: "branch@astra-india.demo", desc: "Capacity & growth", subtitle: "Your branch overview." },
+  { role: "Admin", email: "admin@astra-india.demo", desc: "Platform, within the licences", subtitle: "Platform configuration." },
+];
+
+// What the Indian demonstration firm shows, for the brand panel. Features, not claims: nothing here says compliant.
+const INDIA_SHOWS = [
+  "Agents bound by the SEBI licence: an adviser's client consents to every trade",
+  "No advice and no fee before the client's paperwork is on file",
+  "Tax worked per taxpayer, first-in first-out, with HUFs and PAN",
+  "Rupees in lakh and crore, AMFI fund prices, SIPs by licence",
 ];
 
 const DEMO = [
@@ -45,11 +60,11 @@ export default function LoginPage() {
   const firmPersonas = useFirmPersonas();
   const firmGroups: Record<string, FirmPersona[]> = {};
   firmPersonas.forEach((p) => (firmGroups[p.firm_slug] ||= []).push(p));
-  const [email, setEmail] = useState("sophie.adviser@aurea.demo");
+  const [email, setEmail] = useState(INDIA[0].email);
   const [password, setPassword] = useState("aurea");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [subtitle, setSubtitle] = useState(DEMO[0].subtitle);
+  const [subtitle, setSubtitle] = useState(INDIA[0].subtitle);
 
   // MFA challenge state
   const [mfaToken, setMfaToken] = useState<string | null>(null);
@@ -201,12 +216,20 @@ export default function LoginPage() {
         </div>
         <div className="relative max-w-md">
           <h1 className="font-serif text-4xl leading-tight">The Wealth Intelligence Platform</h1>
-          <p className="mt-4 text-white/70 text-lg">Truly personal advice, at scale.</p>
+          <p className="mt-4 text-white/70 text-lg">Truly personal advice, at scale, built for India.</p>
           <p className="mt-6 text-white/60 text-sm leading-relaxed">
             A governed agentic workforce over one unified client brain — with the adviser
             unmistakably in command. Every recommendation shows its reasoning, its sources and its
             confidence, recorded to an immutable decision ledger.
           </p>
+          <ul className="mt-6 space-y-2" data-testid="login-india-shows">
+            {INDIA_SHOWS.map((line) => (
+              <li key={line} className="flex gap-2 text-sm text-white/75">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "#c8a35e" }} />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
         </div>
         <div className="relative text-white/50 text-xs flex gap-4">
           {["Astra Core", "Atlas", "Studio", "Canvas", "Provenance", "Conduit"].map((c) => (
@@ -248,25 +271,17 @@ export default function LoginPage() {
             <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-2">
               Demo personas — click to sign in instantly
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              {DEMO.map((d) => (
-                <button
-                  key={d.email}
-                  data-testid={`login-persona-${d.role.toLowerCase()}`}
-                  onClick={() => pickPersona(d)}
-                  disabled={busy}
-                  className="text-left rounded-lg border border-border px-3 py-2 hover:border-border-soft hover:bg-surface transition disabled:opacity-50"
-                >
-                  <div className="text-sm font-medium text-ink">{d.role}</div>
-                  <div className="text-xs text-ink-muted">{d.desc}</div>
-                </button>
-              ))}
-            </div>
-
-            <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-2 mt-6">
-              India · demonstration firm, invented clients
-            </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-border bg-surface p-3" data-testid="login-market-in">
+              <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                <span className="text-sm font-semibold text-ink">India</span>
+                <span className="text-[11px] text-ink-muted">Demonstration firm · invented clients</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
+                <span className="chip text-ink-muted">SEBI Investment Adviser</span>
+                <span className="chip text-ink-muted">Portfolio Manager</span>
+                <span className="chip text-ink-muted">INR</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
               {INDIA.map((d) => (
                 <button
                   key={d.email}
@@ -279,6 +294,29 @@ export default function LoginPage() {
                   <div className="text-xs text-ink-muted">{d.desc}</div>
                 </button>
               ))}
+              </div>
+            </div>
+
+            <div className="mt-6" data-testid="login-market-nz">
+              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted mr-auto">
+                  New Zealand · demonstration firm, invented clients
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {DEMO.map((d) => (
+                  <button
+                    key={d.email}
+                    data-testid={`login-persona-${d.role.toLowerCase()}`}
+                    onClick={() => pickPersona(d)}
+                    disabled={busy}
+                    className="text-left rounded-lg border border-border px-3 py-2 hover:border-border-soft hover:bg-surface transition disabled:opacity-50"
+                  >
+                    <div className="text-sm font-medium text-ink">{d.role}</div>
+                    <div className="text-xs text-ink-muted">{d.desc}</div>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {Object.entries(firmGroups).map(([slug, people]) => (

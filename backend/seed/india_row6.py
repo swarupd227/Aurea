@@ -28,12 +28,15 @@ BY = "seed: india row 6 (demonstration)"
 # The middle answer to every question: a balanced tolerance and a medium capacity.
 ANSWERS = {q["key"]: q["options"][1] for q in risk_profile.QUESTIONS}
 FILED_ON = date(2026, 11, 6)
+# The firm's compliance persona (core/personas.py). Row 6 first shipped with an invented name nobody signs in as.
+COMPLIANCE_OFFICER = "Neha Kulkarni (demonstration)"
+WRONG_OFFICER = "Vikram Menon (demonstration)"
 REGISTRATION = {
     "registration_number": "INA000000000 (demonstration, not a real registration)",
     "registered_address": "Demonstration address, Mumbai",
     "sebi_regional_office": "Western Regional Office, Mumbai (demonstration)",
     "principal_officer": "Ananya Rao (demonstration)",
-    "compliance_officer": "Vikram Menon (demonstration)",
+    "compliance_officer": COMPLIANCE_OFFICER,
     "grievance_contact": "grievances@astra-india.demo (demonstration)",
 }
 
@@ -53,6 +56,24 @@ async def _schedule(s: AsyncSession, firm, code: str, name: str, **terms) -> Fee
     s.add(row)
     await s.flush()
     return row
+
+
+async def correct_names(s: AsyncSession, firm) -> int:
+    """Put the firm's own compliance persona where row 6 first named someone invented. Idempotent."""
+    from app.models.billing import FeeArrangement
+
+    fixed = 0
+    reg = dict(((firm.settings or {}).get("sebi_registration")) or {})
+    if reg.get("compliance_officer") == WRONG_OFFICER:
+        reg["compliance_officer"] = COMPLIANCE_OFFICER
+        firm.settings = {**(firm.settings or {}), "sebi_registration": reg}
+        fixed += 1
+    for a in (await s.execute(select(FeeArrangement).where(
+            FeeArrangement.firm_id == firm.id, FeeArrangement.confirmed_by == WRONG_OFFICER))).scalars().all():
+        a.confirmed_by = COMPLIANCE_OFFICER
+        fixed += 1
+    await s.flush()
+    return fixed
 
 
 async def add(s: AsyncSession, firm) -> int:
@@ -91,7 +112,7 @@ async def add(s: AsyncSession, firm) -> int:
             await billing.activate_arrangement(
                 s, firm_id=firm.id, mandate=m, fee_schedule_id=schedule.id, billing_method="arrears",
                 billing_frequency="quarterly", householding=householding, effective_from=start,
-                set_by="Ananya Rao (demonstration)", set_at=utcnow(), confirmed_by="Vikram Menon (demonstration)",
+                set_by="Ananya Rao (demonstration)", set_at=utcnow(), confirmed_by=COMPLIANCE_OFFICER,
                 confirmed_at=utcnow(), source="onboarding", notes=SOURCE)
             added += 1
 
