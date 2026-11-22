@@ -6,6 +6,7 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { firmMarket, money } from "@/lib/format";
 import { TaxPositionCard } from "@/app/workspace/components/artifacts/TaxPositionCard";
+import { RothWindowChips, RothWindowTable } from "@/app/workspace/components/artifacts/RothWindowCard";
 import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
@@ -152,9 +153,35 @@ function Lots({ lots, ccy, gain = false, washSale = false }: { lots: Lot[]; ccy:
   );
 }
 
-function Withdrawals({ data, ccy }: { data: { sequences: any[]; count: number; guidance?: string }; ccy: string }) {
+function Withdrawals({ data, ccy }: { data: { sequences: any[]; count: number; guidance?: string; basis?: string; by_year?: any[] }; ccy: string }) {
+  const byYear = data.by_year ?? [];
   return (
-    <Section title="Withdrawal sequencing" count={data.count} note={data.guidance} testId="tax-withdrawal">
+    <Section title="Withdrawal sequencing" count={data.count} note={data.guidance} testId="tax-withdrawal"
+      chips={data.basis === "room_each_year" ? <Chip>each year&rsquo;s bracket room · today&rsquo;s money</Chip> : data.basis === "usual_order" ? <Chip>usual order</Chip> : undefined}>
+      {byYear.length > 0 && (
+        <div className="overflow-x-auto border-b border-border-soft">
+          <table className="w-full text-sm" data-testid="tax-withdrawal-years">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
+                <th className="px-4 py-2 font-medium">Year</th>
+                <th className="px-2 py-2 text-right font-medium">Draw</th>
+                <th className="px-2 py-2 text-right font-medium">Traditional in room</th>
+                <th className="px-4 py-2 text-right font-medium">Beyond the room</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-soft">
+              {byYear.map((y: any) => (
+                <tr key={y.year}>
+                  <td className="px-4 py-2 font-mono text-xs tabular-nums text-ink">{y.year} <span className="text-ink-muted">· {pctFig((y.bracket ?? 0) * 100)}</span></td>
+                  <td className="px-2 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{y.draw == null ? "—" : money(y.draw, ccy)}</td>
+                  <td className="px-2 py-2 text-right font-mono text-xs tabular-nums text-ink">{y.within_room == null ? "—" : money(y.within_room, ccy)}</td>
+                  <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{y.beyond_room == null ? "—" : money(y.beyond_room, ccy)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {!data.count ? <None>No mandates to sequence</None> : (
         <Rows>
           {data.sequences.map((s: any, i: number) => (
@@ -512,6 +539,13 @@ function UnitedStates({ data, ccy }: { data: any; ccy: string }) {
           </Rows>
         )}
       </Section>
+
+      {data.roth_window && (
+        <Section title="Roth window" count={(data.roth_window.years ?? []).length} testId="tax-us-roth-window"
+          chips={<RothWindowChips result={data.roth_window} />}>
+          {(data.roth_window.years ?? []).length === 0 ? <None>{data.roth_window.reason}</None> : <RothWindowTable result={data.roth_window} />}
+        </Section>
+      )}
 
       <Withdrawals data={data.withdrawal_sequencing} ccy={ccy} />
     </>
