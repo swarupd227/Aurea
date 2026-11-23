@@ -245,6 +245,16 @@ async def main() -> int:
                                                                   Recommendation.status == RecommendationStatus.PROPOSED))).scalars().all()
             check("a second run refreshes the list rather than stacking another", len(again), 1)
             rec = again[0]
+            from app.api.threads import _my_open_proposals
+            from app.aurea_core import advisers
+
+            check("the list counts as the adviser it names, though its subject is the product",
+                  (advisers.named_for(rec, sophie.id), advisers.named_for(rec, ben.id)), (True, False))
+            asked = {u.full_name: [r.id for r, _ in await _my_open_proposals(s, u)] for u in (sophie, ben, bea)}
+            check("  so it asks Sophie and a branch leader, and not another adviser",
+                  (rec.id in asked["Sophie Tran"], rec.id in asked["Ben Hall"], rec.id in asked["Bea Lead"]), (True, False, True))
+            check("  and it is among what Sophie's cockpit says waits on her",
+                  str(rec.id) in [i["id"] for i in (await advisers.day(s, firm, sophie))["waiting"]["items"]], True)
             approve = {"recommendation_id": str(rec.id), "action": "approve"}
             await refused("another adviser may not approve it", ben_ex.preview_change("decide_recommendation", approve), "Sophie Tran's clients")
             await refused("compliance may not approve it", compliance.preview_change("decide_recommendation", approve), "only the adviser it names")

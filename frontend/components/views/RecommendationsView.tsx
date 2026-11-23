@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import RecommendationCard from "@/components/RecommendationCard";
 import { SkeletonList, Empty, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
+import { api } from "@/lib/api";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 
@@ -20,14 +21,20 @@ export function RecommendationsView({ focusId }: { focusId?: string | null }) {
   const [status, setStatus] = useState("open");
   const { data, loading, error, refetch } = useApi<any[]>(`/api/studio/feed?status=${status}`, [status]);
 
-  const hit = useMemo(() => (focusId ? (data || []).find((r) => String(r.id) === focusId) ?? null : null), [data, focusId]);
+  // A proposal asked for by id and beyond the list's first 200 (a decided one, say) is fetched on its own.
+  const [single, setSingle] = useState<any | null>(null);
+  const listed = useMemo(() => (focusId ? (data || []).find((r) => String(r.id) === focusId) ?? null : null), [data, focusId]);
+  const hit = listed ?? (single && String(single.id) === focusId ? single : null);
   const rows = hit ? [hit] : data || [];
   const focusMissing = !!focusId && !loading && !!data && !hit;
 
-  // A proposal asked for by id may already be decided: look in all of them before saying so.
+  // A proposal asked for by id may already be decided: look in all of them, then ask for it alone, before saying so.
   useEffect(() => {
     if (focusMissing && status === "open") setStatus("all");
-  }, [focusMissing, status]);
+    if (focusMissing && status === "all" && focusId) {
+      api<any>(`/api/studio/recommendations/${focusId}`).then(setSingle).catch(() => setSingle(null));
+    }
+  }, [focusMissing, status, focusId]);
 
   const top = useRef<HTMLDivElement>(null);
   useEffect(() => {
