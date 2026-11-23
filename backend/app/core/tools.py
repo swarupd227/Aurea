@@ -3340,6 +3340,21 @@ TOOLS: dict[str, Tool] = {
                         UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.RESEARCH_CIO, UserRole.ADMIN},
     ),
 
+    "read_giving": Tool(
+        key="read_giving",
+        name="Read giving",
+        speaking_agent="astra",
+        description="Three ways a US household can give, laid out as figures from what is on file and the law: from an IRA (a qualified charitable distribution: who may, from the day they reach 70 and a half, this year's limit and next year's where set, the one-time split-interest amount, and how much of this year's RMD it could satisfy); stock (lots in accounts the household owns directly, held over a year, largest gain first, deducted at value with the gain never realised, capped at 30% of the return's AGI); and a donor-advised fund bunching year (one to five years of giving put into a fund in one year, against giving each year: the deductions and the difference, with the 0.5% AGI floor, the 60% cash limit, the non-itemizer deduction a fund does not get and the 35% cap). Bunching needs the yearly giving, as the user says it, and a recorded return; never estimate either. It recommends nothing; record what the client chooses or declines with record_recommendation (category tax).",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "The household (from search_households)", required=True),
+                ToolInput("annual_giving", "number", "What the household gives a year, as the user says it", required=False),
+                ToolInput("other_itemized", "number", "Other itemized deductions a year (state and local tax, mortgage interest), as the user says it", required=False)],
+        output=ToolOutput("object", "Giving, laid out"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                        UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
     "read_healthcare_costs": Tool(
         key="read_healthcare_costs",
         name="Read healthcare costs",

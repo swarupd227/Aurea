@@ -7,6 +7,7 @@ import { useApi } from "@/lib/hooks";
 import { firmMarket, money } from "@/lib/format";
 import { TaxPositionCard } from "@/app/workspace/components/artifacts/TaxPositionCard";
 import { RothWindowChips, RothWindowTable } from "@/app/workspace/components/artifacts/RothWindowCard";
+import { GivingSections } from "@/app/workspace/components/artifacts/GivingCard";
 import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
@@ -544,6 +545,12 @@ function UnitedStates({ data, ccy }: { data: any; ccy: string }) {
         <Section title="Roth window" count={(data.roth_window.years ?? []).length} testId="tax-us-roth-window"
           chips={<RothWindowChips result={data.roth_window} />}>
           {(data.roth_window.years ?? []).length === 0 ? <None>{data.roth_window.reason}</None> : <RothWindowTable result={data.roth_window} />}
+        </Section>
+      )}
+
+      {data.giving && data.giving.status === "assessed" && (
+        <Section title="Giving" testId="tax-us-giving" chips={<Chip>lays out · what to give is the client&rsquo;s</Chip>}>
+          <GivingSections result={data.giving} />
         </Section>
       )}
 

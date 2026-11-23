@@ -265,6 +265,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "read_outside_agents": self.read_outside_agents,
             "revoke_outside_agent": self.revoke_outside_agent,
             "read_assumption_set": self.read_assumption_set,
+            "read_giving": self.read_giving,
             "read_healthcare_costs": self.read_healthcare_costs,
             "read_roth_window": self.read_roth_window,
             "read_social_security": self.read_social_security,
@@ -6766,6 +6767,54 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         except oa.OutsideAgentError as exc:
             raise ExecutorError(str(exc))
         out["message"] = f"Revoked the key for {out['label']} (ending {out['key_ends']})."
+        return out
+
+    # ── Giving, laid out (B-192) ──────────────────────────────────────────────────────────────
+
+    async def read_giving(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import giving, markets
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+
+        def amount(key: str) -> float | None:
+            v = inputs.get(key)
+            if v in (None, ""):
+                return None
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                raise ExecutorError(f"{key} must be a number.")
+            if v < 0:
+                raise ExecutorError(f"{key} cannot be negative.")
+            return v
+
+        try:
+            out = await giving.for_household(self.session, household_id, firm_id=self.firm_id,
+                                             annual_giving=amount("annual_giving"), other_itemized=amount("other_itemized"))
+        except ValueError as exc:
+            raise ExecutorError(str(exc))
+        if out["status"] != "assessed":
+            out["message"] = f"{out['household']}: giving not assessed. {out['reason']}"
+            return out
+        say = markets.money_for(await self._firm())
+        q, st, b = out["qcd"], out["stock"], out["bunching"]
+        parts = []
+        for p in q["people"]:
+            parts.append(f"{p['person']} may give from an IRA {'now' if p['eligible_now'] else 'from ' + p['eligible_from']}, up to "
+                         f"{say(p['limit'])} in {q['tax_year']}" + (f", which could satisfy {say(p['satisfies_rmd_up_to'])} of this year's RMD"
+                                                                    if p["satisfies_rmd_up_to"] else ""))
+        if st["lots"]:
+            top = st["lots"][0]
+            parts.append(f"{st['long_held_with_gain']} lot(s) held over a year carry a gain; the largest is {top['symbol']} "
+                         f"with {say(top['gain'])} on {say(top['value'])}")
+        if b["status"] == "assessed":
+            best = max(b["rows"], key=lambda r: r["extra_deduction"])
+            parts.append(f"putting {best['years']} year(s) of giving into a donor-advised fund in one year adds "
+                         f"{say(best['extra_deduction'])} of deductions over those years against giving each year")
+        else:
+            parts.append(f"bunching is not assessed: {b['reason']}")
+        out["message"] = (f"{out['household']}: " + "; ".join(parts) + ". This lays the choices out; what to give is the client's, "
+                          "and what they decide goes on the advice file.")
         return out
 
     # ── Healthcare in retirement, year by year (B-191) ───────────────────────────────────────

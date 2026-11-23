@@ -125,6 +125,38 @@ ALL: tuple[LawFigure, ...] = (
               "IRC §86(c)(1)(A)", date(1993, 8, 10)),
     LawFigure("us_ss_adjusted_base_single", "Social Security taxed at up to 85% above this, single (adjusted base amount)", 34_000, "USD",
               "IRC §86(c)(2)(A), added by OBRA 1993 §13215", date(1993, 8, 10)),
+    # Giving (B-192). A qualified charitable distribution from an IRA, once the owner has reached 70 and a half, is kept
+    # out of income up to a yearly limit, indexed; a one-time gift to a split-interest entity sits inside it.
+    LawFigure("us_qcd_age", "Qualified charitable distribution: the IRA owner has reached this age", 70.5, "age",
+              "IRC §408(d)(8)(B)(ii)", date(2006, 8, 17)),
+    LawFigure("us_qcd_limit", "Qualified charitable distributions kept out of income, a year per IRA owner", 111_000, "USD",
+              "IRS Notice 2025-67 (IR-2025-111, 13 Nov 2025), IRC §408(d)(8)(A)", date(2025, 11, 13),
+              applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_qcd_limit", "Qualified charitable distributions kept out of income, a year per IRA owner", 114_000, "USD",
+              "IRS Notice 2026-66 (IR-2026-136, 12 Nov 2026), IRC §408(d)(8)(A)", date(2026, 11, 12),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
+    LawFigure("us_qcd_split_interest", "One-time QCD to a split-interest entity (inside the yearly limit)", 55_000, "USD",
+              "IRS Notice 2025-67 (IR-2025-111, 13 Nov 2025), IRC §408(d)(8)(F)", date(2025, 11, 13),
+              applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_qcd_split_interest", "One-time QCD to a split-interest entity (inside the yearly limit)", 57_000, "USD",
+              "IRS Notice 2026-66 (IR-2026-136, 12 Nov 2026), IRC §408(d)(8)(F)", date(2026, 11, 12),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
+    # From 2026: a deduction for cash gifts by those who do not itemize (not to a donor-advised fund), a floor of 0.5% of
+    # AGI under what an itemizer deducts, and an itemized deduction worth at most 35% to the top bracket.
+    LawFigure("us_nonitemizer_charity_mfj", "Cash gifts deducted without itemizing, joint return (not to a donor-advised fund)",
+              2_000, "USD", "P.L. 119-21 §70424 (IRS: permanent charitable contribution deduction for taxpayers who do not itemize)",
+              date(2025, 7, 4), applies_from=date(2026, 1, 1)),
+    LawFigure("us_nonitemizer_charity_single", "Cash gifts deducted without itemizing, other returns (not to a donor-advised fund)",
+              1_000, "USD", "P.L. 119-21 §70424 (IRS: permanent charitable contribution deduction for taxpayers who do not itemize)",
+              date(2025, 7, 4), applies_from=date(2026, 1, 1)),
+    LawFigure("us_charity_floor", "Itemized charitable gifts deductible only above this share of AGI", 0.005, "rate",
+              "P.L. 119-21 §70425 (IRS Publication 505, 2026)", date(2025, 7, 4), applies_from=date(2026, 1, 1)),
+    LawFigure("us_itemized_value_cap", "Itemized deductions worth at most this rate to the top bracket", 0.35, "rate",
+              "P.L. 119-21 §70111, IRC §68 (the 2/37 reduction)", date(2025, 7, 4), applies_from=date(2026, 1, 1)),
+    LawFigure("us_charity_cash_limit", "Cash gifts to a public charity or donor-advised fund deductible up to this share of AGI",
+              0.60, "rate", "IRC §170(b)(1)(G), made permanent by P.L. 119-21", date(2025, 7, 4)),
+    LawFigure("us_charity_stock_limit", "Long-held appreciated stock given to a public charity deductible up to this share of AGI",
+              0.30, "rate", "IRC §170(b)(1)(C)", date(2025, 7, 4)),
     # Medicare Part B's standard monthly premium, by year (B-191). What the firm states for healthcare on Medicare is
     # beyond it.
     LawFigure("us_part_b_premium", "Medicare Part B standard monthly premium", 202.90, "USD",

@@ -152,6 +152,7 @@ async def _load_lots(session: AsyncSession, brain: dict, *, today: date) -> list
 
         result.append({
             "lot_id": str(lot.id),
+            "account_id": str(h.account_id),
             "account_name": acc.get("name", ""),
             "mandate_id": mandate_id,
             "mandate_name": mandate.get("name", ""),
@@ -1294,6 +1295,11 @@ async def for_household(
 
             rw = await roth_window.for_household(session, household_id, firm_id=firm_id)
         result = _us_tax_report(brain, await _load_lots(session, brain, today=today), today=today, window=rw)
+        if window:
+            # Giving from an IRA and in stock, laid out on the tax page (B-192); bunching needs the yearly giving said.
+            from app.aurea_core import giving
+
+            result["giving"] = await giving.for_household(session, household_id, firm_id=firm_id)
     elif jurisdiction == "UK":
         result = _uk_tax_report(brain, await _load_lots(session, brain, today=today))
     else:
