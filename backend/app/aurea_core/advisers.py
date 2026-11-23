@@ -189,6 +189,14 @@ async def subject_households(session: AsyncSession, firm_id: uuid.UUID, recs: li
     return await _subject_households(session, firm_id, recs)
 
 
+def named_for(rec: Recommendation, user_id) -> bool:
+    """A proposal that names its adviser rather than a household: a Product Match list is one adviser's clients, its
+    subject the product. Read beside the household's recorded adviser, so it counts as theirs."""
+    from app.core.decision_rights import DISTRIBUTION_AGENTS
+
+    return str(rec.agent_key) in DISTRIBUTION_AGENTS and str((rec.payload or {}).get("adviser_id") or "") == str(user_id)
+
+
 async def day(session: AsyncSession, firm: Firm, user: User) -> dict:
     """The four figures at the top of an adviser's cockpit, each from what is on file."""
     today, now = firm_time.today(firm), utcnow()
@@ -205,7 +213,8 @@ async def day(session: AsyncSession, firm: Firm, user: User) -> dict:
         Recommendation.firm_id == firm.id, Recommendation.status == RecommendationStatus.PROPOSED)
         .order_by(Recommendation.created_at))).scalars().all())
     homes = await _subject_households(session, firm.id, open_recs) if mine else {}
-    asked = [r for r in open_recs if queue_action(role, r.agent_key) and (not mine or homes.get(r.id) in ids)]
+    asked = [r for r in open_recs if queue_action(role, r.agent_key)
+             and (not mine or homes.get(r.id) in ids or named_for(r, user.id))]
     oldest = asked[0] if asked else None
 
     # Due this week: recorded reviews falling due or overdue, and this person's tasks.

@@ -278,7 +278,13 @@ async def _my_open_proposals(session: AsyncSession, user: User) -> list[tuple[Re
         .order_by(Recommendation.priority.asc(), Recommendation.created_at.desc())
         .limit(200)
     )).scalars().all()
-    return [(r, a) for r in recs if (a := queue_action(role, r.agent_key))]
+    from app.aurea_core.advisers import named_for
+    from app.core.decision_rights import DISTRIBUTION_AGENTS
+
+    # A product list is one adviser's to decide (decision_rights.named_decider): another adviser is not asked about it.
+    def theirs(r: Recommendation) -> bool:
+        return str(r.agent_key) not in DISTRIBUTION_AGENTS or role == UserRole.BRANCH_LEADER or named_for(r, user.id)
+    return [(r, a) for r in recs if (a := queue_action(role, r.agent_key)) and theirs(r)]
 
 
 @router.get("/needs-you")

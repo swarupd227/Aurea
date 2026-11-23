@@ -82,7 +82,7 @@ async def nba_feed(
         return [_rec_dict(r, user.role) for r in recs]
     held = await advisers.of_households(db, firm.id)
     homes = await advisers.subject_households(db, firm.id, list(recs))
-    mine = {r.id: held.get(homes.get(r.id)) == user.id for r in recs}
+    mine = {r.id: held.get(homes.get(r.id)) == user.id or advisers.named_for(r, user.id) for r in recs}
     ordered = sorted(recs, key=lambda r: not mine[r.id])[:200]  # stable: priority order kept within each part
     return [{**_rec_dict(r, user.role), "mine": mine[r.id]} for r in ordered]
 
