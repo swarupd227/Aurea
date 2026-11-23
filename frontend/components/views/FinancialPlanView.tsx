@@ -6,6 +6,7 @@ import { useApi } from "@/lib/hooks";
 import { bandChip, pct1 } from "@/app/workspace/components/artifacts/PlanCard";
 import { ScenariosTable } from "@/app/workspace/components/artifacts/ScenarioCard";
 import { SocialSecurityTable } from "@/app/workspace/components/artifacts/SocialSecurityCard";
+import { HealthcareChips, HealthcareTable } from "@/app/workspace/components/artifacts/HealthcareCard";
 import { agesOfLabel, basisLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
 import { PlanInputsChips, SequenceIllustration } from "@/components/PlanInputs";
 import { FiguresTable, FreshnessChip, PlanStateChip, ReviewNeedChip, SummaryChip } from "@/app/workspace/components/artifacts/PlanRecordCard";
@@ -358,6 +359,15 @@ export function FinancialPlanView({ household = null }: { household?: string | n
         </div>
       </Card>
 
+      {r?.healthcare && r.healthcare.status !== "not_assessed" && (
+        <Card className="mb-4 overflow-hidden p-0" data-testid="plan-healthcare">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border-soft px-4 py-2.5">
+            <div className="text-sm font-medium text-ink">Healthcare the plan funds</div>
+            <HealthcareChips result={r.healthcare} />
+          </div>
+          <HealthcareTable result={r.healthcare} />
+        </Card>
+      )}
       <PlanSocialSecurity household={household} />
       <PlanScenarios household={household} />
 

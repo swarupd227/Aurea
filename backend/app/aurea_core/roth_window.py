@@ -117,12 +117,17 @@ class YearLaw:
         return next((top, rate) for top, rate in self.brackets if taxable < top)
 
     def tier_of(self, magi: float) -> int:
-        finite = [t[0] for t in self.irmaa if t[0] != float("inf")]
-        for i, bound in enumerate(finite):
-            # Every bound is "at or below", except the last finite one: the top tier starts at it.
-            if magi < bound or (magi == bound and i < len(finite) - 1):
-                return i
-        return len(finite)
+        return tier_in(self.irmaa, magi)
+
+
+def tier_in(tiers: list[tuple], magi: float) -> int:
+    """The IRMAA tier a modified AGI falls in. Every bound is "at or below", except the last finite one: the top tier
+    starts at it."""
+    finite = [t[0] for t in tiers if t[0] != float("inf")]
+    for i, bound in enumerate(finite):
+        if magi < bound or (magi == bound and i < len(finite) - 1):
+            return i
+    return len(finite)
 
 
 def _largest(f, limit: float, hi: float) -> float:
@@ -143,9 +148,45 @@ def _age(dob: date, year: int) -> int:
     return year - dob.year
 
 
+def filing_of(brain: dict, adults: list[dict]) -> tuple[str, str, str]:
+    """The filing status, where it comes from and its label: the standing return's, else the one recorded, else assumed
+    from the adults on file (B-183)."""
+    from app.aurea_core import tax_returns
+
+    tax_of = lambda p: (p.get("profile") or {}).get("tax") or {}  # noqa: E731
+    ids = {p["id"] for p in adults}
+    filed = sorted((r for r in (brain.get("tax_returns") or []) if ids & set(r["person_ids"])), key=lambda r: -r["tax_year"])
+    recorded = (((brain.get("household") or {}).get("values") or {}).get("filing_status")
+                or next((tax_of(p).get("filing_status") for p in adults if tax_of(p).get("filing_status")), None))
+    if filed:
+        filing, basis = filed[0]["filing_status"], f"the {filed[0]['tax_year']} return"
+    elif recorded:
+        filing, basis = recorded, "recorded on file"
+    else:
+        filing, basis = ("married_filing_jointly" if len(adults) >= 2 else "single"), "assumed from the adults on file"
+    return filing, basis, tax_returns.FILING_STATUSES.get(filing, filing)
+
+
+def income_in(streams: list[dict], dobs: dict, names: dict, year: int, *, today: date, inflation: float) -> tuple[list[dict], float, float]:
+    """The recorded streams paid in a year, in today's money (a level one losing buying power), and the Social Security
+    and other income among them."""
+    paid, ss, other = [], 0.0, 0.0
+    for s in streams:
+        dob = dobs.get(s["person_id"])
+        if dob is None or _age(dob, year) < int(s["start_age"]):
+            continue
+        amount = float(s["planned_annual"]) * (1.0 if s.get("inflation_linked") else 1 / (1 + inflation) ** max(year - today.year, 0))
+        paid.append({"name": s["name"], "person": names.get(s["person_id"]), "kind": s["kind"], "amount": round(amount, 2)})
+        if s["kind"] == "social_security":
+            ss += amount
+        else:
+            other += amount
+    return paid, ss, other
+
+
 def lay_out(brain: dict, plan: dict | None, streams: list[dict], *, today: date, inflation: float, base: dict) -> dict:
     """The window, year by year, from the brain (people, IRAs, returns), the retirement plan and the streams on file."""
-    from app.aurea_core import rmd, tax_returns
+    from app.aurea_core import rmd
 
     def not_assessed(reason: str) -> dict:
         return {**base, "status": "not_assessed", "reason": reason, "years": []}
@@ -165,19 +206,7 @@ def lay_out(brain: dict, plan: dict | None, streams: list[dict], *, today: date,
     ira = sum(float(tax_of(p).get("ira_value") or 0) for p in adults)
     roth = sum(float(tax_of(p).get("roth_value") or 0) for p in adults)
 
-    # The filing status: the standing return's, else the one recorded, else assumed from the adults on file.
-    ids = {p["id"] for p in adults}
-    filed = sorted((r for r in (brain.get("tax_returns") or []) if ids & set(r["person_ids"])), key=lambda r: -r["tax_year"])
-    recorded = (((brain.get("household") or {}).get("values") or {}).get("filing_status")
-                or next((tax_of(p).get("filing_status") for p in adults if tax_of(p).get("filing_status")), None))
-    if filed:
-        filing, filing_basis = filed[0]["filing_status"], f"the {filed[0]['tax_year']} return"
-    elif recorded:
-        filing, filing_basis = recorded, "recorded on file"
-    else:
-        filing = "married_filing_jointly" if len(adults) >= 2 else "single"
-        filing_basis = "assumed from the adults on file"
-    label = tax_returns.FILING_STATUSES.get(filing, filing)
+    filing, filing_basis, label = filing_of(brain, adults)
     if filing not in FILING_KEYS:
         return not_assessed(f"The filing status on file, {label}, is not one whose brackets are held here; a return "
                             "recorded from Form 1040 gives the status the law knows.")
@@ -215,17 +244,7 @@ def lay_out(brain: dict, plan: dict | None, streams: list[dict], *, today: date,
         if law.senior_each:
             keys |= {"us_senior_deduction", f"us_senior_deduction_line_{k}", "us_senior_deduction_taper"}
         ages = {name[i]: _age(d, year) for i, d in dobs.items()}
-        paid, ss, other = [], 0.0, 0.0
-        for s in streams:
-            dob = dobs.get(s["person_id"])
-            if dob is None or _age(dob, year) < int(s["start_age"]):
-                continue
-            amount = float(s["planned_annual"]) * (1.0 if s.get("inflation_linked") else 1 / (1 + inflation) ** max(year - today.year, 0))
-            paid.append({"name": s["name"], "person": name.get(s["person_id"]), "kind": s["kind"], "amount": round(amount, 2)})
-            if s["kind"] == "social_security":
-                ss += amount
-            else:
-                other += amount
+        paid, ss, other = income_in(streams, dobs, name, year, today=today, inflation=inflation)
         aged = sum(1 for a in ages.values() if a >= MEDICARE_AGE)
         work = lambda x: law.work(other, ss, aged, x)  # noqa: E731
         now = work(0.0)

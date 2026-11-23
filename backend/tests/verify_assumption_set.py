@@ -106,7 +106,9 @@ async def main() -> int:
         print("\n=== Before any version ===")
         out = await assumptions.read(s, firm)
         check("no version is recorded", out["version"], None)
-        check("every figure is the platform's", {f["whose"] for f in out["figures"]}, {"platform"})
+        check("every figure is the platform's", {f["whose"] for f in out["figures"] if not f["key"].startswith("healthcare.")}, {"platform"})
+        check("except healthcare, which has no default and reads not set (B-191)",
+              {(f["whose"], f["value"]) for f in out["figures"] if f["key"].startswith("healthcare.")}, {("none", None)})
         check("the goals bar is in the set", fig(out, "success_target.goals")["value"], 0.7)
         check("the retirement bar is in the set", fig(out, "success_target.retirement")["value"], 0.85)
         check("an input's age line is in the set", fig(out, "plan_input_days")["value"], 90)

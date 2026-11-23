@@ -60,7 +60,7 @@ class Figure:
 
 
 def _figures() -> dict[str, Figure]:
-    from app.aurea_core.planning import CMA, DISCOUNT_SETTING, INFLATION_INDEXES, SUCCESS_CEILING, SUCCESS_TARGETS
+    from app.aurea_core.planning import CMA, DISCOUNT_SETTING, HEALTHCARE_SETTINGS, INFLATION_INDEXES, SUCCESS_CEILING, SUCCESS_TARGETS
 
     out: list[Figure] = []
     for cls in CMA:
@@ -79,6 +79,12 @@ def _figures() -> dict[str, Figure]:
     out.append(Figure("reserve_months", "Cash reserve", "months", 0, 36, ("reserve_months",)))
     out.append(Figure("plan_input_days", "Oldest planning input", "days", 1, 1825, ("plan_input_days",)))
     out.append(Figure("refresh_line", "Refresh line", "rate", 0.01, 0.5, ("assumption_refresh_line",)))
+    # Healthcare a person pays a year in retirement, today's money, for a US household (B-191). No default: unset reads
+    # not assessed.
+    out.append(Figure("healthcare.pre65", "Healthcare before Medicare, a year per person", "money", 0, 250_000,
+                      (HEALTHCARE_SETTINGS["pre65"],)))
+    out.append(Figure("healthcare.medicare", "Healthcare on Medicare beyond Part B, a year per person", "money", 0, 250_000,
+                      (HEALTHCARE_SETTINGS["medicare"],)))
     return {f.key: f for f in out}
 
 
@@ -113,7 +119,9 @@ def _set(settings: dict, path: tuple, value, current: dict) -> None:
 
 
 def _num(unit: str, value):
-    return int(round(float(value))) if unit in ("age", "months", "days") else float(value)
+    if value is None:
+        return None
+    return int(round(float(value))) if unit in ("age", "months", "days") else round(float(value), 2) if unit == "money" else float(value)
 
 
 async def latest(session: AsyncSession, firm_id: uuid.UUID) -> AssumptionSetVersion | None:
@@ -163,6 +171,10 @@ def figures_now(firm: Firm, recorded: AssumptionSetVersion | None, *, sources: d
         elif key == "discount_rate":
             value, whose, msrc = aset["discount_rate"], aset["sources"]["discount_rate"], None
             whose = "platform" if whose == "cash_return" else whose
+        elif key.startswith("healthcare."):
+            # The firm's or nothing: no market suggests one and the platform has none to supply.
+            value, msrc = aset["healthcare"][key.split(".", 1)[1]], None
+            whose = "firm" if value is not None else "none"
         elif key == "plan_input_days":
             line = plan_inputs.line_of(firm)
             value, whose, msrc = line["days"], "platform" if line["assumed"] else "firm", None
@@ -173,6 +185,7 @@ def figures_now(firm: Firm, recorded: AssumptionSetVersion | None, *, sources: d
             value, msrc = (raw if whose == "firm" else default), None
         source = (sources.get(key) or "Set before the assumption set kept versions") if whose == "firm" \
             else msrc if whose == "market" \
+            else "Not set: healthcare reads not assessed" if whose == "none" \
             else "Platform default: the cash return in this set" if key == "discount_rate" else "Platform default"
         out[key] = {"key": key, "label": f.label, "unit": f.unit, "value": _num(f.unit, value), "whose": whose, "source": source}
     return out
@@ -284,6 +297,9 @@ async def record(session: AsyncSession, firm: Firm, actor: User, *, changes: lis
     row.refresh = await run_refresh(session, firm, actor, before_settings=before_settings, version=plan["version"],
                                     line=float(plan["refresh_line"]), line_assumed=plan["refresh_line_assumed"]) \
         if refresh else {"run": False}
+    if any(c["key"].startswith("healthcare.") for c in plan["changes"]):
+        # Healthcare moves what a retirement plan funds, not a goal's likelihood, so the refresh does not measure it.
+        row.refresh = {**(row.refresh or {}), "retirement_not_measured": True}
     await session.flush()
     return {**(await read(session, firm)), "recorded": _view(row), "changes": plan["changes"]}
 

@@ -265,6 +265,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "read_outside_agents": self.read_outside_agents,
             "revoke_outside_agent": self.revoke_outside_agent,
             "read_assumption_set": self.read_assumption_set,
+            "read_healthcare_costs": self.read_healthcare_costs,
             "read_roth_window": self.read_roth_window,
             "read_social_security": self.read_social_security,
             "read_tax_returns": self.read_tax_returns,
@@ -6767,6 +6768,34 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         out["message"] = f"Revoked the key for {out['label']} (ending {out['key_ends']})."
         return out
 
+    # ── Healthcare in retirement, year by year (B-191) ───────────────────────────────────────
+
+    async def read_healthcare_costs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import healthcare
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        try:
+            out = await healthcare.for_household(self.session, household_id, firm_id=self.firm_id)
+        except ValueError as exc:
+            raise ExecutorError(str(exc))
+        out.pop("by_t", None)
+        if out.get("status") == "not_assessed":
+            out["message"] = f"{out['household']}: healthcare not assessed. {out.get('reason', '')}"
+            return out
+        from app.aurea_core import markets
+
+        say = markets.money_for(await self._firm())
+        yrs = out.get("years") or []
+        first = yrs[0] if yrs else None
+        out["message"] = (
+            f"{out['household']}: healthcare the retirement plan funds, {len(yrs)} year(s) from {first['year'] if first else '-'}, "
+            f"{say(out.get('first_year_today') or 0)} in the first year and {say(out.get('total_today') or 0)} in all, in today's money, "
+            "from the firm's stated costs, Medicare Part B and the IRMAA tier two years on."
+            + (" Not assessed: " + "; ".join(out["not_assessed"]) + "." if out.get("not_assessed") else "")
+            + (" Assumed: " + "; ".join(out["assumed"]) + "." if out.get("assumed") else "")
+            + " What cover to buy is the client's.")
+        return out
+
     # ── The Roth window, year by year (B-190) ───────────────────────────────────────────────
 
     async def read_roth_window(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -6780,6 +6809,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         if out["status"] != "assessed":
             out["message"] = f"{out['household']}: {out['status'].replace('_', ' ')}. {out['reason']}"
             return out
+        from app.aurea_core import markets
+
+        say = markets.money_for(await self._firm())
         w, t, yrs = out["window"], out["totals"], out["years"]
         first = yrs[0]
         room = first["room_in_bracket"]
@@ -6787,10 +6819,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         out["message"] = (
             f"{out['household']}: {t['years']} year(s) from {w['from_year']} to {w['to_year']}, {w['ends']}, in today's money, "
             f"filing {out['filing_label']} ({out['filing_basis']})."
-            + (f" In {first['year']} taxable income of ${first['taxable_income']:,.0f} sits in the {first['bracket']:.0%} bracket; "
-               f"converting ${room['room']:,.0f} reaches its top and adds ${room['tax']:,.0f} of tax." if room else
+            + (f" In {first['year']} taxable income of {say(first['taxable_income'])} sits in the {first['bracket']:.0%} bracket; "
+               f"converting {say(room['room'])} reaches its top and adds {say(room['tax'])} of tax." if room else
                f" In {first['year']} taxable income is in the top bracket.")
-            + f" The room to each year's bracket top totals ${t['room_in_brackets']:,.0f} against ${t['ira_balance']:,.0f} in traditional IRAs."
+            + f" The room to each year's bracket top totals {say(t['room_in_brackets'])} against {say(t['ira_balance'])} in traditional IRAs."
             + (f" In {', '.join(map(str, crossing))} that room crosses a Medicare IRMAA line two years on." if crossing else "")
             + (" " + "; ".join(out["assumed"]) + "." if out["assumed"] else "")
             + " ACA credits and state tax are not modelled. This lays the window out; whether to convert is the client's.")
@@ -6976,6 +7008,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return "—"
         if unit == "rate":
             return f"{float(value) * 100:.2f}".rstrip("0").rstrip(".") + "%"
+        if unit == "money":
+            return f"{float(value):,.0f} a year, in the firm's currency"
         return f"{int(value)} {'years' if unit == 'age' else unit}" if unit != "age" else str(int(value))
 
     async def read_assumption_set(self, inputs: dict[str, Any]) -> dict[str, Any]:

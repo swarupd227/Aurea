@@ -13,6 +13,7 @@ import { ScenarioCard, ScenariosCard } from "./ScenarioCard";
 import { TaxReturnsCard } from "./TaxReturnsCard";
 import { SocialSecurityCard } from "./SocialSecurityCard";
 import { RothWindowCard } from "./RothWindowCard";
+import { HealthcareCard } from "./HealthcareCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
@@ -167,6 +168,9 @@ export function artifactCard(artifact: Artifact) {
       case "revoke_outside_agent":
         if (typeof artifact.result?.label !== "string" || typeof artifact.result?.state !== "string") return null;
         return <OutsideAgentsCard result={artifact.result as any} />;
+      case "read_healthcare_costs":
+        if (!Array.isArray(artifact.result?.years)) return null;
+        return <HealthcareCard result={artifact.result as any} />;
       case "read_roth_window":
         if (!Array.isArray(artifact.result?.years)) return null;
         return <RothWindowCard result={artifact.result as any} />;

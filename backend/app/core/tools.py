@@ -3340,6 +3340,19 @@ TOOLS: dict[str, Tool] = {
                         UserRole.COMPLIANCE, UserRole.OPERATIONS, UserRole.RESEARCH_CIO, UserRole.ADMIN},
     ),
 
+    "read_healthcare_costs": Tool(
+        key="read_healthcare_costs",
+        name="Read healthcare costs",
+        speaking_agent="astra",
+        description="Healthcare a US household's retirement plan funds, year by year and per adult, in today's money: before 65 the firm's stated cost of cover a year per person; from 65 the firm's stated cost on Medicare beyond Part B, the Part B standard premium (the law's, by year) and the IRMAA surcharge from the tier the household's income on file two years before puts it in. These costs are added to what the retirement plan draws. A firm that has stated neither cost reads 'not assessed' and nothing is added; the costs are set in the planning assumptions (record_assumption_set, figures healthcare.pre65 and healthcare.medicare) by research or the portfolio team, never estimated. It recommends no cover.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "The household (from search_households)", required=True)],
+        output=ToolOutput("object", "Healthcare, year by year"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                        UserRole.OPERATIONS, UserRole.BRANCH_LEADER},
+    ),
+
     "read_roth_window": Tool(
         key="read_roth_window",
         name="Read Roth window",

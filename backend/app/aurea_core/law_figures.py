@@ -125,6 +125,14 @@ ALL: tuple[LawFigure, ...] = (
               "IRC §86(c)(1)(A)", date(1993, 8, 10)),
     LawFigure("us_ss_adjusted_base_single", "Social Security taxed at up to 85% above this, single (adjusted base amount)", 34_000, "USD",
               "IRC §86(c)(2)(A), added by OBRA 1993 §13215", date(1993, 8, 10)),
+    # Medicare Part B's standard monthly premium, by year (B-191). What the firm states for healthcare on Medicare is
+    # beyond it.
+    LawFigure("us_part_b_premium", "Medicare Part B standard monthly premium", 202.90, "USD",
+              "CMS fact sheet, 2026 Medicare Parts A & B Premiums and Deductibles (14 Nov 2025)", date(2025, 11, 14),
+              applies_from=date(2026, 1, 1), applies_to=date(2026, 12, 31)),
+    LawFigure("us_part_b_premium", "Medicare Part B standard monthly premium", 209.40, "USD",
+              "CMS fact sheet, 2027 Medicare Parts A & B Premiums and Deductibles (17 Nov 2026)", date(2026, 11, 17),
+              applies_from=date(2027, 1, 1), applies_to=date(2027, 12, 31)),
     # Medicare's income-related monthly adjustment (IRMAA), by premium year: each tier's upper bound of modified AGI from
     # the tax return two years before, then the monthly Part B and Part D amounts it adds per person. A bound is "at or
     # below", except the last finite one, which is "below" (the top tier starts at it).

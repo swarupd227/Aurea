@@ -31,17 +31,20 @@ ASSUMED_LONGEVITY = 95    # the plan-to age, for the last survivor, when none is
 ASSUMED_FUNDING_SHARE = 0.7
 
 
-def _draws(need_today: float, streams: list[dict], *, acc: int, dec: int, inflation: float) -> list[float]:
+def _draws(need_today: float, streams: list[dict], *, acc: int, dec: int, inflation: float,
+           costs_by_t: dict | None = None) -> list[float]:
     """Each retirement year's draw on the portfolio, in that year's money: the need grown with inflation, less
     the guaranteed income paid that year. A stream linked to inflation keeps its buying power; a level one is
     paid at its stated amount and so falls in real terms; one not started yet pays nothing, and the portfolio
-    bridges until it does. `starts_in` is the years from today until a stream is paid."""
+    bridges until it does. `starts_in` is the years from today until a stream is paid. `costs_by_t` adds a cost the
+    plan funds on top of the need, in the money of its year, by years from today (healthcare, B-191)."""
+    costs_by_t = costs_by_t or {}
     out = []
     for y in range(dec):
         t = acc + y
         grow = (1 + inflation) ** t
         paid = sum(s["annual"] * (grow if s.get("inflation_linked") else 1.0) for s in streams if t >= s["starts_in"])
-        out.append(max(need_today * grow - paid, 0.0))
+        out.append(max(need_today * grow + float(costs_by_t.get(t, 0.0)) - paid, 0.0))
     return out
 
 
@@ -136,6 +139,7 @@ def retirement_plan(
     cma: dict | None = None,
     discount_rate: float | None = None,
     success_ceiling: float | None = None,
+    costs_by_t: dict | None = None,
 ) -> dict:
     """Full retirement projection + sustainable income + sequence risk + levers.
 
@@ -150,7 +154,7 @@ def retirement_plan(
     infl_to_ret = (1 + inflation) ** acc
 
     def draws_for(need: float, acc_years: int = acc, dec_years: int = dec) -> list[float]:
-        return _draws(need, streams, acc=acc_years, dec=dec_years, inflation=inflation)
+        return _draws(need, streams, acc=acc_years, dec=dec_years, inflation=inflation, costs_by_t=costs_by_t)
 
     draws = draws_for(annual_income)
     # Guaranteed income paid in the first year of retirement, in today's money: a level stream has lost the
@@ -331,6 +335,17 @@ async def for_household(
     annual_contribution += float(overrides.get("extra_contribution") or 0.0)
 
     retire_at = max(retirement_age, current_age + 1)
+    # Healthcare the plan funds on top of the income (B-191): only a US household, only what the firm has stated. With
+    # nothing stated this is None and the plan is exactly what it was.
+    from app.aurea_core import healthcare, markets
+
+    market = markets.of_household(await session.get(Firm, firm_id), brain["household"].get("values"))
+    us = bool(market and market.code == "US")
+    care_years = None
+    if us and any(v is not None for v in ((brain.get("planning") or {}).get("healthcare") or {}).values()):
+        first = today.year + (retire_at - current_age)
+        last = first + max(1, max(end_age, retire_at + 1) - retire_at) - 1
+        care_years = await healthcare.for_household(session, household_id, firm_id=firm_id, from_year=first, to_year=last, brain=brain)
     plan = retirement_plan(
         current_value=current_value, allocation=allocation, current_age=current_age,
         retirement_age=retire_at, longevity_age=max(end_age, retire_at + 1),
@@ -341,7 +356,11 @@ async def for_household(
         # The firm's retirement success target, from the assumption set (B-174); the platform's 85% without one.
         target_success=planning.target_of(brain, "retirement"),
         success_ceiling=planning.ceiling_of(brain), discount_rate=planning.discount_of(brain)[0],
+        costs_by_t=(care_years or {}).get("by_t"),
     )
+    plan["healthcare"] = ({k: v for k, v in care_years.items() if k != "by_t"} if care_years else
+                          {"status": "not_assessed", "reason": "The firm has stated no healthcare cost in its planning assumptions."
+                           if us else "Healthcare costs are laid out for a household taxed in the US.", "years": []})
     acc = plan["years_to_retirement"]
     plan["household"] = {"id": str(household_id), "name": brain["household"]["name"]}
     plan["currency"] = brain.get("currency")   # without it a reader guesses, and a model guessed pounds

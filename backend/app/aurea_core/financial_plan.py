@@ -308,6 +308,8 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
                                     "success_probability", "on_track", "target_success", "median_depletion_age", "failed_shortfall_today", "band",
                                     "success_ceiling", "pv_spending", "sustainable_income", "income_gap", "sequence_risk",
                                     "levers", "years_to_retirement", "years_in_retirement", "end_age", "ages_of", "plan_to", "assumptions_source", "assumed")},
+            # Healthcare the plan funds on top of the income, from what the firm stated (B-191).
+            "healthcare": plan.get("healthcare"),
             "money_basis": "today",
             "income_need": plan.get("income_need"), "income_basis": plan.get("income_basis"), "guaranteed_income": guaranteed, "starts_later": plan.get("starts_later", 0.0),
             "withdrawal_rate": round(rate, 4) if rate is not None else None, "sustainable_rate": round(plan["sustainable_income"] / projected, 4) if projected else None,

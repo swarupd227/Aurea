@@ -71,6 +71,10 @@ SUCCESS_CEILING = ("success_ceiling", 0.95)
 # What future needs are discounted at for the funded ratio (B-177): the firm's rate, else the cash return in the same
 # assumption set, named as such. Never a figure of its own made up here.
 DISCOUNT_SETTING = "planning_discount_rate"
+# What healthcare costs a person a year in retirement, today's money (B-191): before Medicare, and on Medicare beyond the
+# Part B premium the law sets. The firm's only, with its source: no market suggests one and the platform supplies none,
+# so with neither set healthcare is not assessed and a plan is exactly what it was.
+HEALTHCARE_SETTINGS = {"pre65": "healthcare_pre65", "medicare": "healthcare_medicare"}
 
 
 def assumption_set(firm_settings: dict | None = None, jurisdiction: str | None = None) -> dict:
@@ -112,6 +116,7 @@ def assumption_set(firm_settings: dict | None = None, jurisdiction: str | None =
             "inflation": inflation, "inflation_assumed": assumed,
             "retirement_age": retirement_age, "plan_to_age": plan_to_age, "success_target": targets,
             "success_ceiling": ceiling, "discount_rate": discount, "sources": sources,
+            "healthcare": {k: (float(s[v]) if s.get(v) not in (None, "") else None) for k, v in HEALTHCARE_SETTINGS.items()},
             # The recorded version these figures are (B-174); None while the firm has recorded none.
             "version": int(version) if version not in (None, "") else None,
             "market_basis": [a.view() for a in suggested.values()]}

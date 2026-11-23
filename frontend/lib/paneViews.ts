@@ -388,6 +388,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_plan_delivery":
       return typeof r.household_id === "string" ? onClient("/studio/plan") : "/studio/plans";
     case "read_financial_plan":
+    case "read_healthcare_costs":
     case "read_social_security":
     case "run_plan_scenario":
     case "save_plan_scenario":

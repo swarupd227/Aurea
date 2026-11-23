@@ -1,14 +1,17 @@
 /** The firm's planning assumptions, one versioned record (aurea_core/assumptions.py, B-174): each figure with whose it
  * is and its source, the version standing, recent versions, and the households a new version moved. Tables and chips. */
-interface Figure { key: string; label: string; unit: "rate" | "age" | "months" | "days"; value: number; whose: "firm" | "market" | "platform"; source: string }
+import { money } from "@/lib/format";
+
+interface Figure { key: string; label: string; unit: "rate" | "age" | "months" | "days" | "money"; value: number | null; whose: "firm" | "market" | "platform" | "none"; source: string }
 interface Moved { household: string; biggest_change: number; on_track_changed: boolean; adviser: string | null }
 interface Refresh { run?: boolean; line?: number; line_assumed?: boolean; measured?: number; not_measured?: number; moved?: Moved[]; tasks?: number }
 interface Version { version: number; made: string | null; by: string; reason: string; changed: string[]; refresh: Refresh }
 
 const pct = (v: number) => `${(v * 100).toFixed(2).replace(/\.?0+$/, "")}%`;
-const shown = (f: Figure) => (f.unit === "rate" ? pct(f.value) : f.unit === "age" ? String(f.value) : `${f.value} ${f.unit}`);
+const shown = (f: Figure, ccy?: string) => (f.value == null ? "not set" : f.unit === "rate" ? pct(f.value) : f.unit === "age" ? String(f.value)
+  : f.unit === "money" ? money(f.value, ccy || "USD") : `${f.value} ${f.unit}`);
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
-const tone = { firm: "text-ok", market: "text-info", platform: "text-ink-muted" } as const;
+const tone = { firm: "text-ok", market: "text-info", platform: "text-ink-muted", none: "text-warn" } as const;
 
 function Head({ children }: { children: React.ReactNode }) {
   return <th className="px-3 py-1.5 text-left font-mono text-[11px] font-normal uppercase tracking-wider text-ink-muted">{children}</th>;
@@ -38,6 +41,7 @@ export function AssumptionSetCard({ result }: { result: any }) {
               line {pct(recorded.refresh.line ?? 0)}{recorded.refresh.line_assumed ? " · platform default" : ""}
             </span>
             {!!recorded.refresh.not_measured && <span className="chip tabular-nums text-ink-muted">{recorded.refresh.not_measured} with no goals</span>}
+            {(recorded.refresh as any).retirement_not_measured && <span className="chip text-warn">healthcare moves retirement plans · not measured here</span>}
           </div>
           {moved.length > 0 && (
             <div className="overflow-x-auto">
@@ -70,7 +74,7 @@ export function AssumptionSetCard({ result }: { result: any }) {
                     {f.label}
                     {changed.has(f.key) && <span className="chip ml-2 text-ink">changed</span>}
                   </td>
-                  <td className="px-3 py-1.5 whitespace-nowrap tabular-nums text-ink">{shown(f)}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap tabular-nums text-ink">{shown(f, result.currency)}</td>
                   <td className="px-3 py-1.5"><span className={`chip ${tone[f.whose]}`}>{f.whose}</span></td>
                   <td className="px-3 py-1.5 text-xs text-ink-muted">{f.source}</td>
                 </tr>
