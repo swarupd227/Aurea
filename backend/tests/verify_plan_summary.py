@@ -114,8 +114,9 @@ async def db_checks() -> None:
                 u = User(id=uuid.uuid4(), firm_id=f.id, email=f"{name.split()[0].lower()}@x.test", full_name=name, role=role, hashed_password="x", is_active=True)
                 s.add(u)
                 return u
-            ann, ada, pat, cora = (user(firm, "Ann Adviser", R.ADVISER), user(firm, "Ada Adviser", R.ADVISER),
-                                   user(firm, "Pat Para", R.PARAPLANNER), user(firm, "Cora Compliance", R.COMPLIANCE))
+            ann, ada, pat, cora, pete = (user(firm, "Ann Adviser", R.ADVISER), user(firm, "Ada Adviser", R.ADVISER),
+                                         user(firm, "Pat Para", R.PARAPLANNER), user(firm, "Cora Compliance", R.COMPLIANCE),
+                                         user(firm, "Pete Portfolio", R.PORTFOLIO_TEAM))
             kiri = user(other, "Kiri Adviser", R.ADVISER)
             park, lone = (Household(id=uuid.uuid4(), firm_id=firm.id, name=n) for n in ("Park", "Lone"))
             s.add_all([park, lone])
@@ -285,6 +286,33 @@ async def db_checks() -> None:
             check("  any adviser's card is offered", (await card(ada, lrec)).get("Plan summary"), "Lone")
             await refused("  a paraplanner's is not", card(pat, lrec), "client's adviser")
             check("firm scope: another firm reads no plan summary of this one", await plan_summary.latest(s, other.id, park.id), None)
+
+            print("\n=== Healthcare (B-191): it says whether the figures include it, from what the baseline froze ===")
+            ldoc = (await summaries(lone))[0]
+            ltext = " ".join(x["body"] for x in ldoc.sections)
+            check("no cost stated by the firm: the baseline froze healthcare as not assessed", ldoc.data["figures"]["retirement"]["healthcare"]["status"], "not_assessed")
+            check("  and the summary says it is not in the figures", "Healthcare costs are not included in these figures." in ltext, True)
+            check("a baseline frozen before healthcare was laid out says nothing of it", plan_summary._care_sentences(None, str), [])
+            from app.aurea_core import assumptions
+
+            await assumptions.record(s, firm, pete, reason="Healthcare costs from the 2026 survey", changes=[
+                {"figure": "healthcare.pre65", "value": 15_000, "source": "Test survey of individual premiums, 2026"},
+                {"figure": "healthcare.medicare", "value": 4_000, "source": "Test survey of Medigap and Part D, 2026"}])
+            await s.commit()
+            await ex(pat).record_plan_baseline(L)   # revises plan v1 before it is delivered
+            await ex(ada).record_plan_review({**L, "outcome": "passed"})
+            await run(lone)
+            ldoc = (await summaries(lone))[0]
+            ltext = " ".join(x["body"] for x in ldoc.sections)
+            care = ldoc.data["figures"]["retirement"]["healthcare"]
+            check("once the firm states a cost, the new baseline froze it as funded", (care["status"] in ("assessed", "partly_assessed"), care["first_year_today"] is not None), (True, True))
+            check("  and the summary says the retirement figures include it, with the frozen amounts",
+                  ("funds healthcare" in ltext, "the likelihood above includes it" in ltext, f"{care['total_today']:,.0f}" in ltext), (True, True, True))
+            check("  and no longer says it is left out", "are not included in these figures" in ltext, False)
+            check("  every number in it still comes from the plan of record", _stray_numbers(ltext, await ex(ada).read_plan_record(L)), [])
+            check("  the retirement figures a baseline froze keep their names", sorted(k for k in ldoc.data["figures"]["retirement"] if k != "healthcare"),
+                  sorted(["success_probability", "on_track", "band", "sustainable_income", "income_need", "income_target",
+                          "projected_at_retirement_today", "retirement_age", "longevity_age"]))
     finally:
         await db.dispose()
 
@@ -306,7 +334,8 @@ def _stray_numbers(text: str, record: dict) -> list[str]:
 
 def _amounts(fig: dict) -> list:
     r, f = fig.get("retirement") or {}, fig.get("funded") or {}
-    return [v for v in (r.get("income_need"), r.get("sustainable_income"), r.get("projected_at_retirement_today"), f.get("assets"), f.get("pv_needs"),
+    care = r.get("healthcare") or {}
+    return [v for v in (care.get("first_year_today"), care.get("total_today"), r.get("income_need"), r.get("sustainable_income"), r.get("projected_at_retirement_today"), f.get("assets"), f.get("pv_needs"),
                         r.get("retirement_age"), r.get("longevity_age")) if v is not None]
 
 

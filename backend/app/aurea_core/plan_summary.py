@@ -59,6 +59,22 @@ def _pct(p: Any) -> str:
     return f"{float(p):.0%}"
 
 
+def _care_sentences(care: dict | None, money) -> list[str]:
+    """Whether healthcare is in the retirement figures, from what the baseline froze (B-191). A baseline frozen before
+    healthcare was laid out carries nothing, and nothing is said."""
+    if not care:
+        return []
+    if care.get("status") not in ("assessed", "partly_assessed"):
+        return ["Healthcare costs are not included in these figures."]
+    out = ["On top of that income it funds healthcare"
+           + (f": {money(care['first_year_today'])} in the first year of retirement" if care.get("first_year_today") is not None else "")
+           + (f" and {money(care['total_today'])} over the whole plan" if care.get("total_today") is not None else "")
+           + ", in today's money, and the likelihood above includes it."]
+    if care.get("status") == "partly_assessed":
+        out.append("Part of it could not be worked out from what is on file and is left out.")
+    return out
+
+
 def sections(record: dict, ccy: str | None) -> list[dict]:
     """The summary's sections, set out from the baseline's frozen figures and the plan of record alone."""
     baseline = record["baseline"]
@@ -84,6 +100,7 @@ def sections(record: dict, ccy: str | None) -> list[dict]:
             parts.append(f"It plans for retirement at {r['retirement_age']}.")
         if r.get("income_need") is not None:
             parts.append(f"The income it plans for is {money(r['income_need'])} a year in today's money.")
+        parts.extend(_care_sentences(r.get("healthcare"), money))
         if r.get("sustainable_income") is not None:
             parts.append(f"The income the plan could sustain is {money(r['sustainable_income'])} a year in today's money.")
         if r.get("projected_at_retirement_today") is not None:

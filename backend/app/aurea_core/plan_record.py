@@ -211,9 +211,11 @@ async def figures_of(session: AsyncSession, household_id: uuid.UUID, *, firm_id:
         "as_of": today.isoformat(), "currency": firm.base_currency if firm else None,
         "assumption_version": planning.assumption_version((firm.settings or {}) if firm else None),
         "assumptions_version": planning.version_of(brain), "assumptions_source": planning.source_of(brain),
-        "retirement": None if r is None else {k: r.get(k) for k in (
+        "retirement": None if r is None else {**{k: r.get(k) for k in (
             "success_probability", "on_track", "band", "sustainable_income", "income_need", "income_target",
             "projected_at_retirement_today", "retirement_age", "longevity_age")},
+            # Healthcare the plan funds on top of the income (B-191), as it stood: whether it is in the figures above.
+            "healthcare": _care(r.get("healthcare"))},
         "goals": [{"id": str(g["id"]), "name": g["name"], "kind": g.get("kind"), "tier": g.get("tier"),
                    "success_probability": g["success_probability"], "on_track": g["on_track"], "band": g.get("band")}
                   for g in likely.get("goals") or []],
@@ -225,6 +227,16 @@ async def figures_of(session: AsyncSession, household_id: uuid.UUID, *, firm_id:
                    "oldest_days": (i.get("oldest") or {}).get("days"), "completeness": i.get("completeness")},
         "estimate": True,
     }
+
+
+def _care(block: dict | None) -> dict | None:
+    """What a baseline keeps of the retirement plan's healthcare: whether it is funded, the first year's and the whole
+    plan's cost in today's money, and what is not assessed. None when the plan carried no healthcare block."""
+    if not block:
+        return None
+    return {"status": block.get("status"), "first_year_today": block.get("first_year_today"),
+            "total_today": block.get("total_today"), "not_assessed": list(block.get("not_assessed") or []),
+            "reason": block.get("reason")}
 
 
 def differences(frozen: dict, now: dict) -> list[dict]:
