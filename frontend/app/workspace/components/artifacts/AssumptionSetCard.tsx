@@ -1,6 +1,6 @@
 /** The firm's planning assumptions, one versioned record (aurea_core/assumptions.py, B-174): each figure with whose it
  * is and its source, the version standing, recent versions, and the households a new version moved. Tables and chips. */
-import { money } from "@/lib/format";
+import { money, firmLocale } from "@/lib/format";
 
 interface Figure { key: string; label: string; unit: "rate" | "age" | "months" | "days" | "money"; value: number | null; whose: "firm" | "market" | "platform" | "none"; source: string }
 interface Moved { household: string; biggest_change: number; on_track_changed: boolean; adviser: string | null }
@@ -10,7 +10,7 @@ interface Version { version: number; made: string | null; by: string; reason: st
 const pct = (v: number) => `${(v * 100).toFixed(2).replace(/\.?0+$/, "")}%`;
 const shown = (f: Figure, ccy?: string) => (f.value == null ? "not set" : f.unit === "rate" ? pct(f.value) : f.unit === "age" ? String(f.value)
   : f.unit === "money" ? money(f.value, ccy || "USD") : `${f.value} ${f.unit}`);
-const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
+const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(firmLocale(), { day: "numeric", month: "short", year: "numeric" }) : "—");
 const tone = { firm: "text-ok", market: "text-info", platform: "text-ink-muted", none: "text-warn" } as const;
 
 function Head({ children }: { children: React.ReactNode }) {

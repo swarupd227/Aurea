@@ -4,7 +4,7 @@ import { FileText, ShieldCheck, ShieldAlert, Play, Check, X, Plus, ArrowRight, C
 import { Card, Spinner, Segment, ConfidenceBar, SeverityBadge, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { titleCase, money } from "@/lib/format";
+import { titleCase, money, firmLocale } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
@@ -410,7 +410,7 @@ export function OnboardingCaseView({ id }: { id: string }) {
                         </div>
                       )}
                       {entry.disposition_note && <div className="text-ink-muted mt-0.5">{entry.disposition_note}</div>}
-                      {entry.screened_at && <div className="text-ink-faint mt-0.5">{new Date(entry.screened_at).toLocaleDateString()}</div>}
+                      {entry.screened_at && <div className="text-ink-faint mt-0.5">{new Date(entry.screened_at).toLocaleDateString(firmLocale())}</div>}
                     </div>
                   ))}
                 </div>
@@ -520,7 +520,7 @@ function TrackAPanel({ c, caseId, onChanged }: { c: any; caseId: string; onChang
         c.agreement_status === "signed",
         "Advisory agreement",
         c.agreement_status === "signed"
-          ? `Signed${c.agreement_signed_at ? ` ${new Date(c.agreement_signed_at).toLocaleDateString()}` : ""}${c.agreement_envelope_id ? ` · ${c.agreement_envelope_id}` : ""}`
+          ? `Signed${c.agreement_signed_at ? ` ${new Date(c.agreement_signed_at).toLocaleDateString(firmLocale())}` : ""}${c.agreement_envelope_id ? ` · ${c.agreement_envelope_id}` : ""}`
           : `Status: ${c.agreement_status || "not started"}.`,
         c.agreement_status !== "signed" ? (
           <button className="btn-outline text-[10px] py-1 px-2 shrink-0" disabled={!!busy}
@@ -535,7 +535,7 @@ function TrackAPanel({ c, caseId, onChanged }: { c: any; caseId: string; onChang
         !!c.ips_accepted_at,
         "IPS accepted",
         c.ips_accepted_at
-          ? `Accepted by ${c.ips_accepted_by} on ${new Date(c.ips_accepted_at).toLocaleDateString()}`
+          ? `Accepted by ${c.ips_accepted_by} on ${new Date(c.ips_accepted_at).toLocaleDateString(firmLocale())}`
           : c.proposal?.mandate ? "Proposal drafted — awaiting acceptance." : "No proposal yet — run the onboarding agent.",
         !c.ips_accepted_at && c.proposal?.mandate ? (
           <button className="btn-outline text-[10px] py-1 px-2 shrink-0" disabled={!!busy}
@@ -782,9 +782,9 @@ function FeeSchedulePanel({ caseId, status }: { caseId: string; status: string }
               )}
 
               <div className="text-[10px] text-ink-faint mt-2 leading-relaxed">
-                Set by {data.set_by} {data.set_at && `on ${new Date(data.set_at).toLocaleDateString()}`}
+                Set by {data.set_by} {data.set_at && `on ${new Date(data.set_at).toLocaleDateString(firmLocale())}`}
                 {data.confirmed && (
-                  <><br />Confirmed by {data.confirmed_by} on {new Date(data.confirmed_at).toLocaleDateString()}</>
+                  <><br />Confirmed by {data.confirmed_by} on {new Date(data.confirmed_at).toLocaleDateString(firmLocale())}</>
                 )}
               </div>
 
@@ -1191,7 +1191,7 @@ function Parties({ caseId, status }: { caseId: string; status: string }) {
                       <span className="text-[10px] text-ink-muted">{p.ownership_pct}% ownership</span>
                     )}
                     {p.screened_at && (
-                      <span className="text-[10px] text-ink-faint">{new Date(p.screened_at).toLocaleDateString()}</span>
+                      <span className="text-[10px] text-ink-faint">{new Date(p.screened_at).toLocaleDateString(firmLocale())}</span>
                     )}
                   </div>
                 </div>
@@ -1441,7 +1441,7 @@ function DisclosureTracker({ caseId, status }: { caseId: string; status: string 
                   <div className="text-[10px] text-ink-faint mt-0.5">{d.regime}</div>
                   {d.delivered ? (
                     <div className="text-[11px] text-ink-muted mt-1">
-                      {new Date(d.delivered_at).toLocaleDateString()} ·{" "}
+                      {new Date(d.delivered_at).toLocaleDateString(firmLocale())} ·{" "}
                       {DELIVERY_METHODS.find((m) => m.value === d.method)?.label || d.method}
                       {d.delivered_by ? ` · ${d.delivered_by}` : ""}
                       {d.evidence_ref && <div className="font-mono text-ink-faint truncate">Ref: {d.evidence_ref}</div>}
@@ -1590,7 +1590,7 @@ function CustodianCard({ c, onPush, busy }: { c: any; onPush: () => void; busy: 
           </div>
           <div className="font-mono text-sm text-ink font-semibold">{c.custodian_account_id}</div>
           {c.custodian_push_at && (
-            <div className="text-[10px] text-ink-faint mt-1">Pushed {new Date(c.custodian_push_at).toLocaleDateString()}</div>
+            <div className="text-[10px] text-ink-faint mt-1">Pushed {new Date(c.custodian_push_at).toLocaleDateString(firmLocale())}</div>
           )}
         </>
       ) : (

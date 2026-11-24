@@ -118,7 +118,7 @@ class Invoice(Base):
     period_start: Mapped[date] = mapped_column(Date)
     period_end: Mapped[date] = mapped_column(Date)
     amount: Mapped[float] = mapped_column(Numeric(20, 2), default=0)        # negative on a credit note
-    currency: Mapped[str] = mapped_column(String(8), default="NZD")
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
 
     # The full working: bands, accounts, valuation date and price age - what lets a bill

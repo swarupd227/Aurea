@@ -44,7 +44,7 @@ _ALIASES = {"GB": "UK", "UNITED KINGDOM": "UK", "USA": "US", "UNITED STATES": "U
 
 def code(value: str | None) -> str:
     """The canonical code for a stored jurisdiction. Empty is the column's own default."""
-    raw = str(value or "NZ").strip().upper()
+    raw = str(value or "IN").strip().upper()
     return _ALIASES.get(raw, raw)
 
 

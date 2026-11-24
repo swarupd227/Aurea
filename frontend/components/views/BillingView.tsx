@@ -63,7 +63,7 @@ function InvoiceTable({ rows, onOpen, openId, testId }: { rows: any[]; onOpen: (
               <td className={`py-1.5 pr-3 text-right font-mono tabular-nums whitespace-nowrap ${i.amount < 0 ? "text-ok" : "text-ink"}`}>{money(i.amount, i.currency)}</td>
               <td className="py-1.5 pr-3 whitespace-nowrap">
                 <span className={`font-mono text-xs ${i.status === "held" ? "text-crit" : i.status === "debited" ? "text-ok" : "text-ink-muted"}`}>{i.status}</span>
-                {i.debit_status === "insufficient_cash" && <div className="font-mono text-[10px] text-warn">unpaid · short {i.shortfall?.toLocaleString()}</div>}
+                {i.debit_status === "insufficient_cash" && <div className="font-mono text-[10px] text-warn">unpaid · short {i.shortfall?.toLocaleString(firmLocale())}</div>}
               </td>
               <td className="py-1.5"><Checks checks={i.checks ?? []} /></td>
             </tr>
@@ -253,7 +253,7 @@ export function BillingView({ focusInvoice = null }: { focusInvoice?: string | n
                   {ex.no_agreement.map((u: any) => (
                     <div key={u.mandate_id} className="flex justify-between gap-3 text-sm">
                       <span className="text-ink">{u.household_name ?? u.mandate_name}{u.pending_confirmation ? " · awaiting confirmation" : ""}</span>
-                      <span className="font-mono tabular-nums text-ink-muted">{u.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                      <span className="font-mono tabular-nums text-ink-muted">{u.value.toLocaleString(firmLocale(), { maximumFractionDigits: 0 })}</span>
                     </div>
                   ))}
                 </div>

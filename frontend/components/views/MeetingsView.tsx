@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { ViewLink } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 import { BriefProfilePanel } from "./BriefProfilePanel";
+import { firmLocale } from "@/lib/format";
 
 /** Client meetings, newest first. A meeting opens in the work pane when the list is there. */
 export function MeetingsView() {
@@ -46,7 +47,7 @@ export function MeetingsView() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-ink">{m.title}</span>
                   <span className="mt-0.5 block truncate text-xs text-ink-muted">
-                    {m.household_name}{m.scheduled_at ? ` · ${new Date(m.scheduled_at).toLocaleString()}` : ""}
+                    {m.household_name}{m.scheduled_at ? ` · ${new Date(m.scheduled_at).toLocaleString(firmLocale())}` : ""}
                   </span>
                 </span>
                 {m.brief?.agenda && <span className={`${chip} hidden cq-sm:inline-flex`}>brief</span>}

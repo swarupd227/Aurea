@@ -1,3 +1,4 @@
+import { firmLocale } from "@/lib/format";
 interface Row {
   symbol: string;
   name: string;
@@ -44,12 +45,12 @@ export const STATUS_TEXT: Record<string, { text: string; tone: string }> = {
 };
 
 function n(v: number, d = 0) {
-  return v.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  return v.toLocaleString(firmLocale(), { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
 function when(iso: string | null | undefined) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleString(firmLocale(), { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 export function PriceFreshnessCard({ result }: { result: Freshness | Refreshed }) {

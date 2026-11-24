@@ -13,6 +13,7 @@ import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 import { ReportState } from "./ReportsView";
+import { firmLocale } from "@/lib/format";
 
 /** One client report, as the client would read it, and what can happen to it next. A report reaches
  * a client only by a person approving its proposal, shown below it. In the work pane, redrafting and
@@ -70,7 +71,7 @@ export function ReportView({ id }: { id: string }) {
             {r.period && <span className={`${chip} tabular-nums`}>{r.period}</span>}
             <StatusBadge status={r.status} />
             <ReportState report={r} />
-            {r.published_at && <span className={`${chip} tabular-nums`}>Published {new Date(r.published_at).toLocaleDateString()}</span>}
+            {r.published_at && <span className={`${chip} tabular-nums`}>Published {new Date(r.published_at).toLocaleDateString(firmLocale())}</span>}
           </>
         }
         actions={

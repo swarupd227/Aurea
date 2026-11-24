@@ -32,8 +32,9 @@ docker compose up --build   # brings up the entire platform
 
 | Surface | URL | Default login |
 |---|---|---|
-| **Studio** (adviser cockpit) | http://localhost:3010 | `sophie.adviser@aurea.demo` / `aurea` |
-| **Canvas** (client view) | http://localhost:3010/canvas | `client@aurea.demo` / `aurea` |
+| **Studio** (adviser cockpit), India | http://localhost:3010 | `adviser@astra-india.demo` / `aurea` |
+| **Canvas** (client view), India | http://localhost:3010/canvas | `client@astra-india.demo` / `aurea` |
+| New Zealand demonstration firm | http://localhost:3010 | `sophie.adviser@aurea.demo` / `aurea` |
 | **API docs** (Swagger) | http://localhost:8010/docs | — |
 
 > With no `ANTHROPIC_API_KEY` the platform runs **deterministic fallbacks** for all narrative — every governed workflow still produces a fully auditable artefact. Add a key and rationale/commentary/assistant become LLM-authored.
@@ -42,7 +43,18 @@ docker compose up --build   # brings up the entire platform
 
 ## Demo Personas
 
-All passwords: `aurea` — switchable in-app via the **role switcher** (sidebar → *Switch role*).
+All passwords: `aurea` — switchable in-app via the **role switcher** (sidebar → *Switch role*). The sign-in page lists India first, then New Zealand. Both firms are demonstrations with invented clients. The deploy seeds both (the India firm with `python -m seed.india_demo`, which does nothing if it exists).
+
+**India** (the primary market). The same ten roles sign in as `<role>@astra-india.demo`: `adviser`, `paraplanner`, `portfolio`, `research`, `compliance`, `operations`, `branch`, `admin` and `client`.
+
+| Persona | Login | Lands on |
+|---|---|---|
+| Adviser (Ananya Rao) | `adviser@astra-india.demo` | Conversation |
+| Portfolio team | `portfolio@astra-india.demo` | Conversation |
+| Compliance | `compliance@astra-india.demo` | Conversation |
+| Client (Rajesh Sharma) | `client@astra-india.demo` | Canvas wealth view |
+
+**New Zealand** (second market).
 
 | Persona | Login | Lands on |
 |---|---|---|
@@ -60,6 +72,10 @@ All passwords: `aurea` — switchable in-app via the **role switcher** (sidebar 
 ---
 
 ## What You Can Do in 5 Minutes
+
+**India.** Sign in as `adviser@astra-india.demo`, ask the conversation about the Sharma household, and open its net worth, tax (per taxpayer, first-in first-out) and SEBI licence views. The same steps work for the other roles.
+
+**New Zealand.**
 
 1. **Sign in as Sophie** → the **Cockpit** shows the live agent workforce and proactive next-best-action feed.
 2. Open **The Chen Family** (couple + trust + foundation + heir) → see total-portfolio view valued against real market prices, goals, and whole-portfolio risk.
@@ -95,10 +111,11 @@ Provenance → Verify chain  ←  regulatory-grade, not just logging
 
 ### 3. Machine-Readable Compliance Ontology
 
-Not tick-boxes — a formal ontology of actual legal obligations across four regimes:
+Not tick-boxes — a formal ontology of actual legal obligations across five regimes:
 
 | Regime | Coverage |
 |---|---|
+| **India SEBI** | Investment Advisers and Portfolio Managers, per licence (a demonstration: nothing here says a firm is compliant) |
 | **NZ FMA** | FMC Act, FAP Code Standards, CoFI |
 | **UK FCA** | COBS 9A, Consumer Duty |
 | **US SEC** | Reg BI, Form CRS |
@@ -339,7 +356,7 @@ docker-compose.yml postgres(+pgvector) · redis · backend · worker · frontend
 - Component names (Aurea Core / Studio / Canvas / Provenance / Conduit / Atlas) are the spec working names used throughout the codebase.
 - The drift rebalancing prototype is an illustrative proof of concept on synthetic + real-priced data — **no live execution anywhere**.
 - **Client data is never used to train external models.**
-- Regulatory framing defaults to advice-led conduct regulation with multi-regime support (NZ FMA / UK FCA / US SEC / EU MiFID II).
+- Regulatory framing defaults to advice-led conduct regulation with multi-regime support (India SEBI / NZ FMA / UK FCA / US SEC / EU MiFID II).
 
 ---
 

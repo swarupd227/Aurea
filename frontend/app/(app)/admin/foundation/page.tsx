@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import { Card, Spinner } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api, getUser } from "@/lib/api";
+import { firmLocale } from "@/lib/format";
 
 const ICONS: Record<string, any> = {
   governance: ShieldCheck, grounding: BookOpen, eval: CheckCircle2,
@@ -152,7 +153,7 @@ export default function Foundation() {
           <div className="font-semibold text-ink mb-3 flex items-center gap-2"><BarChart3 size={17} /> AI usage & cost</div>
           <div className="grid grid-cols-3 gap-3 mb-4">
             <Stat label="Model calls" value={usage.calls ?? 0} />
-            <Stat label="Tokens" value={(usage.total_tokens ?? 0).toLocaleString()} />
+            <Stat label="Tokens" value={(usage.total_tokens ?? 0).toLocaleString(firmLocale())} />
             <Stat label="Est. cost" value={`$${(usage.est_cost ?? 0).toFixed(2)}`} />
           </div>
           <Mix title="By model" data={usage.by_model} total={usage.calls} />

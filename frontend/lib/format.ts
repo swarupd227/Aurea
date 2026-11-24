@@ -1,14 +1,14 @@
 import { getUser } from "./api";
 
-/** The signed-in firm's books. A session from before the firm carried these reads as New Zealand. */
+/** The signed-in firm's books. A session from before the firm carried these reads as India, the primary market. */
 export function firmCurrency(): string {
-  return getUser()?.firm?.base_currency || "NZD";
+  return getUser()?.firm?.base_currency || "INR";
 }
 export function firmLocale(): string {
-  return getUser()?.firm?.locale || "en-NZ";
+  return getUser()?.firm?.locale || "en-IN";
 }
 export function firmMarket(): string {
-  return getUser()?.firm?.jurisdiction || "NZ";
+  return getUser()?.firm?.jurisdiction || "IN";
 }
 
 export function money(n: number | null | undefined, ccy?: string, digits = 0): string {
@@ -39,6 +39,11 @@ export function num(n: number, digits = 0): string {
   return new Intl.NumberFormat(firmLocale(), { maximumFractionDigits: digits }).format(n);
 }
 
+/** A quantity of units, grouped as the firm's own people write numbers. */
+export function units(n: number, digits = 3): string {
+  return new Intl.NumberFormat(firmLocale(), { maximumFractionDigits: digits }).format(Number(n));
+}
+
 export function titleCase(s: string): string {
   return (s || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -52,7 +57,7 @@ export function timeAgo(iso: string | null): string {
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.round(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
-  return new Date(iso).toLocaleDateString();
+  return new Date(iso).toLocaleDateString(firmLocale());
 }
 
 export function formatDateFull(iso: string | null): string {

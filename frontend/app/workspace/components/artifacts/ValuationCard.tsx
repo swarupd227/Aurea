@@ -1,3 +1,4 @@
+import { firmLocale } from "@/lib/format";
 interface Row {
   symbol: string;
   name: string;
@@ -31,7 +32,7 @@ interface Recorded {
 type Payload = { instruments: Row[] } | Recorded;
 
 function n(v: number, d = 2) {
-  return v.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  return v.toLocaleString(firmLocale(), { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
 const BASIS_LABEL: Record<string, { text: string; tone: string }> = {

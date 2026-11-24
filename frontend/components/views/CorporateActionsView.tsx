@@ -5,7 +5,7 @@ import { CalendarClock, Check, ChevronDown, ChevronRight } from "lucide-react";
 import { Card, StatTile, Empty, Spinner } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { titleCase, money } from "@/lib/format";
+import { titleCase, money, firmLocale } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
@@ -26,7 +26,7 @@ function EntitlementRow({ entitlement, action, onPosted }: { entitlement: any; a
 
   async function post() {
     if (nav.say) {
-      const figures = `${entitlement.shares_entitled.toLocaleString()} share(s)`
+      const figures = `${entitlement.shares_entitled.toLocaleString(firmLocale())} share(s)`
         + `${entitlement.cash_amount !== null ? ` and ${money(entitlement.cash_amount)} cash` : ""}`;
       return nav.say(withRef(
         `Post ${entitlement.client ? `${entitlement.client}'s` : "one account's"} entitlement`
@@ -50,7 +50,7 @@ function EntitlementRow({ entitlement, action, onPosted }: { entitlement: any; a
       </span>
       {entitlement.client && <span className="chip text-ink-soft" title={entitlement.account_name ?? undefined}>{entitlement.client}</span>}
       <span className="flex-1 font-mono tabular-nums text-ink-muted">
-        {entitlement.shares_entitled.toLocaleString()} share(s)
+        {entitlement.shares_entitled.toLocaleString(firmLocale())} share(s)
         {entitlement.cash_amount !== null ? ` · ${money(entitlement.cash_amount)}` : ""}
       </span>
       {entitlement.status !== "posted" && (

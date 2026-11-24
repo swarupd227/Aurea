@@ -82,7 +82,7 @@ async def held_away_lines(session: AsyncSession, household_id: uuid.UUID, *, fir
 
     rows = (await session.execute(select(HeldAwayHolding).where(
         HeldAwayHolding.household_id == household_id, HeldAwayHolding.status == "current"))).scalars().all()
-    base = ((firm.base_currency if firm else None) or "NZD").upper()
+    base = ((firm.base_currency if firm else None) or "INR").upper()
     return [r for r in rows if (r.currency or base).upper() == base], [r for r in rows if (r.currency or base).upper() != base]
 
 
@@ -94,7 +94,7 @@ async def current_items(session: AsyncSession, household_id: uuid.UUID, *, firm_
 
 def in_currency(items: list[BalanceItem], firm: Firm | None) -> tuple[list[BalanceItem], list[BalanceItem]]:
     """Items that can be added up, and those that cannot, because nothing here converts between currencies."""
-    base = ((firm.base_currency if firm else None) or "NZD").upper()
+    base = ((firm.base_currency if firm else None) or "INR").upper()
     return [i for i in items if (i.currency or base).upper() == base], [i for i in items if (i.currency or base).upper() != base]
 
 
@@ -244,7 +244,7 @@ async def prepare_item(session: AsyncSession, household_id: uuid.UUID, *, firm_i
         raise BalanceSheetError("The interest rate must be between 0% and 100%.")
     if ends_on is not None and ends_on < today:
         raise BalanceSheetError(f"This debt ended on {ends_on.isoformat()}, so it is not owed.")
-    code = (currency or firm.base_currency or "NZD").strip().upper()
+    code = (currency or firm.base_currency or "INR").strip().upper()
     if len(code) != 3:
         raise BalanceSheetError("Give the currency as a three-letter code.")
 
@@ -269,7 +269,7 @@ async def prepare_item(session: AsyncSession, household_id: uuid.UUID, *, firm_i
             raise BalanceSheetError(f"{label} is already on file. Replace it with the new figure rather than adding it twice.")
     return {"household": household, "person": person, "side": side, "kind": kind, "name": label, "amount": figure,
             "as_of": as_of, "source": source[:255], "annual_payment": payment, "interest_rate": rate, "ends_on": ends_on,
-            "currency": code, "replacing": replacing, "not_converted": code != (firm.base_currency or "NZD").upper()}
+            "currency": code, "replacing": replacing, "not_converted": code != (firm.base_currency or "INR").upper()}
 
 
 async def record_item(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, by: str, **fields) -> dict:
@@ -340,7 +340,7 @@ async def carry_from_onboarding(session: AsyncSession, case: OnboardingCase, *, 
                 BalanceItem.household_id == household_id, BalanceItem.kind == kind, BalanceItem.name == name))).first():
             continue
         session.add(BalanceItem(firm_id=case.firm_id, household_id=household_id, side="asset", kind=kind, name=name,
-                                amount=float(a.approx_value), currency=(a.currency or "NZD")[:3].upper(), as_of=today,
+                                amount=float(a.approx_value), currency=(a.currency or "INR")[:3].upper(), as_of=today,
                                 source_document=f"Declared at onboarding ({a.source}): {case.prospect_name}"[:255],
                                 recorded_by="onboarding"))
         carried += 1

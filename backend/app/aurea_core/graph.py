@@ -129,7 +129,7 @@ async def household_brain(
     ]
 
     firm = await session.get(Firm, firm_id)
-    base = ((firm.base_currency if firm else None) or "NZD").upper()
+    base = ((firm.base_currency if firm else None) or "INR").upper()
     held_items = (await session.execute(select(BalanceItem).where(
         BalanceItem.household_id == household_id, BalanceItem.kind == "held_away_investment", BalanceItem.status == "current",
     ))).scalars().all()

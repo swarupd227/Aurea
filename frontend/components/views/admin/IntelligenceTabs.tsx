@@ -5,7 +5,7 @@ import { Save, Power, Pause, Play, Plus, Clock, Pencil, X, CheckCircle2, Eye, Se
 import { Card, Spinner, InlineConfirmButton, Empty, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api, getUser } from "@/lib/api";
-import { money, titleCase } from "@/lib/format";
+import { money, titleCase, firmLocale } from "@/lib/format";
 import { chip } from "../ViewHeader";
 import { PageOnly, ReasonInput, Saved, because, q, tierWord, useAsk } from "./shared";
 
@@ -491,11 +491,11 @@ export function UsageTab() {
     <div className="max-w-4xl space-y-5" data-testid="admin-usage">
       <div className="grid grid-cols-2 gap-3 cq-sm:grid-cols-3 cq-lg:grid-cols-5">
         {[
-          { label: "API calls", value: (usage.calls ?? 0).toLocaleString() },
+          { label: "API calls", value: (usage.calls ?? 0).toLocaleString(firmLocale()) },
           { label: "Total tokens", value: ((usage.total_tokens ?? 0) / 1000).toFixed(1) + "k" },
           { label: "Est. cost", value: money(usage.est_cost ?? 0, "USD", 2) },
           { label: "Fallback rate", value: `${((usage.fallback_rate ?? 0) * 100).toFixed(1)}%` },
-          { label: "PII redacted", value: (usage.redacted_entities ?? 0).toLocaleString() },
+          { label: "PII redacted", value: (usage.redacted_entities ?? 0).toLocaleString(firmLocale()) },
         ].map(({ label, value }) => (
           <Card key={label} className="p-4">
             <div className="tile-label">{label}</div>

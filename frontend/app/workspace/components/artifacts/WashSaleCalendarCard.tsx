@@ -1,4 +1,4 @@
-import { money as firmMoney } from "@/lib/format";
+import { money as firmMoney, firmLocale } from "@/lib/format";
 import { AlertTriangle, Check } from "lucide-react";
 
 interface Conflict {
@@ -70,7 +70,7 @@ export function WashSaleCalendarCard({ result }: { result: WashSalePayload }) {
                 <td className="px-3 py-1.5 text-xs text-ink-muted">
                   {v.wash_sale_conflicts.map((c, i) => (
                     <div key={i}>
-                      {c.account_name} bought {c.quantity.toLocaleString()} · {c.days_ago}d ago
+                      {c.account_name} bought {c.quantity.toLocaleString(firmLocale())} · {c.days_ago}d ago
                     </div>
                   ))}
                 </td>

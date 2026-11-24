@@ -73,7 +73,7 @@ export function listenOnce(onResult: (text: string) => void, onEnd?: () => void)
   }
   try {
     const rec = new SR();
-    rec.lang = navigator.language || "en-NZ";
+    rec.lang = navigator.language || "en-IN";
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.onresult = (e: any) => onResult(e.results[0][0].transcript);

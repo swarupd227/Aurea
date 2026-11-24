@@ -33,6 +33,8 @@ LABELS = {
 ONLY_IN = {**{t: "US" for t in (R.JOINT_TBE, R.COMMUNITY_PROPERTY, R.TRADITIONAL_IRA, R.ROTH_IRA, R.SEP_IRA, R.SIMPLE_IRA,
                                  R.EMPLOYER_ROLLOVER, R.CUSTODIAL_UTMA, R.CUSTODIAL_UGMA, R.INHERITED_IRA, R.PLAN_529, R.DAF, R.HSA)},
            R.HUF: "IN"}
+# Account types a market does not use, though others do. An LLC is a US form; India's are the company and the LLP.
+NOT_IN = {"IN": frozenset({R.ENTITY_LLC})}
 # The legal entity an entity account becomes at activation (models.enums.EntityType).
 ENTITY_OF = {R.TRUST: "trust", R.ENTITY_LLC: "company", R.ENTITY_CORP: "company", R.ENTITY_PARTNERSHIP: "partnership", R.HUF: "huf"}
 RISK_PREFERENCES = ("conservative", "balanced", "growth", "aggressive")
@@ -47,7 +49,7 @@ class StartError(Exception):
 def types_for(firm: Firm) -> list[str]:
     """The account types this firm's market offers."""
     market = (firm.jurisdiction or "").upper()
-    return [t.value for t in LABELS if ONLY_IN.get(t) in (None, market)]
+    return [t.value for t in LABELS if ONLY_IN.get(t) in (None, market) and t not in NOT_IN.get(market, ())]
 
 
 async def prepare(session: AsyncSession, firm: Firm, *, prospect_name: str | None, registration_type: str | None,

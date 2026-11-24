@@ -41,7 +41,7 @@ class ProtectionPolicy(Base):
     # How many years a care benefit pays. None means for as long as care lasts.
     benefit_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
     annual_premium: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)
-    currency: Mapped[str] = mapped_column(String(3), default="NZD")
+    currency: Mapped[str] = mapped_column(String(3), default="INR")
     expires_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(12), default="in_force", index=True)  # in_force | ended
     # The document it came from - schedule, date and provider. Required.
@@ -74,7 +74,7 @@ class CareFundingDecision(Base):
     choice: Mapped[str] = mapped_column(String(24))
     # What the household sets aside for care, in `currency`. Self-funding names one; a hybrid may.
     earmark_amount: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)
-    currency: Mapped[str] = mapped_column(String(3), default="NZD")
+    currency: Mapped[str] = mapped_column(String(3), default="INR")
     reason: Mapped[str] = mapped_column(Text)
     decided_on: Mapped[date] = mapped_column(Date)
     recorded_by: Mapped[str] = mapped_column(String(200))

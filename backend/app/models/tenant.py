@@ -22,10 +22,10 @@ class Firm(Base):
     slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     legal_name: Mapped[str | None] = mapped_column(String(200))
-    # Jurisdiction drives regulatory framing (spec §10 — FMA/NZ default).
-    jurisdiction: Mapped[str] = mapped_column(String(8), default="NZ")
-    regulator: Mapped[str | None] = mapped_column(String(120), default="FMA")
-    base_currency: Mapped[str] = mapped_column(String(3), default="NZD")
+    # Jurisdiction drives regulatory framing (India, SEBI, by default).
+    jurisdiction: Mapped[str] = mapped_column(String(8), default="IN")
+    regulator: Mapped[str | None] = mapped_column(String(120), default="SEBI")
+    base_currency: Mapped[str] = mapped_column(String(3), default="INR")
 
     # Branding for Studio + Canvas white-labelling.
     branding: Mapped[dict] = mapped_column(JSON, default=dict)

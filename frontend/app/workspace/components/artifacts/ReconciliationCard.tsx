@@ -1,3 +1,4 @@
+import { firmLocale } from "@/lib/format";
 export interface ReconBreak {
   id: string;
   account_id: string;
@@ -107,13 +108,13 @@ export const BREAK_STATUS_TONE: Record<string, string> = {
 export const BREAK_STATUS_TEXT: Record<string, string> = { dismissed: "set aside" };
 
 export function signed(v: number, d = 0, min = d) {
-  const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: min, maximumFractionDigits: d });
+  const s = Math.abs(v).toLocaleString(firmLocale(), { minimumFractionDigits: min, maximumFractionDigits: d });
   return v > 0 ? `+${s}` : v < 0 ? `−${s}` : s;
 }
 
 export function figure(b: Pick<ReconBreak, "kind" | "book" | "custodian_value" | "difference">) {
   const d = b.kind === "cash" ? 2 : 4;
-  const f = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: d });
+  const f = (v: number) => v.toLocaleString(firmLocale(), { minimumFractionDigits: 0, maximumFractionDigits: d });
   return { book: f(b.book), custodian: f(b.custodian_value), diff: signed(b.difference, d, b.kind === "cash" ? 2 : 0) };
 }
 

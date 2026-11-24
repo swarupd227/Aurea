@@ -7,9 +7,10 @@ import { api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
+import { firmLocale } from "@/lib/format";
 
 function n(v: number, d = 2) {
-  return v.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  return v.toLocaleString(firmLocale(), { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
 const BASIS: Record<string, { text: string; tone: string }> = {

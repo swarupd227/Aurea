@@ -146,7 +146,7 @@ async def propose_run(
             household_id=uuid.UUID(e["household_id"]) if e["household_id"] else None,
             mandate_name=e["mandate_name"], household_name=e["household_name"],
             period_start=date.fromisoformat(e["period_start"]), period_end=date.fromisoformat(e["period_end"]),
-            amount=e["amount"], currency=e["currency"] or "NZD", calculation=e, checks=e["checks"],
+            amount=e["amount"], currency=e["currency"] or "INR", calculation=e, checks=e["checks"],
         )
         session.add(inv)
         drafts.append(inv)

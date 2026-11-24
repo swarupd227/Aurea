@@ -6,6 +6,7 @@ import { CheckCircle2, XCircle, Clock, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { ViewHeader, chip } from "./ViewHeader";
+import { firmLocale } from "@/lib/format";
 
 /** One row of `/api/studio/agents/history` (backend `atlas/history.run_history`). */
 interface AgentRun {
@@ -147,7 +148,7 @@ export function AgentHistoryView() {
                             </span>
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-ink-muted">
-                            {r.created_at ? new Date(r.created_at).toLocaleTimeString() : "—"}
+                            {r.created_at ? new Date(r.created_at).toLocaleTimeString(firmLocale()) : "—"}
                             {r.duration_ms ? <span className="ml-1">({(r.duration_ms / 1000).toFixed(1)}s)</span> : null}
                           </td>
                         </tr>

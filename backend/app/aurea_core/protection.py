@@ -477,7 +477,7 @@ async def record_policy(
         provider=ready["provider"], policy_number=(policy_number or "").strip()[:64] or None,
         sum_insured=ready["sum_insured"], annual_benefit=ready["annual_benefit"], benefit_to_age=ready["benefit_to_age"],
         benefit_years=ready["benefit_years"],
-        annual_premium=ready["annual_premium"], currency=(currency or firm.base_currency or "NZD").upper()[:3],
+        annual_premium=ready["annual_premium"], currency=(currency or firm.base_currency or "INR").upper()[:3],
         expires_on=expires_on, status="in_force", source_document=ready["source"], recorded_by=recorded_by,
         as_of=today or firm_time.today(firm),
         cover_basis=ready["cover_basis"], rider_of=ready["rider_of"].id if ready["rider_of"] else None,
@@ -628,7 +628,7 @@ async def prepare_care_funding(session: AsyncSession, firm_id: uuid.UUID, *, hou
     if len(why) < 10:
         raise ProtectionError("Give the adviser's reason for this choice.")
     return {"household": household, "choice": choice, "earmark_amount": amount or None, "reason": why[:2000],
-            "currency": (firm.base_currency if firm else None) or "NZD",
+            "currency": (firm.base_currency if firm else None) or "INR",
             "previous": await care_funding_of(session, household_id, firm_id=firm_id)}
 
 

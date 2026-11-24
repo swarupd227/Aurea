@@ -42,7 +42,7 @@ class CustodyStatement(Base):
     positions: Mapped[list] = mapped_column(JSON, default=list)
     # None when the statement carries no cash figure - then cash is not compared, not assumed zero.
     cash_balance: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)
-    currency: Mapped[str] = mapped_column(String(3), default="NZD")
+    currency: Mapped[str] = mapped_column(String(3), default="INR")
     # The document it came from - name, date and custodian. Required: a figure with no source
     # cannot be taken to a custodian.
     source_document: Mapped[str] = mapped_column(String(255))

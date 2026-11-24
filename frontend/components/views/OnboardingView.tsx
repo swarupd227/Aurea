@@ -255,15 +255,16 @@ function CaseCard({ c }: { c: any }) {
 }
 
 // `only`: an account type that exists in one market's law (backend aurea_core/onboarding_start.ONLY_IN).
-export const REGISTRATION_OPTIONS: { value: string; label: string; only?: string }[] = [
+// `not`: a market that does not use it (NOT_IN). `labelIn`: its name in a market where the US one would mislead.
+export const REGISTRATION_OPTIONS: { value: string; label: string; only?: string; not?: string; labelIn?: Record<string, string> }[] = [
   { value: "individual", label: "Individual" },
-  { value: "joint_jtwros", label: "Joint — JTWROS" },
+  { value: "joint_jtwros", label: "Joint — JTWROS", labelIn: { IN: "Joint — holders with survivorship" } },
   { value: "joint_tic", label: "Joint — Tenants in Common" },
   { value: "traditional_ira", label: "Traditional IRA", only: "US" },
   { value: "roth_ira", label: "Roth IRA", only: "US" },
   { value: "employer_rollover", label: "Employer Rollover (401k/403b)", only: "US" },
   { value: "trust", label: "Trust" },
-  { value: "entity_llc", label: "Entity — LLC" },
+  { value: "entity_llc", label: "Entity — LLC", not: "IN" },
   { value: "entity_corp", label: "Entity — Corporation" },
   { value: "entity_partnership", label: "Entity — Partnership" },
   { value: "custodial_utma", label: "Custodial — UTMA", only: "US" },
@@ -271,6 +272,19 @@ export const REGISTRATION_OPTIONS: { value: string; label: string; only?: string
   { value: "estate_inherited", label: "Estate / Inherited" },
   { value: "huf", label: "HUF", only: "IN" },
 ];
+
+// Indian account types come first, in the order an Indian family opens them, then the rest as listed.
+const IN_FIRST = ["individual", "joint_jtwros", "huf", "trust", "entity_corp", "entity_partnership", "estate_inherited"];
+
+/** The account types a market offers, named and ordered for it. */
+export function registrationOptionsFor(market: string): { value: string; label: string }[] {
+  const m = (market || "").toUpperCase();
+  const rows = REGISTRATION_OPTIONS.filter((o) => (!o.only || o.only === m) && o.not !== m)
+    .map((o) => ({ value: o.value, label: o.labelIn?.[m] ?? o.label }));
+  if (m !== "IN") return rows;
+  const rank = (v: string) => (IN_FIRST.includes(v) ? IN_FIRST.indexOf(v) : IN_FIRST.length);
+  return [...rows].sort((a, b) => rank(a.value) - rank(b.value));
+}
 
 function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   // Only what the person states is sent: a blank risk or mandate is left for the questionnaire and the adviser.
@@ -281,7 +295,7 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const market = (getUser()?.firm?.jurisdiction || "").toUpperCase();
-  const options = REGISTRATION_OPTIONS.filter((o) => !o.only || o.only === market);
+  const options = registrationOptionsFor(market);
 
   const isRollover = ["employer_rollover", "traditional_ira", "roth_ira"].includes(form.registration_type);
 

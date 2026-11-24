@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { api } from "@/lib/api";
-import { money } from "@/lib/format";
+import { money, firmLocale } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { withRef } from "@/lib/refs";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
@@ -86,7 +86,7 @@ function Exposures({ household, canRecord, say, onSaved, asOf }: { household: Eq
                         <tr key={p.years}>
                           <td className="py-1.5 text-ink">{p.years} years</td>
                           <td className="py-1.5 text-right font-mono tabular-nums text-ink-muted">{money(p.sold_a_year)}</td>
-                          <td className="py-1.5 text-right font-mono tabular-nums text-ink-muted">{p.units_a_year.toLocaleString()}</td>
+                          <td className="py-1.5 text-right font-mono tabular-nums text-ink-muted">{p.units_a_year.toLocaleString(firmLocale())}</td>
                           <td className="py-1.5 text-right font-mono tabular-nums text-ink-muted">{p.gain_a_year != null ? money(p.gain_a_year) : "—"}</td>
                         </tr>
                       ))}
@@ -139,8 +139,8 @@ function Grants({ grants }: { grants: Grant[] }) {
               {g.price == null && <span className="chip ml-1.5 text-warn">no real price</span>}
               {g.expired && <span className="chip ml-1.5 text-crit">expired</span>}
             </td>
-            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{g.vested.toLocaleString()}{g.value_vested != null && ` · ${money(g.value_vested)}`}</td>
-            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{g.unvested.toLocaleString()}{g.value_unvested != null && ` · ${money(g.value_unvested)}`}</td>
+            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{g.vested.toLocaleString(firmLocale())}{g.value_vested != null && ` · ${money(g.value_vested)}`}</td>
+            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-ink-muted">{g.unvested.toLocaleString(firmLocale())}{g.value_unvested != null && ` · ${money(g.value_unvested)}`}</td>
             <td className="px-4 py-2 font-mono text-xs text-ink-muted">{g.next_vest_on ? reviewDay(g.next_vest_on) : "—"}</td>
           </tr>
         ))}

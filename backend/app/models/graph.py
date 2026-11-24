@@ -78,7 +78,7 @@ class LegalEntity(Sourced, Base):
     pan: Mapped[str | None] = mapped_column(String(10), nullable=True)   # aurea_core/pan.py
     # Mandate / impact objectives for for-purpose entities.
     impact_objectives: Mapped[dict] = mapped_column(JSON, default=dict)
-    jurisdiction: Mapped[str] = mapped_column(String(8), default="NZ")
+    jurisdiction: Mapped[str] = mapped_column(String(8), default="IN")
 
 
 class Mandate(Sourced, Base):
@@ -131,7 +131,7 @@ class Account(Sourced, Base):
     name: Mapped[str] = mapped_column(String(200))
     account_number: Mapped[str | None] = mapped_column(String(64))
     custodian: Mapped[str | None] = mapped_column(String(120))  # source system / connector
-    currency: Mapped[str] = mapped_column(String(3), default="NZD")
+    currency: Mapped[str] = mapped_column(String(3), default="INR")
     cash_balance: Mapped[float] = mapped_column(Numeric(20, 2), default=0)
     # Lineage for the account-level figures (source connector, as_of, confidence).
     lineage: Mapped[dict] = mapped_column(JSON, default=dict)

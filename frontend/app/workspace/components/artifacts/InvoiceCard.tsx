@@ -73,7 +73,7 @@ export function InvoiceCard({ result }: { result: InvoicePayload }) {
   const stale = val?.stale_days != null && val.stale_days > 35;
   const payment =
     result.debit_status === "posted" ? { text: "paid from cash", tone: "text-ok" }
-    : result.debit_status === "insufficient_cash" ? { text: `unpaid, short ${(result.shortfall ?? 0).toLocaleString()}`, tone: "text-warn" }
+    : result.debit_status === "insufficient_cash" ? { text: `unpaid, short ${(result.shortfall ?? 0).toLocaleString(firmLocale())}`, tone: "text-warn" }
     : null;
 
   return (
@@ -113,13 +113,13 @@ export function InvoiceCard({ result }: { result: InvoicePayload }) {
             {c.breakdown!.map((b) => (
               <tr key={b.band}>
                 <td className="px-3 py-1.5 text-ink">{b.band}</td>
-                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">{b.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">{b.amount.toLocaleString(firmLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
               </tr>
             ))}
             {c.annual_fee != null && (
               <tr>
                 <td className="px-3 py-1.5 text-ink-muted">Annual fee · {c.effective_bps?.toFixed(1)} bps · 1 of {c.periods_per_year}</td>
-                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink">{c.annual_fee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink">{c.annual_fee.toLocaleString(firmLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
               </tr>
             )}
           </tbody>
@@ -139,8 +139,8 @@ export function InvoiceCard({ result }: { result: InvoicePayload }) {
             {c.accounts!.map((a) => (
               <tr key={a.account_name}>
                 <td className="px-3 py-1.5 text-ink">{a.account_name}</td>
-                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">{a.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink">{a.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">{a.cash.toLocaleString(firmLocale(), { maximumFractionDigits: 0 })}</td>
+                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink">{a.value.toLocaleString(firmLocale(), { maximumFractionDigits: 0 })}</td>
               </tr>
             ))}
           </tbody>

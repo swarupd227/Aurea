@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight, FileText, ShieldAlert } from "lucide-react";
-import { money } from "@/lib/format";
+import { money, firmLocale } from "@/lib/format";
 import { api } from "@/lib/api";
 
 const tile = "rounded-lg bg-border-soft p-2.5";
 const chip = "chip bg-border-soft text-ink-soft";
 const pct = (v: number | null | undefined) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
 const day = (iso: string | null | undefined) =>
-  iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—";
+  iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString(firmLocale(), { day: "numeric", month: "short", year: "numeric" }) : "—";
 
 const DEFAULT_ORDER = ["agenda", "mandates", "goals", "history", "review", "tax", "open_proposals", "watch_items", "life_events", "house_views"];
 const LABELS: Record<string, string> = {

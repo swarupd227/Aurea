@@ -525,7 +525,7 @@ async def download_invoice_pdf(
     original = await db.get(Invoice, inv.credit_of_id) if inv.credit_of_id else None
     view = billing_views.invoice_view(inv, detail=True, credit_of_number=original.invoice_number if original else None)
     pdf = render_invoice_pdf(view, firm_name=firm.name, branding=firm.branding,
-                             base_currency=firm.base_currency or "NZD")
+                             base_currency=firm.base_currency or "INR")
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{inv.invoice_number}.pdf"'})
 

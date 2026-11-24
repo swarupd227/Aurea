@@ -1,6 +1,8 @@
 // Figures and chips only - the agent's message carries the sentences. Each row is one proposal;
 // whether it may be decided is the server's answer for the caller's role (decision_rights), never a
 // guess here. A row says so only when the answer is no: "you may decide" on every line says nothing.
+import { units as fmtUnits } from "@/lib/format";
+
 interface RecOrder {
   side: string;
   symbol: string;
@@ -28,7 +30,7 @@ interface RecsPayload {
 
 const PRIORITY_COLOR: Record<number, string> = { 1: "text-crit", 2: "text-warn" };
 
-const units = (n: number) => Number(n).toLocaleString("en-NZ", { maximumFractionDigits: 3 });
+const units = (n: number) => fmtUnits(n);
 
 export function RecommendationsCard({ result }: { result: RecsPayload }) {
   return (

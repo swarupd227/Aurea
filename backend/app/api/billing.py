@@ -78,7 +78,7 @@ async def get_invoice_pdf(invoice_id: uuid.UUID, user: User = StaffDep, firm: Fi
     if view is None:
         raise HTTPException(status_code=404, detail="Invoice not found.")
     pdf = render_invoice_pdf(view, firm_name=firm.name, branding=firm.branding,
-                             base_currency=firm.base_currency or "NZD")
+                             base_currency=firm.base_currency or "INR")
     name = (view["number"] or "invoice-draft").replace(" ", "_")
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{name}.pdf"'})

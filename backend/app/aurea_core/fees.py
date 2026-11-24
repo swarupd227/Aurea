@@ -73,7 +73,7 @@ def compute_annual_fee(schedule, aum: float | None) -> dict:
         "effective_bps": round(fee / aum * 10_000, 2) if aum else None,
         "breakdown": breakdown,
         "applied_minimum": applied_minimum,
-        "currency": schedule.currency or "NZD",
+        "currency": schedule.currency or "INR",
     }
 
 

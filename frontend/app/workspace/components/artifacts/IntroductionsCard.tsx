@@ -1,3 +1,4 @@
+import { firmLocale } from "@/lib/format";
 /** The ways in to a prospect, from people the firm already knows (aurea_core/introductions.py, B-200). Figures, chains
  * and chips only: who knows whom, how strongly, on what evidence, and who should ask. */
 
@@ -17,7 +18,7 @@ export interface IntroductionsPayload {
 }
 
 const day = (iso: string | null | undefined) =>
-  iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : null;
+  iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString(firmLocale(), { day: "numeric", month: "short", year: "numeric" }) : null;
 
 function Score({ value }: { value: number }) {
   const tone = value >= 60 ? "bg-ok" : value >= 25 ? "bg-warn" : "bg-ink-muted";

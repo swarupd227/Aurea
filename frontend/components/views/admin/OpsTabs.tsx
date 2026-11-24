@@ -5,7 +5,7 @@ import { Save, Check, RefreshCw, AlertCircle, CheckCircle2, CircleDot, Wifi, Wif
 import { Card, Spinner, Empty, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { titleCase } from "@/lib/format";
+import { titleCase, firmLocale } from "@/lib/format";
 import { ViewLink } from "../ViewNav";
 import { chip } from "../ViewHeader";
 import { CONNECTOR_STATUS_TONE, ReasonInput, TableCard, TD, TH, because, connectorEnabled, connectorSay, useAsk } from "./shared";
@@ -82,7 +82,7 @@ export function ConnectorsTab() {
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
                   {c.last_synced_at
-                    ? <span className={`${chip} font-mono`}>synced {new Date(c.last_synced_at).toLocaleString()}</span>
+                    ? <span className={`${chip} font-mono`}>synced {new Date(c.last_synced_at).toLocaleString(firmLocale())}</span>
                     : !c.last_error && <span className={chip}>never synced</span>}
                   {c.last_error && <span className="chip max-w-xs truncate bg-crit-bg text-crit" title={c.last_error}>{c.last_error}</span>}
                   {syncRes && (
@@ -170,7 +170,7 @@ export function SchedulesTab() {
   function fmtDate(iso: string | null) {
     if (!iso) return "Never";
     const d = new Date(iso);
-    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleString(firmLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
   return (
@@ -214,7 +214,7 @@ export function SchedulesTab() {
                 </td>
                 <td className={`${TD} font-mono text-xs text-ink-muted`}>{s.default_cron ?? "—"}</td>
                 <td className={`${TD} text-xs text-ink-muted`}>{fmtDate(s.last_run_at)}</td>
-                <td className={`${TD} text-right font-mono text-xs tabular-nums text-ink-muted`}>{s.run_count.toLocaleString()}</td>
+                <td className={`${TD} text-right font-mono text-xs tabular-nums text-ink-muted`}>{s.run_count.toLocaleString(firmLocale())}</td>
                 <td className={TD}>
                   {s.paused ? <span className="chip bg-warn-bg text-warn">Paused</span>
                     : s.enabled ? <span className="chip bg-ok-bg text-ok">Active</span>

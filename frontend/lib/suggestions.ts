@@ -91,14 +91,24 @@ export function roleStarters(role: string, ctx: SuggestionContext): Suggestion[]
         { label: "SIPs", prompt: "Which SIPs are running, and was any instalment missed?" }];
       return [WAITING, REPLIES, MEETINGS, perf(h1)];
     case "paraplanner":
+      if (firmMarket() === "IN") return [view(h1), { label: "Nominee gaps", prompt: "Which accounts are missing a nominee?" }, MEETINGS, WAITING];
       return [view(h1), { label: "Beneficiary gaps", prompt: "Which accounts are missing beneficiaries?" }, MEETINGS, WAITING];
     case "portfolio_team":
       return [WAITING, { label: "Composites", prompt: "How are the composites performing?" }, ANALYTICS, AGENTS];
     case "research_cio":
       return [{ label: "Composites", prompt: "How are the composites performing?" }, ANALYTICS, { label: "Firm definition", prompt: "Does the firm definition check come back clean?" }, perf(h1), WAITING];
     case "compliance":
+      if (firmMarket() === "IN") return [PROVENANCE, { label: "Filings due", prompt: "Which regulatory filings are due, and which are overdue?" }, { label: "AI governance", prompt: "Summarise AI governance: what is overdue for review?" }, ONBOARDING, WAITING];
       return [PROVENANCE, { label: "Compliance program", prompt: "Show me the compliance program and any open conflicts." }, { label: "AI governance", prompt: "Summarise AI governance: what is overdue for review?" }, ONBOARDING, WAITING];
     case "operations":
+      if (firmMarket() === "IN") return [
+        { label: "Prepare billing run", prompt: "Prepare this quarter's billing run." },
+        { label: "Billing exceptions", prompt: "What's the billing status, and which bills are held or unpaid?" },
+        { label: "SIPs", prompt: "Which SIPs are running, and was any instalment missed?" },
+        { label: "Price freshness", prompt: "How fresh are my prices, and which ones can't be trusted?" },
+        ONBOARDING,
+        WAITING,
+      ];
       return [
         { label: "Prepare billing run", prompt: "Prepare this quarter's billing run." },
         { label: "Billing exceptions", prompt: "What's the billing status, and which bills are held or unpaid?" },
@@ -144,19 +154,22 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
   const [h1, h2] = ctx.households;
   const household = pathname.match(/^\/studio\/clients\/([0-9a-f-]{36})/i)?.[1];
   if (household) {
+    const india = firmMarket() === "IN";
     return [
       { label: "Walk me through it", prompt: withRef("Show me the accounts, goals and holdings for this household.", "household", household) },
       { label: "Performance", prompt: withRef("How has this household performed against its benchmark?", "household", household) },
-      { label: "Wash sales", prompt: withRef("Check this household for wash-sale conflicts.", "household", household) },
+      india
+        ? { label: "Tax position", prompt: withRef("What is this household's tax position this tax year, taxpayer by taxpayer?", "household", household) }
+        : { label: "Wash sales", prompt: withRef("Check this household for wash-sale conflicts.", "household", household) },
       { label: "Billing", prompt: withRef("Why was this household billed what it was?", "household", household) },
       { label: "Next review", prompt: withRef("When was this household last reviewed, and when is the next review due?", "household", household) },
       { label: "Against its IPS", prompt: withRef("How does this household's portfolio sit against its IPS?", "household", household) },
       { label: "Trades", prompt: withRef("What has been traded for this household in the last month, and what has settled?", "household", household) },
       { label: "Tax documents", prompt: withRef("Which tax documents are expected for this household, and what has arrived?", "household", household) },
-      { label: "Cash movements", prompt: withRef("Are any payments waiting for this household, and how much of their required distribution is left this year?", "household", household) },
+      { label: "Cash movements", prompt: withRef(india ? "Are any payments waiting for this household?" : "Are any payments waiting for this household, and how much of their required distribution is left this year?", "household", household) },
       { label: "Client file", prompt: withRef("What is on file for this household: trusted contact, estate documents, recent life events, and is anything out of date?", "household", household) },
       { label: "Financial plan", prompt: withRef("Will this household's money last, how much cash do they have in reserve, and what do their debts cost?", "household", household) },
-      { label: "Concentration", prompt: withRef("Does this household have a concentrated position or equity grants, and what is the plan?", "household", household) },
+      { label: "Concentration", prompt: withRef(india ? "Does this household have a concentrated position, and what is the plan?" : "Does this household have a concentrated position or equity grants, and what is the plan?", "household", household) },
       { label: "Leaving or estate", prompt: withRef("Is a departure or an estate open for this household, and what is left to do?", "household", household) },
       { label: "Net worth", prompt: withRef("What is this household's net worth, and what is on file for it?", "household", household) },
     ];

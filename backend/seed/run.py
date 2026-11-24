@@ -76,6 +76,8 @@ async def seed() -> None:
                 "ai_usage_policy": "AI outputs are assistive; a named adviser decides. "
                                    "Client data is never used to train external models.",
                 "data_residency": "New Zealand",
+                # Invented clients, like the Indian firm: the banner says so (seed/nz_demo_label_backfill.py).
+                "demonstration": True,
             },
             model_config_json={},
         )

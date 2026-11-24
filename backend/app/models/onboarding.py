@@ -174,7 +174,7 @@ class FeeSchedule(Base):
     flat_bps: Mapped[float | None] = mapped_column(Numeric(6, 2))
     flat_fee: Mapped[float | None] = mapped_column(Numeric(12, 2))
     minimum_annual_fee: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    currency: Mapped[str] = mapped_column(String(8), default="NZD")
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -345,7 +345,7 @@ class HeldAwayAsset(Base):
     institution: Mapped[str] = mapped_column(String(120))
     account_type: Mapped[str | None] = mapped_column(String(48))   # brokerage|pension|property|...
     approx_value: Mapped[float | None] = mapped_column(Numeric(18, 2))
-    currency: Mapped[str] = mapped_column(String(8), default="NZD")
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
     # How it came to be known: statement upload, aggregation feed, or client statement.
     source: Mapped[str] = mapped_column(String(24), default="client_declared")
     will_transfer: Mapped[bool] = mapped_column(Boolean, default=False)

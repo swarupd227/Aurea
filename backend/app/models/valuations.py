@@ -24,7 +24,7 @@ class ValuationStatement(Base):
     instrument_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("instrument.id", ondelete="CASCADE"), index=True)
     as_of: Mapped[date] = mapped_column(Date)
     unit_value: Mapped[float] = mapped_column(Numeric(20, 6))
-    currency: Mapped[str] = mapped_column(String(8), default="NZD")
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
     # What the valuation rests on - a statement name, date, manager. Required: no evidence, no value.
     source_document: Mapped[str] = mapped_column(String(300))
     recorded_by: Mapped[str] = mapped_column(String(200))

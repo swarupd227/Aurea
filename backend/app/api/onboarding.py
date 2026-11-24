@@ -652,7 +652,7 @@ class HeldAwayIn(BaseModel):
     institution: str
     account_type: str | None = None
     approx_value: float | None = None
-    currency: str = "NZD"
+    currency: str | None = None            # the firm's own books when not said, never another market's
     source: str = "client_declared"
     will_transfer: bool = False
     notes: str | None = None
@@ -690,7 +690,7 @@ async def add_held_away(
     db.add(HeldAwayAsset(
         firm_id=firm.id, case_id=case.id, institution=body.institution,
         account_type=body.account_type, approx_value=body.approx_value,
-        currency=body.currency, source=body.source,
+        currency=(body.currency or firm.base_currency or "INR").upper()[:3], source=body.source,
         will_transfer=body.will_transfer, notes=body.notes,
     ))
     case.held_away_captured_at = utcnow()

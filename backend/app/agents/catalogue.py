@@ -102,7 +102,8 @@ CATALOGUE: dict[str, dict] = {
         "default_tier": AutonomyTier.TIER_2, "subject": "onboarding_case",
         "senses": "Name, date of birth, address and identity-document number for each natural "
                   "person on the case.",
-        "acts": "Runs the Customer Identification Program check through the configured identity "
+        "acts": "Runs the customer identification check (CIP in the US; the identity check for KYC in India) "
+                "through the configured identity "
                 "provider, returning a verification decision, a confidence score, and any "
                 "mismatch flags against the provider's audit reference.",
         "checkpoint": "Operations reviews review/failed outcomes; a passing CIP is a precondition "
@@ -213,8 +214,9 @@ CATALOGUE: dict[str, dict] = {
         "name": "Regulatory Countdown", "stage": "Protect & govern",
         "default_tier": AutonomyTier.TIER_1, "subject": "household",
         "senses": "Household jurisdiction, estate values, retirement account balances, pension pot values, "
-                  "and proximity to critical regulatory deadlines (US estate tax sunset Jan 2026, "
-                  "UK IHT pension inclusion April 2027).",
+                  "and proximity to critical regulatory deadlines. Only the US (estate tax sunset Jan 2026) and "
+                  "the UK (IHT pension inclusion April 2027) are encoded; a household in India or anywhere else "
+                  "is not assessed here. An Indian firm's filings are the compliance calendar's.",
         "acts": "Surfaces time-critical adviser alerts ranked by urgency and financial impact. "
                 "Proposes specific planning actions (SLATs, GRATs, pension drawdown, whole-of-life in trust) "
                 "before regulatory deadlines make planning impossible or more costly.",

@@ -11,6 +11,7 @@ import { getUser } from "@/lib/api";
 import { readable } from "@/lib/refs";
 import { roleStarters, useSuggestionContext } from "@/lib/suggestions";
 import type { LiveTurn, Message, Mentionable, ThreadStatus } from "../types";
+import { firmLocale } from "@/lib/format";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -60,7 +61,7 @@ export function ThreadView({
   const me = typeof window !== "undefined" ? getUser() : null;
   const role = me?.role ?? "";
   const firstName = String(me?.full_name ?? "").split(" ")[0];
-  const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+  const today = new Date().toLocaleDateString(firmLocale(), { weekday: "long", day: "numeric", month: "long" });
   const ctx = useSuggestionContext();
   const starters = roleStarters(role, ctx);
   // The newest words stay in view while someone is reading the end of the thread. Opening a view

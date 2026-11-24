@@ -5,7 +5,7 @@ import { RefreshCw, AlertCircle, CheckCircle2, Search } from "lucide-react";
 import { Card, Spinner, Empty, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { titleCase } from "@/lib/format";
+import { titleCase, firmLocale } from "@/lib/format";
 import { chip } from "../ViewHeader";
 import { TableCard, TD, TH } from "./shared";
 
@@ -159,7 +159,7 @@ export function AuditTab() {
           <tbody className="divide-y divide-border-soft">
             {filtered.map((e, i) => (
               <tr key={i} className="text-xs">
-                <td className={`${TD} whitespace-nowrap font-mono text-ink-muted`}>{new Date(e.ts).toLocaleString()}</td>
+                <td className={`${TD} whitespace-nowrap font-mono text-ink-muted`}>{new Date(e.ts).toLocaleString(firmLocale())}</td>
                 <td className={TD}>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className={`${chip} text-[10px]`}>{titleCase(e.category)}</span>

@@ -67,6 +67,15 @@ async def _activation_gates(session, firm, case) -> dict:
 RISK_TO_MODEL = {"conservative": "Balanced", "balanced": "Balanced", "growth": "Growth", "aggressive": "Growth"}
 
 
+def _custodian_for(firm, case) -> str | None:
+    """The custodian the case named, else the firm's own setting. An Indian firm with neither is left unnamed
+    (a depository participant is recorded when it opens the account), never given an American custodian."""
+    named = case.custodian_name or ((firm.settings or {}).get("default_custodian"))
+    if named:
+        return str(named)
+    return None if markets.code(firm.jurisdiction) == "IN" else "BNY Pershing"
+
+
 class OnboardingAgent(BaseAgent):
     key = AgentKey.ONBOARDING_KYC_AML
     name = "Onboarding · KYC · AML"
@@ -286,7 +295,7 @@ class OnboardingAgent(BaseAgent):
                 # An HUF is run by its karta for its members; a trust by its trustees.
                 governance=({"karta": (case.intake or {}).get("karta"), "members": parties}
                             if case.entity_type == "huf" else {"trustees": parties}),
-                # The firm's own jurisdiction as markets.py reads it, not the column's New Zealand default.
+                # The firm's own jurisdiction as markets.py reads it, not the column's default.
                 # One with no market stays as written, so nothing downstream reads it as New Zealand.
                 jurisdiction=markets.code(ctx.firm.jurisdiction),
                 impact_objectives={},
@@ -343,7 +352,7 @@ class OnboardingAgent(BaseAgent):
             created["fee_arrangement_id"] = str(arrangement.id)
 
         account = Account(firm_id=ctx.firm.id, mandate_id=mandate.id,
-                          name=f"{case.prospect_name.split()[0]} Account", custodian="BNY Pershing",
+                          name=f"{case.prospect_name.split()[0]} Account", custodian=_custodian_for(ctx.firm, case),
                           currency=ctx.firm.base_currency, cash_balance=0,
                           lineage={"source": "onboarding", "as_of": utcnow().isoformat()})
         s.add(account)

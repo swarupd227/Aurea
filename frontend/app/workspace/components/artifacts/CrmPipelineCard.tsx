@@ -1,4 +1,4 @@
-import { money } from "@/lib/format";
+import { money, firmLocale } from "@/lib/format";
 import { IntroPathRow, type IntroPath } from "./IntroductionsCard";
 import { LeftOutChips, PersonaRows, type PersonaLeftOut, type PersonaPoint } from "./PersonaCard";
 
@@ -141,8 +141,8 @@ export interface ProspectBriefPayload {
   persona?: { points: PersonaPoint[]; left_out?: PersonaLeftOut; simulated?: boolean; expiry_days?: number };
 }
 
-const when = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-const whenTime = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const when = (iso: string) => new Date(iso).toLocaleDateString(firmLocale(), { day: "numeric", month: "short", year: "numeric" });
+const whenTime = (iso: string) => new Date(iso).toLocaleString(firmLocale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 /** A prospect's file before a meeting: what was recorded, and what is not on file. */
 export function ProspectBriefCard({ result }: { result: ProspectBriefPayload }) {

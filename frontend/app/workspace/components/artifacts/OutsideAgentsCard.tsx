@@ -1,3 +1,4 @@
+import { firmLocale } from "@/lib/format";
 /** Outside agents that call Astra's tools through MCP with a person's key (aurea_core/outside_agents.py, B-166): each key's
  * name, last four characters, state, use and expiry. A key's value never appears here. Table and chips only. */
 export interface OutsideAgentKey {
@@ -6,7 +7,7 @@ export interface OutsideAgentKey {
   revoked_by: string | null; revoked_reason: string | null;
 }
 
-const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
+const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(firmLocale(), { day: "numeric", month: "short", year: "numeric" }) : "—");
 const tone = { active: "text-ok", expired: "text-ink-muted", revoked: "text-crit" } as const;
 
 export function OutsideAgentsTable({ rows, onRevoke }: { rows: OutsideAgentKey[]; onRevoke?: (row: OutsideAgentKey) => void }) {

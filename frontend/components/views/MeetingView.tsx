@@ -6,7 +6,7 @@ import { Breadcrumb, Card, ErrorState, Spinner, StatusBadge } from "@/components
 import RecommendationCard from "@/components/RecommendationCard";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { money, titleCase } from "@/lib/format";
+import { money, titleCase, firmLocale } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
@@ -65,7 +65,7 @@ export function MeetingView({ id }: { id: string }) {
         meta={
           <>
             {m.household_name && <span className={chip}>{m.household_name}</span>}
-            {m.scheduled_at && <span className={`${chip} tabular-nums`}>{new Date(m.scheduled_at).toLocaleString()}</span>}
+            {m.scheduled_at && <span className={`${chip} tabular-nums`}>{new Date(m.scheduled_at).toLocaleString(firmLocale())}</span>}
             <StatusBadge status={m.status} />
             {m.date_passed && <span className="chip bg-warn-bg text-warn" data-testid="meeting-date-passed">Date passed, not held</span>}
           </>

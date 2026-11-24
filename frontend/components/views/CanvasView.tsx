@@ -9,7 +9,7 @@ import { AllocationDonut } from "@/components/Charts";
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import MessageThread from "@/components/MessageThread";
 import { API_BASE, api, getToken, getUser } from "@/lib/api";
-import { money, pct, titleCase } from "@/lib/format";
+import { money, pct, titleCase, firmLocale } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
@@ -372,7 +372,7 @@ function Page({ householdId }: { householdId: string | null }) {
                 <FileText size={15} className="shrink-0 text-ink-muted" aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-ink">{d.filename}</span>
-                  <span className="block text-xs text-ink-muted">{titleCase(d.doc_type ?? "")}{d.created_at ? ` · ${new Date(d.created_at).toLocaleDateString()}` : ""}</span>
+                  <span className="block text-xs text-ink-muted">{titleCase(d.doc_type ?? "")}{d.created_at ? ` · ${new Date(d.created_at).toLocaleDateString(firmLocale())}` : ""}</span>
                 </span>
                 {d.size_bytes > 0 && <span className="shrink-0 font-mono text-xs tabular-nums text-ink-muted">{(d.size_bytes / 1024).toFixed(0)} KB</span>}
               </li>

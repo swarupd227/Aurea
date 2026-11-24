@@ -1,7 +1,7 @@
 import { Check, CircleAlert, Loader2 } from "lucide-react";
 import { MeetingBrief } from "@/components/MeetingBrief";
 import { DecisionMemory } from "@/components/DecisionMemory";
-import { money } from "@/lib/format";
+import { money, firmLocale } from "@/lib/format";
 
 // A run narrated into the thread: published when it starts, settled when it finishes. Figures,
 // chips and the beats of the run - the sentence ("what it found, who decides") is the agent's
@@ -71,7 +71,7 @@ function RebalanceFigures({ r }: { r: Rebalance }) {
         <div className="flex flex-wrap gap-1">
           {r.orders.map((o, i) => (
             <span key={i} className={`chip font-mono ${o.side === "sell" ? "text-crit" : "text-ok"}`}>
-              {o.side === "sell" ? "Sell" : "Buy"} {Number(o.quantity).toLocaleString(undefined, { maximumFractionDigits: 2 })} {o.symbol} · {say(o.value)}
+              {o.side === "sell" ? "Sell" : "Buy"} {Number(o.quantity).toLocaleString(firmLocale(), { maximumFractionDigits: 2 })} {o.symbol} · {say(o.value)}
             </span>
           ))}
         </div>

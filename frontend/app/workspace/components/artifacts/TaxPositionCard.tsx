@@ -1,4 +1,4 @@
-import { money } from "@/lib/format";
+import { money, firmLocale } from "@/lib/format";
 
 export const BUCKET_TEXT: Record<string, string> = {
   st_equity: "Short-term equity",
@@ -79,7 +79,7 @@ function Taxpayer({ t, full }: { t: any; full: boolean }) {
                   <tr key={`${o.kind}-${o.symbol}-${i}`} title={o.account}>
                     <td className="px-3 py-1 text-ink-soft">{a.text}</td>
                     <td className="px-3 py-1 font-mono text-xs text-ink">{o.symbol}</td>
-                    <td className="px-3 py-1 text-right tabular-nums text-ink-muted">{o.quantity.toLocaleString()}</td>
+                    <td className="px-3 py-1 text-right tabular-nums text-ink-muted">{o.quantity.toLocaleString(firmLocale())}</td>
                     <td className="px-3 py-1 text-right tabular-nums text-ink-soft">{money(a.amount)}</td>
                     <td className="px-3 py-1 text-right tabular-nums text-ok">{o.tax_saved ? money(o.tax_saved) : "—"}</td>
                   </tr>

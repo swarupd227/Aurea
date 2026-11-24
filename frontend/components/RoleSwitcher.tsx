@@ -12,13 +12,13 @@ export default function RoleSwitcher() {
 
   useEffect(() => {
     // Stay inside the firm's market: switching role is not switching firm.
-    const market = current?.firm?.jurisdiction === "IN" ? "IN" : "NZ";
+    const market = current?.firm?.jurisdiction || "IN";
     const slug = current?.firm?.slug;
     api<any[]>("/api/auth/demo-personas")
       .then((all) => {
         // A firm that carries its own people (a demonstration firm made at run time) switches among them only.
         const own = all.filter((p) => p.firm_slug && p.firm_slug === slug);
-        setPersonas(own.length ? own : all.filter((p) => !p.firm_slug && (p.market || "NZ") === market));
+        setPersonas(own.length ? own : all.filter((p) => !p.firm_slug && (p.market || "IN") === market));
       })
       .catch(() => setPersonas([]));
   }, []);

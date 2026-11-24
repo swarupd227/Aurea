@@ -8,15 +8,26 @@ import { api, getUser } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 const DOMAINS = [
+  { value: "IN", label: "India (SEBI)" },
   { value: "NZ", label: "New Zealand (FMA)" },
   { value: "AU", label: "Australia (ASIC)" },
   { value: "UK", label: "United Kingdom (FCA)" },
   { value: "US", label: "United States (SEC)" },
   { value: "SG", label: "Singapore (MAS)" },
   { value: "EU", label: "European Union (ESMA)" },
-  { value: "IN", label: "India (SEBI)" },
 ];
-const CURRENCIES = ["NZD", "AUD", "GBP", "USD", "SGD", "EUR", "INR"];
+const CURRENCIES = ["INR", "NZD", "AUD", "GBP", "USD", "SGD", "EUR"];
+// A SEBI licence a firm holds caps what its agents may do (aurea_core/licences.py). None is held unless chosen here.
+const LICENCES = [
+  { value: "investment_adviser", label: "Investment Adviser" },
+  { value: "research_analyst", label: "Research Analyst" },
+  { value: "pms_discretionary", label: "Portfolio Manager, discretionary" },
+  { value: "pms_non_discretionary", label: "Portfolio Manager, non-discretionary" },
+  { value: "pms_advisory", label: "Portfolio Manager, advisory" },
+  { value: "mutual_fund_distributor", label: "Mutual Fund Distributor" },
+];
+const REGULATOR_FOR: Record<string, string> = { IN: "SEBI", NZ: "FMA", UK: "FCA", US: "SEC", AU: "ASIC", SG: "MAS", EU: "ESMA" };
+const CURRENCY_FOR: Record<string, string> = { IN: "INR", NZ: "NZD", UK: "GBP", US: "USD", AU: "AUD", SG: "SGD", EU: "EUR" };
 const chip = "chip bg-border-soft text-ink-soft";
 
 export default function SuperadminPage() {
@@ -33,8 +44,8 @@ export default function SuperadminPage() {
   const { data: firms, loading, refetch } = useApi<any[]>(denied ? null : "/api/superadmin/firms");
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({
-    name: "", slug: "", legal_name: "", jurisdiction: "NZ", regulator: "FMA",
-    base_currency: "NZD", admin_email: "", admin_name: "",
+    name: "", slug: "", legal_name: "", jurisdiction: "IN", regulator: "SEBI",
+    base_currency: "INR", admin_email: "", admin_name: "", licences: [] as string[],
   });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -56,10 +67,11 @@ export default function SuperadminPage() {
       const payload: any = { ...form };
       if (!payload.slug) payload.slug = autoSlug(payload.name);
       if (!payload.legal_name) delete payload.legal_name;
+      if (payload.jurisdiction !== "IN" || !payload.licences.length) delete payload.licences;
       const r = await api("/api/superadmin/firms", { body: payload });
       setResult(r);
       refetch();
-      setForm({ name: "", slug: "", legal_name: "", jurisdiction: "NZ", regulator: "FMA", base_currency: "NZD", admin_email: "", admin_name: "" });
+      setForm({ name: "", slug: "", legal_name: "", jurisdiction: "IN", regulator: "SEBI", base_currency: "INR", admin_email: "", admin_name: "", licences: [] });
       setShowNew(false);
     } catch (e: any) {
       setErr(e.message || "Failed to create firm.");
@@ -140,7 +152,8 @@ export default function SuperadminPage() {
               <div>
                 <label className="label">Jurisdiction</label>
                 <select className="input" value={form.jurisdiction}
-                  onChange={(e) => setForm({ ...form, jurisdiction: e.target.value })}>
+                  onChange={(e) => setForm({ ...form, jurisdiction: e.target.value, regulator: REGULATOR_FOR[e.target.value] ?? form.regulator,
+                    base_currency: CURRENCY_FOR[e.target.value] ?? form.base_currency, licences: e.target.value === "IN" ? form.licences : [] })}>
                   {DOMAINS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select>
               </div>
@@ -157,6 +170,21 @@ export default function SuperadminPage() {
                 </select>
               </div>
             </div>
+            {form.jurisdiction === "IN" && (
+              <div data-testid="superadmin-licences">
+                <label className="label">SEBI licences held</label>
+                <div className="flex flex-wrap gap-3">
+                  {LICENCES.map((l) => (
+                    <label key={l.value} className="flex items-center gap-1.5 text-sm text-ink-soft">
+                      <input type="checkbox" checked={form.licences.includes(l.value)}
+                        onChange={(e) => setForm({ ...form, licences: e.target.checked ? [...form.licences, l.value] : form.licences.filter((k) => k !== l.value) })} />
+                      {l.label}
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-1 text-xs text-ink-muted">Each licence caps what an agent may do. None chosen means the firm holds none.</div>
+              </div>
+            )}
             <div className="border-t border-border-soft pt-4">
               <div className="mb-3 flex flex-wrap items-center gap-1.5">
                 <span className="text-sm font-medium text-ink">Initial admin</span>

@@ -1,3 +1,4 @@
+import { firmLocale } from "@/lib/format";
 interface NetOrder {
   symbol: string;
   side: string | null;
@@ -20,7 +21,7 @@ export function SleeveNettingCard({ result }: { result: NettingPayload }) {
       <div className="flex items-center justify-between border-b border-border-soft px-3 py-2">
         <div className="text-sm font-medium text-ink">Sleeve netting</div>
         <div className="font-mono text-xs tabular-nums text-ink-muted">
-          {totalCrossed.toLocaleString()} of {totalGross.toLocaleString()} sh crossed internally
+          {totalCrossed.toLocaleString(firmLocale())} of {totalGross.toLocaleString(firmLocale())} sh crossed internally
         </div>
       </div>
       <table className="w-full text-sm">
@@ -29,10 +30,10 @@ export function SleeveNettingCard({ result }: { result: NettingPayload }) {
             <tr key={i}>
               <td className="px-3 py-1.5 text-ink">{o.symbol}</td>
               <td className="px-3 py-1.5 text-xs text-ink-muted">
-                {o.side ? `${o.side} ${o.quantity.toLocaleString()}` : "fully crossed — no trade"}
+                {o.side ? `${o.side} ${o.quantity.toLocaleString(firmLocale())}` : "fully crossed — no trade"}
               </td>
               <td className="px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink-muted whitespace-nowrap">
-                {o.gross_buy_quantity.toLocaleString()} buy / {o.gross_sell_quantity.toLocaleString()} sell gross
+                {o.gross_buy_quantity.toLocaleString(firmLocale())} buy / {o.gross_sell_quantity.toLocaleString(firmLocale())} sell gross
               </td>
             </tr>
           ))}

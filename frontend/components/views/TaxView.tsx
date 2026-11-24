@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
-import { firmMarket, money } from "@/lib/format";
+import { firmMarket, money, firmLocale } from "@/lib/format";
 import { TaxPositionCard } from "@/app/workspace/components/artifacts/TaxPositionCard";
 import { RothWindowChips, RothWindowTable } from "@/app/workspace/components/artifacts/RothWindowCard";
 import { GivingSections } from "@/app/workspace/components/artifacts/GivingCard";
@@ -29,7 +29,7 @@ const JURISDICTION: Record<string, string> = {
 
 const pctFig = (n: number | null | undefined) => (n == null ? "—" : `${Number(n).toFixed(1)}%`);
 const words = (s: string | null | undefined) => (s ?? "").replace(/_/g, " ");
-const qty = (n: number) => Number(n).toLocaleString();
+const qty = (n: number) => Number(n).toLocaleString(firmLocale());
 
 function Chip({ children, tone = "text-ink-muted", title, testId }: { children: ReactNode; tone?: string; title?: string; testId?: string }) {
   return <span className={`chip bg-border-soft ${tone}`} title={title} data-testid={testId}>{children}</span>;

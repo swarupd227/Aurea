@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/superadmin", tags=["superadmin"])
 _DEFAULT_SEGMENTS = [
     ("private_wealth", "Private Wealth", 75, 500_000, "High-net-worth individuals and families"),
     ("mass_affluent", "Mass Affluent", 100, 100_000, "Emerging affluent clients"),
-    ("for_purpose", "For Purpose", 50, None, "Charities, foundations, community and iwi organisations"),
+    ("for_purpose", "For Purpose", 50, None, "Charities, foundations and community organisations"),
     ("institutional", "Institutional", 25, 5_000_000, "Institutional investors and family offices"),
     ("next_gen", "Next Gen", 100, None, "Next-generation heirs and young investors"),
 ]
@@ -76,9 +76,10 @@ class FirmCreate(BaseModel):
     name: str
     slug: str | None = None
     legal_name: str | None = None
-    jurisdiction: str = "NZ"
-    regulator: str | None = "FMA"
-    base_currency: str = "NZD"
+    jurisdiction: str = "IN"
+    regulator: str | None = "SEBI"
+    base_currency: str = "INR"
+    licences: list[str] | None = None      # SEBI licence keys (aurea_core/licences.LICENCES); none held when not given
     admin_email: str
     admin_name: str
 
@@ -100,12 +101,19 @@ async def create_firm(
     if (await db.execute(select(User).where(User.email == admin_email))).scalar_one_or_none():
         raise HTTPException(400, f"A user with email '{admin_email}' already exists.")
 
+    from app.aurea_core import licences as _licences, markets as _markets
+    held = [k for k in (body.licences or []) if k]
+    if bad := [k for k in held if k not in _licences.LICENCES]:
+        raise HTTPException(400, f"Not a licence this platform knows: {', '.join(bad)}.")
+    if held and _markets.code(body.jurisdiction) != "IN":
+        raise HTTPException(400, "A SEBI licence belongs to a firm in India.")
+
     # 1. Create firm
     firm = Firm(
         slug=slug, name=body.name, legal_name=body.legal_name,
         jurisdiction=body.jurisdiction, regulator=body.regulator,
         base_currency=body.base_currency,
-        branding={}, settings={}, model_config_json={}, llm_config={},
+        branding={}, settings=({"licences": held} if held else {}), model_config_json={}, llm_config={},
         is_active=True,
     )
     db.add(firm)

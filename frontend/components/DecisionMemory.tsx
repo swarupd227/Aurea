@@ -1,9 +1,10 @@
+import { firmLocale } from "@/lib/format";
 /** What people decided before on the same finding, and what they asked its agent to remember (B-204). Chips only. */
 export function DecisionMemory({ memory }: { memory: any }) {
   if (!memory || (!memory.last_decision && !memory.notes?.length)) return null;
   const last = memory.last_decision;
   const day = (iso?: string | null) =>
-    iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+    iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString(firmLocale(), { day: "numeric", month: "short", year: "numeric" }) : "";
   return (
     <div className="flex flex-wrap items-center gap-1.5" data-testid="decision-memory">
       {last && (

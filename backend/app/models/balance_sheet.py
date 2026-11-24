@@ -40,7 +40,7 @@ class BalanceItem(Base):
     name: Mapped[str] = mapped_column(String(120))             # the institution, lender or description
     # The value, the balance owed, or the amount a year.
     amount: Mapped[float] = mapped_column(Numeric(20, 2))
-    currency: Mapped[str] = mapped_column(String(3), default="NZD")
+    currency: Mapped[str] = mapped_column(String(3), default="INR")
     annual_payment: Mapped[float | None] = mapped_column(Numeric(20, 2), nullable=True)  # liability
     interest_rate: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)    # liability, a fraction
     ends_on: Mapped[date | None] = mapped_column(Date, nullable=True)                    # liability

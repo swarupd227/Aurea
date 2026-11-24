@@ -203,7 +203,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         return None
     firm = await session.get(Firm, firm_id)
     today = today or firm_time.today(firm)
-    base = (firm.base_currency or "NZD").upper()
+    base = (firm.base_currency or "INR").upper()
     persons, entities, mandates = await _members(session, household_id)
     names = {p.id: p.full_name for p in persons} | {e.id: e.name for e in entities}
     lines = await current_lines(session, household_id, firm_id=firm_id)
@@ -363,7 +363,7 @@ async def prepare_holding(session: AsyncSession, household_id: uuid.UUID, *, fir
     doc = (source_document or "").strip()
     if len(doc) < 3:
         raise HeldAwayError("Say which statement this comes from - its institution and date. A figure with no source cannot be taken to a client.")
-    code = (currency or firm.base_currency or "NZD").strip().upper()
+    code = (currency or firm.base_currency or "INR").strip().upper()
     if len(code) != 3:
         raise HeldAwayError("Give the currency as a three-letter code.")
     cls = (asset_class or "").strip().lower() or None
@@ -406,7 +406,7 @@ async def prepare_holding(session: AsyncSession, household_id: uuid.UUID, *, fir
             "account_label": (account_label or "").strip()[:120] or None, "symbol": sym, "isin": isin_code,
             "asset_class": cls or (str(inst.asset_class) if inst else None), "quantity": units, "value": round(amount, 2),
             "currency": code, "value_on": value_on, "source": doc[:255], "replacing": replacing, "instrument": inst,
-            "not_converted": code != (firm.base_currency or "NZD").upper()}
+            "not_converted": code != (firm.base_currency or "INR").upper()}
 
 
 async def record_holding(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, by: str, **fields) -> dict:

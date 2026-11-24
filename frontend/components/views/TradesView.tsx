@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
-import { money } from "@/lib/format";
+import { money, firmLocale } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { AllClients, ViewHeader } from "./ViewHeader";
@@ -34,7 +34,7 @@ export function TradesView({ household = null }: { household?: string | null }) 
           <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Block</th><th className={`${th} text-right`}>Accounts</th><th className={`${th} text-right`}>Units</th><th className={`${th} text-right`}>Average</th><th className={th}>Allocation</th></tr></thead>
           <tbody className="divide-y divide-border-soft">
             {data.blocks.map((b: any, i: number) => (
-              <tr key={i}><td className="px-4 py-2 font-mono text-xs text-ink">{b.side.toUpperCase()} {b.symbol} {reviewDay(b.trade_date)}</td><td className={num}>{b.accounts}</td><td className={num}>{b.units.toLocaleString()}</td><td className={num}>{b.average_price}</td>
+              <tr key={i}><td className="px-4 py-2 font-mono text-xs text-ink">{b.side.toUpperCase()} {b.symbol} {reviewDay(b.trade_date)}</td><td className={num}>{b.accounts}</td><td className={num}>{b.units.toLocaleString(firmLocale())}</td><td className={num}>{b.average_price}</td>
                 <td className="px-4 py-2"><span className={`chip ${b.same_price ? "text-ok" : "text-warn"}`}>{b.same_price ? "same price" : "prices differ"}</span></td></tr>
             ))}
           </tbody>
@@ -47,7 +47,7 @@ export function TradesView({ household = null }: { household?: string | null }) 
             {data.trades.map((t: any) => (
               <tr key={t.id} title={t.reason || t.rejected_reason || undefined}>
                 <td className="px-4 py-2 font-mono text-xs text-ink-muted">{t.confirmation ?? t.status}</td>
-                <td className="px-4 py-2 font-mono text-xs text-ink">{t.side.toUpperCase()} {t.quantity.toLocaleString()} {t.symbol}{t.price ? ` @ ${t.price}` : ""}</td>
+                <td className="px-4 py-2 font-mono text-xs text-ink">{t.side.toUpperCase()} {t.quantity.toLocaleString(firmLocale())} {t.symbol}{t.price ? ` @ ${t.price}` : ""}</td>
                 <td className="px-4 py-2 text-xs text-ink-muted">{t.client}</td>
                 <td className={num}>{t.net ? money(t.net) : "—"}</td>
                 <td className="px-4 py-2"><span className={`chip ${t.settled ? "text-ok" : "text-ink-muted"}`}>{t.settles_on ? reviewDay(t.settles_on) : "—"}</span></td>

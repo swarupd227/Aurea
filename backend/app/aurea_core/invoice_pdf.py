@@ -37,7 +37,7 @@ def header_text_rgb(fill: tuple[int, int, int]) -> tuple[int, int, int]:
     return (15, 29, 41) if (0.299 * r + 0.587 * g + 0.114 * b) > 170 else (255, 255, 255)
 
 
-def render_invoice_pdf(view: dict, *, firm_name: str, branding: dict | None = None, base_currency: str = "NZD") -> bytes:
+def render_invoice_pdf(view: dict, *, firm_name: str, branding: dict | None = None, base_currency: str = "INR") -> bytes:
     from fpdf import FPDF
 
     calc = view.get("calculation") or {}

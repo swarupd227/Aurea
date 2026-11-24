@@ -51,7 +51,7 @@ def pure() -> None:
     check("the US regulator in full still is", regime("XX", "Securities and Exchange Commission"), "US-SEC")
     check("the UK is unchanged", (regime("UK", "FCA"), regime("GB")), ("UK-FCA", "UK-FCA"))
     check("the EU is unchanged", (regime("EU"), regime("DE", "BaFin")), ("EU-MiFID", "EU-MiFID"))
-    check("a firm with no jurisdiction set reads the column's default", regime(None), "NZ-FMA")
+    check("a firm with no jurisdiction set reads the column's default, India", regime(None), "IN-SEBI")
     check("Australia has no rules here, and says so", regime("AU", "ASIC"), "NOT-SUPPORTED")
     check("nor Singapore", regime("SG", "MAS"), "NOT-SUPPORTED")
     check("nor a 'per client' firm", regime("MULTI"), "NOT-SUPPORTED")

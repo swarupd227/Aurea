@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Check, Pencil, X, FileText, ShieldAlert, ChevronDown, ChevronUp, Undo2, Bot,
   Scissors, Scale, Landmark, Target, TrendingDown, Wand2, Mail, Copy } from "lucide-react";
 import { api } from "@/lib/api";
-import { money, titleCase } from "@/lib/format";
+import { money, titleCase, firmLocale } from "@/lib/format";
 import { Markdown } from "@/app/workspace/components/Markdown";
 import { ConfidenceBar, StatusBadge, TierBadge } from "./ui";
 import { DriftBars } from "./Charts";
@@ -472,7 +472,7 @@ export default function RecommendationCard({
                           </span>
                         </td>
                         <td className="px-3 py-2 font-medium text-ink">{o.symbol}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{o.quantity.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{o.quantity.toLocaleString(firmLocale())}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{money(o.est_value)}</td>
                         <td className={`px-3 py-2 text-right tabular-nums ${o.est_realised_gain < 0 ? "text-ok" : "text-ink-soft"}`}>
                           {money(o.est_realised_gain)}
@@ -747,7 +747,7 @@ function evidenceRows(ev: any): { k: string; label: string; val: string }[] {
       if (k === "data_confidence" || (k === "probability" && Number(v) <= 1)) val = `${Math.round(Number(v) * 100)}%`;
       else if (k === "weight" && Number(v) <= 1) val = `${Math.round(Number(v) * 100)}%`;
       else if (["cgt_budget", "total_loss", "cash"].includes(k)) val = money(Number(v));
-      else if (typeof v === "number" && Math.abs(v) >= 1000) val = Number(v).toLocaleString();
+      else if (typeof v === "number" && Math.abs(v) >= 1000) val = Number(v).toLocaleString(firmLocale());
       else if (typeof v === "string") val = EV_TITLECASE.has(k) ? titleCase(v) : v;
       else val = String(v);
       return { k, label: EV_LABELS[k] || titleCase(k), val };
@@ -781,7 +781,7 @@ function renderVal(v: any): string {
   }
   if (typeof v === "object")
     return Object.entries(v).map(([k, val]) => `${titleCase(k)} ${typeof val === "object" ? "…" : val}`).join(" · ");
-  if (typeof v === "number" && Math.abs(v) >= 1000) return v.toLocaleString();
+  if (typeof v === "number" && Math.abs(v) >= 1000) return v.toLocaleString(firmLocale());
   return String(v);
 }
 

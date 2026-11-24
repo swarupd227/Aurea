@@ -26,7 +26,7 @@ async def _billing_position(session: AsyncSession, firm_id: uuid.UUID) -> dict:
     from app.models.tenant import Firm
 
     firm = await session.get(Firm, firm_id)
-    currency = (firm.base_currency if firm else None) or "NZD"
+    currency = (firm.base_currency if firm else None) or "INR"
     rows = (await session.execute(select(Invoice).where(
         Invoice.firm_id == firm_id, Invoice.currency == currency))).scalars().all()
     # This year and an invoice's year are both the firm's: one issued late on 31 Dec UTC may be 1 Jan for it.

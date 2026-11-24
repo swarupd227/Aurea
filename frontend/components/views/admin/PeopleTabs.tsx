@@ -5,7 +5,7 @@ import { Save, Copy, Check, UserPlus, KeyRound, X, FileText, Pencil, Link2, Plus
 import { Card, Spinner, InlineConfirmButton, Empty } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { titleCase } from "@/lib/format";
+import { titleCase, firmLocale } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { ViewLink } from "../ViewNav";
 import { chip } from "../ViewHeader";
@@ -410,7 +410,7 @@ export function ClientsTab() {
                     </span>
                   )}
                 </td>
-                <td className={`${TD} font-mono text-xs text-ink-muted`}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}</td>
+                <td className={`${TD} font-mono text-xs text-ink-muted`}>{c.created_at ? new Date(c.created_at).toLocaleDateString(firmLocale()) : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -520,7 +520,7 @@ export function AssignmentsTab() {
                 <td className={`${TD} font-medium text-ink`}>{a.household_name}</td>
                 <td className={`${TD} text-ink-soft`}>{a.adviser_name}</td>
                 <td className={`${TD} text-xs text-ink-muted`}>{a.adviser_email || "—"}</td>
-                <td className={`${TD} font-mono text-xs text-ink-muted`}>{a.created_at ? new Date(a.created_at).toLocaleDateString() : "—"}</td>
+                <td className={`${TD} font-mono text-xs text-ink-muted`}>{a.created_at ? new Date(a.created_at).toLocaleDateString(firmLocale()) : "—"}</td>
                 <td className={`${TD} text-right`}>
                   {ask ? (
                     removing?.id === a.id ? (

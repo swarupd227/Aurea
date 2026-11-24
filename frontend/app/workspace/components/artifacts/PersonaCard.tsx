@@ -1,3 +1,4 @@
+import { firmLocale } from "@/lib/format";
 /** Talking points from public sources (aurea_core/persona.py, B-202). Rows and chips only: each point, the article it
  * cites, its date and when it expires, and the article's own words it rests on. Never shown to a client. */
 
@@ -28,7 +29,7 @@ const CATEGORY: Record<string, string> = {
 };
 
 const day = (iso: string | null | undefined) =>
-  iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+  iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString(firmLocale(), { day: "numeric", month: "short", year: "numeric" }) : "";
 
 /** The counts of what was left out, as chips. */
 export function LeftOutChips({ left }: { left?: PersonaLeftOut }) {

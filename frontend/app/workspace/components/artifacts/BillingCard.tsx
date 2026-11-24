@@ -118,7 +118,7 @@ export function BillingCard({ result }: { result: BillingPayload }) {
                   </td>
                   <td className="px-3 py-1.5 whitespace-nowrap">
                     <span className={`font-mono text-xs ${STATUS_TONE[i.status] ?? "text-ink-muted"}`}>{i.status}</span>
-                    {i.debit_status === "insufficient_cash" && <div className="font-mono text-[10px] text-warn">unpaid, no cash{i.shortfall ? ` · short ${i.shortfall.toLocaleString()}` : ""}</div>}
+                    {i.debit_status === "insufficient_cash" && <div className="font-mono text-[10px] text-warn">unpaid, no cash{i.shortfall ? ` · short ${i.shortfall.toLocaleString(firmLocale())}` : ""}</div>}
                   </td>
                   <td className="px-3 py-1.5">
                     <div className="flex flex-wrap gap-1">
@@ -145,7 +145,7 @@ export function BillingCard({ result }: { result: BillingPayload }) {
             {ex.no_agreement.map((u) => (
               <tr key={u.mandate_name}>
                 <td className="px-3 py-1.5 text-ink">{u.household_name ?? u.mandate_name}{u.pending_confirmation ? " · awaiting confirmation" : ""}</td>
-                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">{u.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">{u.value.toLocaleString(firmLocale(), { maximumFractionDigits: 0 })}</td>
               </tr>
             ))}
           </tbody>

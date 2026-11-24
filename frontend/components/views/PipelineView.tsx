@@ -9,7 +9,7 @@ import { money, titleCase } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
-import { REGISTRATION_OPTIONS } from "./OnboardingView";
+import { registrationOptionsFor } from "./OnboardingView";
 import { CrmPipelineCard, ProspectBriefCard } from "@/app/workspace/components/artifacts/CrmPipelineCard";
 import { WaysInPanel } from "./WaysInPanel";
 
@@ -185,7 +185,7 @@ function StartOnboarding({ deal, onStarted }: { deal: any; onStarted: () => void
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const market = (getUser()?.firm?.jurisdiction || "").toUpperCase();
-  const options = REGISTRATION_OPTIONS.filter((o) => !o.only || o.only === market);
+  const options = registrationOptionsFor(market);
 
   if (!open) {
     return (

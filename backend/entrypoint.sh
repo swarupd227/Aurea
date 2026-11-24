@@ -17,6 +17,9 @@ fi
 if [ "${AUREA_RUN_SEED:-false}" = "true" ]; then
   echo "[aurea] seeding demo firm + synthetic clients (idempotent)..."
   python -m seed.run || echo "[aurea] seed skipped/failed (non-fatal)"
+  echo "[aurea] seeding the India demonstration firm (idempotent, does nothing if it exists)..."
+  python -m seed.india_demo || echo "[aurea] India seed skipped/failed (non-fatal)"
+  python -m seed.nz_demo_label_backfill || echo "[aurea] demo label skipped/failed (non-fatal)"
 fi
 
 echo "[aurea] launching API on :8000"

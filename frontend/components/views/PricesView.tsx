@@ -8,14 +8,15 @@ import { useApi } from "@/lib/hooks";
 import { STATUS_TEXT } from "@/app/workspace/components/artifacts/PriceFreshnessCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
+import { firmLocale } from "@/lib/format";
 
 function n(v: number, d = 0) {
-  return v.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  return v.toLocaleString(firmLocale(), { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
 function when(iso: string | null | undefined) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleString(firmLocale(), { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 /** What a fetch did, as chips. */

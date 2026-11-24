@@ -32,7 +32,7 @@ class Account(Record):
     name: str
     account_number: str | None = None
     custodian: str | None = None
-    currency: str = "NZD"
+    currency: str = "INR"
     cash_balance: float = 0.0
     registration_type: str | None = None
     status: str = "active"

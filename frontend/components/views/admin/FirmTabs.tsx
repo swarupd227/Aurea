@@ -9,10 +9,10 @@ import { chip } from "../ViewHeader";
 import { PageOnly, Saved, q, useAsk } from "./shared";
 
 const JURISDICTION_DEFAULTS: Record<string, { regulator: string; base_currency: string; compliance_regime: string }> = {
-  NZ:    { regulator: "FMA",       base_currency: "NZD", compliance_regime: "NZ-FMA" },
   US:    { regulator: "SEC/FINRA", base_currency: "USD", compliance_regime: "US-SEC" },
   UK:    { regulator: "FCA",       base_currency: "GBP", compliance_regime: "UK-FCA" },
   IN:    { regulator: "SEBI",      base_currency: "INR", compliance_regime: "IN-SEBI" },
+  NZ:    { regulator: "FMA",       base_currency: "NZD", compliance_regime: "NZ-FMA" },
   MULTI: { regulator: "",          base_currency: "USD", compliance_regime: "none: not supported" },
 };
 
@@ -47,7 +47,7 @@ export function FirmTab() {
   if (error || !data) return <Card><ErrorState what="the firm" message={error} onRetry={refetch} /></Card>;
   const f = form || {
     name: data.name, jurisdiction: data.jurisdiction, regulator: data.regulator,
-    base_currency: data.base_currency || "NZD",
+    base_currency: data.base_currency || "INR",
     branding: { ...data.branding }, settings: { ...data.settings },
   };
   const set = (patch: any) => setForm({ ...f, ...patch });
@@ -107,10 +107,10 @@ export function FirmTab() {
             <div>
               <label className="label">Jurisdiction</label>
               <select className="input" value={f.jurisdiction} onChange={(e) => changeJurisdiction(e.target.value)}>
+                <option value="IN">IN · India (SEBI)</option>
                 <option value="NZ">NZ · New Zealand (FMA)</option>
                 <option value="US">US · United States (SEC / FINRA)</option>
                 <option value="UK">UK · United Kingdom (FCA)</option>
-                <option value="IN">IN · India (SEBI)</option>
                 <option value="MULTI">Multi-jurisdiction</option>
               </select>
             </div>
@@ -127,10 +127,10 @@ export function FirmTab() {
             {!ask && (
               <div><label className="label">Base currency</label>
                 <select className="input" value={f.base_currency} onChange={(e) => set({ base_currency: e.target.value })}>
+                  <option value="INR">INR · Indian Rupee</option>
                   <option value="NZD">NZD · New Zealand Dollar</option>
                   <option value="USD">USD · US Dollar</option>
                   <option value="GBP">GBP · British Pound</option>
-                  <option value="INR">INR · Indian Rupee</option>
                   <option value="AUD">AUD · Australian Dollar</option>
                   <option value="EUR">EUR · Euro</option>
                 </select>
