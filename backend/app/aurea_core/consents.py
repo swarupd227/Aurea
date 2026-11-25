@@ -29,7 +29,7 @@ from app.provenance import ledger
 LABELS = {"e_delivery": "Electronic delivery", "householding": "Householding", "data_aggregation": "Data aggregation",
           "trusted_contact": "Contact a trusted contact", "discretionary_authority": "Discretionary authority", "fee_debit": "Fee debit",
           "advisory_agreement": "Advisory agreement signed (with MITC)", "ai_use_disclosure": "AI use disclosure received",
-          "investor_charter": "Investor charter received", "risk_profile": "Risk profile consented",
+          "investor_charter": "Investor charter received", "risk_profile": "Risk profile consented", "whatsapp": "WhatsApp messages from the firm",
           "non_sebi_declaration": "Non-SEBI products declaration"}
 # How an Indian client's act is evidenced. The risk profile is consented "either through registered email or physical
 # document" (IA Master Circular para 2.2), read here to include an e-signed document; the agreement is signed.

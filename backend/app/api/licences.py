@@ -876,3 +876,23 @@ async def record_figure_watch(body: WatchIn, user: User = ReaderDep, firm: Firm 
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     return await rate_card.overview(db, firm)
+
+
+# ── India: a client's language and WhatsApp (B-301), DigiLocker and eSign (B-302) ──────────────────────────────────
+# Reads only: recording is a tool behind a Confirm card (record_client_language, record_whatsapp_template, pull_digilocker, send_for_esign,
+# record_digilocker_kyc, record_esigned_agreement) and sending is send_client_message.
+@router.get("/channels")
+async def channels_view(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import whatsapp
+
+    result = await whatsapp.overview(db, firm)
+    if result["applies"]:
+        result["deliveries"] = await whatsapp.deliveries(db, firm.id, None, limit=10)
+    return result
+
+
+@router.get("/india-stack")
+async def india_stack_view(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import india_stack
+
+    return await india_stack.overview(db, firm)

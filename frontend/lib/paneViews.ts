@@ -495,6 +495,14 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_adviser_fee_term":
     case "read_rate_card":
     case "record_figure_watch":
+    case "read_client_channels":
+    case "record_client_language":
+    case "record_whatsapp_template":
+    case "read_india_stack":
+    case "pull_digilocker":
+    case "send_for_esign":
+    case "record_digilocker_kyc":
+    case "record_esigned_agreement":
     case "read_compliance_calendar":
     case "record_compliance_filing":
     case "record_sebi_registration":

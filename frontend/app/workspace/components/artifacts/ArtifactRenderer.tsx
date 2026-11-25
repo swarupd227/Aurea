@@ -40,6 +40,7 @@ import { FamilyEstateCard } from "./FamilyEstateCard";
 import { PolishCard } from "./PolishCard";
 import { GovernanceCard } from "./GovernanceCard";
 import { IndiaGatesCard } from "./IndiaGatesCard";
+import { IndiaChannelsCard } from "./IndiaChannelsCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
@@ -500,6 +501,16 @@ export function artifactCard(artifact: Artifact) {
         if (!Array.isArray(artifact.result?.categories) && !Array.isArray(artifact.result?.people) && !Array.isArray(artifact.result?.figures)
             && !Array.isArray(artifact.result?.households) && !artifact.result?.household_id && artifact.result?.applies !== false) return null;
         return <IndiaGatesCard result={artifact.result as any} />;
+      case "read_client_channels":
+      case "record_client_language":
+      case "record_whatsapp_template":
+      case "read_india_stack":
+      case "pull_digilocker":
+      case "send_for_esign":
+      case "record_digilocker_kyc":
+      case "record_esigned_agreement":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.items) && artifact.result?.applies !== false) return null;
+        return <IndiaChannelsCard result={artifact.result as any} />;
       case "check_advertising":
         if (!Array.isArray(artifact.result?.findings) && artifact.result?.applies !== false) return null;
         return <AdvertisingCard result={artifact.result as any} />;

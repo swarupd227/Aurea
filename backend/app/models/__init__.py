@@ -89,3 +89,4 @@ from app.models import india_family  # noqa: F401,E402
 from app.models import india_governance  # noqa: F401,E402
 from app.models import india_polish  # noqa: F401,E402
 from app.models import india_gates  # noqa: F401,E402
+from app.models import india_batch_b  # noqa: F401,E402

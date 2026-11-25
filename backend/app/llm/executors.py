@@ -26,6 +26,7 @@ from app.llm.india_data_executors import IndiaDataExecutors
 from app.llm.india_family_executors import IndiaFamilyExecutors
 from app.llm.india_polish_executors import IndiaPolishExecutors
 from app.llm.india_gates_executors import IndiaGatesExecutors
+from app.llm.india_batch_b_executors import IndiaBatchBExecutors
 from app.llm.india_governance_executors import IndiaGovernanceExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
 from app.models.enums import UserRole
@@ -64,7 +65,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 
 
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
-                    IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors):
+                    IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -358,6 +359,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_polish_map(),
             # India, the L100 items (B-290 to B-292, B-300): app/llm/india_gates_executors.py.
             **self._india_gates_map(),
+            # India, languages, WhatsApp and the India Stack seams (B-301, B-302): app/llm/india_batch_b_executors.py.
+            **self._india_batch_b_map(),
         }
 
         executor = executor_map.get(tool_key)
@@ -5144,6 +5147,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         from app.aurea_core import product_distribution
 
         household = await self._own_household(inputs.get("household_id") or "")
+        if not (inputs.get("body") or "").strip() and (inputs.get("template") or "").strip():
+            return household, ""        # a template's own approved wording goes: whatsapp.plan reads and checks it
         try:
             body = messages.clean(inputs.get("body"))
             # A product named in the message carries its document, and a conflicted one its disclosure.
@@ -5162,19 +5167,46 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             raise ExecutorError(why)
         return household, body
 
+    async def _message_plan(self, household, inputs: dict[str, Any], body: str) -> dict[str, Any]:
+        """The words, language and channel a message would go in, with every rule checked (aurea_core/whatsapp.py)."""
+        from app.aurea_core import messages, whatsapp
+
+        if (inputs.get("translation") or "").strip() and body != str(inputs.get("body") or "").strip():
+            raise ExecutorError("This message names a product, so its document or disclosure is added in English. Put that wording in the translation too, "
+                                "or send the English alone.")
+        try:
+            return await whatsapp.plan(self.session, await self._firm(), household, body=body, translation=inputs.get("translation"),
+                                       channel=inputs.get("channel"), template=inputs.get("template"))
+        except (whatsapp.WhatsappError, messages.MessageError) as exc:
+            raise ExecutorError(str(exc))
+
     async def send_client_message(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import messages
         from app.models.identity import User
 
+        from app.aurea_core import whatsapp
+
         household, body = await self._client_message(inputs)
+        plan = await self._message_plan(household, inputs, body)
         user = await self.session.get(User, self.user_id)
-        sent = messages.from_firm(self.firm_id, household.id, body, author=user.full_name)
+        sent = messages.from_firm(self.firm_id, household.id, plan["local"], author=user.full_name)
         self.session.add(sent)
         await self.session.flush()
+        delivery = None
+        if plan["channel"] != "portal" or plan["translation_state"] != "english":
+            try:
+                delivery = await whatsapp.submit(self.session, await self._firm(), household, sent, plan, by=await self._shelf_user())
+            except whatsapp.WhatsappError as exc:
+                raise ExecutorError(str(exc))
         rows = await messages.thread(self.session, self.firm_id, household.id)
+        said = f"Sent to {household.name}."
+        if delivery and plan["channel"] == "whatsapp":
+            said = (f"Handed to WhatsApp for {household.name}; the channel reports it {delivery['state']}." if delivery["statuses"]
+                    else f"Handed to WhatsApp for {household.name}; the channel has reported no status yet, so it is not described as delivered.")
         return {"scope": "household", "household_id": str(household.id), "household_name": household.name,
                 "messages": [messages.view(sent)], "shown": 1, "total": len(rows), "unread": messages.unread(rows),
-                "needs_reply": False, "message": f"Sent to {household.name}."}
+                "needs_reply": False, "delivery": delivery, "language": plan["sent_language"], "translation": plan["translation_state"],
+                "message": said}
 
     @staticmethod
     def _ips_decision_preview(rec, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -5364,10 +5396,14 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         if tool_key == "send_client_message":
             from app.models.identity import User
 
+            from app.aurea_core import whatsapp
+
             household, body = await self._client_message(inputs)
             sender = await self.session.get(User, self.user_id)
-            return rows(("To", household.name), ("From", sender.full_name if sender else None), ("Message", body),
-                        *await self._advertising_rows(body))
+            plan = await self._message_plan(household, inputs, body)
+            return rows(("To", household.name), ("From", sender.full_name if sender else None),
+                        *whatsapp.card_rows(plan), *await self._advertising_rows(plan["local"]),
+                        *(await self._advertising_rows(plan["english"]) if plan["english"] != plan["local"] else []))
         if tool_key in ("record_client_review", "set_review_cadence", "book_client_review"):
             return rows(*await self._review_preview(tool_key, inputs))
         if tool_key == "record_ips":
@@ -5417,6 +5453,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._india_governance_preview(tool_key, inputs))
         if tool_key in ("record_accredited_investor", "record_adviser_fee_term", "record_figure_watch"):
             return rows(*await self._india_gates_preview(tool_key, inputs))
+        if tool_key in ("record_client_language", "record_whatsapp_template", "pull_digilocker", "send_for_esign", "record_digilocker_kyc",
+                        "record_esigned_agreement"):
+            return rows(*await self._india_batch_b_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
             return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):

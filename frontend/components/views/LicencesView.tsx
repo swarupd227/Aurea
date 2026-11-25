@@ -19,6 +19,7 @@ import { ReminderRows } from "@/app/workspace/components/artifacts/PolishCard";
 import { CounselRows, LicenceMapTable, PolicyForm, PolicyRows } from "@/app/workspace/components/artifacts/GovernanceCard";
 import { IndiaDateItems } from "@/app/workspace/components/artifacts/RegulatoryCountdownCard";
 import { AccreditedRows, FeeTermRows, RateCardChips, RateCardRows, TicketGateFleet } from "@/app/workspace/components/artifacts/IndiaGatesCard";
+import { ChannelChips, ChannelRows, StackChips, StackRows, TemplateRows } from "@/app/workspace/components/artifacts/IndiaChannelsCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -458,6 +459,29 @@ export function LicencesView() {
             <span className="tile-label mr-auto">Adviser fee terms</span>
           </div>
           <div className="-mx-3"><FeeTermRows data={data.fee_terms} /></div>
+        </Card>
+      )}
+
+      {data.channels?.applies && (data.channels.households ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Languages and WhatsApp</span>
+            <ChannelChips data={data.channels} />
+          </div>
+          <div className="-mx-3">
+            <ChannelRows data={data.channels} />
+            {(data.channels.templates ?? []).length > 0 && <div className="border-t border-border-soft"><TemplateRows templates={data.channels.templates} /></div>}
+          </div>
+        </Card>
+      )}
+
+      {data.india_stack?.applies && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">DigiLocker and eSign</span>
+            <StackChips data={data.india_stack} />
+          </div>
+          <div className="-mx-3"><StackRows items={data.india_stack.items ?? []} /></div>
         </Card>
       )}
 

@@ -700,6 +700,19 @@ async def main() -> int:
             check("polish adds nothing a second time", await india_polish.add(s, firm), 0)
             check("Tara Menon's account waits for a person to record the conversion", (await guardianship.overview(s, firm))["attained_majority"], ["Tara Menon"])
 
+            print("\n=== Languages and WhatsApp (B-301) ===")
+            from app.aurea_core import client_language as _lang, whatsapp as _wa
+            from seed import india_batch_b as _batch_b
+
+            _langs = {h["household"]: h["language"] for h in (await _lang.overview(s, firm))["households"]}
+            check("the Sharmas read Hindi, the Banerjees Bengali and the D'Souzas have none on file",
+                  (_langs["The Sharma Family"], _langs["The Banerjee Household"], _langs["The D'Souza Household"]), ("hi", "bn", None))
+            _wo = await _wa.overview(s, firm)
+            check("three households opted in to WhatsApp and the annual review template is approved in English and Hindi",
+                  (_wo["counts"]["opted_in"], sorted(t["language"] for t in _wo["templates"] if t["state"] == "approved")), (3, ["en", "hi"]))
+            check("no provider is connected until the simulation is seeded", _wo["provider"], None)
+            check("the seed adds nothing twice", await _batch_b.add(s, firm), 0)
+
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)
 

@@ -148,7 +148,7 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
     """Before advice, the fee cap per family and the filing calendar, for a firm whose licences are India's."""
     from app.aurea_core import (account_aggregator, billing, compliance_calendar, counsel_review, governance, guardianship, india_estate,
                                 india_reminders, kyc_india, pms, pre_advice, residency, sebi_family)
-    from app.aurea_core import accredited, adviser_fees, product_gates, rate_card
+    from app.aurea_core import accredited, adviser_fees, india_stack, product_gates, rate_card, whatsapp
 
     caps: dict[str, dict] = {}
     for e in (await billing.preview(session, firm.id))["arrangements"]:
@@ -166,4 +166,6 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
             "counsel": await counsel_review.overview(session, firm),
             # The L100 items: ticket-size gates, accredited investors, an adviser's fee terms and the February rate card.
             "ticket_gates": await product_gates.for_firm(session, firm), "accredited": await accredited.overview(session, firm),
-            "fee_terms": await adviser_fees.overview(session, firm), "rate_card": await rate_card.overview(session, firm)}
+            "fee_terms": await adviser_fees.overview(session, firm), "rate_card": await rate_card.overview(session, firm),
+            # B-301 and B-302: a client's language and WhatsApp, and the DigiLocker and eSign seams.
+            "channels": await whatsapp.overview(session, firm), "india_stack": await india_stack.overview(session, firm)}
