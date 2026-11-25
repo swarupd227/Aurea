@@ -145,7 +145,7 @@ async def main() -> int:
 
             print("\n=== Every mandate through the rebalancer ===")
             mandates = (await s.execute(select(Mandate).where(Mandate.firm_id == firm.id))).scalars().all()
-            check("seven taxpayers and the Menons' NRO account hold mandates", len(mandates), 8)
+            check("seven taxpayers, the Menons' NRO account and Tara Menon's savings hold mandates", len(mandates), 9)
             recs = {}
             for m in mandates:
                 run = await runtime.run_agent(s, firm=firm, agent_key=AgentKey.DRIFT_REBALANCING,
@@ -169,6 +169,20 @@ async def main() -> int:
             manager = (await s.execute(select(User).where(User.email == "portfolio@astra-india.demo"))).scalar_one()
             orders = lambda rec: s.execute(select(func.count()).select_from(Order).where(Order.recommendation_id == rec.id))
             await s.execute(Price.__table__.update().values(is_real=True))
+            # Lakshmi Iyer's KYC is overdue in the seed, which holds her household's book (B-273): a person records the refreshed one first.
+            from datetime import timedelta as _delta
+
+            from app.aurea_core import firm_time as _ft, kyc_india as _kyc, pre_advice
+            lakshmi = (await s.execute(select(Person).where(Person.firm_id == firm.id, Person.full_name == "Lakshmi Iyer"))).scalar_one()
+            try:
+                await runtime.decide(s, firm=firm, recommendation=pm, action=HumanAction.APPROVE, actor_id=manager.id, actor_label=manager.email)
+                check("an overdue KYC in the household holds the book", "approved", "refused")
+            except pre_advice.PreAdviceError as exc:
+                check("an overdue KYC in the household holds the book, naming it", "Lakshmi Iyer's KYC is overdue" in str(exc), True)
+            await _kyc.record(s, firm, by="adviser@astra", person_id=lakshmi.id, document="KRA acknowledgement, re-KYC, filed", ckyc_number="12345678901234",
+                              kra_name="CVL KRA", kra_status="validated", kyc_completed_on=_ft.today(firm) - _delta(days=10), verification_mode="aadhaar_ekyc",
+                              aadhaar_last4="4321", pan_aadhaar_linked=True, id_proof_kind="passport", id_proof_valid_to=_ft.today(firm) + _delta(days=2000),
+                              risk_band="high")
             ia = await runtime.decide(s, firm=firm, recommendation=ia, action=HumanAction.APPROVE, actor_id=adviser.id, actor_label=adviser.email)
             pm = await runtime.decide(s, firm=firm, recommendation=pm, action=HumanAction.APPROVE, actor_id=manager.id, actor_label=manager.email)
             check("the adviser's approval places nothing", ((await orders(ia)).scalar_one(), ia.payload["client_consent"]["status"]), (0, "awaiting"))
@@ -216,6 +230,9 @@ async def main() -> int:
                     break
             check("a discretionary rebalance is left on a household with a memo", later is not None, True)
             memo, later_id = memo_of[traded], later.id
+            # Nandini Kapoor's KYC is blocked at the KRA in the seed, which holds the Kapoor household's book (B-273).
+            nandini = (await s.execute(select(Person).where(Person.firm_id == firm.id, Person.full_name == "Nandini Kapoor"))).scalar_one()
+            await _kyc.record(s, firm, by="adviser@astra", person_id=nandini.id, document="KRA acknowledgement, status Registered, filed", kra_status="registered")
             await runtime.decide(s, firm=firm, recommendation=later, action=HumanAction.APPROVE,
                                  actor_id=manager.id, actor_label=manager.email)
             await s.commit()
@@ -653,7 +670,7 @@ async def main() -> int:
             check("KYC is in every state, each worked out from what was recorded",
                   (kyc["Rajesh Sharma"], kyc["Karthik Iyer"], kyc["Lakshmi Iyer"], kyc["Nandini Kapoor"], kyc["Subir Banerjee"], kyc["Anita Menon"],
                    kyc["Elaine D'Souza"], kyc["Kapoor Family Trust"]),
-                  ("verified", "due", "overdue", "blocked", "due", "due", "not_on_file", "not_assessed"))
+                  ("verified", "due", "verified", "due", "due", "due", "not_on_file", "not_assessed"))     # Lakshmi and Nandini were refreshed above, to lift the hold
             check("rows 11 and 12 add nothing a second time", (await india_row11.add(s, firm), await india_row12.add(s, firm)), (0, 0))
 
             print("\n=== Rows 13 and 14: the family and its estate, and governance ===")
@@ -669,6 +686,19 @@ async def main() -> int:
             check("counsel has reviewed three figures and the rest read not reviewed",
                   {k: v for k, v in (await counsel_review.overview(s, firm))["counts"].items() if k in ("confirmed", "not_confirmed")}, {"confirmed": 2, "not_confirmed": 1})
             check("rows 13 and 14 add nothing a second time", (await india_row13.add(s, firm), await india_row14.add(s, firm)), (0, 0))
+
+            print("\n=== The polish row: reminders, a lapsed KYC, a minor now an adult ===")
+            from app.aurea_core import guardianship
+            from app.models.engagement import Task
+            from seed import india_polish
+
+            raised = (await s.execute(select(Task.title).where(Task.firm_id == firm.id, Task.source == "india_reminder"))).scalars().all()
+            check("the dates that are overdue or near are tasks, each once", (len(raised) >= 6, len(raised) == len(set(raised))), (True, True))
+            check("a lapsed KYC and a minor now an adult are among them",
+                  (any("KYC overdue for Lakshmi Iyer" in t for t in raised), any("KYC blocked for Nandini Kapoor" in t for t in raised),
+                   any("Tara Menon is now an adult" in t for t in raised)), (True, True, True))
+            check("polish adds nothing a second time", await india_polish.add(s, firm), 0)
+            check("Tara Menon's account waits for a person to record the conversion", (await guardianship.overview(s, firm))["attained_majority"], ["Tara Menon"])
 
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)

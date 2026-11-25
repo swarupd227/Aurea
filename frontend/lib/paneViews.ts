@@ -459,6 +459,12 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_residency":
     case "record_residency":
     case "record_guardian":
+    case "read_india_reminders":
+    case "raise_india_reminders":
+    case "confirm_pms_fee_line":
+    case "read_case_facts":
+    case "record_case_facts":
+    case "record_majority_conversion":
     case "read_pms":
     case "read_pms_report":
     case "record_pms_agreement":

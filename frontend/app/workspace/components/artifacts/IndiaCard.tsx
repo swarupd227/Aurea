@@ -8,10 +8,10 @@ const FLAG_TONE: Record<string, string> = { ok: "text-ok", warn: "text-warn", in
 const CHECK_TONE: Record<string, string> = { pass: "text-ok", fail: "text-crit", not_assessed: "text-ink-muted" };
 const CHECK_TEXT: Record<string, string> = { pass: "pass", fail: "held", not_assessed: "not assessed" };
 const MINOR_TONE: Record<string, string> = {
-  guardian_on_file: "text-ok", no_guardian: "text-crit", attained_majority: "text-warn", adult: "text-ink-muted", not_assessed: "text-ink-muted",
+  guardian_on_file: "text-ok", no_guardian: "text-crit", attained_majority: "text-crit", converted: "text-ok", adult: "text-ink-muted", not_assessed: "text-ink-muted",
 };
 const MINOR_TEXT: Record<string, string> = {
-  guardian_on_file: "Guardian on file", no_guardian: "No guardian on file", attained_majority: "Now an adult", adult: "Adult", not_assessed: "Not assessed",
+  guardian_on_file: "Guardian on file", no_guardian: "No guardian on file", attained_majority: "Now an adult: convert", converted: "Converted", adult: "Adult", not_assessed: "Not assessed",
 };
 
 const pct = (v: number | null | undefined) => (v == null ? "-" : `${(v * 100).toFixed(2)}%`);
@@ -80,6 +80,7 @@ export function GuardianChips({ guardians }: { guardians: any }) {
           {m.guardian && <span className="chip text-ink-muted">{m.guardian.name}, {m.guardian.relationship_label.toLowerCase()}</span>}
           <span className={`chip ${MINOR_TONE[m.state]}`}>{MINOR_TEXT[m.state]}</span>
           {m.majority_on && <span className="chip text-ink-muted tabular-nums">Adult {m.majority_on}</span>}
+          {m.converted_on && <span className="chip text-ink-muted tabular-nums">Converted {m.converted_on}</span>}
         </div>
       ))}
     </div>

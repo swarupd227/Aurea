@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import firm_time, law_figures, markets
 from app.core.db import utcnow
+from app.core.security import UserRole
 from app.models.graph import Mandate, Person
+from app.models.india_polish import MajorityConversion
 from app.models.residency import GuardianshipRecord
 from app.models.tenant import Firm
 from app.provenance import ledger
@@ -51,8 +53,16 @@ def majority_age(guardian: GuardianshipRecord | None, today: date) -> int:
     return int(law_figures.value("in_majority_age_court_guardian" if court else "in_majority_age", today))
 
 
-def status_of(person: Person, guardian: GuardianshipRecord | None, today: date) -> dict:
-    """Whether the person is a minor, from the date of birth on file; None where there is none."""
+async def conversion_of(session: AsyncSession, firm_id: uuid.UUID, person_id: uuid.UUID) -> MajorityConversion | None:
+    """The record a person made that this account was converted to the adult's own, the latest, or None."""
+    return (await session.execute(select(MajorityConversion).where(
+        MajorityConversion.firm_id == firm_id, MajorityConversion.person_id == person_id
+    ).order_by(MajorityConversion.created_at.desc()))).scalars().first()
+
+
+def status_of(person: Person, guardian: GuardianshipRecord | None, today: date, conversion: MajorityConversion | None = None) -> dict:
+    """Whether the person is a minor, from the date of birth on file; None where there is none. A conversion a person recorded
+    ends the guardian's part: until then an adult with a guardian on file is "attained_majority" and the account waits."""
     if person.date_of_birth is None:
         return {"minor": None, "age": None, "majority_on": None, "state": "not_assessed",
                 "message": "No date of birth on file, so whether this client is a minor is not assessed."}
@@ -65,11 +75,13 @@ def status_of(person: Person, guardian: GuardianshipRecord | None, today: date) 
         majority_on = date(b.year + limit, 3, 1)
     minor = age < limit
     return {"minor": minor, "age": age, "majority_age": limit, "majority_on": majority_on.isoformat(),
-            "state": ("guardian_on_file" if guardian else "no_guardian") if minor else ("attained_majority" if guardian else "adult")}
+            "state": ("guardian_on_file" if guardian else "no_guardian") if minor
+            else "converted" if conversion is not None else ("attained_majority" if guardian else "adult"),
+            "converted_on": conversion.converted_on.isoformat() if conversion is not None and not minor else None}
 
 
-def _view(person: Person, guardian: GuardianshipRecord | None, today: date) -> dict:
-    s = status_of(person, guardian, today)
+def _view(person: Person, guardian: GuardianshipRecord | None, today: date, conversion: MajorityConversion | None = None) -> dict:
+    s = status_of(person, guardian, today, conversion)
     return {"person_id": str(person.id), "name": person.full_name, **s,
             "guardian": ({"name": guardian.guardian_name, "person_id": str(guardian.guardian_person_id) if guardian.guardian_person_id else None,
                           "relationship": guardian.relationship, "relationship_label": RELATIONSHIPS[guardian.relationship],
@@ -86,13 +98,15 @@ async def overview(session: AsyncSession, firm: Firm) -> dict:
     for p in (await session.execute(select(Person).where(Person.firm_id == firm.id, Person.deceased_on.is_(None),
                                                          Person.date_of_birth.is_not(None)).order_by(Person.full_name))).scalars().all():
         g = await standing(session, firm.id, p.id)
-        v = _view(p, g, today)
+        v = _view(p, g, today, await conversion_of(session, firm.id, p.id))
         if v["minor"] or g is not None:
             out.append(v)
     return {"applies": True, "as_of": today.isoformat(), "minors": out,
             "no_guardian": [m["name"] for m in out if m["state"] == "no_guardian"],
             "attained_majority": [m["name"] for m in out if m["state"] == "attained_majority"],
-            "note": "A minor never trades; the guardian operates the account. Nothing here converts an account at majority."}
+            "converted": [m["name"] for m in out if m["state"] == "converted"],
+            "note": "A minor never trades; the guardian operates the account. At majority the guardian's authority ends and the account "
+                    "waits until a person records its conversion from the document; nothing here converts it."}
 
 
 async def prepare(session: AsyncSession, firm: Firm, *, minor_person_id, guardian_name: str | None, relationship: str | None,
@@ -159,8 +173,62 @@ async def order_refusal(session: AsyncSession, firm: Firm, mandate: Mandate) -> 
         return None
     today = firm_time.today(firm)
     g = await standing(session, firm.id, person.id)
-    s = status_of(person, g, today)
+    s = status_of(person, g, today, await conversion_of(session, firm.id, person.id))
+    if s["state"] == "attained_majority":
+        return (f"{person.full_name} reached {s['majority_age']} on {s['majority_on']}, so the guardian's authority has ended. Record the "
+                f"conversion of the account from the document before an order is placed ({CITATION}).")
     if s["minor"] and g is None:
         return (f"{person.full_name} is a minor, and an account for one is run by a guardian. Record the guardian from the "
                 f"document before an order is placed ({CITATION}).")
     return None
+
+
+# ── A minor's account converted at majority (B-262) ─────────────────────────────────────────────────────────────
+
+CONVERTERS = frozenset({UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS})
+
+
+async def prepare_conversion(session: AsyncSession, firm: Firm, *, person_id, document: str | None, converted_on=None) -> dict:
+    """What recording a conversion would write. Only for a person who has reached the age of majority with a guardian on file."""
+    if not _applies(firm):
+        raise GuardianError("A conversion is recorded for an Indian firm.")
+    try:
+        pid = person_id if isinstance(person_id, uuid.UUID) else uuid.UUID(str(person_id))
+    except ValueError:
+        raise GuardianError("Give the person's id, from the client's page.")
+    person = await session.get(Person, pid)
+    if person is None or person.firm_id != firm.id:
+        raise GuardianError("That person is not a client of this firm.")
+    today = firm_time.today(firm)
+    g = await standing(session, firm.id, pid)
+    before = await conversion_of(session, firm.id, pid)
+    s = status_of(person, g, today, before)
+    if s["state"] == "converted":
+        raise GuardianError(f"{person.full_name}'s account was already converted on {s['converted_on']}.")
+    if s["state"] != "attained_majority":
+        raise GuardianError(f"{person.full_name} has no minor's account to convert here ({s['state'].replace('_', ' ')}): a conversion follows "
+                            "a guardian on file and the age of majority.")
+    if len((document or "").strip()) < 4:
+        raise GuardianError("Say where it is on file: the signed conversion form, the adult's KYC and the end of the guardian's authority.")
+    day = today
+    if converted_on not in (None, ""):
+        try:
+            day = converted_on if isinstance(converted_on, date) else date.fromisoformat(str(converted_on)[:10])
+        except ValueError:
+            raise GuardianError("Write the day of conversion as YYYY-MM-DD.")
+        if day > today:
+            raise GuardianError("A conversion cannot be dated in the future.")
+        if day < date.fromisoformat(s["majority_on"]):
+            raise GuardianError(f"A conversion cannot be dated before {person.full_name} reached majority on {s['majority_on']}.")
+    return {"person": person, "guardian": g, "converted_on": day, "document": document.strip(), "status": s}
+
+
+async def record_conversion(session: AsyncSession, firm: Firm, *, by: str, note: str | None = None, **terms) -> dict:
+    p = await prepare_conversion(session, firm, **terms)
+    row = MajorityConversion(firm_id=firm.id, person_id=p["person"].id, converted_on=p["converted_on"], document=p["document"], recorded_by=by,
+                             note=(note or "").strip() or None, created_at=utcnow())
+    session.add(row)
+    await session.flush()
+    await ledger.append_entry(session, firm_id=firm.id, event_type="majority_conversion_recorded", actor=by, content={
+        "person_id": str(p["person"].id), "converted_on": p["converted_on"].isoformat(), "document": p["document"]})
+    return await overview(session, firm)

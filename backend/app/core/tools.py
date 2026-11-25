@@ -480,6 +480,89 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
+    "read_india_reminders": Tool(
+        key="read_india_reminders",
+        name="Read India Reminders",
+        speaking_agent="astra",
+        description="India: the dates that are overdue or within 14 days, each with the task it becomes and who owns it, and whether the task already exists. The firm's filings, registration expiry and policy reviews go to compliance; a client's periodic KYC review, a KYC that is overdue or blocked, and a minor who is now an adult go to the household's recorded adviser (a household with none is unassigned and says so). Advance tax and the return are not raised, because whether either applies is not assessed. Reading writes nothing; the scheduled run raises the same tasks. To show it beside the conversation call open_view with view licences.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The reminders and their tasks"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER, UserRole.OPERATIONS, UserRole.ADMIN, UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "raise_india_reminders": Tool(
+        key="raise_india_reminders",
+        name="Raise India Reminders",
+        speaking_agent="astra",
+        description="Raises now, as tasks, the India dates read_india_reminders lists, one task per obligation and period for its owner, once: a second run raises nothing new and a task someone closed is not raised again. The worker does the same every six hours. It changes no filing, KYC or guardian record, tells no client, and does not say the firm is compliant. Compliance, a branch leader, operations or an administrator.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Raise these tasks?",
+        inputs=[],
+        output=ToolOutput("object", "What was raised"),
+        roles_required={UserRole.COMPLIANCE, UserRole.BRANCH_LEADER, UserRole.OPERATIONS, UserRole.ADMIN},
+    ),
+
+    "confirm_pms_fee_line": Tool(
+        key="confirm_pms_fee_line",
+        name="Confirm PMS Performance Fee Line",
+        speaking_agent="astra",
+        description="India, Portfolio Manager clients: carries the performance fee the billing preview estimates for one client's next bill onto that bill as a separate line, only when a person confirms it here. The estimate is on securities only, gross and monthly-linked returns, over the agreement's hurdle and high-water mark; the manager's own computation on unit values decides. The invoice's amount, and so the SEBI fee cap, stays the fixed fee alone, and nothing debits the line here. One line per client and period; an issued bill is never edited. mandate_id from read_pms; period_start only to pick among periods. Portfolio team, operations or an adviser.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Carry this performance fee onto the bill as its own line?",
+        inputs=[
+            ToolInput("mandate_id", "uuid", "The PMS client's mandate", required=True),
+            ToolInput("period_start", "string", "The bill's period start, YYYY-MM-DD, to pick one", required=False),
+            ToolInput("note", "string", "Why it is carried, in your words", required=False),
+        ],
+        output=ToolOutput("object", "The line as confirmed"),
+        roles_required={UserRole.PORTFOLIO_TEAM, UserRole.OPERATIONS, UserRole.ADVISER},
+    ),
+
+    "read_case_facts": Tool(
+        key="read_case_facts",
+        name="Read Onboarding Case Residence And Guardian",
+        speaking_agent="astra",
+        description="India: the residence and guardian facts an onboarding case already holds (the country of residence, an NRE or NRO account, a minor's guardian and relationship), laid against the person's records. Nothing is written and nothing is worked out: a registration type does not state a FEMA status or a day count. A case that has not made its client yet has nobody to record against. record_case_facts writes them, after a Confirm card.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("case_id", "uuid", "The onboarding case", required=True)],
+        output=ToolOutput("object", "What the case holds"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "record_case_facts": Tool(
+        key="record_case_facts",
+        name="Record Case Residence And Guardian",
+        speaking_agent="astra",
+        description="India: writes the residence and guardian facts an onboarding case holds into the person's residence record and guardian record, the same records record_residency and record_guardian write, after the Confirm card shows exactly what each would hold. document is where the evidence is filed (default: the case's own passport, visa, FATCA and CRS form, birth certificate or guardian proof). Only what the case states is written; a fact it does not state stays not assessed. An adviser, paraplanner or operations.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record these from the onboarding case?",
+        inputs=[
+            ToolInput("case_id", "uuid", "The onboarding case", required=True),
+            ToolInput("document", "string", "Where the evidence is filed, if not the case's own documents", required=False),
+        ],
+        output=ToolOutput("object", "The records written"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "record_majority_conversion": Tool(
+        key="record_majority_conversion",
+        name="Record Account Conversion At Majority",
+        speaking_agent="astra",
+        description="India: records, from the document, that a minor who has reached the age of majority had the account converted to their own: person_id, document (the signed conversion form, the adult's own KYC, the end of the guardian's authority) and converted_on (default today). Until it is recorded the guardian's authority has ended and orders on the account are refused. Nothing converts the account by itself and no holding or cash moves. Only for a person with a guardian on file who has reached majority. An adviser, paraplanner or operations.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this conversion?",
+        inputs=[
+            ToolInput("person_id", "uuid", "The client who is now an adult", required=True),
+            ToolInput("document", "string", "Where the conversion paperwork is filed", required=True),
+            ToolInput("converted_on", "string", "The day of conversion, YYYY-MM-DD", required=False),
+        ],
+        output=ToolOutput("object", "The minors and their guardians after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
     "read_pms": Tool(
         key="read_pms",
         name="Read Portfolio Manager Clients",
@@ -4480,7 +4563,7 @@ TOOLS: dict[str, Tool] = {
                 ToolInput("slug", "string", "A new segment's slug", required=False),
                 ToolInput("label", "string", "Its label", required=False),
                 ToolInput("fee_tier_bps", "number", "Fee rate in basis points a year", required=False),
-                ToolInput("min_aum_usd", "number", "Minimum assets, USD", required=False),
+                ToolInput("min_aum_usd", "number", "Minimum assets, in the firm's own currency (the name is the old one)", required=False),
                 ToolInput("description", "string", "Description", required=False),
                 ToolInput("active", "string", "true or false", required=False)],
         output=ToolOutput("object", "The record and its changes"),

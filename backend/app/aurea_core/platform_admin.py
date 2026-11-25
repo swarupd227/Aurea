@@ -631,15 +631,21 @@ async def end_sessions(user_id: uuid.UUID) -> None:
 
 # ── Segments and mandate types ───────────────────────────────────────────────────────────────────
 
-def segment_out(s: FirmSegment) -> dict:
+def segment_currency(s: FirmSegment) -> str:
+    """What a segment's minimum is stated in: its own currency, else US dollars, which is all the column held before B-255."""
+    return s.currency or "USD"
+
+
+def segment_out(s: FirmSegment, firm: Firm | None = None) -> dict:
     return {"id": str(s.id), "slug": s.slug, "label": s.label, "fee_tier_bps": s.fee_tier_bps, "min_aum_usd": s.min_aum_usd,
+            "currency": segment_currency(s), "firm_currency": firm.base_currency if firm else None,
             "description": s.description, "is_active": s.is_active}
 
 
 async def list_segments(session: AsyncSession, firm: Firm) -> list[dict]:
     rows = (await session.execute(
         select(FirmSegment).where(FirmSegment.firm_id == firm.id).order_by(FirmSegment.label))).scalars().all()
-    return [segment_out(s) for s in rows]
+    return [segment_out(s, firm) for s in rows]
 
 
 async def households_on_segment(session: AsyncSession, firm_id: uuid.UUID, slug: str) -> int:
@@ -689,6 +695,8 @@ async def prepare_segment(session: AsyncSession, firm: Firm, *, segment_id: Any 
         if fee_tier_bps < 0 or fee_tier_bps > 1000:
             raise AdminError("A fee rate is in basis points a year, between 0 and 1,000.")
         notes.append(("Households on this segment", str(await households_on_segment(session, firm.id, the_slug))))
+    if min_aum_usd is not None:
+        notes.append(("The minimum is stated in", firm.base_currency))
     return Plan("segments", record, label or (record.label if record else the_slug), changes, notes,
                 values={"slug": the_slug, **{k: v for k, v in given.items() if v is not None}, "label": label or None})
 
@@ -701,8 +709,9 @@ async def save_segment(session: AsyncSession, firm: Firm, actor: User, *, segmen
                                  min_aum_usd=min_aum_usd, description=description, is_active=is_active)
     detail = _with_reason({"changed": [c["field"] for c in plan.changes]} if reason else None, reason)
     if plan.record is None:
+        # A minimum a person gives is in the firm's own money (B-255); with none given there is no currency to state.
         seg = FirmSegment(firm_id=firm.id, slug=plan.values["slug"], label=plan.values["label"], fee_tier_bps=fee_tier_bps,
-                          min_aum_usd=min_aum_usd, description=description,
+                          min_aum_usd=min_aum_usd, currency=firm.base_currency if min_aum_usd is not None else None, description=description,
                           **({"is_active": is_active} if is_active is not None else {}))
         session.add(seg)
         await session.flush()
@@ -714,6 +723,8 @@ async def save_segment(session: AsyncSession, firm: Firm, actor: User, *, segmen
                  "is_active": is_active}[name]
         if value is not None:
             setattr(seg, name, value)
+            if name == "min_aum_usd":
+                seg.currency = firm.base_currency       # a minimum a person states now is in the firm's own money (B-255)
     audit(session, firm.id, actor, "segment.updated", subject=seg.label, detail=detail)
     return _done(plan)
 
@@ -1627,11 +1638,11 @@ async def read_section(session: AsyncSession, firm: Firm, section: str) -> dict:
                             _col("last_status", "Status", "chip"), _col("runs", "Runs")]}
     if section == "segments":
         rows = [{"id": s["id"], "slug": s["slug"], "label": s["label"], "fee": s["fee_tier_bps"], "min_aum": s["min_aum_usd"],
-                 "households": await households_on_segment(session, firm.id, s["slug"]), "active": bool(s["is_active"])}
+                 "currency": s["currency"], "households": await households_on_segment(session, firm.id, s["slug"]), "active": bool(s["is_active"])}
                 for s in await list_segments(session, firm)]
         return {"section": section, "title": "Client segments", "rows": rows,
                 "columns": [_col("label", "Segment"), _col("slug", "Slug"), _col("fee", "Fee", "bps"),
-                            _col("min_aum", "Minimum (USD)", "money"), _col("households", "Households"), _col("active", "Active", "bool")]}
+                            _col("min_aum", "Minimum", "money"), _col("currency", "In"), _col("households", "Households"), _col("active", "Active", "bool")]}
     if section == "mandate_types":
         rows = [{"id": m["id"], "slug": m["slug"], "label": m["label"], "tier": str(m["default_autonomy_tier"])}
                 for m in await list_mandate_types(session, firm)]

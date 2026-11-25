@@ -105,7 +105,10 @@ class FirmSegment(Base):
     slug: Mapped[str] = mapped_column(String(48))
     label: Mapped[str] = mapped_column(String(120))
     fee_tier_bps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The minimum assets for the segment. The column keeps its old name, which said US dollars; `currency` says what the figure is in
+    # (B-255). None reads as USD, which is all the column ever held before.
     min_aum_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

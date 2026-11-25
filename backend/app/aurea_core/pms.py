@@ -13,8 +13,10 @@ assessed" and holds nothing: a missing agreement does not mean none was signed. 
 (`refusal`), the way a missing agreement holds an Investment Adviser's.
 
 The billing preview shows what the agreement's performance terms would give for the period beside the bill, as an
-estimate on securities-only, gross, monthly-linked returns. It is not added to the bill, and it is not the manager's
-own computation on unit values, which decides. The client's report carries the same returns with their basis and says it
+estimate on securities-only, gross, monthly-linked returns. It is not added to the bill by itself: a person confirms it
+(`record_fee_line`, behind a Confirm card), and the draft invoice then carries it as a separate line, outside the invoice's
+amount and so outside the fee cap, and nothing debits it here (B-261). It is not the manager's own computation on unit
+values, which decides. The client's report carries the same returns with their basis and says it
 is not publishable: a return may be stated to a client only when APMI's TWRR or a verified figure backs it (research
 report R9), which this build does not supply. No benchmark value is fetched here.
 """
@@ -32,6 +34,7 @@ from app.core.db import utcnow
 from app.core.security import UserRole
 from app.models.billing import Invoice
 from app.models.graph import Account, Household, LegalEntity, Mandate, Person
+from app.models.india_polish import PmsFeeLine
 from app.models.pms import PmsAgreement
 from app.models.tenant import Firm
 from app.provenance import ledger
@@ -363,8 +366,80 @@ async def apply(session: AsyncSession, firm: Firm, entries: list[dict], as_of: d
                                        "rate": float(agreement.performance_rate), "hurdle_rate": float(agreement.hurdle_rate or 0),
                                        "high_water_mark": bool(agreement.high_water_mark), "added_to_bill": False,
                                        "basis": "Securities only, gross, monthly-linked; the manager's own computation on unit values decides"}
+                line = await fee_line(session, firm.id, mandate.id, date.fromisoformat(e["period_start"]), date.fromisoformat(e["period_end"]))
+                # A confirmed estimate is its own line on the bill. It is never added to the invoice's amount, so the fee cap does not read it.
+                view["line"] = _line_view(line)
         e["pms_fee"] = view
         e["blocked"] = any(c["severity"] == "block" for c in e["checks"])
+
+
+async def fee_line(session: AsyncSession, firm_id: uuid.UUID, mandate_id: uuid.UUID, start: date, end: date) -> PmsFeeLine | None:
+    return (await session.execute(select(PmsFeeLine).where(
+        PmsFeeLine.firm_id == firm_id, PmsFeeLine.mandate_id == mandate_id, PmsFeeLine.period_start == start,
+        PmsFeeLine.period_end == end).order_by(PmsFeeLine.created_at.desc()))).scalars().first()
+
+
+def _line_view(line: PmsFeeLine | None) -> dict | None:
+    if line is None:
+        return None
+    return {"amount": float(line.amount), "currency": line.currency, "confirmed_by": line.confirmed_by,
+            "confirmed_on": line.created_at.date().isoformat() if line.created_at else None, "working": line.working,
+            "in_fee_cap": False, "debited": False,
+            "note": "A separate line: the invoice's amount, and so the fee cap, is the fixed fee alone. Nothing debits this line here."}
+
+
+async def prepare_fee_line(session: AsyncSession, firm: Firm, *, mandate_id, period_start=None) -> dict:
+    """The performance fee the billing preview estimates for one PMS client's next bill, as it would stand on a line of its own.
+    Writes nothing. A person confirms it; nothing carries an estimate onto a bill by itself."""
+    from app.aurea_core import billing
+
+    if not applies(firm):
+        raise PmsError("A performance fee line is carried for a firm holding a Portfolio Manager licence.")
+    try:
+        mid = mandate_id if isinstance(mandate_id, uuid.UUID) else uuid.UUID(str(mandate_id))
+    except ValueError:
+        raise PmsError("Give the client's mandate id, from read_pms.")
+    mandate = next((m for m in await pms_mandates(session, firm) if m.id == mid), None)
+    if mandate is None:
+        raise PmsError("That is not a PMS client of this firm. read_pms lists them.")
+    pv = await billing.preview(session, firm.id, as_of=firm_time.today(firm))
+    entries = [e for e in pv["arrangements"] if e["mandate_id"] == str(mid)]
+    if period_start not in (None, ""):
+        entries = [e for e in entries if e["period_start"] == str(period_start)[:10]]
+    if not entries:
+        raise PmsError(f"{mandate.name} has no bill to draft for the period: there is no fee arrangement running for it.")
+    e = entries[-1]
+    perf = ((e.get("pms_fee") or {}).get("performance")) or None
+    if perf is None:
+        raise PmsError(f"{mandate.name}'s agreement has no performance fee (or no agreement is recorded), so there is nothing to carry.")
+    if perf.get("estimate") is None:
+        raise PmsError(f"The performance fee is not assessed: {(perf.get('reason') or 'no return series').rstrip('.')}.")
+    if perf["estimate"] <= 0:
+        raise PmsError(f"The agreement's terms give no performance fee for {e['period_start']} to {e['period_end']}: the return does not clear the "
+                       "hurdle and the high-water mark, so there is no line to confirm.")
+    start, end = date.fromisoformat(e["period_start"]), date.fromisoformat(e["period_end"])
+    if await fee_line(session, firm.id, mid, start, end) is not None:
+        raise PmsError(f"A performance fee line for {mandate.name}, {e['period_start']} to {e['period_end']}, is already confirmed.")
+    billed = (await session.execute(select(Invoice.id).where(
+        Invoice.firm_id == firm.id, Invoice.mandate_id == mid, Invoice.period_start == start, Invoice.kind == "invoice",
+        Invoice.status.in_(("issued", "debited"))).limit(1))).first()
+    if billed:
+        raise PmsError("That period's bill is already issued, and an issued bill is never edited: credit it and bill again to add the line.")
+    return {"mandate": mandate, "period_start": start, "period_end": end, "amount": float(perf["estimate"]), "currency": e["currency"] or firm.base_currency,
+            "working": {k: v for k, v in perf.items() if k not in ("added_to_bill",)}, "fixed_fee": e["amount"]}
+
+
+async def record_fee_line(session: AsyncSession, firm: Firm, *, by: str, note: str | None = None, **terms) -> dict:
+    p = await prepare_fee_line(session, firm, **terms)
+    row = PmsFeeLine(firm_id=firm.id, mandate_id=p["mandate"].id, period_start=p["period_start"], period_end=p["period_end"], amount=p["amount"],
+                     currency=p["currency"], working=p["working"], confirmed_by=by, note=(note or "").strip() or None, created_at=utcnow())
+    session.add(row)
+    await session.flush()
+    await ledger.append_entry(session, firm_id=firm.id, event_type="pms_performance_fee_line_confirmed", actor=by, content={
+        "mandate_id": str(p["mandate"].id), "period_start": p["period_start"].isoformat(), "period_end": p["period_end"].isoformat(),
+        "amount": p["amount"], "currency": p["currency"]})
+    return {"applies": True, "line": {"mandate": p["mandate"].name, "period_start": p["period_start"].isoformat(), "period_end": p["period_end"].isoformat(),
+                                       **_line_view(row)}}
 
 
 # ── The client's report ──────────────────────────────────────────────────────────────────────────────────────

@@ -12,13 +12,14 @@ import { ActiveChip, FormError, ReasonInput, TableCard, TD, TH, because, q, tier
 
 // ── Segments ──────────────────────────────────────────────────────────────────
 
-const usd = (n: number | null | undefined) => (n == null ? null : money(n, "USD"));
+// A segment's minimum is in its own currency (B-255): the firm's, for one a person states now; US dollars for one recorded before.
+const inCur = (n: number | null | undefined, cur?: string | null) => (n == null ? null : money(n, cur || "USD"));
 
 function segmentChange(s: any, e: any): string | null {
   const parts: string[] = [];
   if ((e.label || "").trim() !== (s.label || "")) parts.push(`label ${q(e.label)}`);
   if ((e.fee_tier_bps ?? null) !== (s.fee_tier_bps ?? null)) parts.push(e.fee_tier_bps != null ? `fee ${e.fee_tier_bps} bps` : "clear the fee");
-  if ((e.min_aum_usd ?? null) !== (s.min_aum_usd ?? null)) parts.push(e.min_aum_usd != null ? `minimum AUM ${usd(e.min_aum_usd)}` : "clear the minimum AUM");
+  if ((e.min_aum_usd ?? null) !== (s.min_aum_usd ?? null)) parts.push(e.min_aum_usd != null ? `minimum AUM ${inCur(e.min_aum_usd, s.firm_currency || s.currency)}` : "clear the minimum AUM");
   if ((e.description || "") !== (s.description || "")) parts.push((e.description || "").trim() ? `description ${q(e.description)}` : "clear the description");
   if (!!e.is_active !== !!s.is_active) parts.push(e.is_active ? "reactivate it" : "deactivate it");
   return parts.length ? `Change the segment ${q(s.label)} (${s.slug}): ${parts.join("; ")}` : null;
@@ -40,7 +41,7 @@ export function SegmentsTab() {
     if (ask) {
       const bits = [
         form.fee_tier_bps ? `fee ${parseInt(form.fee_tier_bps)} bps` : null,
-        form.min_aum_usd ? `minimum AUM ${usd(parseFloat(form.min_aum_usd))}` : null,
+        form.min_aum_usd ? `minimum AUM ${inCur(parseFloat(form.min_aum_usd), segments?.[0]?.firm_currency)}` : null,
         form.description.trim() ? `description ${q(form.description)}` : null,
       ].filter(Boolean);
       ask(`Add the segment ${q(form.label)} (slug ${slug})${bits.length ? `: ${bits.join("; ")}` : ""}`);
@@ -105,7 +106,7 @@ export function SegmentsTab() {
             <div><label className="label">Fee tier (bps)</label>
               <input className="input" type="number" min="0" value={editing.fee_tier_bps ?? ""}
                 onChange={(e) => setEditing({ ...editing, fee_tier_bps: e.target.value ? parseInt(e.target.value) : null })} /></div>
-            <div><label className="label">Min AUM (USD)</label>
+            <div><label className="label">Min AUM ({editing.firm_currency || editing.currency || "USD"})</label>
               <input className="input" type="number" min="0" value={editing.min_aum_usd ?? ""}
                 onChange={(e) => setEditing({ ...editing, min_aum_usd: e.target.value ? parseFloat(e.target.value) : null })} /></div>
             <div><label className="label">Description</label>
@@ -139,7 +140,7 @@ export function SegmentsTab() {
             <div><label className="label">Fee tier (bps)</label>
               <input className="input" type="number" min="0" placeholder="50" value={form.fee_tier_bps}
                 onChange={(e) => setForm({ ...form, fee_tier_bps: e.target.value })} /></div>
-            <div><label className="label">Min AUM (USD)</label>
+            <div><label className="label">Min AUM ({segments?.[0]?.firm_currency || "USD"})</label>
               <input className="input" type="number" min="0" placeholder="1000000" value={form.min_aum_usd}
                 onChange={(e) => setForm({ ...form, min_aum_usd: e.target.value })} /></div>
             <div className="cq-sm:col-span-2"><label className="label">Description</label>
@@ -179,7 +180,7 @@ export function SegmentsTab() {
                 <td className={`${TD} font-mono text-xs text-ink-muted`}>{s.slug}</td>
                 <td className={`${TD} font-medium text-ink`}>{s.label}</td>
                 <td className={`${TD} text-right font-mono text-xs tabular-nums text-ink-soft`}>{s.fee_tier_bps != null ? `${s.fee_tier_bps} bps` : "—"}</td>
-                <td className={`${TD} text-right font-mono text-xs tabular-nums text-ink-soft`}>{usd(s.min_aum_usd) ?? "—"}</td>
+                <td className={`${TD} text-right font-mono text-xs tabular-nums text-ink-soft`}>{inCur(s.min_aum_usd, s.currency) ?? "—"}</td>
                 <td className={TD}><ActiveChip active={!!s.is_active} /></td>
                 <td className={`${TD} text-right`}>
                   <div className="flex items-center justify-end gap-1.5">

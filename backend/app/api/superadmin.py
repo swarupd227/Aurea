@@ -123,7 +123,10 @@ async def create_firm(
     for seg_slug, label, fee_bps, min_aum, desc in _DEFAULT_SEGMENTS:
         db.add(FirmSegment(
             firm_id=firm.id, slug=seg_slug, label=label,
-            fee_tier_bps=fee_bps, min_aum_usd=min_aum, description=desc, is_active=True,
+            # The default minimums are US dollar figures: another currency's firm starts with none, to be stated in its own money (B-255).
+            fee_tier_bps=fee_bps, min_aum_usd=min_aum if (body.base_currency or "USD") == "USD" else None,
+            currency="USD" if (body.base_currency or "USD") == "USD" and min_aum is not None else None,
+            description=desc, is_active=True,
         ))
 
     # 3. Default mandate types

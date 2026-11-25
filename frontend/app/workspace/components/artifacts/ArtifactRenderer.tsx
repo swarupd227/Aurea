@@ -37,6 +37,7 @@ import { AggregatorCard, EcasCard } from "./AggregatorCard";
 import { AdvertisingCard, ComplaintsCard } from "./ComplaintsCard";
 import { KycCard, TaxRecordsCard } from "./IndiaKycCard";
 import { FamilyEstateCard } from "./FamilyEstateCard";
+import { PolishCard } from "./PolishCard";
 import { GovernanceCard } from "./GovernanceCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
@@ -463,6 +464,15 @@ export function artifactCard(artifact: Artifact) {
       case "record_complaint_step":
         if (!Array.isArray(artifact.result?.complaints) && artifact.result?.applies !== false) return null;
         return <ComplaintsCard result={artifact.result as any} />;
+      case "read_india_reminders":
+      case "raise_india_reminders":
+      case "confirm_pms_fee_line":
+      case "read_case_facts":
+      case "record_case_facts":
+      case "record_majority_conversion":
+        if (!Array.isArray(artifact.result?.reminders) && !Array.isArray(artifact.result?.tasks) && !artifact.result?.line && !artifact.result?.case
+            && !Array.isArray(artifact.result?.minors) && artifact.result?.applies !== false) return null;
+        return <PolishCard result={artifact.result as any} />;
       case "read_sebi_family":
       case "record_sebi_family":
       case "read_india_estate":

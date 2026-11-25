@@ -148,10 +148,14 @@ async def household_items(session: AsyncSession, firm: Firm, household_id: uuid.
     people = (await session.execute(select(Person).where(Person.household_id == household_id, Person.deceased_on.is_(None)))).scalars().all()
     for p in people:
         g = await guardianship.standing(session, firm.id, p.id)
-        s = guardianship.status_of(p, g, today)
+        s = guardianship.status_of(p, g, today, await guardianship.conversion_of(session, firm.id, p.id))
         if s.get("minor") and s.get("majority_on"):
             items.append(_item("majority", f"{p.full_name} reaches majority: the account is converted", date.fromisoformat(s["majority_on"]), today,
                                source=guardianship.CITATION, detail="Nothing converts the account here; the guardian's authority ends"))
+        elif s.get("state") == "attained_majority":
+            items.append(_item("majority", f"{p.full_name} is now an adult: convert the account", date.fromisoformat(s["majority_on"]), today,
+                               source=guardianship.CITATION, state="overdue",
+                               detail="The guardian's authority has ended and orders on the account are refused until a person records the conversion"))
     from app.aurea_core import client_file
 
     file = await client_file.for_household(session, household_id, firm_id=firm.id)

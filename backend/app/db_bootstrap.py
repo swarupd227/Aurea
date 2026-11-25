@@ -258,6 +258,8 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE income_stream ADD COLUMN IF NOT EXISTS end_age INTEGER"))
         # B-180: the guardrail spending terms a client agreed, on the IPS. Empty on every version recorded before.
         await conn.execute(text("ALTER TABLE investment_policy ADD COLUMN IF NOT EXISTS guardrail_spending JSON"))
+        # B-255: the currency a segment's minimum is stated in. Empty on every row before, which was US dollars.
+        await conn.execute(text("ALTER TABLE firm_segment ADD COLUMN IF NOT EXISTS currency VARCHAR(8)"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

@@ -87,3 +87,4 @@ from app.models import kyc  # noqa: F401,E402
 # SEBI family of client, nominations, a will's state, an HUF and gratuity (India row 13), and the governance register and counsel review (India row 14).
 from app.models import india_family  # noqa: F401,E402
 from app.models import india_governance  # noqa: F401,E402
+from app.models import india_polish  # noqa: F401,E402

@@ -31,8 +31,9 @@ For an entity the beneficial-owner test is SEBI's AML Master Circular as read in
 partnership, more than 15% of an unincorporated body, and for a trust a beneficiary with 10% or more and always the author,
 trustee and protector. CRS controlling persons (more than 25% of a company) are a different test and are listed apart, never one field.
 
-An overdue or blocked KYC appears in the onboarding board's KYC queue and fails the activation gate; a due one or none on file warns.
-Nothing here stops an order, files with a regulator or tells the client. This is not a statement that the firm's KYC is compliant.
+An overdue or blocked KYC appears in the onboarding board's KYC queue, fails the activation gate and holds the household's book: a
+book-moving approval (`runtime.decide`) and a direct order (`order_guard`) are refused, naming the KYC and who records the new one
+(B-273). A due one or none on file warns and stops nothing. Nothing here files with a regulator or tells the client. This is not a statement that the firm's KYC is compliant.
 """
 from __future__ import annotations
 
@@ -566,3 +567,41 @@ def gate(status: dict | None) -> dict | None:
     if status["due"]:
         return {"state": "warn", "detail": "; ".join(f"{v['name']}: {v['message']}" for v in status["due"])}
     return {"state": "pass", "detail": f"{status['records']} party(ies) with KYC on file and current."}
+
+
+# ── At order time (B-273) ────────────────────────────────────────────────────────────────────────────────────────
+
+async def household_refusal(session: AsyncSession, firm: Firm | None, household_id: uuid.UUID | None) -> str | None:
+    """Why this household's book may not move, or None. An overdue or blocked KYC stops it, the way the pre-advice gate does; a KYC
+    that is only due, or not on file, warns elsewhere and stops nothing, because not on file does not mean not done. A sale is
+    stopped too: a blocked KRA record means the client may not transact. Dismissing a proposal stays open."""
+    if firm is None or household_id is None or not applies(firm):
+        return None
+    stopped = [p for p in (await overview(session, firm, household_id=household_id))["parties"] if p["state"] in ("overdue", "blocked")]
+    if not stopped:
+        return None
+    said = "; ".join(f"{p['name']}'s KYC is {p['state']} ({p['message']})" for p in stopped)
+    return (f"{said}. Orders and approvals that move this household's book are held until an adviser, paraplanner, operations or compliance "
+            f"records the refreshed KYC from the KRA's acknowledgement or the client's document (record_kyc) ({CITATION}).")
+
+
+async def order_refusal(session: AsyncSession, firm: Firm | None, mandate) -> str | None:
+    """For a direct order or a proposal's orders on this mandate."""
+    from app.aurea_core import wash_sale
+
+    if firm is None or not applies(firm):
+        return None
+    return await household_refusal(session, firm, await wash_sale.household_of(session, mandate))
+
+
+async def refusal(session: AsyncSession, firm: Firm | None, rec) -> str | None:
+    """Why a book-moving proposal may not be approved yet, or None."""
+    from app.core import decision_rights
+    from app.models.graph import Mandate
+
+    if firm is None or not applies(firm) or not decision_rights.moves_the_book(rec.agent_key):
+        return None
+    if rec.subject_type != "mandate" or not rec.subject_id:
+        return None
+    mandate = await session.get(Mandate, rec.subject_id)
+    return await order_refusal(session, firm, mandate) if mandate is not None else None

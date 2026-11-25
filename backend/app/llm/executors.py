@@ -24,6 +24,7 @@ from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
 from app.llm.india_data_executors import IndiaDataExecutors
 from app.llm.india_family_executors import IndiaFamilyExecutors
+from app.llm.india_polish_executors import IndiaPolishExecutors
 from app.llm.india_governance_executors import IndiaGovernanceExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
 from app.models.enums import UserRole
@@ -62,7 +63,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 
 
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
-                    IndiaFamilyExecutors, IndiaGovernanceExecutors):
+                    IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -353,6 +354,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_family_map(),
             # India row 14: app/llm/india_governance_executors.py.
             **self._india_governance_map(),
+            **self._india_polish_map(),
         }
 
         executor = executor_map.get(tool_key)
@@ -5403,6 +5405,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._india_data_preview(tool_key, inputs))
         if tool_key in ("record_sebi_family", "record_asset_nomination", "record_will_status", "record_huf", "record_gratuity"):
             return rows(*await self._india_family_preview(tool_key, inputs))
+        if tool_key in ("raise_india_reminders", "confirm_pms_fee_line", "record_case_facts", "record_majority_conversion"):
+            return rows(*await self._india_polish_preview(tool_key, inputs))
         if tool_key in ("record_governance_policy", "record_counsel_review"):
             return rows(*await self._india_governance_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):

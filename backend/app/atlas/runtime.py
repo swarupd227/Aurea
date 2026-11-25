@@ -307,6 +307,12 @@ async def decide(
         why = await pms.refusal(session, firm, rec)
         if why:
             raise pre_advice.PreAdviceError(why)
+        # An overdue or blocked KYC holds the household's book until a person records the refreshed one (B-273).
+        from app.aurea_core import kyc_india
+
+        why = await kyc_india.refusal(session, firm, rec)
+        if why:
+            raise pre_advice.PreAdviceError(why)
     rec.decided_by = actor_id
     rec.decided_at = utcnow()
     rec.decision_note = note

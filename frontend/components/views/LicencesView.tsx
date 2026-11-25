@@ -15,6 +15,7 @@ import { AggregatorConsents, StatementChips } from "@/app/workspace/components/a
 import { AdvertisingChecker, AnnexureTable, ComplaintRows } from "@/app/workspace/components/artifacts/ComplaintsCard";
 import { KycCounts, KycParties } from "@/app/workspace/components/artifacts/IndiaKycCard";
 import { EstateHousehold, FamilyChips } from "@/app/workspace/components/artifacts/FamilyEstateCard";
+import { ReminderRows } from "@/app/workspace/components/artifacts/PolishCard";
 import { CounselRows, LicenceMapTable, PolicyForm, PolicyRows } from "@/app/workspace/components/artifacts/GovernanceCard";
 import { IndiaDateItems } from "@/app/workspace/components/artifacts/RegulatoryCountdownCard";
 import { useViewNav } from "./ViewNav";
@@ -350,6 +351,17 @@ export function LicencesView() {
             <FamilyChips families={data.family.families} relations={data.family.relations} />
             {(data.estate?.households ?? []).map((h: any) => <div key={h.household_id} className="border-t border-border-soft"><EstateHousehold view={h} currency="INR" /></div>)}
           </div>
+        </Card>
+      )}
+
+      {data.reminders?.applies && (data.reminders.reminders ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Dates that need a task</span>
+            {data.reminders.to_raise > 0 && <span className="chip text-warn">{data.reminders.to_raise} without a task</span>}
+            <span className="chip text-ok">{data.reminders.tasks_exist} raised</span>
+          </div>
+          <div className="-mx-3" data-testid="licence-reminders"><ReminderRows reminders={data.reminders.reminders} /></div>
         </Card>
       )}
 

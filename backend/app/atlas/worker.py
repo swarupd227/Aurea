@@ -151,6 +151,22 @@ async def _run_sips() -> None:
                 log.warning("sip_run_failed", firm=str(firm_id), error=str(exc))
 
 
+async def _raise_india_reminders() -> None:
+    """One task per India date that is overdue or within 14 days, for its owner, once (aurea_core/india_reminders.py)."""
+    from app.aurea_core import india_reminders
+
+    async with SessionLocal() as s:
+        for firm in (await s.execute(select(Firm))).scalars().all():
+            try:
+                done = await india_reminders.raise_due(s, firm)
+                await s.commit()
+                if done.get("raised"):
+                    log.info("india_reminders", firm=firm.slug, raised=done["raised"], already=done["already"])
+            except Exception as exc:  # pragma: no cover
+                await s.rollback()
+                log.warning("india_reminders_failed", firm=firm.slug, error=str(exc))
+
+
 async def _run_evaluation() -> None:
     from app.provenance.evaluation import evaluate_firm
 
@@ -436,6 +452,7 @@ async def main() -> None:
     scheduler.add_job(_refresh_tax_after_trades, "interval", minutes=2, id="tax_after_trades")
     # SIP instalments, hourly: each SIP is tried once a month, on or after its day on its firm's calendar.
     scheduler.add_job(_run_sips, "interval", hours=1, id="sip_instalments")
+    scheduler.add_job(_raise_india_reminders, "interval", hours=6, id="india_reminders")
     # The Foundation layer: what a connected product owns, pulled every six hours (native firms are skipped).
     scheduler.add_job(_sync_foundation_sources, "interval", hours=6, id="foundation_sync")
     # Pick up cadence changes made in Admin without needing a worker restart.
