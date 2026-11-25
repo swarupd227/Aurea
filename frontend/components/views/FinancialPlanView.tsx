@@ -7,6 +7,9 @@ import { bandChip, pct1 } from "@/app/workspace/components/artifacts/PlanCard";
 import { ScenariosTable } from "@/app/workspace/components/artifacts/ScenarioCard";
 import { SocialSecurityTable } from "@/app/workspace/components/artifacts/SocialSecurityCard";
 import { HealthcareChips, HealthcareTable } from "@/app/workspace/components/artifacts/HealthcareCard";
+import { TriggerChips, TriggersTable } from "@/app/workspace/components/artifacts/PlanTriggersCard";
+import { BenefitChips, BenefitsTable } from "@/app/workspace/components/artifacts/EmployerBenefitsCard";
+import { GuardrailChips, GuardrailTable } from "@/app/workspace/components/artifacts/GuardrailCard";
 import { agesOfLabel, basisLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
 import { PlanInputsChips, SequenceIllustration } from "@/components/PlanInputs";
 import { FiguresTable, FreshnessChip, PlanStateChip, ReviewNeedChip, SummaryChip } from "@/app/workspace/components/artifacts/PlanRecordCard";
@@ -39,6 +42,51 @@ function PlanSocialSecurity({ household }: { household: string }) {
         {data.status === "one_statement" && <span className="chip text-warn">one statement · spousal and survivor not assessed</span>}
       </div>
       <SocialSecurityTable result={data} />
+    </Card>
+  );
+}
+
+/** What has given the plan a reason to be looked at again, and how fast it was (B-188). The tier is set in the conversation. */
+function PlanTriggers({ household }: { household: string }) {
+  const { data } = useApi<any>(`/api/plan/triggers?household=${household}`, [household]);
+  if (!data || (!(data.triggers ?? []).length && !data.tier)) return null;
+  return (
+    <Card className="mb-4 overflow-hidden p-0" data-testid="plan-triggers-section">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border-soft px-4 py-2.5">
+        <div className="text-sm font-medium text-ink">Triggers</div>
+        <TriggerChips result={data} />
+      </div>
+      <TriggersTable result={data} />
+    </Card>
+  );
+}
+
+/** Guardrail spending beside fixed spending, from the terms on the IPS (B-180). It shows only when the IPS has terms. */
+function PlanGuardrails({ household }: { household: string }) {
+  const { data } = useApi<any>(`/api/plan/guardrails?household=${household}`, [household]);
+  if (!data || data.status !== "assessed") return null;
+  return (
+    <Card className="mb-4 overflow-hidden p-0" data-testid="plan-guardrails">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border-soft px-4 py-2.5">
+        <div className="text-sm font-medium text-ink">Guardrail spending</div>
+        <GuardrailChips result={data} />
+      </div>
+      <GuardrailTable result={data} />
+    </Card>
+  );
+}
+
+/** What an employer's plan gives each person, from the plan document (B-193). Recorded in the conversation; moves no figure. */
+function PlanEmployerBenefits({ household }: { household: string }) {
+  const { data } = useApi<any>(`/api/plan/employer-benefits?household=${household}`, [household]);
+  if (!data || !(data.benefits ?? []).length) return null;
+  return (
+    <Card className="mb-4 overflow-hidden p-0" data-testid="plan-employer-benefits">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border-soft px-4 py-2.5">
+        <div className="text-sm font-medium text-ink">Employer benefits</div>
+        <BenefitChips result={data} />
+      </div>
+      <BenefitsTable result={data} />
     </Card>
   );
 }
@@ -299,7 +347,7 @@ export function FinancialPlanView({ household = null }: { household?: string | n
                   <tr key={s.id} title={s.document}>
                     <td className="px-4 py-2 text-ink">{s.name}<span className="ml-1 text-xs text-ink-muted">{s.person}</span></td>
                     <td className={num}>{money(s.planned_annual)}</td>
-                    <td className={num}>{s.start_age}</td>
+                    <td className={num}>{s.start_age}{s.end_age ? <span className="text-ink-muted"> to {s.end_age}</span> : null}</td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-1.5">
                         {s.claiming?.claims.map((x: any) => <span key={x.age} className="chip text-ink-muted" title={x.breaks_even ? Object.entries(x.breaks_even).map(([k, v]) => `beats ${k} by ${v}`).join(", ") : undefined}>at {x.age}: {money(x.annual)}</span>)}
@@ -368,6 +416,9 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           <HealthcareTable result={r.healthcare} />
         </Card>
       )}
+      <PlanTriggers household={household} />
+      <PlanEmployerBenefits household={household} />
+      <PlanGuardrails household={household} />
       <PlanSocialSecurity household={household} />
       <PlanScenarios household={household} />
 

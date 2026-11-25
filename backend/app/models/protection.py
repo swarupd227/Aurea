@@ -17,7 +17,8 @@ from app.core.db import Base
 
 # life and tpd pay a lump sum; income_protection pays a yearly benefit while the insured cannot work,
 # and long_term_care one while they need care.
-POLICY_KINDS = ("life", "tpd", "income_protection", "long_term_care", "critical_illness", "personal_accident")
+# umbrella (liability) and property cover are listed beside the rest and never counted against a gap (B-193).
+POLICY_KINDS = ("life", "tpd", "income_protection", "long_term_care", "critical_illness", "personal_accident", "umbrella", "property")
 COVER_BASES = ("any_cause", "accident_only")
 # How a household means to pay for care (B-186). Medicaid is a US programme, so medicaid_planning is a US household's.
 CARE_FUNDING_CHOICES = ("self_fund", "care_insurance", "hybrid", "medicaid_planning", "undecided")

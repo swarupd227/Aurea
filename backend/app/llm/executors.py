@@ -149,6 +149,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "record_trusted_contact": self.record_trusted_contact,
             "record_estate_document": self.record_estate_document,
             "record_life_event": self.record_life_event,
+            "record_discovery_note": self.record_discovery_note,
             "read_financial_plan": self.read_financial_plan,
             "record_income_stream": self.record_income_stream,
             "end_income_stream": self.end_income_stream,
@@ -267,6 +268,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "read_assumption_set": self.read_assumption_set,
             "read_giving": self.read_giving,
             "read_healthcare_costs": self.read_healthcare_costs,
+            "run_guardrail_spending": self.run_guardrail_spending,
+            "record_guardrail_terms": self.record_guardrail_terms,
+            "read_employer_benefits": self.read_employer_benefits,
+            "record_employer_benefit": self.record_employer_benefit,
+            "end_employer_benefit": self.end_employer_benefit,
+            "read_plan_triggers": self.read_plan_triggers,
+            "set_plan_tier": self.set_plan_tier,
             "read_roth_window": self.read_roth_window,
             "read_social_security": self.read_social_security,
             "read_tax_returns": self.read_tax_returns,
@@ -926,7 +934,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         firm = await self._firm()
         say = markets.money_for(firm)
         kinds = {"life": "Life", "tpd": "Total and permanent disablement", "income_protection": "Income protection",
-                 "long_term_care": "Long-term care", "critical_illness": "Critical illness", "personal_accident": "Personal accident"}
+                 "long_term_care": "Long-term care", "critical_illness": "Critical illness", "personal_accident": "Personal accident",
+                 "umbrella": "Umbrella (liability)", "property": "Property"}
         try:
             if tool_key == "set_care_assumptions":
                 r = await protection.prepare_care(self.session, self.firm_id, annual_cost=inputs.get("annual_cost"),
@@ -1006,13 +1015,23 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
 
         if inputs.get("household_id"):
             household_id = _parse_uuid(inputs["household_id"], "household_id")
-            result = await risk_profile.for_household(self.session, household_id, firm_id=self.firm_id)
+            result = await risk_profile.with_need(self.session, household_id, firm_id=self.firm_id)
             if result is None:
                 raise ExecutorError(f"Household {household_id} not found or access denied")
             done = result["assessment"]
             wealth = result["wealth"]
             said = (f" What could be drawn on, less debts, covers {wealth['years_covered']} years of recorded spending." if wealth and wealth["status"] == "assessed"
                     else " Wealth against needs is not assessed: no spending is on file.")
+            need, pair = result["return_need"], result["people_compared"]
+            said += (f" The goals' needs ask for a compound return of {need['required_return']:.1%} a year"
+                     + (f", against {need['expected']['compound']:.1%} expected from the current allocation" if need.get("expected") else "")
+                     + "; that sits beside the questionnaire and changes nothing." if need["status"] == "assessed" and need.get("required_return") is not None
+                     else " The goals are already covered by what is held and recorded contributions, at any return considered." if need["status"] == "assessed" and need["already_covered"]
+                     else " The goals' needs are beyond a 40% return a year." if need["status"] == "assessed"
+                     else f" The return the needs ask for is not assessed: {need['reason']}")
+            if pair["gap"]:
+                said += (f" {pair['gap']['between'][0]} and {pair['gap']['between'][1]} answered for themselves, {pair['gap']['indicated']} step(s) apart on the profile"
+                         + (f", {pair['gap']['takes_less_risk']} taking less risk" if pair["gap"]["takes_less_risk"] else "") + ".")
             result["message"] = (f"{result['household']}: {result['status']}, indicated {done['indicated']}." if done and done["indicated"]
                                  else f"{result['household']}: no questionnaire is recorded here. That is all this shows. The firm may hold one elsewhere, so whether the profile on file is supported is not known: do not say it is unsupported."
                                  if result["status"] == "not_taken" else f"{result['household']}: {result['status']}.") + said
@@ -1670,7 +1689,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         person_id = _parse_uuid(inputs.get("person_id") or "", "person_id")
         args = self._grant_args(inputs)
         result = await self._equity_write(lambda e, by: e.record_grant(self.session, person_id, firm_id=self.firm_id, by=by, **args))
-        result["message"] = f"Recorded. {result['household']} has {len(result['grants'])} grant(s) on file."
+        result["message"] = f"Recorded. {result['household']} has {len(result['grants'])} grant(s) on file, and a review task is open."
         return result
 
     async def end_equity_grant(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -1764,7 +1783,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             raise ExecutorError("joint_survivor_share_pct must be a number.")
         return {"kind": inputs.get("kind"), "name": inputs.get("name"), "annual_amount": inputs.get("annual_amount"), "start_age": inputs.get("start_age"),
                 "source_document": inputs.get("source_document"), "inflation_linked": self._said_linked(inputs.get("inflation_linked")), "lump_sum": inputs.get("lump_sum"),
-                "joint_annual": inputs.get("joint_annual"), "joint_survivor_share": share}
+                "joint_annual": inputs.get("joint_annual"), "joint_survivor_share": share, "end_age": inputs.get("end_age")}
 
     @staticmethod
     def _said_linked(value: Any) -> bool | None:
@@ -1822,7 +1841,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 r = await financial_plan.prepare_stream(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._stream_args(inputs))
                 social = r["kind"] == "social_security"
                 return [("Person", r["person"].full_name), ("Income", f"{r['kind'].replace('_', ' ').capitalize()} · {r['name']}"),
-                        ("At full retirement age" if social else "A year", say(r["amount"])), ("Claiming at" if social else "From age", str(r["age"])),
+                        ("At full retirement age" if social else "A year", say(r["amount"])), ("Claiming at" if social else "From age", str(r["age"])), ("Until age", str(r["end_age"]) if r["end_age"] else None),
                         ("Rises with inflation", ("Yes" if r["inflation_linked"] else "No")
                          + (f" · the default for {r['kind'].replace('_', ' ')}" if r["inflation_linked_basis"] == "default_for_kind" else "")),
                         ("Lump sum", say(r["lump_sum"]) if r["lump_sum"] else None),
@@ -1905,10 +1924,41 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         result["message"] = f"Recorded, and a review task is open. It touches: {', '.join(result['events'][0]['touches'])}."
         return result
 
+    def _discovery_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        engaged = inputs.get("engaged")
+        if engaged in (None, ""):
+            engaged = None
+        elif str(engaged).strip().lower() in ("true", "false"):
+            engaged = str(engaged).strip().lower() == "true"
+        else:
+            raise ExecutorError("engaged must be true or false.")
+        return {"kind": inputs.get("kind"), "met_on": self._exit_day(inputs.get("met_on"), "met_on"), "source_document": inputs.get("source_document"),
+                "body": inputs.get("body"), "person_id": _parse_uuid(inputs["person_id"], "person_id") if inputs.get("person_id") else None, "engaged": engaged}
+
+    async def record_discovery_note(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        args = self._discovery_args(inputs)
+
+        async def same(_row):
+            return household_id
+
+        result = await self._file_write(lambda e, by: e.record_discovery(self.session, household_id, firm_id=self.firm_id, by=by, **args), same)
+        d = result["discovery"]
+        result["message"] = (f"Recorded a {args['kind'].replace('_', ' ')} note. It changes no figure."
+                             + (f" Not engaged: {', '.join(d['not_engaged'])}." if d["not_engaged"] else ""))
+        return result
+
     async def _file_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core import client_file, firm_time
 
         try:
+            if tool_key == "record_discovery_note":
+                r = await client_file.prepare_discovery(self.session, _parse_uuid(inputs.get("household_id") or "", "household_id"), firm_id=self.firm_id,
+                                                        **self._discovery_args(inputs))
+                eng = None if r["engaged"] is None else "Engaged" if r["engaged"] else "Not engaged"
+                return [("Client", r["household"].name), ("Note", r["kind"].replace("_", " ").capitalize()), ("About", r["person"].full_name if r["person"] else None),
+                        ("Engagement", eng), ("Replaces", ("Engaged" if r["was"].engaged else "Not engaged") + " on " + firm_time.spoken(r["was"].met_on) if r["was"] else None),
+                        ("Met", firm_time.spoken(r["day"])), ("Said", r["text"]), ("Then", "Added to the file; it changes no figure"), ("From", r["document"])]
             if tool_key == "record_trusted_contact":
                 r = await client_file.prepare_contact(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._contact_file_args(inputs))
                 return [("Client", r["person"].full_name), ("Contact", r["name"]), ("Relationship", r["relationship"]), ("Phone", r["phone"]), ("Email", r["email"]),
@@ -5117,7 +5167,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._sip_preview(tool_key, inputs))
         if tool_key == "record_pan":
             return rows(*await self._pan_preview(inputs))
-        if tool_key in ("record_trusted_contact", "record_estate_document", "record_life_event"):
+        if tool_key == "record_guardrail_terms":
+            return rows(*await self._guardrail_preview(inputs))
+        if tool_key in ("record_employer_benefit", "end_employer_benefit"):
+            return rows(*await self._benefit_preview(tool_key, inputs))
+        if tool_key == "set_plan_tier":
+            return rows(*await self._plan_tier_preview(inputs))
+        if tool_key in ("record_trusted_contact", "record_estate_document", "record_life_event", "record_discovery_note"):
             return rows(*await self._file_preview(tool_key, inputs))
         if tool_key in ("raise_estate_review", "record_care_funding"):
             return rows(*await self._estate_care_preview(tool_key, inputs))
@@ -6844,6 +6900,216 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             + (" Assumed: " + "; ".join(out["assumed"]) + "." if out.get("assumed") else "")
             + " What cover to buy is the client's.")
         return out
+
+    # ── Guardrail spending, run beside fixed spending (B-180) ─────────────────────────────────
+
+    @staticmethod
+    def _guardrail_terms(inputs: dict[str, Any]) -> dict[str, Any]:
+        """The terms as fractions from the percentages a person said; nothing is filled in."""
+        out: dict[str, Any] = {}
+        for key, name in (("start_rate", "start_rate_pct"), ("upper_band", "upper_pct"), ("lower_band", "lower_pct"), ("cut", "cut_pct"), ("raise", "raise_pct")):
+            value = inputs.get(name)
+            if value in (None, ""):
+                continue
+            try:
+                out[key] = float(value) / 100
+            except (TypeError, ValueError):
+                raise ExecutorError(f"{name} must be a number.")
+        if inputs.get("skip_inflation") not in (None, ""):
+            out["skip_inflation"] = inputs.get("skip_inflation")
+        return out
+
+    async def run_guardrail_spending(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import guardrails, markets
+
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        terms = self._guardrail_terms(inputs)
+        # Only skip_inflation said, with no number: the IPS's terms are read, and the flag is not a rule on its own.
+        said = terms if any(k != "skip_inflation" for k in terms) else {}
+        try:
+            out = await guardrails.for_household(self.session, household_id, firm_id=self.firm_id, terms=said or None)
+        except guardrails.GuardrailError as exc:
+            raise ExecutorError(str(exc))
+        if out is None:
+            raise ExecutorError(f"Household {household_id} not found or access denied")
+        if out["status"] != "assessed":
+            out["message"] = f"{out['household']}: guardrail spending not assessed. {out['reason']}"
+            return out
+        say = markets.money_for(await self._firm())
+        t = out["terms"]
+        out["message"] = (
+            f"{out['household']}: with a {t['start_rate']:.1%} start rate{' (the plan\'s own)' if t['start_rate_derived'] else ''}, cutting {t['cut']:.0%} past "
+            f"{t['upper_band']:.0%} above it and raising {t['raise']:.0%} past {t['lower_band']:.0%} below, the portfolio's first draw is "
+            f"{say(out['start_draw_today'])} a year in today's money against {say(out['fixed_draw_today'])} fixed, and the likelihood it lasts is "
+            f"{out['success']:.0%} against {out['fixed_success']:.0%}. Cuts come in {out['paths_with_a_cut']:.0%} of futures, a median of {out['median_cuts']:g} each, "
+            f"and income falls as low as {out['lowest_income_worst_tenth']:.0%} of the first year's in the worst tenth. "
+            f"Terms are {'the ones said' if out['terms_from'] == 'stated' else 'the IPS\'s, version ' + str(out['ips']['ips_version'])}. "
+            "This is a run beside fixed spending; nothing changes spending by itself.")
+        return out
+
+    async def record_guardrail_terms(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import ips
+        from app.models.identity import User
+
+        if self.role != UserRole.ADVISER:
+            raise ExecutorError("Only an adviser records the terms of an IPS.")
+        mandate_id = _parse_uuid(inputs.get("mandate_id"), "mandate_id")
+        user = await self.session.get(User, self.user_id)
+        try:
+            result = await ips.record_guardrails(self.session, mandate_id, firm_id=self.firm_id, by=user.email if user else "unknown", role=str(self.role),
+                                                 accepted_on=self._exit_day(inputs.get("accepted_on"), "accepted_on"), document=inputs.get("document"),
+                                                 terms=self._guardrail_terms(inputs), reason=inputs.get("reason"))
+        except ips.IpsError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = f"Recorded the guardrail terms as version {result['version']} of the IPS for {result['mandate']}, with every other term carried over. They change no spending."
+        return result
+
+    async def _guardrail_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, ips
+
+        try:
+            r = await ips.prepare_guardrails(self.session, _parse_uuid(inputs.get("mandate_id"), "mandate_id"), firm_id=self.firm_id,
+                                             accepted_on=self._exit_day(inputs.get("accepted_on"), "accepted_on"), document=inputs.get("document"),
+                                             terms=self._guardrail_terms(inputs), reason=inputs.get("reason"))
+        except ips.IpsError as exc:
+            raise ExecutorError(str(exc))
+        g, was = r["guardrail_spending"], r["was"]
+        return [("Mandate", r["mandate"].name), ("Version", f"{was.version if was else 0} to {r['version']}"), ("Accepted on", firm_time.spoken(r["accepted_on"])),
+                ("Start rate", f"{g['start_rate']:.2%}" if g["start_rate"] else "The plan's own"),
+                ("Upper guardrail", f"{g['upper_band']:.0%} above the start rate"), ("Lower guardrail", f"{g['lower_band']:.0%} below it"),
+                ("Cut", f"{g['cut']:.0%}"), ("Raise", f"{g['raise']:.0%}"), ("Inflation after a down year", "Skipped" if g["skip_inflation"] else "Applied"),
+                ("Every other term", "Carried over unchanged"), ("Because", r["reason"]), ("Then", "A new version of the IPS; it changes no spending by itself"),
+                ("Document", r["document"])]
+
+    # ── What an employer's plan gives a person (B-193) ───────────────────────────────────────
+
+    def _benefit_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {k: inputs.get(k) for k in ("person_id", "kind", "employer", "source_document", "match_rate", "match_up_to", "vesting", "annual_deferral",
+                                           "election_year", "payout_start_age", "payout_form", "payout_years")}
+
+    async def read_employer_benefits(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import employer_benefits, markets
+
+        try:
+            employer_benefits.may_read(self.role)
+        except employer_benefits.EmployerBenefitError as exc:
+            raise ExecutorError(str(exc))
+        household_id = _parse_uuid(inputs.get("household_id") or "", "household_id")
+        out = await employer_benefits.for_household(self.session, household_id, firm_id=self.firm_id)
+        if out is None:
+            raise ExecutorError(f"Household {household_id} not found or access denied")
+        say, s = markets.money_for(await self._firm()), out["summary"]
+        out["message"] = (f"{out['household']}: {s['active']} employer benefit(s) on file, {s['matches']} match(es) and {s['deferrals']} deferral(s)"
+                          + (f"; at most {say(s['most_matches_add_a_year'])} a year from the matches with income on file" if s["most_matches_add_a_year"] else "")
+                          + (f"; {s['matches_not_assessed']} match(es) not assessed with no income on file" if s["matches_not_assessed"] else "")
+                          + (f". Nothing on file for {', '.join(out['adults_with_none'])}, which does not mean there is none" if out["adults_with_none"] else "")
+                          + ". None of it moves a plan figure.")
+        return out
+
+    async def record_employer_benefit(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import employer_benefits
+        from app.models.identity import User
+
+        user = await self.session.get(User, self.user_id)
+        try:
+            row = await employer_benefits.record_benefit(self.session, self.firm_id, role=self.role, recorded_by=user.email if user else "unknown",
+                                                         **self._benefit_args(inputs))
+        except employer_benefits.EmployerBenefitError as exc:
+            raise ExecutorError(str(exc))
+        out = await employer_benefits.for_household(self.session, row.household_id, firm_id=self.firm_id)
+        out["message"] = f"Recorded the {row.kind.replace('_', ' ')} with {row.employer}. It moves no plan figure."
+        return out
+
+    async def end_employer_benefit(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import employer_benefits
+        from app.models.identity import User
+
+        user = await self.session.get(User, self.user_id)
+        try:
+            row = await employer_benefits.end_benefit(self.session, self.firm_id, role=self.role, recorded_by=user.email if user else "unknown",
+                                                      benefit_id=inputs.get("benefit_id"), reason=inputs.get("reason"))
+        except employer_benefits.EmployerBenefitError as exc:
+            raise ExecutorError(str(exc))
+        out = await employer_benefits.for_household(self.session, row.household_id, firm_id=self.firm_id)
+        out["message"] = f"Ended the {row.kind.replace('_', ' ')} with {row.employer}; it is kept on file with why."
+        return out
+
+    async def _benefit_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import employer_benefits, markets
+
+        say = markets.money_for(await self._firm())
+        try:
+            if tool_key == "end_employer_benefit":
+                r = await employer_benefits.prepare_end(self.session, self.firm_id, role=self.role, benefit_id=inputs.get("benefit_id"), reason=inputs.get("reason"))
+                b = r["benefit"]
+                return [("Person", r["person"].full_name if r["person"] else None), ("Benefit", b.kind.replace("_", " ").capitalize()), ("Employer", b.employer),
+                        ("Ending because", r["reason"]), ("Then", "Kept on file with why")]
+            r = await employer_benefits.prepare_benefit(self.session, self.firm_id, role=self.role, **self._benefit_args(inputs))
+            match = r["kind"] == "retirement_match"
+            return [("Person", r["person"].full_name), ("Benefit", r["kind"].replace("_", " ").capitalize()), ("Employer", r["employer"]),
+                    ("Employer adds", f"{r['match_rate']:.0%} of what they put in" if match else None),
+                    ("Up to", f"{r['match_up_to']:.1%} of pay" if match else None), ("Vests", r["vesting"]),
+                    ("Deferred a year", say(r["annual_deferral"]) if r["annual_deferral"] else None), ("Elected in", str(r["election_year"]) if r["election_year"] else None),
+                    ("Paid from age", str(r["payout_start_age"]) if r["payout_start_age"] else None),
+                    ("Paid as", (r["payout_form"] or "").replace("_", " ") + (f" over {r['payout_years']} years" if r["payout_years"] else "") if r["payout_form"] else None),
+                    ("Then", "Recorded; it moves no plan figure"), ("Plan document", r["document"])]
+        except employer_benefits.EmployerBenefitError as exc:
+            raise ExecutorError(str(exc))
+
+    # ── What gives a plan a reason to be looked at again, and how fast it was (B-188) ─────────
+
+    async def read_plan_triggers(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import plan_record, plan_triggers
+
+        try:
+            plan_record.may_read(self.role)
+        except plan_record.PlanRecordError as exc:
+            raise ExecutorError(str(exc))
+        if inputs.get("household_id"):
+            household_id = _parse_uuid(inputs["household_id"], "household_id")
+            out = await plan_triggers.for_household(self.session, household_id, firm_id=self.firm_id)
+            if out is None:
+                raise ExecutorError(f"Household {household_id} not found or access denied")
+            s, tier = out["summary"], out["tier"]
+            out["message"] = (
+                f"{out['household']}: {s['triggers']} trigger(s) on file, {s['answered']} answered and {s['open']} open"
+                + (f", the plan touched a median {s['median_days']:g} day(s) after a trigger" if s["median_days"] is not None else "")
+                + (f", the oldest open one waiting {s['longest_open_days']} day(s)" if s["longest_open_days"] is not None else "")
+                + (f". Tier: {tier['label']}, set by {tier['set_by']}" if tier else ". No tier is set")
+                + ". No target is supplied. This decides nothing.")
+            return out
+        out = await plan_triggers.for_firm(self.session, self.firm_id)
+        s = out["summary"]
+        out["message"] = (f"{s['households_with_triggers']} household(s) have a trigger on file: {s['answered']} answered, {s['open']} open"
+                          + (f", a median {s['median_days']:g} day(s) to touch the plan" if s["median_days"] is not None else "")
+                          + (f", the longest open one {s['longest_open_days']} day(s)" if s["longest_open_days"] is not None else "")
+                          + f", and {s['tier_not_set']} with no tier set. No target is supplied.")
+        return out
+
+    async def set_plan_tier(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import plan_triggers
+        from app.models.identity import User
+
+        user = await self.session.get(User, self.user_id)
+        try:
+            row = await plan_triggers.set_tier(self.session, self.firm_id, role=self.role, recorded_by=user.email if user else "unknown",
+                                               household_id=inputs.get("household_id"), tier=inputs.get("tier"), reason=inputs.get("reason"))
+        except plan_triggers.PlanTriggerError as exc:
+            raise ExecutorError(str(exc))
+        out = await plan_triggers.for_household(self.session, row.household_id, firm_id=self.firm_id)
+        out["message"] = f"{out['household']}'s plan is now a {out['tier']['label']}. It changes no plan and no task."
+        return out
+
+    async def _plan_tier_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import plan_triggers
+
+        try:
+            r = await plan_triggers.prepare_tier(self.session, self.firm_id, role=self.role, household_id=inputs.get("household_id"),
+                                                 tier=inputs.get("tier"), reason=inputs.get("reason"))
+        except plan_triggers.PlanTriggerError as exc:
+            raise ExecutorError(str(exc))
+        return [("Client", r["household"].name), ("Plan tier", r["label"].capitalize()), ("Replaces", r["was"].tier.replace("_", " ") if r["was"] else "Not set"),
+                ("Because", r["reason"]), ("Then", "Recorded on the file; it changes no plan and no task")]
 
     # ── The Roth window, year by year (B-190) ───────────────────────────────────────────────
 

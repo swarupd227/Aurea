@@ -15,6 +15,9 @@ import { SocialSecurityCard } from "./SocialSecurityCard";
 import { RothWindowCard } from "./RothWindowCard";
 import { HealthcareCard } from "./HealthcareCard";
 import { GivingCard } from "./GivingCard";
+import { PlanTriggersCard } from "./PlanTriggersCard";
+import { EmployerBenefitsCard } from "./EmployerBenefitsCard";
+import { GuardrailCard } from "./GuardrailCard";
 import { CorporateActionsCard } from "./CorporateActionsCard";
 import { SleevesCard } from "./SleevesCard";
 import { SleeveNettingCard } from "./SleeveNettingCard";
@@ -169,6 +172,18 @@ export function artifactCard(artifact: Artifact) {
       case "revoke_outside_agent":
         if (typeof artifact.result?.label !== "string" || typeof artifact.result?.state !== "string") return null;
         return <OutsideAgentsCard result={artifact.result as any} />;
+      case "run_guardrail_spending":
+        if (typeof artifact.result?.status !== "string") return null;
+        return <GuardrailCard result={artifact.result as any} />;
+      case "read_employer_benefits":
+      case "record_employer_benefit":
+      case "end_employer_benefit":
+        if (!Array.isArray(artifact.result?.benefits)) return null;
+        return <EmployerBenefitsCard result={artifact.result as any} />;
+      case "read_plan_triggers":
+      case "set_plan_tier":
+        if (!Array.isArray(artifact.result?.triggers) && !Array.isArray(artifact.result?.households)) return null;
+        return <PlanTriggersCard result={artifact.result as any} />;
       case "read_giving":
         if (typeof artifact.result?.status !== "string") return null;
         return <GivingCard result={artifact.result as any} />;

@@ -38,7 +38,7 @@ async def read(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: A
 @router.get("/households/{household_id}")
 async def read_household(household_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
                          db: AsyncSession = Depends(get_db)):
-    view = await risk_profile.for_household(db, household_id, firm_id=firm.id)
+    view = await risk_profile.with_need(db, household_id, firm_id=firm.id)
     if view is None:
         raise HTTPException(status_code=404, detail="Household not found.")
     return {**view, "can_decide": user.role == UserRole.ADVISER}

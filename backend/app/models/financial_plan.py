@@ -28,6 +28,8 @@ class IncomeStream(Base):
     name: Mapped[str] = mapped_column(String(200))
     annual_amount: Mapped[float] = mapped_column(Numeric(20, 2))
     start_age: Mapped[int] = mapped_column()
+    # The age it stops being paid (a term annuity, a pension to a set age); None means for life (B-193).
+    end_age: Mapped[int | None] = mapped_column(nullable=True)
     inflation_linked: Mapped[bool] = mapped_column(Boolean, default=False)
     lump_sum: Mapped[float | None] = mapped_column(Numeric(20, 2))          # the pension's cash alternative
     joint_annual: Mapped[float | None] = mapped_column(Numeric(20, 2))      # its joint-life amount

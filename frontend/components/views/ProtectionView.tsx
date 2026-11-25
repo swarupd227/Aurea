@@ -197,6 +197,8 @@ export function ProtectionView({ household = null }: { household?: string | null
                 <option value="long_term_care">Long-term care</option>
                 <option value="critical_illness">Critical illness</option>
                 <option value="personal_accident">Personal accident</option>
+                <option value="umbrella">Umbrella (liability)</option>
+                <option value="property">Property</option>
               </select>
             </label>
             <label className="block">

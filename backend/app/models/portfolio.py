@@ -168,6 +168,9 @@ class InvestmentPolicy(Base):
     max_position: Mapped[float | None] = mapped_column(Numeric(5, 4))  # largest share of any one instrument
     min_cash: Mapped[float | None] = mapped_column(Numeric(5, 4))      # the liquidity floor
     restricted: Mapped[list] = mapped_column(JSON, default=list)       # symbols and values flags
+    # The guardrail spending rule the client agreed, if any (B-180): start rate, guardrails, cut and raise. Terms of the IPS
+    # like the others, carried to the next version unless it gives new ones; nothing acts on it but the run beside fixed spending.
+    guardrail_spending: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # What the mandate said when this was accepted, so a later risk decision shows it is out of date.
     profile: Mapped[dict] = mapped_column(JSON, default=dict)
     document: Mapped[str] = mapped_column(String(300))  # which document these terms come from

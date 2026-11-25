@@ -252,6 +252,11 @@ async def record_grant(session: AsyncSession, person_id: uuid.UUID, *, firm_id: 
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="equity_grant_recorded", actor=by, content={
         "grant_id": str(row.id), "person_id": str(person_id), "kind": row.kind, "units": ready["units"], "document": row.source_document})
+    # A grant is a reason to look at the plan, as a life event is (B-188): one review task, for the recorded adviser.
+    from app.aurea_core import plan_triggers
+    from app.models.graph import Household
+
+    row.review_task = await plan_triggers.raise_for_grant(session, firm_id, await session.get(Household, row.household_id), row)
     return row
 
 

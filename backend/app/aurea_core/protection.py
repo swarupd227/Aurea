@@ -224,6 +224,8 @@ def not_counted_for(kind: str, cover_basis: str | None) -> str | None:
     modelled, so they are listed and never added."""
     if kind == "critical_illness":
         return "critical illness: no need is modelled for it"
+    if kind in ("umbrella", "property"):
+        return f"{kind} cover protects what a household owns, not an earner's life or income, so it is listed and not counted against a gap"
     if kind == "personal_accident" or (cover_basis or "any_cause") == "accident_only":
         return "accident only, so it is not counted against a gap for any cause"
     return None
@@ -272,6 +274,14 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
 
     market = markets.of_household(firm, (brain.get("household") or {}).get("values"))
     rows = [_policy_row(p, names, today, market.code if market else None) for p in policies]
+    # A rider is listed under the base policy it is attached to, as a figure and a kind, never as a policy of its own to count twice.
+    by_id = {r["id"]: r for r in rows}
+    for r in rows:
+        r["riders"] = []
+    for r in rows:
+        if r["rider_of"] in by_id:
+            by_id[r["rider_of"]]["riders"].append({"id": r["id"], "kind": r["kind"], "sum_insured": r["sum_insured"], "annual_benefit": r["annual_benefit"],
+                                                   "status": r["status"], "counted": r["counted"]})
     in_force = [p for p, r in zip(policies, rows) if r["counted"]]
 
     managed = float(brain["totals"]["total_value"])

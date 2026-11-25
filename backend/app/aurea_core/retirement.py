@@ -43,7 +43,8 @@ def _draws(need_today: float, streams: list[dict], *, acc: int, dec: int, inflat
     for y in range(dec):
         t = acc + y
         grow = (1 + inflation) ** t
-        paid = sum(s["annual"] * (grow if s.get("inflation_linked") else 1.0) for s in streams if t >= s["starts_in"])
+        paid = sum(s["annual"] * (grow if s.get("inflation_linked") else 1.0) for s in streams
+                   if t >= s["starts_in"] and (s.get("ends_in") is None or t < s["ends_in"]))
         out.append(max(need_today * grow + float(costs_by_t.get(t, 0.0)) - paid, 0.0))
     return out
 
@@ -76,6 +77,89 @@ def _simulate(
     return {
         "success": float(np.mean(paths > 0)),
         "end": paths, "at_retirement": at_retirement, "depletion": depletion, "balance": balance,
+    }
+
+
+def simulate_guardrails(
+    current_value: float, mu: float, sigma: float, *, acc_years: int, dec_years: int, annual_contribution: float, sims: int,
+    seed: int, inflation: float, terms: dict, start_rate: float,
+) -> dict:
+    """Spending that follows guardrails on the withdrawal rate (B-180), on the same random returns as `_simulate`.
+
+    The first retirement year draws `start_rate` of the pot. After that the draw is last year's, raised with inflation
+    (not after a year the portfolio fell, if the terms say so). Then the rate it would be (the draw over the pot at the
+    start of the year) is read against the start rate: above the upper guardrail the draw is cut, below the lower one it
+    is raised, by the terms' percentages. The draw is the portfolio's; income from guaranteed streams is paid on top and
+    is not governed here. Nothing changes spending by itself: this is a run, beside fixed spending, for the client to see."""
+    rng = np.random.default_rng(seed)
+    paths = np.full(sims, float(current_value))
+    for _ in range(acc_years):
+        shocks = rng.normal(mu, sigma, sims)
+        paths = np.maximum(paths * (1 + shocks) + annual_contribution, 0.0)
+    at_retirement = paths.copy()
+    upper, lower = start_rate * (1 + terms["upper_band"]), start_rate * (1 - terms["lower_band"])
+    draw = np.zeros(sims)
+    prev_return = np.zeros(sims)
+    first = np.zeros(sims)
+    cuts = np.zeros(sims, dtype=int)
+    raises = np.zeros(sims, dtype=int)
+    alive_years = np.zeros(sims, dtype=int)
+    cut_years = np.zeros(sims, dtype=int)
+    lowest = np.ones(sims)
+    depleted = np.full(sims, -1)
+    for y in range(dec_years):
+        pot = paths
+        alive = pot > 0
+        if y == 0:
+            draw = start_rate * pot
+            first = draw.copy()
+        else:
+            draw = np.where(terms["skip_inflation"] & (prev_return < 0), draw, draw * (1 + inflation))
+            rate = np.where(pot > 0, draw / np.where(pot > 0, pot, 1.0), np.inf)
+            cut = alive & (rate > upper)
+            rise = alive & ~cut & (rate < lower)
+            draw = np.where(cut, draw * (1 - terms["cut"]), np.where(rise, draw * (1 + terms["raise"]), draw))
+            cuts += cut
+            raises += rise
+            cut_years += cut
+        alive_years += alive
+        real_ratio = np.where(first > 0, (draw / (1 + inflation) ** y) / np.where(first > 0, first, 1.0), 1.0)
+        lowest = np.where(alive, np.minimum(lowest, real_ratio), lowest)
+        shocks = rng.normal(mu, sigma, sims)
+        prev_return = shocks
+        paths = pot * (1 + shocks) - draw
+        newly = (paths <= 0) & (depleted < 0)
+        depleted = np.where(newly, y, depleted)
+        paths = np.maximum(paths, 0.0)
+    return {"success": float(np.mean(paths > 0)), "at_retirement": at_retirement, "first_draw": first, "cuts": cuts, "raises": raises,
+            "alive_years": alive_years, "cut_years": cut_years, "lowest": lowest, "depleted": depleted, "end": paths}
+
+
+def guardrail_block(*, current_value: float, mu: float, sigma: float, acc: int, dec: int, annual_contribution: float, sims: int, seed: int,
+                    inflation: float, terms: dict, fixed: dict, retirement_age: int) -> dict:
+    """The guardrail run beside the plan's fixed spending: starting income, success, and how often and how deep cuts come."""
+    median_pot = float(np.median(fixed["at_retirement"]))
+    derived = terms.get("start_rate") is None
+    rate = float(terms["start_rate"]) if not derived else (fixed["first_draw"] / median_pot if median_pot > 0 else 0.0)
+    run = simulate_guardrails(current_value, mu, sigma, acc_years=acc, dec_years=dec, annual_contribution=annual_contribution, sims=sims, seed=seed,
+                              inflation=inflation, terms=terms, start_rate=rate)
+    infl_to_ret = (1 + inflation) ** acc
+    n = max(len(run["cuts"]), 1)
+    failed = run["depleted"][run["depleted"] >= 0]
+    alive = np.maximum(run["alive_years"], 1)
+    return {
+        "terms": {**{k: terms[k] for k in ("upper_band", "lower_band", "cut", "raise", "skip_inflation")}, "start_rate": round(rate, 5), "start_rate_derived": derived},
+        "start_draw_today": round(float(np.median(run["first_draw"])) / infl_to_ret),
+        "fixed_draw_today": round(fixed["first_draw"] / infl_to_ret),
+        "success": round(run["success"], 3), "fixed_success": round(fixed["success"], 3),
+        "paths_with_a_cut": round(float(np.mean(run["cuts"] > 0)), 3), "median_cuts": float(np.median(run["cuts"])),
+        "worst_tenth_cuts": float(np.percentile(run["cuts"], 90)), "share_of_years_cut": round(float(np.mean(run["cut_years"] / alive)), 3),
+        "paths_with_a_raise": round(float(np.mean(run["raises"] > 0)), 3),
+        # The lowest the draw fell to in real terms, as a share of the first year's: 1.0 is never below it.
+        "lowest_income_median": round(float(np.median(run["lowest"])), 3), "lowest_income_worst_tenth": round(float(np.percentile(run["lowest"], 10)), 3),
+        "median_depletion_age": int(retirement_age + np.median(failed) + 1) if failed.size else None,
+        "end_balance_today_median": round(float(np.median(run["end"])) / (infl_to_ret * (1 + inflation) ** dec)),
+        "sims": n, "basis": "the same random returns as the plan above; the draw is the portfolio's, guaranteed income is paid on top and not governed",
     }
 
 
@@ -140,6 +224,7 @@ def retirement_plan(
     discount_rate: float | None = None,
     success_ceiling: float | None = None,
     costs_by_t: dict | None = None,
+    guardrails: dict | None = None,
 ) -> dict:
     """Full retirement projection + sustainable income + sequence risk + levers.
 
@@ -160,7 +245,7 @@ def retirement_plan(
     # Guaranteed income paid in the first year of retirement, in today's money: a level stream has lost the
     # inflation between now and then.
     guaranteed_at_ret = sum(s["annual"] * (1.0 if s.get("inflation_linked") else 1 / infl_to_ret)
-                            for s in streams if s["starts_in"] <= acc)
+                            for s in streams if s["starts_in"] <= acc and (s.get("ends_in") is None or s["ends_in"] > acc))
     income_target = draws[0] / infl_to_ret
     income_at_ret = draws[0]
 
@@ -202,6 +287,13 @@ def retirement_plan(
                     first_year_shock=crash_return)
     illustration = sequence_illustration(proj_at_ret, draws, mu=mu, sigma=sigma, retirement_age=retirement_age,
                                          deflator=(1 + inflation) ** (acc + dec))
+
+    # Guardrail spending run beside fixed spending (B-180), only when terms are given: it is a what-if and changes nothing.
+    guardrail = None
+    if guardrails is not None:
+        guardrail = guardrail_block(current_value=current_value, mu=mu, sigma=sigma, acc=acc, dec=dec, annual_contribution=annual_contribution,
+                                    sims=sims, seed=seed, inflation=inflation, terms=guardrails, retirement_age=retirement_age,
+                                    fixed={"at_retirement": base["at_retirement"], "first_draw": draws[0], "success": base["success"]})
 
     # Levers the adviser can pull.
     levers = []
@@ -249,6 +341,7 @@ def retirement_plan(
             "illustration": illustration,
         },
         "levers": levers,
+        **({"guardrails": guardrail} if guardrail is not None else {}),
         "balance_by_age": balance_by_age,
         "assumptions": {
             "expected_return": round(mu, 4), "volatility": round(sigma, 4),
@@ -357,6 +450,7 @@ async def for_household(
         target_success=planning.target_of(brain, "retirement"),
         success_ceiling=planning.ceiling_of(brain), discount_rate=planning.discount_of(brain)[0],
         costs_by_t=(care_years or {}).get("by_t"),
+        guardrails=overrides.get("guardrails"),
     )
     plan["healthcare"] = ({k: v for k, v in care_years.items() if k != "by_t"} if care_years else
                           {"status": "not_assessed", "reason": "The firm has stated no healthcare cost in its planning assumptions."
@@ -368,7 +462,7 @@ async def for_household(
     plan["income_basis"] = "stated" if overrides.get("annual_income") or a.get("annual_income") else "recorded_spending" if recorded else "assumed_draw"
     # Paid by the first year of retirement, in today's money; what starts later is listed at its stated amount.
     plan["guaranteed_income"] = plan["guaranteed_at_retirement"]
-    plan["starts_later"] = round(sum(s["annual"] for s in on_file["streams"] if s["starts_in"] > acc), 2)
+    plan["starts_later"] = round(sum(s["annual"] for s in on_file["streams"] if s["starts_in"] > acc and (s.get("ends_in") is None or s["ends_in"] > acc)), 2)
     plan["money_basis"] = "today"
     # Whose ages these are, and whose plan-to age ends the plan (B-173).
     plan["ages_of"] = adults[0][1] if adults else None

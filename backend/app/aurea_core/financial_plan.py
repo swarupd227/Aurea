@@ -44,7 +44,8 @@ DEFAULT_RESERVE_MONTHS = 6
 RULE_OF_THUMB = 0.04
 PROJECTION_YEARS = 10
 LIFE_TO = 95
-NOT_MODELLED = ["tax_on_income", "survivor_income_drop", "long_term_care", "guardrail_spending"]
+# Guardrail spending is run beside this plan, never in it (B-180): the plan above draws a fixed real income.
+NOT_MODELLED = ["tax_on_income", "survivor_income_drop", "long_term_care", "guardrail_spending_in_the_plan_itself"]
 # The kinds a statement's issuer indexes to prices by law or by practice, so the default is linked (B-212): Social
 # Security's cost-of-living adjustment, and most state pensions. A recorded answer replaces the default.
 LINKED_BY_DEFAULT = ("social_security", "state_pension")
@@ -114,7 +115,9 @@ def _stream_view(s: IncomeStream, person: Person | None, today: date, us: bool, 
     annual = float(s.annual_amount)
     age = _age_on(person.date_of_birth, today) if person else None
     view = {"id": str(s.id), "person_id": str(s.person_id), "person": person.full_name if person else None, "kind": s.kind, "name": s.name, "annual": annual,
-            "start_age": s.start_age, "inflation_linked": s.inflation_linked, "document": s.source_document, "as_of": s.as_of.isoformat(), "started": age is not None and age >= s.start_age,
+            "start_age": s.start_age, "end_age": s.end_age, "inflation_linked": s.inflation_linked, "document": s.source_document, "as_of": s.as_of.isoformat(), "started": age is not None and age >= s.start_age,
+            # Years from today until it stops being paid; None for life, or with no date of birth on file (B-193).
+            "ends_in": max(s.end_age - age, 0) if age is not None and s.end_age else None,
             # Years from today until it is paid, on its own person's age; None with no date of birth on file.
             "starts_in": max(s.start_age - age, 0) if age is not None else None,
             "planned_annual": annual, "claiming": None, "pension_options": None}
@@ -265,10 +268,12 @@ async def retirement_inputs(session: AsyncSession, household_id: uuid.UUID, *, f
     acc = max(retirement_age - current_age, 0)
     # When each is paid, from today, on its own person's age; with no date of birth on file, on the plan's.
     timed = [{"annual": s["planned_annual"], "inflation_linked": bool(s["inflation_linked"]), "name": s["name"], "person": s["person"],
-              "starts_in": s["starts_in"] if s["starts_in"] is not None else max(s["start_age"] - current_age, 0)} for s in streams]
+              "starts_in": s["starts_in"] if s["starts_in"] is not None else max(s["start_age"] - current_age, 0),
+              "ends_in": s["ends_in"] if s.get("ends_in") is not None else (max(s["end_age"] - current_age, 0) if s.get("end_age") else None)} for s in streams]
+    still = lambda s: s["ends_in"] is None or s["ends_in"] > acc  # noqa: E731 - a stream over before retirement counts for nothing
     return {"spending": spending, "debt_payments": debts, "streams": timed, "stream_age_assumed": any(s["starts_in"] is None for s in streams),
-            "guaranteed": round(sum(s["annual"] for s in timed if s["starts_in"] <= acc), 2),
-            "starts_later": round(sum(s["annual"] for s in timed if s["starts_in"] > acc), 2)}
+            "guaranteed": round(sum(s["annual"] for s in timed if s["starts_in"] <= acc and still(s)), 2),
+            "starts_later": round(sum(s["annual"] for s in timed if s["starts_in"] > acc and still(s)), 2)}
 
 
 async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict | None:
@@ -324,7 +329,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
 
 
 async def prepare_stream(session: AsyncSession, person_id: uuid.UUID, *, firm_id: uuid.UUID, kind: str | None, name: str | None, annual_amount, start_age, source_document: str | None,
-                         inflation_linked: bool | None = None, lump_sum=None, joint_annual=None, joint_survivor_share=None) -> dict:
+                         inflation_linked: bool | None = None, lump_sum=None, joint_annual=None, joint_survivor_share=None, end_age=None) -> dict:
     person = await session.get(Person, person_id)
     if person is None or person.firm_id != firm_id or person.household_id is None:
         raise PlanError("Person not found.")
@@ -340,6 +345,16 @@ async def prepare_stream(session: AsyncSession, person_id: uuid.UUID, *, firm_id
         raise PlanError("The starting age must be between 18 and 100.")
     if kind == "social_security" and not 62 <= age <= 70:
         raise PlanError("Social Security is claimed between 62 and 70.")
+    last = None
+    if end_age not in (None, ""):
+        if kind == "social_security":
+            raise PlanError("Social Security is paid for life: it has no ending age.")
+        try:
+            last = int(end_age)
+        except (TypeError, ValueError):
+            raise PlanError("The ending age must be a whole number.")
+        if not age < last <= 110:
+            raise PlanError(f"The ending age must be after the starting age ({age}) and at most 110.")
     if kind in INDIA_STREAM_KINDS:
         firm = await session.get(Firm, firm_id)
         household = await session.get(Household, person.household_id)
@@ -357,7 +372,7 @@ async def prepare_stream(session: AsyncSession, person_id: uuid.UUID, *, firm_id
             raise PlanError(f"The {label} must be a number.")
     if numbers["survivor share"] is not None and not 0 < numbers["survivor share"] <= 1:
         raise PlanError("The survivor share must be above 0% and at most 100%.")
-    return {"person": person, "kind": kind, "name": (name or "").strip() or kind.replace("_", " ").capitalize(), "amount": amount, "age": age, "document": named,
+    return {"person": person, "kind": kind, "name": (name or "").strip() or kind.replace("_", " ").capitalize(), "amount": amount, "age": age, "end_age": last, "document": named,
             # Not said: the kind's default, and the card says it is one (B-212).
             "inflation_linked": linked_default(kind) if inflation_linked is None else bool(inflation_linked),
             "inflation_linked_basis": "default_for_kind" if inflation_linked is None else "stated", "lump_sum": numbers["lump sum"], "joint_annual": numbers["joint-life amount"], "survivor_share": numbers["survivor share"]}
@@ -367,12 +382,12 @@ async def record_stream(session: AsyncSession, person_id: uuid.UUID, *, firm_id:
     ready = await prepare_stream(session, person_id, firm_id=firm_id, **terms)
     firm = await session.get(Firm, firm_id)
     row = IncomeStream(firm_id=firm_id, household_id=ready["person"].household_id, person_id=person_id, kind=ready["kind"], name=ready["name"], annual_amount=ready["amount"],
-                       start_age=ready["age"], inflation_linked=ready["inflation_linked"], lump_sum=ready["lump_sum"], joint_annual=ready["joint_annual"],
+                       start_age=ready["age"], end_age=ready["end_age"], inflation_linked=ready["inflation_linked"], lump_sum=ready["lump_sum"], joint_annual=ready["joint_annual"],
                        joint_survivor_share=ready["survivor_share"], source_document=ready["document"], as_of=firm_time.today(firm), recorded_by=by)
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="income_stream_recorded", actor=by, content={
-        "stream_id": str(row.id), "person_id": str(person_id), "kind": row.kind, "annual": ready["amount"], "start_age": row.start_age, "document": row.source_document,
+        "stream_id": str(row.id), "person_id": str(person_id), "kind": row.kind, "annual": ready["amount"], "start_age": row.start_age, "end_age": row.end_age, "document": row.source_document,
         "inflation_linked": row.inflation_linked, "inflation_linked_basis": ready["inflation_linked_basis"]})
     return row
 

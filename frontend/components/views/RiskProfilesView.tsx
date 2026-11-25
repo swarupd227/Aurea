@@ -17,8 +17,31 @@ function WealthAgainstNeeds({ household }: { household: string }) {
   const { data } = useApi<any>(`/api/risk-profiles/households/${household}`, [household]);
   const w = data?.household_id === household ? data.wealth : null;
   if (!w) return null;
+  const need = data.return_need;
+  const gap = data.people_compared?.gap;
+  const people: any[] = (data.people_compared?.people ?? []).filter((p: any) => p.assessment);
+  const rate = (v: number | null | undefined) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
   return (
     <div className="mt-2 flex flex-wrap gap-1.5" data-testid="risk-wealth">
+      {need && (need.status === "assessed"
+        ? <>
+            <span className="chip tabular-nums text-ink" data-testid="risk-return-need" title={need.basis}>
+              needs ask for {need.already_covered ? "no growth" : need.beyond_reach ? "over 40%" : rate(need.required_return)} a year
+            </span>
+            {need.expected && <span className="chip tabular-nums text-ink-muted">expected {rate(need.expected.compound)}</span>}
+            {need.margin != null && <span className={`chip tabular-nums ${need.margin >= 0 ? "text-ok" : "text-warn"}`}>margin {rate(need.margin)}</span>}
+            <span className="chip text-ink-muted">{need.tiers === "on_file" ? "needs goals" : "goals not tiered · all counted"}</span>
+            {(need.assumed ?? []).map((a: string) => <span key={a} className="chip text-warn">assumed · {a}</span>)}
+          </>
+        : <span className="chip text-warn" data-testid="risk-return-need" title={need.reason}>return need not assessed</span>)}
+      {people.length > 0 && people.map((p: any) => (
+        <span key={p.person_id} className="chip text-ink-muted" data-testid="risk-person">
+          {p.person} · tolerance {p.assessment.tolerance} · capacity {p.assessment.capacity} · {p.assessment.indicated}
+        </span>
+      ))}
+      {gap && <span className={`chip ${gap.indicated ? "text-warn" : "text-ok"}`} data-testid="risk-people-gap">
+        {gap.indicated ? `${gap.indicated} step${gap.indicated > 1 ? "s" : ""} apart${gap.takes_less_risk ? ` · ${gap.takes_less_risk} takes less` : ""}` : "same profile"}
+      </span>}
       <span className="chip text-ink-muted">can draw on {money(w.liquid)}</span>
       <span className="chip text-ink-muted">{w.basis === "assets_only" ? "no debt on file" : `owes ${money(w.owed)}`}</span>
       {w.status === "assessed"

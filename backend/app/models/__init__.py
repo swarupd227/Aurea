@@ -69,3 +69,7 @@ from app.models import compliance_calendar  # noqa: F401,E402
 from app.models import tax_return  # noqa: F401,E402
 # The plan of record: baselines, reviews and deliveries of a household's plan (B-181).
 from app.models import plan_record  # noqa: F401,E402
+# How much of a plan a trigger asks for, set by a person (B-188).
+from app.models import plan_tier  # noqa: F401,E402
+# A retirement match or a deferred compensation election, from the plan document (B-193).
+from app.models import employer_benefit  # noqa: F401,E402

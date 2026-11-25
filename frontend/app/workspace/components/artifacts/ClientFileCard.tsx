@@ -39,6 +39,7 @@ export function ClientFileCard({ result }: { result: any }) {
           </div>
         )}
         {events.slice(0, 3).map((e) => <div key={e.id}><span className="chip text-ink-muted">{said(e.kind)} {reviewDay(e.happened_on)}</span></div>)}
+        {result?.discovery && <DiscoveryChips discovery={result.discovery} />}
       </div>
     </div>
   );
@@ -73,6 +74,23 @@ export function EstateGaps({ gaps }: { gaps: any }) {
         <span className="chip text-ink-muted">not on file is not none</span>
         {(gaps.assumed ?? []).map((a: string) => <span key={a} className="chip text-ink-muted">assumed · {said(a)}</span>)}
       </div>
+    </div>
+  );
+}
+
+/** B-194: what meetings taught the firm, as counts and who is not engaged. The words sit in each chip's title. */
+export function DiscoveryChips({ discovery }: { discovery: any }) {
+  const notes: any[] = discovery?.notes ?? [];
+  const not: string[] = discovery?.not_engaged ?? [];
+  const unknown: string[] = discovery?.engagement_not_recorded ?? [];
+  return (
+    <div className="flex flex-wrap gap-1.5" data-testid="file-discovery">
+      {Object.entries(discovery?.counts ?? {}).filter(([, n]) => (n as number) > 0).map(([k, n]) => (
+        <span key={k} className="chip text-ink-muted">{said(k)} notes · {n as number}</span>
+      ))}
+      {notes.length === 0 && <span className="chip text-ink-muted">no meeting notes</span>}
+      {not.map((n) => <span key={n} className="chip text-warn">not engaged · {n}</span>)}
+      {unknown.length > 0 && <span className="chip text-ink-muted">engagement not recorded · {unknown.join(", ")}</span>}
     </div>
   );
 }

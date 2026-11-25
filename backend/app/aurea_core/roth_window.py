@@ -173,7 +173,7 @@ def income_in(streams: list[dict], dobs: dict, names: dict, year: int, *, today:
     paid, ss, other = [], 0.0, 0.0
     for s in streams:
         dob = dobs.get(s["person_id"])
-        if dob is None or _age(dob, year) < int(s["start_age"]):
+        if dob is None or _age(dob, year) < int(s["start_age"]) or (s.get("end_age") and _age(dob, year) >= int(s["end_age"])):
             continue
         amount = float(s["planned_annual"]) * (1.0 if s.get("inflation_linked") else 1 / (1 + inflation) ** max(year - today.year, 0))
         paid.append({"name": s["name"], "person": names.get(s["person_id"]), "kind": s["kind"], "amount": round(amount, 2)})

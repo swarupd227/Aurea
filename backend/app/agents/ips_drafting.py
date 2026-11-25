@@ -16,13 +16,31 @@ from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
 
 
+def _need_lines(view: dict | None) -> str:
+    """The return the needs goals ask for and, where two people answered for themselves, how far apart they are: facts to
+    state beside the questionnaire, never to resolve (B-178)."""
+    out = ""
+    need = (view or {}).get("return_need") or {}
+    if need.get("status") == "assessed" and need.get("required_return") is not None:
+        out += (f"\n    Return the needs goals ask for: {need['required_return']:.1%} a year compound"
+                + (f"; the current allocation is expected to compound at {need['expected']['compound']:.1%}" if need.get("expected") else ""))
+    elif need.get("status") == "assessed":
+        out += ("\n    Return the needs goals ask for: covered by what is held, at any return considered" if need["already_covered"]
+                else "\n    Return the needs goals ask for: beyond 40% a year")
+    gap = ((view or {}).get("people_compared") or {}).get("gap")
+    if gap:
+        out += (f"\n    {gap['between'][0]} and {gap['between'][1]} answered for themselves: {gap['indicated']} step(s) apart on the profile"
+                + (f", {gap['takes_less_risk']} taking less risk" if gap.get("takes_less_risk") else ""))
+    return out
+
+
 def _assessed(view: dict | None) -> str:
     """The client's scored answers, which are not the same thing as the profile on the mandate."""
     scored = (view or {}).get("assessment") or {}
     if scored.get("status") != "scored":
-        return "No scored questionnaire on file"
+        return "No scored questionnaire on file" + _need_lines(view)
     return (f"Questionnaire: tolerance {scored['tolerance']}, capacity {scored['capacity']}, "
-            f"indicated {scored['indicated']}" + (" (they differ)" if scored.get("tension") else ""))
+            f"indicated {scored['indicated']}" + (" (they differ)" if scored.get("tension") else "") + _need_lines(view))
 
 
 def _policy_line(row: dict) -> str:
@@ -132,7 +150,7 @@ class IPSDraftingAgent(FollowUpOnApproval, BaseAgent):
         for brain in brains:
             hid = brain["household"]["id"]
             household_id = uuid.UUID(str(hid))
-            assessed[hid] = _assessed(await risk_profile.for_household(s, household_id, firm_id=ctx.firm.id))
+            assessed[hid] = _assessed(await risk_profile.with_need(s, household_id, firm_id=ctx.firm.id))
             rows = (await ips.for_household(s, household_id, firm_id=ctx.firm.id) or {}).get("mandates") or []
             policies[hid] = _policy_line(rows[0]) if rows else "No targets on file"
         return {"brains": brains, "assessed": assessed, "policies": policies}

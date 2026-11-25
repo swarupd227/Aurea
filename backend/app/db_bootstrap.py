@@ -254,6 +254,11 @@ async def bootstrap() -> None:
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS external_id VARCHAR(128)"))
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS as_of TIMESTAMPTZ"))
 
+        # B-193: the age an income stream stops being paid. Empty on every stream recorded before, which is for life.
+        await conn.execute(text("ALTER TABLE income_stream ADD COLUMN IF NOT EXISTS end_age INTEGER"))
+        # B-180: the guardrail spending terms a client agreed, on the IPS. Empty on every version recorded before.
+        await conn.execute(text("ALTER TABLE investment_policy ADD COLUMN IF NOT EXISTS guardrail_spending JSON"))
+
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()
         for (firm_id,) in firms:

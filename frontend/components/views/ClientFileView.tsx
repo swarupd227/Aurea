@@ -3,7 +3,7 @@
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
-import { EstateGaps, said } from "@/app/workspace/components/artifacts/ClientFileCard";
+import { DiscoveryChips, EstateGaps, said } from "@/app/workspace/components/artifacts/ClientFileCard";
 import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
@@ -92,6 +92,34 @@ export function ClientFileView({ household = null }: { household?: string | null
           </Card>
         ))}
       </div>
+      {data.discovery && (
+        <Card className="mb-4 overflow-hidden p-0" data-testid="file-discovery-notes">
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border-soft px-4 py-2.5">
+            <div className="mr-auto text-sm font-medium text-ink">Meeting notes</div>
+            <DiscoveryChips discovery={data.discovery} />
+          </div>
+          {data.discovery.notes.length === 0 ? <div className="px-4 py-3"><span className="chip text-ink-muted">none on file</span></div> : (
+            <div className="divide-y divide-border-soft">
+              {data.discovery.notes.map((n: any) => (
+                <div key={n.id} className="flex items-start justify-between gap-3 px-4 py-2" title={n.document}>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm text-ink">{said(n.kind)}</span>
+                      {n.person && <span className="chip text-ink-muted">{n.person}</span>}
+                      {n.engaged != null && <span className={`chip ${n.engaged ? "text-ok" : "text-warn"}`}>{n.engaged ? "engaged" : "not engaged"}</span>}
+                    </div>
+                    {n.text && <div className="mt-0.5 whitespace-pre-wrap text-xs text-ink-muted">{n.text}</div>}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="font-mono text-xs text-ink-muted">{reviewDay(n.met_on)}</div>
+                    <div className="text-xs text-ink-muted">{n.recorded_by}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
       <Card className="overflow-hidden p-0">
         <div className="border-b border-border-soft px-4 py-2.5 text-sm font-medium text-ink">Life events</div>
         {data.events.length === 0 ? <div className="px-4 py-3"><span className="chip text-ink-muted">none on file</span></div> : (

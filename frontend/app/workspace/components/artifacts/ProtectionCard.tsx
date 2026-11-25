@@ -95,7 +95,7 @@ export function money(v: number | null | undefined) {
 }
 
 export const KIND_TEXT: Record<string, string> = {
-  life: "life", tpd: "TPD", income_protection: "income", long_term_care: "care", critical_illness: "critical illness", personal_accident: "personal accident",
+  life: "life", tpd: "TPD", income_protection: "income", long_term_care: "care", critical_illness: "critical illness", personal_accident: "personal accident", umbrella: "umbrella", property: "property",
 };
 
 /** Who a policy pays, as chip text: the nominee as named, or a Married Women's Property Act trust. */

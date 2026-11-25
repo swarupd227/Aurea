@@ -16,6 +16,11 @@ Three estate gaps are read from the same records (B-185). A revocable trust on f
 adult is named, because a will is where a guardian is nominated. And the titling-fix list: each account whose
 registration or beneficiaries disagree with what is on file. They go to the client's recorded adviser as one task, through
 a Confirm card; nothing here retitles an account or changes a designation, and nothing is sent to an attorney.
+
+Discovery notes (B-194) are what a meeting taught the firm: the client's goals as they said them, how they came to their
+money, who else weighs in on their decisions, and whether each adult is engaged in the planning. A person writes each from
+a meeting, named, and it is added and never edited; the latest engagement note on an adult stands. An adult with none is
+"not recorded", which does not mean engaged. They change no figure, and no client tool reads them.
 """
 from __future__ import annotations
 
@@ -27,7 +32,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import firm_time, nominations, registration, tasks
-from app.models.client_file import DOCUMENT_KINDS, LIFE_EVENTS, EstateDocument, LifeEvent, TrustedContact
+from app.models.client_file import DISCOVERY_KINDS, DOCUMENT_KINDS, LIFE_EVENTS, DiscoveryNote, EstateDocument, LifeEvent, TrustedContact
 from app.models.engagement import Task
 from app.models.enums import TaskStatus
 from app.models.graph import Account, AccountBeneficiary, Household, LegalEntity, Mandate, Person
@@ -176,9 +181,31 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     names = {p.id: p.full_name for p in people}
     issues = await _designation_issues(session, firm_id, household_id, people, happened)
     return {"household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "people": _people_view(people, contacts, documents, happened, today),
+            "discovery": await _discovery(session, household_id, people),
             "events": [_event_view(e, today, names) for e in reversed(happened)], "designation_issues": issues,
             "estate_gaps": await _estate_gaps(session, firm_id, household_id, people, documents, issues, today),
-            "review_years": REVIEW_YEARS, "kinds": {"documents": list(DOCUMENT_KINDS), "events": list(LIFE_EVENTS)}}
+            "review_years": REVIEW_YEARS, "kinds": {"documents": list(DOCUMENT_KINDS), "events": list(LIFE_EVENTS), "discovery": list(DISCOVERY_KINDS)}}
+
+
+async def _discovery(session: AsyncSession, household_id: uuid.UUID, people: list[Person]) -> dict:
+    """The meeting notes on file, newest first, and where each adult stands on engagement as the latest note says."""
+    names = {p.id: p.full_name for p in people}
+    notes = (await session.execute(select(DiscoveryNote).where(DiscoveryNote.household_id == household_id)
+                                   .order_by(DiscoveryNote.met_on.desc(), DiscoveryNote.created_at.desc()))).scalars().all()
+    latest: dict = {}
+    for n in notes:                       # newest first, so the first seen stands
+        if n.kind == "engagement" and n.person_id is not None:
+            latest.setdefault(n.person_id, n)
+    engagement = [{"person_id": str(p.id), "person": p.full_name, "engaged": latest[p.id].engaged if p.id in latest else None,
+                   "as_of": latest[p.id].met_on.isoformat() if p.id in latest else None,
+                   "document": latest[p.id].source_document if p.id in latest else None}
+                  for p in people if not p.is_next_gen]
+    return {"notes": [{"id": str(n.id), "kind": n.kind, "met_on": n.met_on.isoformat(), "person": names.get(n.person_id), "engaged": n.engaged,
+                       "text": n.body, "document": n.source_document, "recorded_by": n.recorded_by} for n in notes],
+            "counts": {k: sum(1 for n in notes if n.kind == k) for k in DISCOVERY_KINDS},
+            "engagement": engagement, "not_engaged": [e["person"] for e in engagement if e["engaged"] is False],
+            "engagement_not_recorded": [e["person"] for e in engagement if e["engaged"] is None],
+            "decides": "nothing: these are what a person heard in a meeting, and they change no figure"}
 
 
 def _age(dob: date | None, today: date) -> int | None:
@@ -396,3 +423,54 @@ async def record_event(session: AsyncSession, household_id: uuid.UUID, *, firm_i
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="life_event_recorded", actor=by, content={"household_id": str(household_id), "kind": row.kind, "happened_on": row.happened_on.isoformat()})
     return row
+
+
+async def prepare_discovery(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, kind: str | None, met_on: date | None,
+                            source_document: str | None, body: str | None = None, person_id: uuid.UUID | None = None, engaged: bool | None = None) -> dict:
+    """What recording a meeting note would refuse, refused without writing."""
+    household = await session.get(Household, household_id)
+    if household is None or household.firm_id != firm_id:
+        raise ClientFileError("Household not found.")
+    if kind not in DISCOVERY_KINDS:
+        raise ClientFileError(f"The note must be one of {', '.join(DISCOVERY_KINDS)}.")
+    if met_on is None:
+        raise ClientFileError("Give the date of the meeting.")
+    if met_on > await _today(session, firm_id):
+        raise ClientFileError("A meeting is recorded once it has been held.")
+    person = await session.get(Person, person_id) if person_id else None
+    if person_id and (person is None or person.household_id != household_id):
+        raise ClientFileError("That person is not in this household.")
+    text = (body or "").strip()
+    if len(text) > 2000:
+        raise ClientFileError("A note is at most 2,000 characters; split it into two.")
+    if kind == "engagement":
+        if person is None:
+            raise ClientFileError("Say whose engagement this is.")
+        if person.is_next_gen:
+            raise ClientFileError("Engagement is recorded for an adult in the household.")
+        if engaged is None:
+            raise ClientFileError("Say whether they are engaged in the planning: true or false.")
+    else:
+        if engaged is not None:
+            raise ClientFileError("Only an engagement note says whether someone is engaged.")
+        if len(text) < 5:
+            raise ClientFileError("Write what was said.")
+    was = None
+    if kind == "engagement":
+        was = (await session.execute(select(DiscoveryNote).where(DiscoveryNote.person_id == person.id, DiscoveryNote.kind == "engagement")
+                                     .order_by(DiscoveryNote.met_on.desc(), DiscoveryNote.created_at.desc()).limit(1))).scalars().first()
+    return {"household": household, "person": person, "kind": kind, "day": met_on, "text": text or None, "engaged": engaged,
+            "document": _document(source_document), "was": was}
+
+
+async def record_discovery(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID, by: str, **terms) -> DiscoveryNote:
+    ready = await prepare_discovery(session, household_id, firm_id=firm_id, **terms)
+    row = DiscoveryNote(firm_id=firm_id, household_id=household_id, person_id=ready["person"].id if ready["person"] else None, kind=ready["kind"],
+                        body=ready["text"], engaged=ready["engaged"], met_on=ready["day"], source_document=ready["document"], recorded_by=by)
+    session.add(row)
+    await session.flush()
+    # The ledger names the note and who it is about, never its words: a note may hold what a client would not want repeated.
+    await ledger.append_entry(session, firm_id=firm_id, event_type="discovery_note_recorded", actor=by, content={
+        "household_id": str(household_id), "kind": row.kind, "met_on": row.met_on.isoformat(), "person_id": str(row.person_id) if row.person_id else None})
+    return row
+

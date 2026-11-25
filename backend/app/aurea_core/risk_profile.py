@@ -244,6 +244,50 @@ async def wealth_against_needs(session: AsyncSession, household_id: uuid.UUID, *
             "debt_payments": flow["debt_payments"], "years_covered": round(free / (spending + flow["debt_payments"]), 1) if spending else None, "basis": sheet["basis"]}
 
 
+async def people_compared(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict:
+    """Each person's own latest questionnaire side by side, and how far apart they are (B-178). A household's answers stand
+    for a person who has not been asked for themselves, so only those asked alone are compared; it changes nothing."""
+    people = (await session.execute(select(Person).where(Person.household_id == household_id, Person.firm_id == firm_id,
+                                                         Person.is_next_gen.is_(False)).order_by(Person.full_name))).scalars().all()
+    rows = []
+    for p in people:
+        row = (await session.execute(select(RiskAssessment).where(RiskAssessment.firm_id == firm_id, RiskAssessment.person_id == p.id)
+                                     .order_by(RiskAssessment.completed_at.desc(), RiskAssessment.created_at.desc()).limit(1))).scalars().first()
+        view = _assessment_view(row) if row is not None and row.indicated else None
+        rows.append({"person_id": str(p.id), "person": p.full_name, "assessment": view})
+    scored = [r for r in rows if r["assessment"]]
+    out = {"people": rows, "asked_alone": len(scored), "adults": len(rows), "decides": "nothing: two people's answers set side by side, for an adviser to talk through"}
+    if len(scored) < 2:
+        out["gap"] = None
+        out["reason"] = ("Only one adult has been asked for themselves." if len(scored) == 1 else "No adult has been asked for themselves.") \
+            + " The household's own answers stand for the rest."
+        return out
+    a, b = scored[0], scored[1]
+    steps = lambda x, y, order: abs(order.index(x) - order.index(y))  # noqa: E731
+    gap = {"between": [a["person"], b["person"]],
+           "tolerance": steps(a["assessment"]["tolerance"], b["assessment"]["tolerance"], PROFILES),
+           "capacity": steps(a["assessment"]["capacity"], b["assessment"]["capacity"], CAPACITIES),
+           "indicated": steps(a["assessment"]["indicated"], b["assessment"]["indicated"], PROFILES)}
+    lower = [r for r in (a, b) if r["assessment"]["indicated"] == min((a, b), key=lambda r: PROFILES.index(r["assessment"]["indicated"]))["assessment"]["indicated"]]
+    gap["takes_less_risk"] = lower[0]["person"] if gap["indicated"] and len(lower) == 1 else None
+    out["gap"] = gap
+    if len(scored) > 2:
+        out["not_compared"] = [r["person"] for r in scored[2:]]
+    return out
+
+
+async def with_need(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict | None:
+    """One household's read with the return its needs require and its two people's answers beside it (B-178). Each is
+    figures only and none moves a profile or a mandate."""
+    from app.aurea_core import return_need
+
+    view = await for_household(session, household_id, firm_id=firm_id)
+    if view is None:
+        return None
+    return {**view, "return_need": await return_need.for_household(session, household_id, firm_id=firm_id),
+            "people_compared": await people_compared(session, household_id, firm_id=firm_id)}
+
+
 async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict | None:
     """One household's latest answers and how each mandate compares, or None if it is not in this firm."""
     views = await _views(session, firm_id, household_id)

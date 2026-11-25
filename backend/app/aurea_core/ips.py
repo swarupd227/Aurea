@@ -94,7 +94,8 @@ def _terms_view(p: InvestmentPolicy) -> dict:
         "targets": {c: float(w) for c, w in (p.targets or {}).items()}, "drift_band": float(p.drift_band),
         "max_position": float(p.max_position) if p.max_position is not None else None,
         "min_cash": float(p.min_cash) if p.min_cash is not None else None,
-        "restricted": list(p.restricted or []), "profile": dict(p.profile or {}), "document": p.document,
+        "restricted": list(p.restricted or []), "guardrail_spending": dict(p.guardrail_spending) if p.guardrail_spending else None,
+        "profile": dict(p.profile or {}), "document": p.document,
         "reason": p.reason, "source": p.source, "recorded_by": p.recorded_by, "recorded_by_role": p.recorded_by_role,
     }
 
@@ -354,7 +355,7 @@ def _targets(given: dict) -> dict[str, float]:
 
 async def prepare_record(session: AsyncSession, mandate_id: uuid.UUID, *, firm_id: uuid.UUID, accepted_on: date | None,
                          document: str | None, targets: dict | None = None, drift_band=None, max_position=None,
-                         min_cash=None, restricted: list | None = None, reason: str | None = None) -> dict:
+                         min_cash=None, restricted: list | None = None, reason: str | None = None, guardrail_spending: dict | None = None) -> dict:
     """Everything recording would refuse, refused without writing, so a Confirm card that would only
     fail is not shown. Left out, the targets and band are the model's and the restrictions the mandate's
     exclusions; the limits have no default, because only the document can say what they are."""
@@ -397,10 +398,21 @@ async def prepare_record(session: AsyncSession, mandate_id: uuid.UUID, *, firm_i
     if ceiling is not None and weights.get("equity", 0.0) > ceiling:
         raise IpsError(f"An equity target of {weights['equity']:.0%} is above the {ceiling:.0%} ceiling for {capacity} capacity.")
 
+    # The guardrail spending rule (B-180): new terms replace the last, and with none given the last carry over.
+    guard = None
+    if guardrail_spending:
+        from app.aurea_core import guardrails
+
+        try:
+            guard = guardrails.clean(guardrail_spending)
+        except guardrails.GuardrailError as exc:
+            raise IpsError(str(exc))
+    elif was is not None and was.guardrail_spending:
+        guard = dict(was.guardrail_spending)
     ready = {"mandate": mandate, "accepted_on": accepted_on, "document": named, "targets": weights, "drift_band": band,
-             "max_position": limit, "min_cash": floor, "restricted": barred, "reason": why, "was": was,
+             "max_position": limit, "min_cash": floor, "restricted": barred, "reason": why, "was": was, "guardrail_spending": guard,
              "version": (was.version if was else 0) + 1, "profile": {"risk_profile": profile, "capacity_for_loss": capacity}}
-    if was and all((_terms_view(was)[k]) == ready[k] for k in ("targets", "drift_band", "max_position", "min_cash", "restricted")):
+    if was and all((_terms_view(was)[k]) == ready[k] for k in ("targets", "drift_band", "max_position", "min_cash", "restricted", "guardrail_spending")):
         raise IpsError(f"These are the terms of version {was.version}.")
     return ready
 
@@ -409,16 +421,17 @@ def _row(ready: dict, *, firm_id: uuid.UUID, by: str, role: str, source: str) ->
     return InvestmentPolicy(
         firm_id=firm_id, mandate_id=ready["mandate"].id, version=ready["version"], accepted_on=ready["accepted_on"],
         targets=ready["targets"], drift_band=ready["drift_band"], max_position=ready["max_position"],
-        min_cash=ready["min_cash"], restricted=ready["restricted"], profile=ready["profile"], document=ready["document"],
+        min_cash=ready["min_cash"], restricted=ready["restricted"], guardrail_spending=ready["guardrail_spending"], profile=ready["profile"], document=ready["document"],
         reason=ready["reason"], source=source, recorded_by=by, recorded_by_role=role)
 
 
 async def record(session: AsyncSession, mandate_id: uuid.UUID, *, firm_id: uuid.UUID, accepted_on: date | None,
                  document: str | None, by: str, role: str, targets: dict | None = None, drift_band=None,
-                 max_position=None, min_cash=None, restricted: list | None = None, reason: str | None = None) -> dict:
+                 max_position=None, min_cash=None, restricted: list | None = None, reason: str | None = None,
+                 guardrail_spending: dict | None = None) -> dict:
     ready = await prepare_record(session, mandate_id, firm_id=firm_id, accepted_on=accepted_on, document=document,
                                  targets=targets, drift_band=drift_band, max_position=max_position, min_cash=min_cash,
-                                 restricted=restricted, reason=reason)
+                                 restricted=restricted, reason=reason, guardrail_spending=guardrail_spending)
     policy = _row(ready, firm_id=firm_id, by=by, role=str(role), source="recorded")
     session.add(policy)
     await session.flush()
@@ -426,7 +439,7 @@ async def record(session: AsyncSession, mandate_id: uuid.UUID, *, firm_id: uuid.
         "policy_id": str(policy.id), "mandate_id": str(mandate_id), "version": policy.version,
         "accepted_on": policy.accepted_on.isoformat(), "targets": policy.targets, "drift_band": ready["drift_band"],
         "max_position": ready["max_position"], "min_cash": ready["min_cash"], "restricted": ready["restricted"],
-        "document": ready["document"], "reason": ready["reason"],
+        "guardrail_spending": ready["guardrail_spending"], "document": ready["document"], "reason": ready["reason"],
     })
     return {**await for_mandate(session, mandate_id, firm_id=firm_id), "version": policy.version}
 
@@ -491,3 +504,35 @@ async def withdraw(session: AsyncSession, recommendation_id: uuid.UUID, *, firm_
             "recommendation_id": str(recommendation_id),
         })
     return len(rows)
+
+
+def _guardrail_carry(was: InvestmentPolicy) -> dict:
+    """What a new version that only adds guardrail terms carries over from the one in force: every other term as it stands."""
+    return {"targets": {c: float(w) for c, w in (was.targets or {}).items()}, "drift_band": float(was.drift_band),
+            "max_position": float(was.max_position) if was.max_position is not None else None,
+            "min_cash": float(was.min_cash) if was.min_cash is not None else None, "restricted": list(was.restricted or [])}
+
+
+async def prepare_guardrails(session: AsyncSession, mandate_id: uuid.UUID, *, firm_id: uuid.UUID, accepted_on: date | None, document: str | None,
+                             terms: dict | None, reason: str | None) -> dict:
+    """What recording the guardrail terms the client agreed would refuse, refused without writing. They are terms of the IPS, so
+    the IPS in force must exist, and recording them is a new version carrying every other term over unchanged."""
+    was = await in_force(session, mandate_id)
+    if was is None:
+        raise IpsError("This mandate has no IPS in force. Record the IPS first: guardrail terms are terms of it.")
+    if not terms:
+        raise IpsError("Give the terms the client agreed: the upper and lower guardrails, the cut and the raise, and the start rate if the IPS sets one.")
+    return await prepare_record(session, mandate_id, firm_id=firm_id, accepted_on=accepted_on, document=document, reason=reason,
+                                guardrail_spending=terms, **_guardrail_carry(was))
+
+
+async def record_guardrails(session: AsyncSession, mandate_id: uuid.UUID, *, firm_id: uuid.UUID, accepted_on: date | None, document: str | None,
+                            by: str, role: str, terms: dict | None, reason: str | None) -> dict:
+    was = await in_force(session, mandate_id)
+    if was is None:
+        raise IpsError("This mandate has no IPS in force. Record the IPS first: guardrail terms are terms of it.")
+    if not terms:
+        raise IpsError("Give the terms the client agreed: the upper and lower guardrails, the cut and the raise, and the start rate if the IPS sets one.")
+    return await record(session, mandate_id, firm_id=firm_id, accepted_on=accepted_on, document=document, by=by, role=role, reason=reason,
+                        guardrail_spending=terms, **_guardrail_carry(was))
+
