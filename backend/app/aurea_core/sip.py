@@ -20,7 +20,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, licences, markets, shelf
+from app.aurea_core import firm_time, licences, markets, shelf, sip_mandates
 from app.models.graph import Account, Mandate
 from app.models.portfolio import Instrument
 from app.models.sip import Sip
@@ -175,6 +175,15 @@ async def run_due(session: AsyncSession, firm: Firm, today: date | None = None) 
         try:
             _, mandate = await _account_mandate(session, firm, row.account_id)
             await _may_buy(session, firm, mandate, inst)
+            # The debit mandate behind the SIP (B-295): one that lapsed, expired or is below the instalment is the reason it is missed. None on file
+            # is a warning on the SIP and not a no, because SIPs recorded before mandates were a record went ahead.
+            behind = await sip_mandates.for_sip(session, row, today) if sip_mandates.applies(firm) else None
+            if behind and behind["row"] is not None:
+                unfit = sip_mandates.reason_unfit(behind["row"], float(row.amount), today)
+                if unfit:
+                    raise SipError(unfit)
+            elif behind:
+                entry["warning"] = "mandate not on file"
             spendable = float(account.cash_balance or 0) - (await cash_movement.held_back(session, firm, mandate))["total"]
             if spendable < float(row.amount):
                 raise SipError(f"short of cash: {markets.money_for(firm)(max(spendable, 0))} free for a "
@@ -217,6 +226,7 @@ def _row(row: Sip, inst: Instrument | None, account: Account | None, firm: Firm,
         "bought": sum(1 for h in (row.history or []) if h.get("status") == "bought"),
         "units": round(sum(float(h.get("units") or 0) for h in (row.history or []) if h.get("status") == "bought"), 3),
         "last": last,
+        "mandate": None,
     }
 
 
@@ -232,6 +242,11 @@ async def for_firm(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
     today = firm_time.today(firm)
     out = [_row(r, await session.get(Instrument, r.instrument_id), await session.get(Account, r.account_id), firm, today)
            for r in rows]
+    if sip_mandates.applies(firm):
+        for view, r in zip(out, rows):
+            behind = await sip_mandates.for_sip(session, r, today)
+            view["mandate"] = {"state": behind["state"], "label": behind["label"], "warning": behind["warning"],
+                               "reference": behind["row"].reference if behind["row"] else None}
     return {"sips": out, "currency": firm.base_currency, "today": today.isoformat(),
             "active": sum(1 for r in out if r["status"] == "active"),
             "monthly": round(sum(r["amount"] for r in out if r["status"] == "active"), 2)}

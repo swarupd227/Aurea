@@ -228,6 +228,15 @@ async def settle(
             raise SettlementError(
                 f"Sale of {qty} exceeds the {_d(holding.quantity)} held"
             )
+        # Units a lender holds a lien on are not the account's to sell (B-296): the last line, behind the guard and the rebalancer.
+        from app.aurea_core import pledges
+        from app.models.tenant import Firm
+
+        firm = await session.get(Firm, order.firm_id)
+        under_lien = (await pledges.pledged_units(session, order.firm_id, order.account_id, order.instrument_id)) if pledges.in_force(firm) else 0.0
+        if under_lien > 0 and qty > _d(holding.quantity) - _d(under_lien):
+            raise SettlementError(f"{under_lien:g} of the {_d(holding.quantity)} held is pledged to a lender, so only "
+                                  f"{pledges.sellable(float(holding.quantity), under_lien):g} can be sold")
         lots = (await session.execute(
             select(TaxLot).where(TaxLot.holding_id == holding.id)
         )).scalars().all()

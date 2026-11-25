@@ -488,6 +488,16 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_governance":
     case "record_governance_policy":
     case "record_counsel_review":
+    case "read_lrs":
+    case "record_lrs_remittance":
+    case "read_sip_mandates":
+    case "record_sip_mandate":
+    case "read_india_savings":
+    case "record_savings_holding":
+    case "read_pledges":
+    case "record_pledge":
+    case "read_tax_habits":
+    case "record_tax_gift":
     case "read_ticket_gates":
     case "read_accredited_investors":
     case "record_accredited_investor":

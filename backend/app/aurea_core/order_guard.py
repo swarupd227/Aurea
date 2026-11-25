@@ -6,6 +6,9 @@ account can do, whether the client is leaving, what the mandate excludes, the cl
 market, and the household's tax window. The rules stay
 in their own modules, so a direct order and the rebalancer cannot come to read them differently.
 
+Two more read India's own facts: a sale that needs units a lender holds a lien on (`pledges`, B-296), and a buy of an overseas product against
+the person's remittance headroom for the financial year (`lrs`, B-293).
+
 A refusal covers the whole set, as it does at approval: a set is read as a whole, and a sale may be funding
 a buy. An Indian rebuy after a loss is a flag, not a refusal, as it is on a proposal.
 """
@@ -17,7 +20,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import cash_movement, exits, firm_time, guardianship, harvest_guard, ips, kyc_india, product_fit, product_gates, shelf, wash_sale
+from app.aurea_core import cash_movement, exits, firm_time, guardianship, harvest_guard, ips, kyc_india, lrs, pledges, product_fit, product_gates, shelf, wash_sale
 from app.aurea_core import orders as order_engine
 from app.aurea_core.equity_comp import CONCENTRATED
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX
@@ -122,6 +125,10 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
 
     filling = [o for o in orders if o["symbol"] not in unpriced]
     refused = await _estimate_sales(session, firm, account, [o for o in filling if o["side"] == "sell"])
+    # Units a lender holds a lien on cannot be sold (B-296); a buy of an overseas product reads the year's remittance headroom (B-293).
+    refused += await pledges.order_refusals(session, firm, account, [o for o in filling if o["side"] == "sell"])
+    lrs_refused, notes = await lrs.order_review(session, firm, mandate, filling, instruments)
+    refused += lrs_refused
     refused += _cash_short(account, filling, (await cash_movement.held_back(session, firm, mandate))["total"])
 
     policy, breaches = await ips.orders_against(session, mandate, firm=firm, orders=[
@@ -160,4 +167,4 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
         flags = harvest_guard.flags(filling, rules)
     refused += [_wash_said(c) for c in wash_sale.conflicts(filling, await wash_sale.guard(session, firm, mandate, today=today))]
     return {"refused": refused, "flags": flags, "policy": policy, "watched": watched, "concentrated": concentrated,
-            "outside_target_market": outside}
+            "outside_target_market": outside, "notes": notes}

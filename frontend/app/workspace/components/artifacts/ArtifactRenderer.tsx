@@ -41,6 +41,7 @@ import { PolishCard } from "./PolishCard";
 import { GovernanceCard } from "./GovernanceCard";
 import { IndiaGatesCard } from "./IndiaGatesCard";
 import { IndiaChannelsCard } from "./IndiaChannelsCard";
+import { IndiaBatchACard } from "./IndiaBatchACard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
@@ -511,6 +512,19 @@ export function artifactCard(artifact: Artifact) {
       case "record_esigned_agreement":
         if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.items) && artifact.result?.applies !== false) return null;
         return <IndiaChannelsCard result={artifact.result as any} />;
+      case "read_lrs":
+      case "record_lrs_remittance":
+      case "read_sip_mandates":
+      case "record_sip_mandate":
+      case "read_india_savings":
+      case "record_savings_holding":
+      case "read_pledges":
+      case "record_pledge":
+      case "read_tax_habits":
+      case "record_tax_gift":
+        if (!Array.isArray(artifact.result?.people) && !Array.isArray(artifact.result?.mandates) && !Array.isArray(artifact.result?.holdings)
+            && !Array.isArray(artifact.result?.pledges) && !Array.isArray(artifact.result?.gain_harvest) && artifact.result?.applies !== false) return null;
+        return <IndiaBatchACard result={artifact.result as any} />;
       case "check_advertising":
         if (!Array.isArray(artifact.result?.findings) && artifact.result?.applies !== false) return null;
         return <AdvertisingCard result={artifact.result as any} />;

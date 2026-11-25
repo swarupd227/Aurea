@@ -312,7 +312,7 @@ async def main() -> int:
             out = await ex["adv"].record_tax_loss(loss)
             check("recorded", (out["taxpayers"][0]["name"], out["taxpayers"][0]["available"]["long_term"]), ("Asha Rao", 150000.0))
             read = await ex["pm"].read_india_tax_records({})
-            check("the portfolio team reads the records and the table", (len(read["taxpayers"]), len(read["asset_classes"])), (1, 11))
+            check("the portfolio team reads the records and the table", (len(read["taxpayers"]), len(read["asset_classes"])), (1, 12))
     finally:
         await db.dispose()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")

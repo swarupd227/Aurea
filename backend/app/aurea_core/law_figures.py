@@ -444,6 +444,81 @@ ALL: tuple[LawFigure, ...] = (
     LawFigure("in_ia_deposit_liquid_funds", "Investment Adviser: the refundable deposit with IAASB may be held in liquid or overnight mutual funds", None, "rule",
               "SEBI circular of August 2025 on the Investment Adviser deposit, as read in the L100 India edition (Nov 2026) section 4.2; the "
               "circular was not re-read", date(2026, 11, 25), applies_from=date(2025, 8, 1)),
+    # ── India: the L100 batch A items (B-293, B-295, B-296, B-299). The L100 edition states the LRS limit and says to verify the tax
+    # collected at source, so those are ASSUMED here from the Finance Act 2025 as understood and stand "not reviewed" in the counsel
+    # tracker until compliance records counsel's reading. None was re-read against its source on 25 Nov 2026.
+    LawFigure("in_lrs_limit_usd", "Liberalised Remittance Scheme: the most a resident individual may remit abroad in a financial year", 250_000, "USD",
+              "RBI Master Direction on the Liberalised Remittance Scheme under FEMA, as read in the L100 India edition (Nov 2026) section 7 (international "
+              "investing); the direction was not re-read", date(2026, 11, 25)),
+    LawFigure("in_lrs_tcs_threshold", "Tax collected at source on a remittance under the Scheme: it starts above this much remitted by a person in a financial year", 1_000_000, "INR",
+              "ASSUMED: the Income-tax Act's tax-collected-at-source provision for remittances (1961 Act s.206C(1G)) as amended by the Finance Act 2025, "
+              "which raised it to Rs 10 lakh; the L100 India edition (section 7) says the rules were revised in recent Budgets and to verify current rates; "
+              "the February 2026 Budget and the Income-tax Act 2025's renumbered section were not read", date(2026, 11, 25)),
+    LawFigure("in_lrs_tcs_rate_other", "Tax collected at source on a remittance under the Scheme above the threshold, for investment, gifts and other purposes", 0.20, "rate",
+              "ASSUMED: as for in_lrs_tcs_threshold (Finance Act 2025 as understood; the L100 edition says to verify current rates); the Budget of "
+              "February 2026 was not read", date(2026, 11, 25)),
+    LawFigure("in_lrs_tcs_rate_edu_medical", "Tax collected at source above the threshold, for education and medical treatment", 0.05, "rate",
+              "ASSUMED: as for in_lrs_tcs_threshold; shown for a remittance's own purpose, never applied to an order; the February 2026 Budget was not read",
+              date(2026, 11, 25)),
+    LawFigure("in_lrs_tcs_rate_edu_loan", "Tax collected at source above the threshold, for education financed by a loan from a specified institution", 0.005, "rate",
+              "ASSUMED: as for in_lrs_tcs_threshold; shown for a remittance's own purpose, never applied to an order; the February 2026 Budget was not read",
+              date(2026, 11, 25)),
+    LawFigure("in_upi_autopay_limit_mf", "A UPI Autopay mandate for mutual-fund subscriptions: the most a single debit may be without a further authentication", 100_000, "INR",
+              "ASSUMED: RBI's e-mandate framework as raised in December 2023 for mutual funds, insurance premium and credit-card payments, as understood; "
+              "not read in the L100 India edition and not re-read; a bank's own limit may be lower", date(2026, 11, 25)),
+    LawFigure("in_ppf_rule", "Public Provident Fund: 15-year term, up to Rs 1.5 lakh a year, rate set by the Government each quarter; interest and maturity are tax-free", None, "rule",
+              "Public Provident Fund Scheme 2019 and the Income-tax Act's exempt-exempt-exempt treatment, as understood; L100 India edition section 7 names the scheme and "
+              "says its rates are administratively set; neither was re-read", date(2026, 11, 25)),
+    LawFigure("in_ssy_rule", "Sukanya Samriddhi Account: a girl child under 10, up to Rs 1.5 lakh a year for 15 years, matures 21 years after opening; interest tax-free", None, "rule",
+              "Sukanya Samriddhi Account Rules 2016, as understood; L100 India edition section 7 names the scheme; not re-read", date(2026, 11, 25)),
+    LawFigure("in_scss_rule", "Senior Citizens' Savings Scheme: age 60 or over, up to Rs 30 lakh, five-year term; interest is taxable", None, "rule",
+              "Senior Citizens' Savings Scheme Rules 2019 as amended in 2023, as understood; L100 India edition section 7 names the scheme; not re-read", date(2026, 11, 25)),
+    LawFigure("in_nsc_rule", "National Savings Certificate: five-year term; interest is taxable and treated as reinvested each year", None, "rule",
+              "National Savings Certificates (VIII Issue) Rules 2019, as understood; L100 India edition section 7 names the scheme; not re-read", date(2026, 11, 25)),
+    LawFigure("in_nps_rule", "National Pension System: locked in to age 60; at exit 60% may be taken as a lump sum, tax-free, and 40% must buy an annuity", None, "rule",
+              "PFRDA regulations as stated in the L100 India edition (Nov 2026) section 7; the regulations and the tax treatment of the lump sum were not re-read",
+              date(2026, 11, 25)),
+    LawFigure("in_epf_rule", "Employees' Provident Fund: interest is tax-free on yearly employee contributions up to Rs 2.5 lakh (Rs 5 lakh with no employer contribution); "
+              "interest on the part above is taxable", None, "rule",
+              "ASSUMED: the Income-tax Act's treatment of interest on provident fund contributions as amended in 2021, as understood; L100 India edition section 7 names the "
+              "fund as the payroll default beside NPS; not re-read", date(2026, 11, 25)),
+    LawFigure("in_gsec_rule", "RBI Retail Direct: an individual buys government securities directly, in lots of Rs 10,000 and multiples; interest is taxable at slab", None, "rule",
+              "RBI Retail Direct scheme (2021) as understood and as named in the L100 India edition section 7; the lot size and the tax were not re-read", date(2026, 11, 25)),
+    LawFigure("in_mld_rule", "Market-linked debentures: a gain is short-term whatever the holding period, taxed at slab", None, "rule",
+              "Income-tax Act's deemed short-term treatment of market-linked debentures from April 2023, as stated in the L100 India edition (Nov 2026) section 7; "
+              "tax_india.NEVER_LONG already holds the class; not re-read", date(2026, 11, 25)),
+    LawFigure("in_reit_invit_rule", "REIT and InvIT units: a gain on listed units is taxed as listed equity (STT paid); the distributions are taxed by what they are made of", None, "rule",
+              "Income-tax Act 2025 as read for in_cg_equity_lt_rate for the units' gain; the character of a distribution (interest, rent, dividend, return of capital) "
+              "was not read and is not modelled", date(2026, 11, 25)),
+    LawFigure("in_sgb_rule", "Sovereign Gold Bonds: an eight-year term with exit from the fifth year, 2.5% interest taxable; a gain on redemption at maturity is exempt for an individual; "
+              "new issuance has been discontinued", None, "rule",
+              "ASSUMED: the Sovereign Gold Bond Scheme and the Income-tax Act's exemption on redemption, as understood; the L100 India edition (section 7) says fresh issuance "
+              "has been discontinued and to verify current status; neither was re-read", date(2026, 11, 25)),
+    LawFigure("in_ulip_lock_in_years", "A unit-linked insurance policy is locked in for this many years", 5, "count",
+              "IRDAI regulations on linked insurance products, as understood and as named in the L100 India edition section 7 (insurance products); not re-read", date(2026, 11, 25)),
+    LawFigure("in_ulip_fmc_cap", "A unit-linked insurance policy: the fund management charge is at most this share of the fund a year", 0.0135, "rate",
+              "ASSUMED: IRDAI's cap on the fund management charge, as understood; the L100 India edition names ULIP economics as a deeper topic and was not the source; not re-read",
+              date(2026, 11, 25)),
+    LawFigure("in_pledge_rule", "A loan against securities: the lender marks a lien on the units at the depository or the registrar, and a unit under lien cannot be sold or transferred", None, "rule",
+              "Depositories Act and the depositories' bye-laws on pledge, and the L100 India edition (Nov 2026) section 7 on loans against securities; not re-read", date(2026, 11, 25)),
+    LawFigure("in_dividend_tds_threshold", "Tax deducted at source on dividends: a company deducts only when what it pays one shareholder in a year goes above this", 10_000, "INR",
+              "ASSUMED: the Income-tax Act's dividend provision (1961 Act s.194) as raised by the Finance Act 2025; the L100 India edition (Nov 2026) section 8.1 says only "
+              "'a small threshold'; not re-read", date(2026, 11, 25)),
+    LawFigure("in_dividend_tds_rate", "Tax deducted at source on a dividend paid to a resident, rate", 0.10, "rate",
+              "ASSUMED: the Income-tax Act's dividend provision (1961 Act s.194) as understood; the L100 India edition section 8.1 says dividends are taxed at slab with TDS above "
+              "a small threshold; not re-read", date(2026, 11, 25)),
+    LawFigure("in_clubbing_minor_exemption", "Income of a minor child clubbed with a parent: an exemption of this much for each child", 1_500, "INR",
+              "Income-tax Act 1961 s.10(32), as understood; the Income-tax Act 2025's renumbered section was not read", date(2026, 11, 25)),
+    LawFigure("in_clubbing_rule", "Income from an asset a person gave a spouse, or a minor child, without adequate consideration is added to the giver's income "
+              "(a minor child's, to the parent whose income is higher)", None, "rule",
+              "Income-tax Act 1961 s.64(1)(iv) and s.64(1A), as understood; the L100 India edition (section 8.3) names the gift exemption and not this rule; the Income-tax "
+              "Act 2025's renumbered sections were not read", date(2026, 11, 25)),
+    LawFigure("in_gift_relative_exempt", "A gift from a specified relative is not income in the receiver's hands; the relatives are a spouse, a brother or sister of the receiver "
+              "or of the receiver's spouse, a brother or sister of either parent, and a lineal ascendant or descendant of the receiver or of the receiver's spouse, and their spouses", None, "rule",
+              "Income-tax Act 1961 s.56(2)(x) and its definition of relative, as understood; the L100 India edition (Nov 2026) section 8.3 says gifts between specified relatives "
+              "are exempt; the Income-tax Act 2025's renumbered sections were not read", date(2026, 11, 25)),
+    LawFigure("in_gift_other_threshold", "A gift from anyone else is income in the receiver's hands only when what they received in the year goes above this", 50_000, "INR",
+              "Income-tax Act 1961 s.56(2)(x), as understood; the Income-tax Act 2025's renumbered section was not read", date(2026, 11, 25)),
 )
 
 VERSIONS: dict[str, tuple[LawFigure, ...]] = {}

@@ -896,3 +896,173 @@ async def india_stack_view(user: User = ReaderDep, firm: Firm = Depends(current_
     from app.aurea_core import india_stack
 
     return await india_stack.overview(db, firm)
+# ── India, batch A: remittances (B-293), SIP mandates (B-295), the shelf's other classes and pledges (B-296), tax habits (B-299) ──
+
+class LrsIn(BaseModel):
+    person_id: uuid.UUID
+    document: str
+    remitted_on: date | None = None
+    amount_usd: float | None = None
+    amount_inr: float | None = None
+    purpose: str | None = None
+    bank: str | None = None
+    tcs: float | None = None
+    reverses_id: uuid.UUID | None = None
+    reason: str | None = None
+
+
+class MandateIn(BaseModel):
+    account_id: uuid.UUID
+    reference: str
+    document: str
+    mandate_type: str | None = None
+    per_debit_limit: float | None = None
+    starts_on: date | None = None
+    expires_on: date | None = None
+    last4: str | None = None
+    status: str = "active"
+    cancel: bool = False
+    reason: str | None = None
+
+
+class SavingsIn(BaseModel):
+    household_id: uuid.UUID
+    kind: str
+    institution: str
+    value: float
+    value_on: date
+    document: str
+    person_id: uuid.UUID | None = None
+    rate: float | None = None
+    maturity_on: date | None = None
+    account_label: str | None = None
+    details: dict = {}
+
+
+class PledgeIn(BaseModel):
+    account_id: uuid.UUID
+    units: float
+    document: str
+    instrument: str | None = None
+    lender: str | None = None
+    marked_on: date | None = None
+    release_of: uuid.UUID | None = None
+
+
+class GiftIn(BaseModel):
+    giver_id: uuid.UUID
+    receiver_id: uuid.UUID
+    relationship: str
+    gifted_on: date
+    value: float
+    description: str
+    document: str
+    consideration: float | None = None
+    instrument: str | None = None
+    quantity: float | None = None
+
+
+@router.get("/lrs")
+async def lrs_view(household_id: uuid.UUID | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, lrs
+
+    result = await lrs.household_view(db, firm, household_id) if household_id else await lrs.overview(db, firm)
+    return await counsel_review.annotate(db, firm, {**result, "can_record": user.role in lrs.RECORDERS})
+
+
+@router.post("/lrs")
+async def record_lrs(body: LrsIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_lrs_remittance behind its Confirm card is the same action."""
+    from app.aurea_core import lrs
+
+    try:
+        result = await lrs.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except lrs.LrsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/sip-mandates")
+async def sip_mandates_view(household_id: uuid.UUID | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, sip_mandates
+
+    return await counsel_review.annotate(db, firm, {**await sip_mandates.overview(db, firm, household_id=household_id), "can_record": user.role in sip_mandates.RECORDERS})
+
+
+@router.post("/sip-mandates")
+async def record_sip_mandate(body: MandateIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_sip_mandate behind its Confirm card is the same action."""
+    from app.aurea_core import sip_mandates
+
+    try:
+        result = await sip_mandates.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except sip_mandates.MandateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/savings")
+async def savings_view(household_id: uuid.UUID | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, india_savings
+
+    result = await india_savings.household_view(db, firm, household_id) if household_id else await india_savings.overview(db, firm)
+    return await counsel_review.annotate(db, firm, {**result, "can_record": user.role in india_savings.RECORDERS})
+
+
+@router.post("/savings")
+async def record_savings(body: SavingsIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_savings_holding behind its Confirm card is the same action."""
+    from app.aurea_core import india_savings
+
+    try:
+        result = await india_savings.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/pledges")
+async def pledges_view(household_id: uuid.UUID | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, pledges
+
+    return await counsel_review.annotate(db, firm, {**await pledges.overview(db, firm, household_id=household_id), "can_record": user.role in pledges.RECORDERS})
+
+
+@router.post("/pledges")
+async def record_pledge(body: PledgeIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_pledge behind its Confirm card is the same action."""
+    from app.aurea_core import pledges
+
+    try:
+        result = await pledges.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except pledges.PledgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/tax-habits/{household_id}")
+async def tax_habits_view(household_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, tax_habits
+
+    try:
+        result = await tax_habits.household_view(db, firm, household_id)
+    except tax_habits.HabitError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return await counsel_review.annotate(db, firm, {**result, "can_record": user.role in tax_habits.RECORDERS})
+
+
+@router.post("/tax-habits/gifts")
+async def record_gift(body: GiftIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_tax_gift behind its Confirm card is the same action."""
+    from app.aurea_core import tax_habits
+
+    try:
+        result = await tax_habits.record_gift(db, firm, user.role, by=user.email, **body.model_dump())
+    except tax_habits.HabitError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result

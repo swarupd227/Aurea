@@ -71,6 +71,8 @@ def asset_classes(today: date) -> list[dict]:
         ("mld", "Market-linked debenture", None, None, None, None, "Always short-term, taxed at slab."),
         ("unlisted_debt", "Unlisted bond or debenture transferred on or after 23 Jul 2024", None, None, None, None, "Always short-term, taxed at slab."),
         ("other_listed", "Other listed funds, ETFs and bonds", eq_m, None, other, None, "Short-term at slab; long-term without the exemption or indexation."),
+        ("sgb", "Sovereign Gold Bond, sold on the exchange before maturity", eq_m, None, other, None,
+         "Short-term at slab; long-term without the exemption. A gain on redemption at maturity is exempt for an individual (in_sgb_rule); new issuance has been discontinued."),
         ("unlisted", "Unlisted shares and other unlisted funds", ot_m, None, other, None, "Short-term at slab."),
         ("foreign_shares", "Foreign shares not listed in India", ot_m, None, other, None, "The research report's inference from the general rule."),
         ("physical_gold", "Physical gold", ot_m, None, other, None, "The research report's inference from the general rule."),

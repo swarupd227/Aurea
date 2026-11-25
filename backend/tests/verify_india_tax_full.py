@@ -45,7 +45,7 @@ def pure() -> None:
 
     print("\n=== Asset classes and holding periods, by the day ===")
     rows = {c["key"]: c for c in full.asset_classes(date(2026, 11, 25))}
-    check("eleven classes", len(rows), 11)
+    check("twelve classes", len(rows), 12)
     check("listed equity: 12 months, 20% and 12.5% above the exemption",
           (rows["listed_equity"]["long_after_months"], rows["listed_equity"]["short_text"], rows["listed_equity"]["long_text"],
            rows["listed_equity"]["exemption"]), (12, "20%", "12.5% above the exemption", 125000))

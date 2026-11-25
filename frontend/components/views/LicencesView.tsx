@@ -20,6 +20,7 @@ import { CounselRows, LicenceMapTable, PolicyForm, PolicyRows } from "@/app/work
 import { IndiaDateItems } from "@/app/workspace/components/artifacts/RegulatoryCountdownCard";
 import { AccreditedRows, FeeTermRows, RateCardChips, RateCardRows, TicketGateFleet } from "@/app/workspace/components/artifacts/IndiaGatesCard";
 import { ChannelChips, ChannelRows, StackChips, StackRows, TemplateRows } from "@/app/workspace/components/artifacts/IndiaChannelsCard";
+import { LrsRows, MandateRows, PledgeRows, SavingsRows } from "@/app/workspace/components/artifacts/IndiaBatchACard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -482,6 +483,46 @@ export function LicencesView() {
             <StackChips data={data.india_stack} />
           </div>
           <div className="-mx-3"><StackRows items={data.india_stack.items ?? []} /></div>
+        </Card>
+      )}
+
+      {data.lrs?.applies && (data.lrs.people ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Overseas remittances</span>
+            <span className="chip text-ink-muted" title="The Liberalised Remittance Scheme, a financial year">{data.lrs.year}</span>
+          </div>
+          <div className="-mx-3"><LrsRows people={data.lrs.people} figures={data.lrs.figures} /></div>
+        </Card>
+      )}
+
+      {data.sip_mandates?.applies && ((data.sip_mandates.mandates ?? []).length > 0 || (data.sip_mandates.sips ?? []).length > 0) && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">SIP mandates</span>
+            {data.sip_mandates.without_mandate > 0 && <span className="chip text-warn">{data.sip_mandates.without_mandate} SIP without a mandate</span>}
+          </div>
+          <div className="-mx-3"><MandateRows data={data.sip_mandates} /></div>
+        </Card>
+      )}
+
+      {data.savings?.applies && (data.savings.holdings ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Savings, pension and other classes</span>
+            <span className="chip tabular-nums text-ink-muted" title="Counted once in net worth, as held away">{money(data.savings.total, "INR")}</span>
+          </div>
+          <div className="-mx-3"><SavingsRows data={{ ...data.savings, rules: data.savings.rules }} /></div>
+        </Card>
+      )}
+
+      {data.pledges?.applies && (data.pledges.pledges ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Pledged units</span>
+            {data.pledges.pledged > 0 && <span className="chip text-warn" title="Cannot be sold by an order, the rebalancer or settlement">{data.pledges.pledged} under lien</span>}
+          </div>
+          <div className="-mx-3"><PledgeRows pledges={data.pledges.pledges} /></div>
         </Card>
       )}
 

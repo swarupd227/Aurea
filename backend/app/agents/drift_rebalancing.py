@@ -97,6 +97,10 @@ class DriftRebalancingAgent(BaseAgent):
         # Adviser revision overrides (from a "Revise with comments" request) — applied for this
         # run only, never mutating the mandate. `protect` = do-not-sell holdings.
         protect = {s.upper() for s in (ov.get("protect") or [])}
+        # Units a lender holds a lien on (B-296): they stay in the book at their value, and are not units the rebalancer may sell.
+        from app.aurea_core import pledges
+
+        pledged = await pledges.pledged_map(s, ctx.firm.id, [a.id for a in accounts]) if pledges.in_force(ctx.firm) else {}
         positions: list[dict] = []
         cash = 0.0
         for acc in accounts:
@@ -120,6 +124,19 @@ class DriftRebalancingAgent(BaseAgent):
                 excluded = bool(tags.get("sin")) or any(t in exclusions for t in tags.get("flags", [])) \
                     or (inst.symbol in exclusions if inst else False)
                 tax_class = tax_india.tax_class_of(inst) if india else None
+                under_lien = pledged.get((acc.id, h.instrument_id), 0.0)
+                lot_rows = [{"quantity": float(lt.quantity), "cost_per_unit": float(lt.cost_per_unit),
+                             "acquired_on": lt.acquired_on.isoformat(),
+                             "bucket": tax_india.bucket(tax_class, lt.acquired_on, today) if india else None}
+                            for lt in sorted(lots_by_holding.get(h.id, []), key=lambda lt: lt.acquired_on)]
+                # The depository marks units, not lots, so the units free to sell are taken oldest first and the newest are the ones left under lien.
+                for lot in reversed(lot_rows):
+                    if under_lien <= 1e-9:
+                        break
+                    take = min(lot["quantity"], under_lien)
+                    lot["quantity"] = round(lot["quantity"] - take, 6)
+                    under_lien -= take
+                lot_rows = [l for l in lot_rows if l["quantity"] > 1e-9]
                 positions.append({
                     "holding_id": str(h.id), "instrument_id": str(h.instrument_id),
                     "symbol": inst.symbol if inst else "?", "name": inst.name if inst else "",
@@ -132,10 +149,7 @@ class DriftRebalancingAgent(BaseAgent):
                     "over_limit_accepted": bool(inst and f"position:{inst.symbol}" in accepted), "diversified": h.instrument_id in funds,
                     "tradeable": bool(inst and inst.market_type == MarketType.PUBLIC),
                     "confidence": float(h.confidence or 1.0),
-                    "lots": [{"quantity": float(lt.quantity), "cost_per_unit": float(lt.cost_per_unit),
-                              "acquired_on": lt.acquired_on.isoformat(),
-                              "bucket": tax_india.bucket(tax_class, lt.acquired_on, today) if india else None}
-                             for lt in lots_by_holding.get(h.id, [])],
+                    "lots": lot_rows, "pledged": pledged.get((acc.id, h.instrument_id), 0.0),
                 })
 
         from app.core import foundation

@@ -27,6 +27,7 @@ from app.llm.india_family_executors import IndiaFamilyExecutors
 from app.llm.india_polish_executors import IndiaPolishExecutors
 from app.llm.india_gates_executors import IndiaGatesExecutors
 from app.llm.india_batch_b_executors import IndiaBatchBExecutors
+from app.llm.india_batch_a_executors import IndiaBatchAExecutors
 from app.llm.india_governance_executors import IndiaGovernanceExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
 from app.models.enums import UserRole
@@ -65,7 +66,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 
 
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
-                    IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors):
+                    IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -361,6 +362,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_gates_map(),
             # India, languages, WhatsApp and the India Stack seams (B-301, B-302): app/llm/india_batch_b_executors.py.
             **self._india_batch_b_map(),
+            # India, batch A (B-293, B-295, B-296, B-299): app/llm/india_batch_a_executors.py.
+            **self._india_batch_a_map(),
         }
 
         executor = executor_map.get(tool_key)
@@ -5456,6 +5459,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         if tool_key in ("record_client_language", "record_whatsapp_template", "pull_digilocker", "send_for_esign", "record_digilocker_kyc",
                         "record_esigned_agreement"):
             return rows(*await self._india_batch_b_preview(tool_key, inputs))
+        if tool_key in ("record_lrs_remittance", "record_sip_mandate", "record_savings_holding", "record_pledge", "record_tax_gift"):
+            return rows(*await self._india_batch_a_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
             return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):
@@ -6414,6 +6419,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             rows.append(("Under watch", ", ".join(a["review"]["watched"])))
         if a["review"].get("outside_target_market"):
             rows.append(("Outside its target market", "; ".join(a["review"]["outside_target_market"])))
+        for note in a["review"].get("notes") or []:
+            rows.append(("Note", note))
         for flag in a["review"]["flags"]:
             rows.append((f"Review {flag['symbol']}", f"Sold at a loss in {flag['account']} on {flag['on']}"))
         venue = venue_for_firm(firm)
