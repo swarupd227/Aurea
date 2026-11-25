@@ -89,7 +89,7 @@ async def behaviour() -> None:
     Session = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with Session() as s:
-            mine = Firm(id=uuid.uuid4(), name="Mine", slug="mine")
+            mine = Firm(id=uuid.uuid4(), name="Mine", slug="mine", jurisdiction="NZ", regulator="FMA")
             theirs = Firm(id=uuid.uuid4(), name="Theirs", slug="theirs")
             s.add_all([mine, theirs])
             await s.flush()
