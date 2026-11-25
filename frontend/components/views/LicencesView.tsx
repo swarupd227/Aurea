@@ -14,6 +14,9 @@ import { GuardianChips, PmsClients, ResidencyPeople } from "@/app/workspace/comp
 import { AggregatorConsents, StatementChips } from "@/app/workspace/components/artifacts/AggregatorCard";
 import { AdvertisingChecker, AnnexureTable, ComplaintRows } from "@/app/workspace/components/artifacts/ComplaintsCard";
 import { KycCounts, KycParties } from "@/app/workspace/components/artifacts/IndiaKycCard";
+import { EstateHousehold, FamilyChips } from "@/app/workspace/components/artifacts/FamilyEstateCard";
+import { CounselRows, LicenceMapTable, PolicyForm, PolicyRows } from "@/app/workspace/components/artifacts/GovernanceCard";
+import { IndiaDateItems } from "@/app/workspace/components/artifacts/RegulatoryCountdownCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -143,6 +146,8 @@ function CalendarSection({ calendar, onDone }: { calendar: any; onDone: () => vo
           {c.overdue > 0 && <span className="chip text-crit">{c.overdue} overdue</span>}
           {c.due_soon > 0 && <span className="chip text-warn">{c.due_soon} due soon</span>}
           <span className="chip text-ok">{c.filed} filed</span>
+          {calendar.governance?.counts?.overdue > 0 && <span className="chip text-crit" title="Policy reviews overdue, from the governance register">{calendar.governance.counts.overdue} policy review overdue</span>}
+          {calendar.governance?.counts?.due_soon > 0 && <span className="chip text-warn" title="Policy reviews due soon, from the governance register">{calendar.governance.counts.due_soon} policy review due soon</span>}
           <span className="chip text-ink-muted">since {calendar.since}</span>
         </div>
         <div className="divide-y divide-border-soft" data-testid="licence-calendar">
@@ -173,6 +178,9 @@ export function LicencesView() {
   // The complaints register is read by compliance, a branch leader and operations; an adviser may record one and reads none.
   const canReadComplaints = ["compliance", "branch_leader", "operations"].includes(getUser()?.role);
   const complaints = useApi<any>(canReadComplaints ? "/api/licences/complaints" : null);
+  // India's dates for the firm sit in the same countdown the client pages read.
+  const dates = useApi<any>("/api/licences/dates");
+  const canRecordPolicy = getUser()?.role === "compliance";
   if (loading || !data) return <div className="view-container"><Spinner /></div>;
   if (!data.applies) {
     return (
@@ -327,6 +335,60 @@ export function LicencesView() {
         <Card className="mb-4">
           <div className="tile-label mb-2">Check client wording</div>
           <AdvertisingChecker />
+        </Card>
+      )}
+
+      {data.family?.applies && ((data.family.families ?? []).length > 0 || (data.estate?.households ?? []).length > 0) && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Family of client and estate</span>
+            <span className="chip text-ok">{data.family.recorded} recorded</span>
+            <span className="chip text-ink-muted" title="Households with no family recorded: the household stands in">{data.family.household_standing_in} stand in</span>
+            {data.estate?.issues > 0 && <span className="chip text-warn">{data.estate.issues} to look at</span>}
+          </div>
+          <div className="-mx-3" data-testid="licence-family">
+            <FamilyChips families={data.family.families} relations={data.family.relations} />
+            {(data.estate?.households ?? []).map((h: any) => <div key={h.household_id} className="border-t border-border-soft"><EstateHousehold view={h} currency="INR" /></div>)}
+          </div>
+        </Card>
+      )}
+
+      {data.governance && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Licence map and governance register</span>
+            {data.governance.policies.counts?.overdue > 0 && <span className="chip text-crit">{data.governance.policies.counts.overdue} overdue</span>}
+            {data.governance.policies.counts?.due_soon > 0 && <span className="chip text-warn">{data.governance.policies.counts.due_soon} due soon</span>}
+            {data.governance.policies.counts?.not_recorded > 0 && <span className="chip text-ink-muted">{data.governance.policies.counts.not_recorded} not recorded</span>}
+          </div>
+          <div className="-mx-3">
+            <LicenceMapTable map={data.governance.map} />
+            <div className="border-t border-border-soft"><PolicyRows policies={data.governance.policies.policies} /></div>
+            {canRecordPolicy && <div className="border-t border-border-soft"><PolicyForm onDone={() => { refetch(); nav.changed(); }} /></div>}
+          </div>
+        </Card>
+      )}
+
+      {data.counsel?.applies && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Counsel's review of each law figure</span>
+            <span className="chip text-ok">{data.counsel.counts.confirmed} confirmed</span>
+            {data.counsel.counts.not_confirmed + data.counsel.counts.corrected > 0 && <span className="chip text-warn">{data.counsel.counts.not_confirmed + data.counsel.counts.corrected} not confirmed or corrected</span>}
+            <span className="chip text-ink-muted">{data.counsel.counts.not_reviewed} of {data.counsel.total} not reviewed</span>
+          </div>
+          <div className="-mx-3"><CounselRows figures={data.counsel.figures} limit={8} /></div>
+        </Card>
+      )}
+
+      {dates.data?.analysis && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">The firm's India dates</span>
+            {dates.data.analysis.figures.counts?.overdue > 0 && <span className="chip text-crit">{dates.data.analysis.figures.counts.overdue} overdue</span>}
+            {dates.data.analysis.figures.counts?.due_soon > 0 && <span className="chip text-warn">{dates.data.analysis.figures.counts.due_soon} due soon</span>}
+          </div>
+          <div data-testid="licence-india-dates"><IndiaDateItems items={dates.data.analysis.figures.items} limit={10} /></div>
         </Card>
       )}
 

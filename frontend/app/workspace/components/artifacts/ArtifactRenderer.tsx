@@ -36,6 +36,8 @@ import { PmsCard, PmsReportCard, ResidencyCard } from "./IndiaCard";
 import { AggregatorCard, EcasCard } from "./AggregatorCard";
 import { AdvertisingCard, ComplaintsCard } from "./ComplaintsCard";
 import { KycCard, TaxRecordsCard } from "./IndiaKycCard";
+import { FamilyEstateCard } from "./FamilyEstateCard";
+import { GovernanceCard } from "./GovernanceCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
@@ -461,6 +463,22 @@ export function artifactCard(artifact: Artifact) {
       case "record_complaint_step":
         if (!Array.isArray(artifact.result?.complaints) && artifact.result?.applies !== false) return null;
         return <ComplaintsCard result={artifact.result as any} />;
+      case "read_sebi_family":
+      case "record_sebi_family":
+      case "read_india_estate":
+      case "record_asset_nomination":
+      case "record_will_status":
+      case "record_huf":
+      case "record_gratuity":
+        if (!Array.isArray(artifact.result?.families) && !Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.nominations)
+            && artifact.result?.applies !== false) return null;
+        return <FamilyEstateCard result={artifact.result as any} />;
+      case "read_governance":
+      case "record_governance_policy":
+      case "record_counsel_review":
+        if (!artifact.result?.map && !artifact.result?.policies && !artifact.result?.counsel && !Array.isArray(artifact.result?.figures)
+            && artifact.result?.applies !== false) return null;
+        return <GovernanceCard result={artifact.result as any} />;
       case "check_advertising":
         if (!Array.isArray(artifact.result?.findings) && artifact.result?.applies !== false) return null;
         return <AdvertisingCard result={artifact.result as any} />;

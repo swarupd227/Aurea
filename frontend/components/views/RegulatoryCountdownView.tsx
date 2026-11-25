@@ -4,8 +4,9 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { money } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import {
-  COUNTDOWN_LABEL, CountdownAnalysis, CountdownHousehold, URGENCY_LABEL, URGENCY_TONE, countdown, extraTax,
+  COUNTDOWN_LABEL, CountdownAnalysis, CountdownHousehold, IndiaDateItems, URGENCY_LABEL, URGENCY_TONE, countdown, extraTax,
 } from "@/app/workspace/components/artifacts/RegulatoryCountdownCard";
+import { CounselChip } from "@/app/workspace/components/artifacts/GovernanceCard";
 import { HouseholdPicker } from "./BehaviouralView";
 import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
@@ -100,6 +101,9 @@ function Figures({ a }: { a: CountdownAnalysis }) {
       </div>
     );
   }
+  if (a.type === "in_client_dates" || a.type === "in_firm_deadlines") {
+    return <IndiaDateItems items={f.items ?? []} limit={a.type === "in_firm_deadlines" ? 20 : 12} />;
+  }
   if (a.type === "uk_fca_targeted_support") {
     return (
       <div className="mb-1 grid grid-cols-2 gap-2">
@@ -144,6 +148,7 @@ function Analysis({ a }: { a: CountdownAnalysis }) {
                   {l.value == null ? (l.applies_from ?? l.applies_to ?? "—") : l.unit === "rate" ? `${Math.round(l.value * 1000) / 10}%` : money(l.value, l.unit)}
                 </span>
                 <span className="chip bg-border-soft text-ink-muted">as of {l.as_of}</span>
+                <CounselChip counsel={l.counsel} />
                 <span className={`chip bg-border-soft ${l.status === "expired" ? "text-warn" : "text-ink-muted"}`}>{URGENCY_LABEL[l.status] ?? l.status}</span>
               </div>
             ))}
@@ -176,11 +181,12 @@ function Analysis({ a }: { a: CountdownAnalysis }) {
 }
 
 function FirmWide() {
-  const { data, loading, error, refetch } = useApi<{ results: CountdownHousehold[]; total: number }>("/api/core/regulatory-countdown/firm");
+  const { data, loading, error, refetch } = useApi<{ results: CountdownHousehold[]; total: number; india_firm?: { analysis: CountdownAnalysis } | null }>("/api/core/regulatory-countdown/firm");
   if (error) return <Card className="mb-4"><ErrorState what="the firm's countdowns" message={error} onRetry={refetch} /></Card>;
   if (loading || !data) return <div className="mb-4"><SkeletonList count={3} /></div>;
   return (
     <>
+      {data.india_firm && <Analysis a={data.india_firm.analysis} />}
       <h2 className="mb-2 flex items-center gap-2 text-sm font-medium text-ink">
         Tracked deadlines <span className="chip bg-border-soft text-ink-muted">{data.total}</span>
       </h2>

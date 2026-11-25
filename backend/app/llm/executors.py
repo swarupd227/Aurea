@@ -23,6 +23,8 @@ from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
 from app.llm.india_data_executors import IndiaDataExecutors
+from app.llm.india_family_executors import IndiaFamilyExecutors
+from app.llm.india_governance_executors import IndiaGovernanceExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
 from app.models.enums import UserRole
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person
@@ -59,7 +61,8 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID:
 _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "proposals", "recommendation", "recommendations"}
 
 
-class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors):
+class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
+                    IndiaFamilyExecutors, IndiaGovernanceExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -346,6 +349,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._plan_record_map(),
             # India rows 9 and 10: app/llm/india_data_executors.py.
             **self._india_data_map(),
+            # India row 13: app/llm/india_family_executors.py.
+            **self._india_family_map(),
+            # India row 14: app/llm/india_governance_executors.py.
+            **self._india_governance_map(),
         }
 
         executor = executor_map.get(tool_key)
@@ -353,7 +360,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             raise ExecutorError(f"No executor for tool '{tool_key}'")
 
         try:
-            return await executor(inputs)
+            result = await executor(inputs)
+            if isinstance(result, dict):
+                # An Indian law figure in a result carries what counsel said about it, "not reviewed" by default (India row 14).
+                from app.aurea_core import counsel_review
+
+                await counsel_review.annotate(self.session, await self._firm(), result)
+            return result
         except ExecutorError:
             raise
         except Exception as e:
@@ -733,6 +746,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         from app.models.tenant import Firm
 
         result = await licences.overview(self.session, await self.session.get(Firm, self.firm_id))
+        from app.aurea_core import governance
+
+        if self.role not in governance.READERS:
+            result.pop("governance", None)      # the register and the licence map are compliance's, a branch leader's, operations' and the admin's
         if not result["applies"]:
             result["message"] = "This firm has no licences on file, so nothing here limits its agents by licence."
             return result
@@ -5384,6 +5401,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         if tool_key in ("record_aggregator_consent", "revoke_aggregator_consent", "pull_aggregator", "record_ecas", "record_complaint",
                         "record_complaint_step"):
             return rows(*await self._india_data_preview(tool_key, inputs))
+        if tool_key in ("record_sebi_family", "record_asset_nomination", "record_will_status", "record_huf", "record_gratuity"):
+            return rows(*await self._india_family_preview(tool_key, inputs))
+        if tool_key in ("record_governance_policy", "record_counsel_review"):
+            return rows(*await self._india_governance_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
             return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):
@@ -5677,8 +5698,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             result = await regulatory_countdown.for_household(self.session, household.id, firm.jurisdiction, firm_id=self.firm_id)
             return {**result, "message": result.get("message") or f"{household.name}: {len(result['analyses'])} countdown(s)."}
         results = await regulatory_countdown.for_firm(self.session, self.firm_id, firm.jurisdiction)
-        return {"results": results, "total": len(results),
-                "message": f"{len(results)} household(s) with a regulatory countdown."}
+        india = await regulatory_countdown.india_firm(self.session, self.firm_id)
+        return {"results": results, "total": len(results), "india_firm": india,
+                "message": f"{len(results)} household(s) with a regulatory countdown."
+                           + (f" The firm's own India dates: {india['analysis']['summary']}" if india else "")}
 
     async def _me(self):
         from app.models.identity import User

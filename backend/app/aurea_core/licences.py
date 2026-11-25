@@ -129,7 +129,7 @@ async def overview(session: AsyncSession, firm) -> dict:
                      "licence": track.key if track else None, "licence_name": track.name if track else None,
                      "per_trade_consent": track.per_trade_consent if track else None})
     limit = ceiling(firm)
-    return {
+    result = {
         "applies": bool(licences),
         "licences": [describe(l) for l in licences],
         "ceiling": limit.value if limit else None,
@@ -139,11 +139,15 @@ async def overview(session: AsyncSession, firm) -> dict:
         "recent_consents": await consent.recent(session, firm),
         **(await _india_pack(session, firm) if licences else {}),
     }
+    from app.aurea_core import counsel_review
+
+    return await counsel_review.annotate(session, firm, result)
 
 
 async def _india_pack(session: AsyncSession, firm) -> dict:
     """Before advice, the fee cap per family and the filing calendar, for a firm whose licences are India's."""
-    from app.aurea_core import account_aggregator, billing, compliance_calendar, guardianship, kyc_india, pms, pre_advice, residency
+    from app.aurea_core import (account_aggregator, billing, compliance_calendar, counsel_review, governance, guardianship, india_estate,
+                                kyc_india, pms, pre_advice, residency, sebi_family)
 
     caps: dict[str, dict] = {}
     for e in (await billing.preview(session, firm.id))["arrangements"]:
@@ -154,4 +158,7 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
             "calendar": await compliance_calendar.overview(session, firm),
             "residency": await residency.overview(session, firm), "guardians": await guardianship.overview(session, firm),
             "pms": await pms.overview(session, firm), "aggregator": await account_aggregator.overview(session, firm),
-            "kyc": await kyc_india.overview(session, firm)}
+            "kyc": await kyc_india.overview(session, firm),
+            "family": await sebi_family.overview(session, firm), "estate": await india_estate.overview(session, firm),
+            "governance": {"policies": await governance.policies(session, firm), "map": await governance.licence_map(session, firm)},
+            "counsel": await counsel_review.overview(session, firm)}

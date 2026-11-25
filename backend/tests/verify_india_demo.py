@@ -408,8 +408,11 @@ async def main() -> int:
             check("a market with none keeps the platform's", (planning_core.assumption_set({}, "NZ")["inflation"]["cpi"],
                                                               planning_core.assumption_set({}, "NZ")["source"]), (0.025, "platform"))
             plan = await financial_plan.for_household(s, sharma.id, firm_id=firm.id)
-            check("the plan shows the figures it used, and names gratuity as not modelled",
-                  (len(plan["assumption_basis"]) > 0, "gratuity" in plan["not_modelled"]), (True, True))
+            check("the plan shows the figures it used, and names the gratuity a person recorded beside the pot (row 13)",
+                  (len(plan["assumption_basis"]) > 0, "gratuity" in plan["not_modelled"], plan["gratuity"]["total"]), (True, False, 3_800_000.0))
+            dsouza_id = (await s.execute(select(Household.id).where(Household.firm_id == firm.id, Household.name == "The D'Souza Household"))).scalar_one()
+            plan_none = await financial_plan.for_household(s, dsouza_id, firm_id=firm.id)
+            check("a household with no gratuity on file still names it as not modelled", ("gratuity" in plan_none["not_modelled"], plan_none["gratuity"]), (True, None))
             eps = next(st for st in plan["streams"] if st["kind"] == "eps_pension")
             check("an EPS pension on file counts, and the plan runs to India's horizon",
                   (eps["annual"], eps["start_age"], plan["retirement"]["longevity_age"]), (36000.0, 58, 90))
@@ -447,7 +450,7 @@ async def main() -> int:
             check("a demat nominee the will does not name is flagged",
                   ("Rajesh Sharma demat", "nominee is not named in the will", "Anil Sharma") in issues, True)
             check("a demat with no nomination says so, not that the client opted out",
-                  ("Meera Sharma demat", "no nomination on file (an opt-out is not modelled)", None) in issues, True)
+                  ("Meera Sharma demat", "no nomination or signed opt-out on file", None) in issues, True)
             meera_demat = (await s.execute(select(_Account).where(_Account.firm_id == firm.id, _Account.name == "Meera Sharma demat"))).scalar_one()
             for who in ("A", "B", "C"):
                 s.add(_Nominee(firm_id=firm.id, account_id=meera_demat.id, beneficiary_name=who, designation_class="primary", percentage=33))
@@ -473,7 +476,7 @@ async def main() -> int:
             check("the adviser's households are gated, the portfolio manager's are not",
                   sorted(n for n, g in gate.items() if g["applies"]), ["The Banerjee Household", "The D'Souza Household", "The Menon NRI Household", "The Sharma Family"])
             check("the Sharmas have all five on file, the declaration included because they hold policies",
-                  (gate["The Sharma Family"]["met"], [c["state"] for c in gate["The Sharma Family"]["checks"]]), (True, ["pass"] * 5))
+                  (gate["The Sharma Family"]["met"], [c["state"] for c in gate["The Sharma Family"]["checks"] if c["key"] != "family"]), (True, ["pass"] * 5))
             check("the D'Souzas hold nothing outside SEBI's purview, so no declaration is asked",
                   (gate["The D'Souza Household"]["met"], gate["The D'Souza Household"]["checks"][-1]["state"]), (True, "n/a"))
             check("the Banerjees have not consented to their risk profile",
@@ -652,6 +655,20 @@ async def main() -> int:
                    kyc["Elaine D'Souza"], kyc["Kapoor Family Trust"]),
                   ("verified", "due", "overdue", "blocked", "due", "due", "not_on_file", "not_assessed"))
             check("rows 11 and 12 add nothing a second time", (await india_row11.add(s, firm), await india_row12.add(s, firm)), (0, 0))
+
+            print("\n=== Rows 13 and 14: the family and its estate, and governance ===")
+            from app.aurea_core import counsel_review, governance, india_estate, sebi_family
+            from seed import india_row13, india_row14
+            fam = await sebi_family.household_view(s, firm, households["The Sharma Family"].id)
+            check("the Sharmas' SEBI family is recorded: the household no longer stands in for it", (fam["basis"], len(fam["families"])), ("recorded", 2))
+            check("the Iyers' household still stands in, and says so", (await sebi_family.household_view(s, firm, iyer.id))["stands_in"] is not None, True)
+            est = await india_estate.household_view(s, firm, households["The Sharma Family"].id)
+            check("Rajesh's HUF has its karta, and a gratuity is on file", ([h["karta"] for h in est["hufs"]], [g["amount"] for g in est["gratuity"]]), (["Rajesh Sharma"], [3_800_000.0]))
+            check("the policy register has an overdue policy, one due soon and one not recorded",
+                  {k: v for k, v in (await governance.policies(s, firm))["counts"].items() if v}, {"overdue": 1, "due_soon": 1, "current": 2, "not_recorded": 1})
+            check("counsel has reviewed three figures and the rest read not reviewed",
+                  {k: v for k, v in (await counsel_review.overview(s, firm))["counts"].items() if k in ("confirmed", "not_confirmed")}, {"confirmed": 2, "not_confirmed": 1})
+            check("rows 13 and 14 add nothing a second time", (await india_row13.add(s, firm), await india_row14.add(s, firm)), (0, 0))
 
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)

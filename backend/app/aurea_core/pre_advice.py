@@ -12,8 +12,8 @@ The gate applies to a household with a mandate on the adviser's track; a portfol
 firm with no licence are outside it. Approving a book-moving proposal is advice reaching the client, so
 `runtime.decide` refuses it while the gate is open, and the billing run blocks a fee with no signed agreement.
 
-"Family of client" in SEBI's sense is not the household (a non-dependent adult child is a family of their own); that
-model is not built here (R4), so the household stands in for it and says so.
+"Family of client" in SEBI's sense is not the household (a non-dependent adult child is a family of their own). It is what a
+person recorded (`sebi_family.py`, India row 13); with none recorded the household stands in for it and says so.
 """
 from __future__ import annotations
 
@@ -182,9 +182,21 @@ async def status(session: AsyncSession, firm, household_id: uuid.UUID) -> dict:
     if nri is not None:
         checks.append(nri)
 
+    # 7. SEBI's family of client, as a person recorded it; the household stands in where none is (India row 13, B-245).
+    from app.aurea_core import sebi_family
+
+    family = await sebi_family.household_view(session, firm, household_id)
+    recorded = family.get("basis") == "recorded"
+    if recorded:
+        apart = [m["name"] for f in family["families"] for m in f["members"] if m["household"] != household.name]
+        checks.append(_check("family", "Family of client", NA, "recorded: " + "; ".join(
+            ", ".join(m["name"] for m in f["members"]) for f in family["families"])
+            + (f" (outside this household: {', '.join(apart)})" if apart else ""), "para 1(iii)"))
+
     missing = [c["label"] for c in checks if c["state"] == FAIL]
     return {**base, "applies": True, "met": not missing, "checks": checks, "missing": missing,
-            "mandates": [{"id": str(m.id), "name": m.name} for m in mandates], "stands_in": STANDS_IN}
+            "mandates": [{"id": str(m.id), "name": m.name} for m in mandates], "stands_in": None if recorded else STANDS_IN,
+            "family": {"basis": family.get("basis"), "families": family.get("families", [])}}
 
 
 async def for_firm(session: AsyncSession, firm) -> list[dict]:

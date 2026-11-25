@@ -7,6 +7,11 @@ exclusion in force.
 UK: unused pension funds enter the IHT estate (6 Apr 2027); the BPR/APR 100% relief allowance (in force from
 6 Apr 2026).
 
+India (row 14, B-258): the dates `india_deadlines.py` works out, each with its source and "assumed" where the day is this build's
+reading: a household's advance tax, return, periodic KYC review, a minor's majority and open nominations, and, beside the households,
+the firm's own filings, policy reviews and rule changes (`india_firm`). They are reported and never proposed on: the agent raises
+the United States' and United Kingdom's only.
+
 Every figure fixed in law comes from aurea_core/law_figures.py with its source and as-of date, and the analysis
 lists the ones it used (B-120). A date that has passed is in force or expired, never a countdown at zero. What the
 platform does not hold - which assets qualify for BPR, whether a spouse's unused exemption was elected - is named as
@@ -320,6 +325,13 @@ async def for_household(
     elif jurisdiction == "UK":
         result["analyses"].append(_uk_iht_pension(brain, today))
         result["analyses"].append(_uk_bpr_apr_cap(brain, today))
+    elif jurisdiction == "IN":
+        # India's dates: advance tax, the return, the periodic KYC review, a minor's majority, open nominations (row 14, B-258).
+        from app.aurea_core import counsel_review, india_deadlines
+
+        firm = await session.get(Firm, firm_id)
+        result["analyses"].append(await india_deadlines.household_analysis(session, firm, uuid.UUID(str(household_id))))
+        await counsel_review.annotate(session, firm, result)
     elif not supported:
         result["message"] = f"{jurisdiction} has no market on this platform, so no rule change is tracked."
     else:
@@ -338,3 +350,15 @@ async def for_firm(
         if r and r.get("analyses"):
             results.append(r)
     return results
+
+
+async def india_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict | None:
+    """The Indian firm's own dates beside its households' (None for a firm outside India or with no licence)."""
+    from app.aurea_core import counsel_review, governance, india_deadlines
+
+    firm = await session.get(Firm, firm_id)
+    if firm is None or not governance.applies(firm):
+        return None
+    result = {"analysis": await india_deadlines.firm_analysis(session, firm), "jurisdiction": "IN"}
+    await counsel_review.annotate(session, firm, result)
+    return result

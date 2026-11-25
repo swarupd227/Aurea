@@ -183,7 +183,10 @@ async def overview(session: AsyncSession, firm: Firm) -> dict:
     items.sort(key=lambda i: (order[i["state"]], i["due_on"] if i["state"] != "filed" else "", i["label"]))
     counts = {s: sum(1 for i in items if i["state"] == s) for s in order}
     people = officers(firm)
+    from app.aurea_core import governance
+
     return {"applies": True, "as_of": today.isoformat(), "since": start.isoformat(), "items": items, "counts": counts,
+            "governance": await governance.policies(session, firm),
             "officers": people, "officers_missing": [p["label"] for p in people if not p["value"]],
             "licences": [licences.LICENCES[k].name for k in {k for o in obligations_for(firm) for k in o.licences} if k in licences.LICENCES
                          and k in {l.key for l in licences.held(firm)}],

@@ -36,6 +36,7 @@ from app.models.client_file import DISCOVERY_KINDS, DOCUMENT_KINDS, LIFE_EVENTS,
 from app.models.engagement import Task
 from app.models.enums import TaskStatus
 from app.models.graph import Account, AccountBeneficiary, Household, LegalEntity, Mandate, Person
+from app.models.india_family import AssetNomination
 from app.models.tenant import Firm
 from app.provenance import ledger
 
@@ -140,9 +141,16 @@ async def _designation_issues(session: AsyncSession, firm_id: uuid.UUID, househo
             wills = {d.person_id: d for d in (await session.execute(select(EstateDocument).where(
                 EstateDocument.person_id.in_([p.id for p in people] or [uuid.uuid4()]), EstateDocument.kind == "will")
                 .order_by(EstateDocument.signed_on))).scalars().all()}
+            from app.aurea_core import india_estate
+
+            optouts = {(r.person_id, r.label.strip().lower()) for r in await india_estate._latest(
+                session, AssetNomination, firm_id, "person_id", "asset_kind", "label", where=[AssetNomination.household_id == household_id])
+                if r.status == "opted_out"}
             for a in accounts:
                 if not nominees.get(a.id):
-                    issues.append({"account": a.name, "issue": "no nomination on file (an opt-out is not modelled)", "name": None})
+                    if (owners.get(a.mandate_id), a.name.strip().lower()) in optouts:
+                        continue        # a signed opt-out a person recorded (India row 13): not a gap
+                    issues.append({"account": a.name, "issue": "no nomination or signed opt-out on file", "name": None})
                     continue
                 will = wills.get(owners.get(a.mandate_id))
                 issues += nominations.will_issues(a.name, nominees[a.id], will.named if will else None)
@@ -180,7 +188,15 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     people, happened = by_home[household_id], events[household_id]
     names = {p.id: p.full_name for p in people}
     issues = await _designation_issues(session, firm_id, household_id, people, happened)
-    return {"household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "people": _people_view(people, contacts, documents, happened, today),
+    # An Indian household's nominations a person recorded for a bank or EPF, a will's registration and probate, an HUF's karta (row 13).
+    from app.aurea_core import india_estate
+
+    firm = await session.get(Firm, firm_id)
+    india = await india_estate.household_view(session, firm, household_id) if india_estate.applies(firm) else None
+    if india:
+        issues = issues + [i for i in india["nomination_issues"] if i not in issues]
+    return {"household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "india": india,
+            "people": _people_view(people, contacts, documents, happened, today),
             "discovery": await _discovery(session, household_id, people),
             "events": [_event_view(e, today, names) for e in reversed(happened)], "designation_issues": issues,
             "estate_gaps": await _estate_gaps(session, firm_id, household_id, people, documents, issues, today),

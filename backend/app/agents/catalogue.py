@@ -215,8 +215,9 @@ CATALOGUE: dict[str, dict] = {
         "default_tier": AutonomyTier.TIER_1, "subject": "household",
         "senses": "Household jurisdiction, estate values, retirement account balances, pension pot values, "
                   "and proximity to critical regulatory deadlines. Only the US (estate tax sunset Jan 2026) and "
-                  "the UK (IHT pension inclusion April 2027) are encoded; a household in India or anywhere else "
-                  "is not assessed here. An Indian firm's filings are the compliance calendar's.",
+                  "the UK (IHT pension inclusion April 2027) are proposed on. India's dates (advance tax, the return, the periodic "
+                  "KYC review, the firm's filings, policy reviews and rule changes) are read in the countdown view with their "
+                  "sources and never proposed on; any other country is not assessed here.",
         "acts": "Surfaces time-critical adviser alerts ranked by urgency and financial impact. "
                 "Proposes specific planning actions (SLATs, GRATs, pension drawdown, whole-of-life in trust) "
                 "before regulatory deadlines make planning impossible or more costly.",

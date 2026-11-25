@@ -472,6 +472,16 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_complaint_step":
     case "read_kyc":
     case "record_kyc":
+    case "read_sebi_family":
+    case "record_sebi_family":
+    case "read_india_estate":
+    case "record_asset_nomination":
+    case "record_will_status":
+    case "record_huf":
+    case "record_gratuity":
+    case "read_governance":
+    case "record_governance_policy":
+    case "record_counsel_review":
     case "read_compliance_calendar":
     case "record_compliance_filing":
     case "record_sebi_registration":

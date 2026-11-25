@@ -6,7 +6,7 @@ This resets the goals from the seed and reruns the tax agent, which refreshes it
 rather than raising more. It touches no other firm. Safe to run twice.
 
 Row 7 (a non-resident household and a minor), row 8 (a Portfolio Manager client's agreement and fee), row 9 (a consolidated
-statement) and row 10 (a complaints register) are added once. The simulated Account Aggregator is not written here: it is
+statement) row 10 (a complaints register), row 13 (a family and its estate records) and row 14 (a governance register and counsel's review) are added once. The simulated Account Aggregator is not written here: it is
 opt-in (`python -m app.simulations seed aa_feed`, with AUREA_SIMULATIONS on).
 Row 11 (capital losses carried forward, a 2018 value, a regime comparison's inputs) and row 12 (KYC in every state) likewise.
 
@@ -90,6 +90,10 @@ async def main() -> None:
 
         row11 = await india_row11.add(s, firm)
         row12 = await india_row12.add(s, firm)
+        from seed import india_row13, india_row14
+
+        row13 = await india_row13.add(s, firm)
+        row14 = await india_row14.add(s, firm)
         await s.commit()
         from app.conduit.service import sync_market_data
         priced = await sync_market_data(s, firm.id)
@@ -97,7 +101,7 @@ async def main() -> None:
         await run_agent(s, firm=firm, agent_key=AgentKey.TAX_INTELLIGENCE, trigger="seed_scan",
                         subject=Subject("firm", firm.id, firm.name), require_human=True)
         await s.commit()
-    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11 and {row12} row 12 record(s), priced {priced['resolved']} instrument(s) "
+    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11, {row12} row 12, {row13} row 13 and {row14} row 14 record(s), priced {priced['resolved']} instrument(s) "
           f"({len(priced['failed'])} failed), and refreshed the tax positions.\n")
 
 

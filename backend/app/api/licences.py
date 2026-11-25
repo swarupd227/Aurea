@@ -38,7 +38,12 @@ class AnswerIn(BaseModel):
 
 @router.get("")
 async def read(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    return {**await licences.overview(db, firm), "can_record": user.role in RECORDERS}
+    from app.aurea_core import governance
+
+    result = await licences.overview(db, firm)
+    if user.role not in governance.READERS:
+        result.pop("governance", None)      # the register and the licence map are compliance's, a branch leader's, operations' and the admin's
+    return {**result, "can_record": user.role in RECORDERS}
 
 
 @router.post("/consents/{recommendation_id}")
@@ -545,6 +550,226 @@ async def record_kyc(body: KycIn, user: User = ReaderDep, firm: Firm = Depends(c
     try:
         result = await kyc_india.record(db, firm, by=user.email, note=body.note, beneficial_owners_text=body.beneficial_owners, **data)
     except kyc_india.KycError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+# ── India row 13: SEBI's family of client, and the family's estate records ─────────────────────────────────────
+
+class FamilyIn(BaseModel):
+    person_id: uuid.UUID
+    of_person_id: uuid.UUID
+    relation: str
+    dependent: bool | None = None
+    document: str
+
+
+class NominationIn(BaseModel):
+    person_id: uuid.UUID
+    asset_kind: str
+    label: str
+    status: str
+    document: str
+    nominees: list[dict] | str | None = None
+    declaration_on: date | None = None
+
+
+class WillStatusIn(BaseModel):
+    person_id: uuid.UUID
+    document: str
+    personal_law: str | None = None
+    registered: bool | None = None
+    registration_ref: str | None = None
+    probate: str | None = None
+    probate_ref: str | None = None
+    executor: str | None = None
+    as_of: date | None = None
+
+
+class HufIn(BaseModel):
+    entity_id: uuid.UUID
+    karta_name: str
+    coparceners: list[dict] | str
+    document: str
+    karta_person_id: uuid.UUID | None = None
+    as_of: date | None = None
+
+
+class GratuityIn(BaseModel):
+    person_id: uuid.UUID
+    employer: str
+    amount: float
+    document: str
+    as_of: date | None = None
+    payable_on: date | None = None
+    years_of_service: float | None = None
+
+
+def _estate_recorder(user: User) -> None:
+    from app.aurea_core import india_estate
+
+    if user.role not in india_estate.RECORDERS:
+        raise HTTPException(status_code=403, detail="A family or estate record is made by an adviser, a paraplanner or operations.")
+
+
+@router.get("/family")
+async def sebi_family_overview(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import india_estate, sebi_family
+
+    from app.aurea_core import counsel_review
+
+    return await counsel_review.annotate(db, firm, {**await sebi_family.overview(db, firm), "can_record": user.role in india_estate.RECORDERS})
+
+
+@router.get("/family/{household_id}")
+async def sebi_family_household(household_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                                db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import sebi_family
+
+    from app.aurea_core import counsel_review
+
+    try:
+        return await counsel_review.annotate(db, firm, await sebi_family.household_view(db, firm, household_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/family")
+async def record_sebi_family(body: FamilyIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_sebi_family behind its Confirm card is the same action."""
+    from app.aurea_core import sebi_family
+
+    _estate_recorder(user)
+    try:
+        result = await sebi_family.record(db, firm, by=user.email, **body.model_dump())
+    except sebi_family.FamilyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/estate")
+async def india_estate_overview(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import india_estate
+
+    from app.aurea_core import counsel_review
+
+    return await counsel_review.annotate(db, firm, {**await india_estate.overview(db, firm), "can_record": user.role in india_estate.RECORDERS})
+
+
+@router.get("/estate/{household_id}")
+async def india_estate_household(household_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                                 db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import india_estate
+
+    from app.aurea_core import counsel_review
+
+    try:
+        return await counsel_review.annotate(db, firm, await india_estate.household_view(db, firm, household_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+async def _record_estate(db, firm, user, name: str, body: BaseModel):
+    from app.aurea_core import india_estate
+
+    _estate_recorder(user)
+    try:
+        result = await getattr(india_estate, name)(db, firm, by=user.email, **body.model_dump())
+    except india_estate.EstateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/estate/nominations")
+async def record_asset_nomination(body: NominationIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_asset_nomination behind its Confirm card is the same action."""
+    return await _record_estate(db, firm, user, "record_nomination", body)
+
+
+@router.post("/estate/will")
+async def record_will_status(body: WillStatusIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_will_status behind its Confirm card is the same action."""
+    return await _record_estate(db, firm, user, "record_will_status", body)
+
+
+@router.post("/estate/huf")
+async def record_huf(body: HufIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_huf behind its Confirm card is the same action."""
+    return await _record_estate(db, firm, user, "record_huf", body)
+
+
+@router.post("/estate/gratuity")
+async def record_gratuity(body: GratuityIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_gratuity behind its Confirm card is the same action."""
+    return await _record_estate(db, firm, user, "record_gratuity", body)
+
+
+# ── India row 14: the governance register, the licence map and counsel's review of each law figure ─────────────
+
+class PolicyIn(BaseModel):
+    kind: str
+    version: str
+    owner: str
+    approved_on: date
+    document: str
+    approved_by: str | None = None
+    next_review_on: date | None = None
+    note: str | None = None
+
+
+class CounselIn(BaseModel):
+    figure_key: str
+    reviewer: str
+    reviewed_on: date
+    outcome: str
+    document: str
+    note: str | None = None
+
+
+@router.get("/governance")
+async def governance_view(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The licence map, the policy register and counsel's review of each figure. Read by compliance, a branch leader, operations and an administrator."""
+    from app.aurea_core import counsel_review, governance
+
+    if user.role not in governance.READERS:
+        raise HTTPException(status_code=403, detail="The governance register is read by compliance, a branch leader, operations and an administrator.")
+    result = {"applies": governance.applies(firm), "map": await governance.licence_map(db, firm), "policies": await governance.policies(db, firm),
+              "counsel": await counsel_review.overview(db, firm), "can_record": user.role in governance.RECORDERS}
+    return await counsel_review.annotate(db, firm, result)
+
+
+@router.get("/dates")
+async def india_dates(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The Indian firm's own dates for the Regulatory Countdown (its households' are on the countdown route)."""
+    from app.aurea_core import regulatory_countdown
+
+    return await regulatory_countdown.india_firm(db, firm.id) or {"analysis": None}
+
+
+@router.post("/governance/policies")
+async def record_governance_policy(body: PolicyIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_governance_policy behind its Confirm card is the same action."""
+    from app.aurea_core import governance
+
+    try:
+        result = await governance.record_policy(db, firm, user.role, by=user.email, **body.model_dump())
+    except governance.GovernanceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/governance/counsel")
+async def record_counsel_review(body: CounselIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_counsel_review behind its Confirm card is the same action."""
+    from app.aurea_core import counsel_review
+
+    try:
+        result = await counsel_review.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except counsel_review.CounselError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     return result

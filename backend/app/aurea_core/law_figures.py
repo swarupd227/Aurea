@@ -371,6 +371,53 @@ ALL: tuple[LawFigure, ...] = (
               'SEBI Master Circular on KYC (12 Oct 2023) para 17', date(2026, 10, 31)),
     LawFigure("in_kyc_aadhaar_xml_days", 'An Aadhaar XML or Secure QR code used for KYC must be no older than this many days', 3, "days",
               'SEBI Master Circular on KYC (12 Oct 2023) para 41, as read in the research report section 3.3', date(2026, 10, 31)),
+    # ── India: family and estate (row 13). Read in the research report (3.7) and the statutes as generally known; none of
+    # these clauses was re-read for this build, and each is for counsel before a client relies on it (see counsel_review.py).
+    LawFigure("in_family_of_client", "SEBI's family of client: the individual, the spouse, dependent children and dependent parents "
+              "(an adult child who is not dependent is a family of their own)", None, "rule",
+              "SEBI (Investment Advisers) Regulations 2013 and the IA Master Circular (6 Feb 2026) para 1(iii), as read in the research "
+              "report; the definition's clause was not re-read, counsel to confirm", date(2026, 10, 31)),
+    LawFigure("in_nominee_cap_demat_mf", "Demat account or mutual fund folio: nominees, at most", 3, "count",
+              "SEBI circular of 29 May 2026 on nomination, from 1 Sep 2026, as reproduced; SEBI's own PDF was not opened and one "
+              "source says 4, the consultation figure", date(2026, 10, 31), applies_from=date(2026, 9, 1)),
+    LawFigure("in_nominee_cap_bank", "Bank account: nominees, at most", 4, "count",
+              "Banking Laws (Amendment) Act 2025, provisions on nomination notified from 1 Nov 2025, as reported; not re-read",
+              date(2026, 10, 31)),
+    LawFigure("in_epf_nominee_family_only", "EPF: a nominee is a member of the member's family (until a family is recorded, any person "
+              "may be nominated, and a nomination to a non-member is invalid)", None, "rule",
+              "EPF Scheme 1952 para 61 (the research report cites para 44 of the Scheme as reproduced), not re-read", date(2026, 10, 31)),
+    LawFigure("in_nomination_opt_out", "A new single-holder demat account or folio needs a nomination or a signed opt-out declaration",
+              None, "rule", "SEBI nomination circulars as read in the research report (3.7); the clause was not re-read", date(2026, 10, 31)),
+    LawFigure("in_hindu_succession_class_i", "Hindu male intestate: Class I heirs take together, equally (son, daughter, widow, mother, "
+              "and the children of a predeceased son or daughter taking their parent's share), then Class II, agnates and cognates", None, "rule",
+              "Hindu Succession Act 1956 s.8 and the Schedule, as amended by the 2005 Act (daughters are coparceners by birth: "
+              "Vineeta Sharma v Rakesh Sharma, 2020); not re-read", date(2026, 10, 31)),
+    LawFigure("in_hindu_succession_female", "Hindu female intestate: sons, daughters and husband first; then the husband's heirs; then her "
+              "parents; property from her parents goes back to her father's heirs and from her husband to his, if she leaves no child", None, "rule",
+              "Hindu Succession Act 1956 s.15 and s.16; not re-read", date(2026, 10, 31)),
+    LawFigure("in_isa_succession", "Christian and other intestate estates: the widow takes one third and the lineal descendants two thirds; "
+              "with no descendant the widow takes half and the kindred half. Parsis follow ss.51 to 56 of the same Act", None, "rule",
+              "Indian Succession Act 1925 ss.33 and 51-56; not re-read. Muslim succession is under personal law and is not laid out here",
+              date(2026, 10, 31)),
+    LawFigure("in_probate_not_compulsory", "Probate of a will is no longer compulsory in Mumbai, Chennai and Kolkata", None, "rule",
+              "Indian Succession Act 1925 s.213 omitted, December 2025, as reported by several law firms; the Gazette text was not opened",
+              date(2026, 10, 31), applies_from=date(2025, 12, 1)),
+    # ── India: deadlines (row 14). The dates the Income-tax Act 1961 fixes, which the Income-tax Act 2025 (in force from 1 Apr 2026)
+    # carries under renumbered sections that were not read.
+    LawFigure("in_advance_tax_dates", "Advance tax instalments: 15 Jun (15%), 15 Sep (45%), 15 Dec (75%), 15 Mar (100%) of the year's "
+              "tax; due where the tax after TDS is Rs 10,000 or more", None, "rule",
+              "Income-tax Act 1961 ss.207, 208, 211, carried into the Income-tax Act 2025 (renumbered sections not read)", date(2026, 10, 31)),
+    LawFigure("in_itr_due_date", "Income-tax return of an individual or HUF not needing an audit: 31 July after the year; 31 October with an audit", None, "rule",
+              "Income-tax Act 1961 s.139(1), carried into the Income-tax Act 2025 (renumbered section not read); the due date is "
+              "often extended by notification, so the day in force is checked", date(2026, 10, 31)),
+    LawFigure("in_dpdp_duties_start", "ASSUMED: the Digital Personal Data Protection Rules' main duties start (sources say 13 or 14 May 2027)", None, "date",
+              "DPDP Act 2023 and Rules 2025 as read in the research report; the Gazette was not fetched, so the day is assumed",
+              date(2026, 10, 31), applies_from=date(2027, 5, 13)),
+    LawFigure("in_pm_regs_2026_start", "SEBI (Portfolio Managers) Regulations 2026 apply (the 2020 Regulations until 31 Mar 2027)", None, "date",
+              "SEBI (Portfolio Managers) Regulations 2026 as read in the research report; implementing circulars had not issued on 31 Oct 2026",
+              date(2026, 10, 31), applies_from=date(2027, 4, 1)),
+    LawFigure("in_ad_code_start", "SEBI Common Advertisement Code operative (Intermediaries Regs 16G-16P)", None, "date",
+              "SEBI (Intermediaries) Regulations, as read in the research report", date(2026, 10, 31), applies_from=date(2027, 4, 8)),
 )
 
 VERSIONS: dict[str, tuple[LawFigure, ...]] = {}

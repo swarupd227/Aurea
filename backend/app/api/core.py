@@ -203,7 +203,7 @@ async def firm_regulatory_countdown(
 ):
     """Firm-wide regulatory countdown — all US and UK households with active countdown analyses."""
     results = await regulatory_countdown.for_firm(db, firm.id, firm.jurisdiction)
-    return {"results": results, "total": len(results)}
+    return {"results": results, "total": len(results), "india_firm": await regulatory_countdown.india_firm(db, firm.id)}
 
 
 @router.post("/portfolio-whatif")

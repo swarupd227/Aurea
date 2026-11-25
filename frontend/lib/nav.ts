@@ -113,7 +113,7 @@ export const VIEWS: View[] = [
 
   // Govern the agents
   { href: "/provenance", label: "Provenance", icon: ShieldCheck, roles: [C, B], intent: "govern", keywords: ["ledger", "audit", "decision record"] },
-  { href: "/studio/regulatory-countdown", label: "Regulatory countdown", icon: Timer, roles: [A, P, PT], intent: "govern", hiddenIn: ["IN"], keywords: ["deadlines", "rules"] },
+  { href: "/studio/regulatory-countdown", label: "Regulatory countdown", icon: Timer, roles: [A, P, PT], intent: "govern", keywords: ["deadlines", "rules", "advance tax", "itr", "kyc review"] },
   { href: "/studio/agent-history", label: "Agent history", icon: History, roles: [A, PT, C, B], intent: "govern", keywords: ["runs", "activity"] },
   { href: "/studio/workforce", label: "Workforce", icon: Workflow, roles: [A, PT, C, B], intent: "govern", keywords: ["agents", "autonomy", "tier", "kill switch"] },
   { href: "/studio/skills", label: "Skills", icon: Wand2, roles: [A, P, PT], intent: "govern", keywords: ["playbooks"] },

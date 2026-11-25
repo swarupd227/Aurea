@@ -5,7 +5,7 @@ import { money } from "@/lib/format";
 // household with one across the firm. Figures and chips only: the analyses' summaries and planning
 // detail stay on the view, and the agent's message carries the words.
 
-export type CountdownType = "us_estate_tax_sunset" | "uk_iht_pension_inclusion" | "uk_bpr_apr_cap" | "uk_fca_targeted_support";
+export type CountdownType = "us_estate_tax_sunset" | "uk_iht_pension_inclusion" | "uk_bpr_apr_cap" | "uk_fca_targeted_support" | "in_client_dates" | "in_firm_deadlines";
 
 export interface CountdownAction {
   priority: number;
@@ -25,6 +25,8 @@ export interface LawFigure {
   applies_from: string | null;
   applies_to: string | null;
   status: "in_force" | "upcoming" | "expired" | string;
+  /** What counsel said about it (an Indian figure): not reviewed by default. */
+  counsel?: { state: string; label: string; reviewer?: string; reviewed_on?: string; note?: string | null };
 }
 
 export interface CountdownAnalysis {
@@ -54,12 +56,29 @@ export interface CountdownHousehold {
   message?: string;
 }
 
-/** One household's analysis, or (firm-wide) every household with an analysis. */
+/** One household's analysis, or (firm-wide) every household with an analysis, and for an Indian firm its own dates. */
 export type RegulatoryCountdownPayload =
   | (CountdownHousehold & { message?: string })
-  | { results: CountdownHousehold[]; total: number; message?: string };
+  | { results: CountdownHousehold[]; total: number; message?: string; india_firm?: { analysis: CountdownAnalysis } | null };
+
+/** One of India's dates: what, when, where it stands, its source and whether the day is assumed (aurea_core/india_deadlines.py). */
+export interface IndiaDate {
+  kind: string;
+  label: string;
+  due_on: string | null;
+  days: number | null;
+  state: "overdue" | "due_soon" | "upcoming" | "in_force" | "not_dated" | string;
+  source: string;
+  assumed: string | null;
+  detail: string | null;
+}
+
+export const DATE_TONE: Record<string, string> = { overdue: "text-crit", due_soon: "text-warn", upcoming: "text-ink-muted", in_force: "text-ink-muted", not_dated: "text-ink-muted" };
+export const DATE_TEXT: Record<string, string> = { overdue: "Overdue", due_soon: "Due soon", upcoming: "Upcoming", in_force: "In force", not_dated: "No day" };
 
 export const COUNTDOWN_LABEL: Record<string, string> = {
+  in_client_dates: "India: tax, KYC and nominations",
+  in_firm_deadlines: "India: the firm's dates",
   us_estate_tax_sunset: "US estate exemption",
   uk_iht_pension_inclusion: "Pensions in IHT estate",
   uk_bpr_apr_cap: "BPR/APR cap",
@@ -128,6 +147,12 @@ export function RegulatoryCountdownCard({ result }: { result: RegulatoryCountdow
           <div className="text-sm font-medium text-ink">Regulatory countdown</div>
           <div className="font-mono text-xs tabular-nums text-ink-muted">{result.total}</div>
         </div>
+        {result.india_firm && (
+          <div className="border-b border-border-soft px-3 py-1.5" data-testid="countdown-india-firm">
+            <div className="tile-label mb-1">The firm's India dates</div>
+            <IndiaDateItems items={result.india_firm.analysis.figures.items} limit={6} />
+          </div>
+        )}
         {result.results.length === 0 ? (
           <div className="px-3 py-2"><Chip>no household with a tracked deadline</Chip></div>
         ) : (
@@ -179,6 +204,26 @@ export function RegulatoryCountdownCard({ result }: { result: RegulatoryCountdow
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+
+/** India's dates as rows: each with its state, its day, its source and "assumed" where the day is this build's reading. */
+export function IndiaDateItems({ items, limit = 12 }: { items: IndiaDate[]; limit?: number }) {
+  return (
+    <div className="divide-y divide-border-soft" data-testid="india-dates">
+      {items.slice(0, limit).map((i, k) => (
+        <div key={k} className="flex flex-wrap items-center gap-1.5 py-1.5" data-testid="india-date">
+          <span className="mr-auto min-w-0 flex-1 text-sm text-ink" title={i.detail ?? ""}>{i.label}</span>
+          {i.due_on && <span className="chip tabular-nums text-ink-muted">{i.due_on}</span>}
+          {i.days != null && i.state !== "in_force" && <span className={`chip tabular-nums ${DATE_TONE[i.state]}`}>{i.days < 0 ? `${-i.days} days over` : `${i.days}d`}</span>}
+          <span className={`chip ${DATE_TONE[i.state] ?? "text-ink-muted"}`} data-testid="india-date-state">{DATE_TEXT[i.state] ?? i.state}</span>
+          {i.assumed && <span className="chip text-warn" title={i.assumed}>assumed</span>}
+          <span className="chip text-ink-muted" title={i.source}>source</span>
+        </div>
+      ))}
+      {items.length > limit && <div className="py-1.5"><span className="chip text-ink-muted">+{items.length - limit} more</span></div>}
     </div>
   );
 }

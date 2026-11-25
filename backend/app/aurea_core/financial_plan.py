@@ -291,6 +291,9 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     sheet = await balance_sheet.for_household(session, household_id, firm_id=firm_id)
     book_cash, saved = await _book_cash(session, household_id)
     streams = await streams_of(session, household_id, firm, today)
+    from app.aurea_core import india_estate
+
+    gratuity = await india_estate.gratuity_of(session, firm.id, household_id) if india_estate.applies(firm) else []
     # The pot in today's money, so every rate and the 4% rule read in the same money as the income (B-168).
     projected = plan["projected_at_retirement_today"] if plan else 0
     rate = (plan["income_target"] / projected) if plan and projected else None
@@ -301,7 +304,10 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     return {
         "household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "currency": firm.base_currency,
         # Gratuity is a lump sum on leaving work, and the retirement pot here starts from the book alone (India row 5).
-        "not_modelled": NOT_MODELLED + (["gratuity"] if (markets.for_firm(firm) and markets.for_firm(firm).code == "IN") else []),
+        "not_modelled": NOT_MODELLED + (["gratuity"] if (markets.for_firm(firm) and markets.for_firm(firm).code == "IN" and not gratuity) else []),
+        # A gratuity a person recorded from an employer's statement is named here and is never added to the pot or estimated (row 13, B-233).
+        "gratuity": {"statements": gratuity, "total": round(sum(g["amount"] for g in gratuity), 2),
+                     "note": "Recorded from the employer's statement, named beside the pot and not added to it."} if gratuity else None,
         "assumptions_source": planning.source_of(brain), "assumptions_version": planning.version_of(brain),
         # The market's suggested figures this plan used where the firm set none, each with its source (India row 5).
         "assumption_basis": [b for b in ((brain.get("planning") or {}).get("market_basis") or [])
