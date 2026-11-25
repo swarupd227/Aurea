@@ -148,6 +148,13 @@ async def _mandate(session: AsyncSession, firm: Firm, inst: Instrument, tm, mand
         ceiling = CAPACITY_EQUITY_MAX[capacity]
         if book["total"] > 0 and book["weights_after"].get("equity", 0.0) > ceiling:
             line("capacity_ceiling", "gate", f"the minimum would take equity to {book['weights_after']['equity']:.0%}, over the {ceiling:.0%} ceiling for {capacity} capacity")
+    # India (B-290): the product's ticket-size category against the household's recorded assets; no figure is a fact still needed.
+    from app.aurea_core import product_gates
+
+    gate = await product_gates.line_for(session, firm, inst, household_id=household.id if getattr(household, "id", None) else None,
+                                        person_id=mandate.person_id)
+    if gate is not None:
+        line("ticket", {"open": "pass", "below": "gate", "needs_fact": "missing"}[gate["state"]], gate["said"])
     if inst.id in ctx["held"].get(mandate.id, set()):
         line("holds", "gate", f"{mandate.name} already holds {inst.symbol}: a top-up, not a new offer")
 
@@ -249,7 +256,7 @@ async def for_book(session: AsyncSession, firm: Firm, inst: Instrument, *, advis
 
 # What the order guard already reads for itself, the negative target market among it (through the shelf's bar);
 # the target market adds the rest, which is named and does not stop the order.
-_GUARDED = {"leaving", "shelf", "ips", "exclusion", "capacity_ceiling", "holds", "negative_market"}
+_GUARDED = {"leaving", "shelf", "ips", "exclusion", "capacity_ceiling", "holds", "negative_market", "ticket"}
 
 
 async def order_check(session: AsyncSession, firm: Firm, mandate: Mandate, inst: Instrument) -> tuple[str | None, str | None]:

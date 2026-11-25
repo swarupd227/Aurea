@@ -18,6 +18,7 @@ import { EstateHousehold, FamilyChips } from "@/app/workspace/components/artifac
 import { ReminderRows } from "@/app/workspace/components/artifacts/PolishCard";
 import { CounselRows, LicenceMapTable, PolicyForm, PolicyRows } from "@/app/workspace/components/artifacts/GovernanceCard";
 import { IndiaDateItems } from "@/app/workspace/components/artifacts/RegulatoryCountdownCard";
+import { AccreditedRows, FeeTermRows, RateCardChips, RateCardRows, TicketGateFleet } from "@/app/workspace/components/artifacts/IndiaGatesCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -78,6 +79,43 @@ function ConsentAsk({ consent, demonstration, say }: { consent: any; demonstrati
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Compliance marks a Budget figure as awaiting the Budget: in the work pane through the conversation's record_figure_watch tool behind its
+ * Confirm card, on a page directly. */
+function WatchForm({ figures, onDone }: { figures: any[]; onDone: () => void }) {
+  const nav = useViewNav();
+  const budget = figures.filter((f) => f.kind === "budget" && f.counsel?.state !== "awaiting_budget");
+  const [key, setKey] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  if (getUser()?.role !== "compliance" || budget.length === 0) return null;
+  async function mark() {
+    setError(null);
+    if (nav.say) {
+      nav.say(`Mark ${key} as awaiting the Budget: ${reason.trim()}.`);
+      setReason("");
+      return;
+    }
+    try {
+      await api("/api/licences/rate-card/watch", { body: { figure_key: key, reason: reason.trim() } });
+      setReason("");
+      onDone();
+    } catch (e: any) {
+      setError(e?.message ?? "Not recorded");
+    }
+  }
+  return (
+    <div className="flex flex-wrap items-end gap-2 px-3 py-2" data-testid="watch-form">
+      <select className="input flex-1 min-w-[12rem] text-sm" value={key} aria-label="The figure" data-testid="watch-figure" onChange={(e) => setKey(e.target.value)}>
+        <option value="">A Budget figure</option>
+        {budget.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+      </select>
+      <input className="input flex-1 min-w-[12rem] text-sm" value={reason} aria-label="Which Budget it waits on" placeholder="Which Budget it waits on" data-testid="watch-reason" onChange={(e) => setReason(e.target.value)} />
+      <button className="btn-outline" data-testid="watch-mark" disabled={!key || reason.trim().length < 5} onClick={mark}>Awaiting the Budget</button>
+      {error && <span className="chip text-crit">{error}</span>}
     </div>
   );
 }
@@ -390,6 +428,49 @@ export function LicencesView() {
             <span className="chip text-ink-muted">{data.counsel.counts.not_reviewed} of {data.counsel.total} not reviewed</span>
           </div>
           <div className="-mx-3"><CounselRows figures={data.counsel.figures} limit={8} /></div>
+        </Card>
+      )}
+
+      {data.ticket_gates?.applies && (data.ticket_gates.households ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Product categories open to each household</span>
+            <span className="chip text-ink-muted" title="SIF, PMS and AIF minimums, each a law figure counsel has not yet read by default">minimums by ticket size</span>
+          </div>
+          <div className="-mx-3"><TicketGateFleet fleet={data.ticket_gates} /></div>
+        </Card>
+      )}
+
+      {data.accredited?.applies && (data.accredited.people ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Accredited investors</span>
+            {(data.accredited.counts?.accredited ?? 0) > 0 && <span className="chip text-ok">{data.accredited.counts.accredited} accredited</span>}
+            {(data.accredited.counts?.lapsed ?? 0) > 0 && <span className="chip text-warn">{data.accredited.counts.lapsed} lapsed</span>}
+          </div>
+          <div className="-mx-3"><AccreditedRows people={data.accredited.people} criteria={data.accredited.criteria} /></div>
+        </Card>
+      )}
+
+      {data.fee_terms?.applies && ((data.fee_terms.households ?? []).length > 0 || data.fee_terms.deposit?.recorded) && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Adviser fee terms</span>
+          </div>
+          <div className="-mx-3"><FeeTermRows data={data.fee_terms} /></div>
+        </Card>
+      )}
+
+      {data.rate_card?.applies && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">February rate card</span>
+            <RateCardChips card={data.rate_card} />
+          </div>
+          <div className="-mx-3">
+            <RateCardRows card={data.rate_card} limit={8} />
+            <div className="border-t border-border-soft"><WatchForm figures={data.rate_card.figures} onDone={() => { refetch(); nav.changed(); }} /></div>
+          </div>
         </Card>
       )}
 

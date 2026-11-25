@@ -17,7 +17,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import cash_movement, exits, firm_time, guardianship, harvest_guard, ips, kyc_india, product_fit, shelf, wash_sale
+from app.aurea_core import cash_movement, exits, firm_time, guardianship, harvest_guard, ips, kyc_india, product_fit, product_gates, shelf, wash_sale
 from app.aurea_core import orders as order_engine
 from app.aurea_core.equity_comp import CONCENTRATED
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX
@@ -139,6 +139,11 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
     # A product's target market: a buy into who it is not for is refused by the shelf's bar above; a buy outside it
     # otherwise goes ahead, named on the card.
     outside: list[str] = []
+    # India's ticket-size gate (B-290): a gated product the household's recorded assets do not reach is refused; with no asset
+    # figure on file it goes ahead and is named, because a fact not on file is not a no.
+    gated, unknown = await product_gates.order_review(session, firm, mandate, filling, instruments)
+    refused += gated
+    outside += unknown
     for o in filling:
         if o["side"] == "buy":
             stop, named = await product_fit.order_check(session, firm, mandate, instruments[o["symbol"]])

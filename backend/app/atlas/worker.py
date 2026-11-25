@@ -61,6 +61,23 @@ async def _heartbeat() -> None:
         await s.commit()
 
 
+async def _run_rate_card() -> None:
+    """In February, raise each Indian firm's rate-card task for compliance, once a year (B-300). Running it again finds the task and does
+    nothing, so the interval below is only a way of not missing the month; it changes no figure."""
+    from app.aurea_core import rate_card
+
+    async with SessionLocal() as s:
+        for firm in (await s.execute(select(Firm))).scalars().all():
+            try:
+                outcome = await rate_card.raise_task(s, firm)
+                await s.commit()
+                if outcome.get("raised"):
+                    log.info("rate_card_task_raised", firm=firm.slug, year=outcome["year"])
+            except Exception as exc:  # pragma: no cover
+                await s.rollback()
+                log.warning("rate_card_task_failed", firm=firm.slug, error=str(exc))
+
+
 async def _refresh_market_data() -> None:
     """Fetch prices, backfill any gap, and revalue holdings - recorded as a connector sync.
 
@@ -453,6 +470,8 @@ async def main() -> None:
     # SIP instalments, hourly: each SIP is tried once a month, on or after its day on its firm's calendar.
     scheduler.add_job(_run_sips, "interval", hours=1, id="sip_instalments")
     scheduler.add_job(_raise_india_reminders, "interval", hours=6, id="india_reminders")
+    # The February rate card for an Indian firm's compliance team: raised once for the year, in February, by this same check.
+    scheduler.add_job(_run_rate_card, "interval", hours=6, id="rate_card")
     # The Foundation layer: what a connected product owns, pulled every six hours (native firms are skipped).
     scheduler.add_job(_sync_foundation_sources, "interval", hours=6, id="foundation_sync")
     # Pick up cadence changes made in Admin without needing a worker restart.

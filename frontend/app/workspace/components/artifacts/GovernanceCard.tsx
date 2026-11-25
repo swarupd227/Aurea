@@ -8,13 +8,13 @@ import { api } from "@/lib/api";
 
 const POLICY_TONE: Record<string, string> = { current: "text-ok", due_soon: "text-warn", overdue: "text-crit", not_recorded: "text-ink-muted" };
 const POLICY_TEXT: Record<string, string> = { current: "Current", due_soon: "Review due soon", overdue: "Review overdue", not_recorded: "Not recorded" };
-const COUNSEL_TONE: Record<string, string> = { not_reviewed: "text-ink-muted", confirmed: "text-ok", corrected: "text-crit", not_confirmed: "text-warn", changed_since: "text-warn" };
+const COUNSEL_TONE: Record<string, string> = { not_reviewed: "text-ink-muted", confirmed: "text-ok", corrected: "text-crit", not_confirmed: "text-warn", changed_since: "text-warn", awaiting_budget: "text-warn" };
 const TIER_TEXT: Record<string, string> = { tier_1: "Tier 1", tier_2: "Tier 2", tier_3: "Tier 3" };
 
 /** What counsel said about a law figure, beside the figure. "Not reviewed" is the default and says so. */
 export function CounselChip({ counsel }: { counsel?: any }) {
   if (!counsel) return null;
-  const detail = counsel.reviewer ? `${counsel.reviewer}, ${counsel.reviewed_on}${counsel.note ? `: ${counsel.note}` : ""}` : "Counsel has not read this figure against its source";
+  const detail = counsel.state === "awaiting_budget" ? `Awaiting the Budget since ${counsel.marked_on}: ${counsel.watch_reason}` : counsel.reviewer ? `${counsel.reviewer}, ${counsel.reviewed_on}${counsel.note ? `: ${counsel.note}` : ""}` : "Counsel has not read this figure against its source";
   return <span className={`chip ${COUNSEL_TONE[counsel.state] ?? "text-ink-muted"}`} title={detail} data-testid="counsel-chip">{counsel.label}</span>;
 }
 

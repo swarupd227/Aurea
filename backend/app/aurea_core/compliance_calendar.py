@@ -38,7 +38,10 @@ OFFICERS = (("registration_number", "SEBI registration number"), ("registration_
             ("registered_address", "Registered address"), ("sebi_regional_office", "SEBI regional office"),
             ("principal_officer", "Principal Officer"), ("compliance_officer", "Compliance Officer"),
             ("designated_director", "Designated Director"), ("ciso", "Chief Information Security Officer"),
-            ("grievance_contact", "Grievance contact"))
+            ("grievance_contact", "Grievance contact"),
+            # B-292: the Investment Adviser's refundable deposit with IAASB, from the deposit's own document.
+            ("iaasb_deposit", "Refundable deposit with IAASB"), ("iaasb_deposit_held_in", "Deposit held in"),
+            ("iaasb_deposit_document", "Deposit evidence"))
 OFFICER_KEYS = {k for k, _ in OFFICERS}
 
 
@@ -240,6 +243,14 @@ def prepare_officers(firm: Firm, details: dict | None, reason: str | None) -> di
         raise CalendarError(f"Not a registration detail: {', '.join(unknown)}. One of {', '.join(k for k, _ in OFFICERS)}.")
     if not given:
         raise CalendarError("Give at least one detail to record.")
+    if "iaasb_deposit_held_in" in given:
+        given["iaasb_deposit_held_in"] = given["iaasb_deposit_held_in"].lower()
+    from app.aurea_core import adviser_fees
+
+    try:
+        adviser_fees.check_deposit_terms({**{k: v for k, v in (((firm.settings or {}).get("sebi_registration")) or {}).items() if k.startswith("iaasb_")}, **given})
+    except adviser_fees.FeeTermError as exc:
+        raise CalendarError(str(exc))
     if len((reason or "").strip()) < 4:
         raise CalendarError("Say why it changes, for the audit log.")
     before = ((firm.settings or {}).get("sebi_registration")) or {}

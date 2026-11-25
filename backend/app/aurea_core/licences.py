@@ -148,10 +148,12 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
     """Before advice, the fee cap per family and the filing calendar, for a firm whose licences are India's."""
     from app.aurea_core import (account_aggregator, billing, compliance_calendar, counsel_review, governance, guardianship, india_estate,
                                 india_reminders, kyc_india, pms, pre_advice, residency, sebi_family)
+    from app.aurea_core import accredited, adviser_fees, product_gates, rate_card
 
     caps: dict[str, dict] = {}
     for e in (await billing.preview(session, firm.id))["arrangements"]:
-        if e.get("fee_cap") and e["household_id"] not in caps:
+        # A household's capped bill reads over an accredited investor's exempt one (B-291): the cap is what the page is about.
+        if e.get("fee_cap") and (e["household_id"] not in caps or (caps[e["household_id"]].get("exempt") and not e["fee_cap"].get("exempt"))):
             caps[e["household_id"]] = {"household_id": e["household_id"], "household": e["household_name"], **e["fee_cap"]}
     return {"pre_advice": await pre_advice.for_firm(session, firm),
             "fee_caps": sorted(caps.values(), key=lambda c: c["household"] or ""),
@@ -161,4 +163,7 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
             "kyc": await kyc_india.overview(session, firm), "reminders": await india_reminders.view(session, firm),
             "family": await sebi_family.overview(session, firm), "estate": await india_estate.overview(session, firm),
             "governance": {"policies": await governance.policies(session, firm), "map": await governance.licence_map(session, firm)},
-            "counsel": await counsel_review.overview(session, firm)}
+            "counsel": await counsel_review.overview(session, firm),
+            # The L100 items: ticket-size gates, accredited investors, an adviser's fee terms and the February rate card.
+            "ticket_gates": await product_gates.for_firm(session, firm), "accredited": await accredited.overview(session, firm),
+            "fee_terms": await adviser_fees.overview(session, firm), "rate_card": await rate_card.overview(session, firm)}

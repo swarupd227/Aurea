@@ -33,6 +33,8 @@ class ProductDecision(Base):
     share_class: Mapped[str | None] = mapped_column(String(24))
     expense_ratio: Mapped[float | None] = mapped_column(Numeric(6, 5))
     diversified: Mapped[bool] = mapped_column(Boolean, default=False)   # a fund of many issuers, so a position limit is not read against it
+    # India (B-290): the ticket-size category the product sits in (sif, pms, aif_1, aif_2, aif_3), as the research team says; none is not gated.
+    category: Mapped[str | None] = mapped_column(String(12), nullable=True)
     decided_by: Mapped[str] = mapped_column(String(200))
     decided_by_role: Mapped[str] = mapped_column(String(32))
 

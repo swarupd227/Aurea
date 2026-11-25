@@ -112,7 +112,7 @@ def figures_in_code() -> None:
 
     from app.aurea_core import behavioural, law_figures, regulatory_countdown as rc, tax_intelligence as ti
 
-    today = date(2026, 11, 17)
+    today = date(2026, 11, 25)
     print("\n=== Every figure fixed in law carries its source and the day it was taken (B-120) ===")
     for f in law_figures.ALL:
         check(f"{f.key} ({f.applies_from}) cites a source and an as-of date", bool(f.source.strip()) and f.as_of <= today, True)

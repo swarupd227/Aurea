@@ -42,6 +42,7 @@ async def read(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: A
 
     result = await licences.overview(db, firm)
     if user.role not in governance.READERS:
+        result.pop("rate_card", None)
         result.pop("governance", None)      # the register and the licence map are compliance's, a branch leader's, operations' and the admin's
     return {**result, "can_record": user.role in RECORDERS}
 
@@ -773,3 +774,105 @@ async def record_counsel_review(body: CounselIn, user: User = ReaderDep, firm: F
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     return result
+
+
+# ── India, the L100 items: ticket-size gates (B-290), accredited investors (B-291), fee terms (B-292), the rate card (B-300) ──
+
+class AccreditedIn(BaseModel):
+    person_id: uuid.UUID
+    document: str
+    state: str = "granted"
+    certificate_ref: str | None = None
+    agency: str | None = None
+    valid_from: date | None = None
+    valid_to: date | None = None
+    criteria: list[str] = []
+    reason: str | None = None
+
+
+class FeeTermIn(BaseModel):
+    household_id: uuid.UUID
+    kind: str
+    document: str
+    effective_on: date | None = None
+    mode: str | None = None
+    advance_months: int | None = None
+    assets: float | None = None
+    rate: float | None = None
+    fee: float | None = None
+    reason: str | None = None
+
+
+class WatchIn(BaseModel):
+    figure_key: str
+    reason: str
+    state: str = "awaiting_budget"
+
+
+@router.get("/ticket-gates/{household_id}")
+async def ticket_gates(household_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, product_gates
+
+    return await counsel_review.annotate(db, firm, await product_gates.open_to(db, firm, household_id))
+
+
+@router.get("/accredited")
+async def accredited_view(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import accredited, counsel_review
+
+    return await counsel_review.annotate(db, firm, {**await accredited.overview(db, firm), "can_record": user.role in accredited.RECORDERS})
+
+
+@router.post("/accredited")
+async def record_accredited(body: AccreditedIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_accredited_investor behind its Confirm card is the same action."""
+    from app.aurea_core import accredited
+
+    try:
+        result = await accredited.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except accredited.AccreditedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/fee-terms")
+async def fee_terms(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import adviser_fees, counsel_review
+
+    return await counsel_review.annotate(db, firm, {**await adviser_fees.overview(db, firm), "can_record": user.role in adviser_fees.RECORDERS})
+
+
+@router.post("/fee-terms")
+async def record_fee_term(body: FeeTermIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_adviser_fee_term behind its Confirm card is the same action."""
+    from app.aurea_core import adviser_fees
+
+    try:
+        result = await adviser_fees.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except adviser_fees.FeeTermError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/rate-card")
+async def rate_card_view(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, governance, rate_card
+
+    if user.role not in governance.READERS:
+        raise HTTPException(status_code=403, detail="The rate card is read by compliance, a branch leader, operations and an administrator.")
+    return await counsel_review.annotate(db, firm, {**await rate_card.overview(db, firm), "can_record": user.role in counsel_review.RECORDERS})
+
+
+@router.post("/rate-card/watch")
+async def record_figure_watch(body: WatchIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_figure_watch behind its Confirm card is the same action."""
+    from app.aurea_core import counsel_review, rate_card
+
+    try:
+        await counsel_review.record_watch(db, firm, user.role, by=user.email, **body.model_dump())
+    except counsel_review.CounselError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return await rate_card.overview(db, firm)

@@ -50,6 +50,9 @@ export function PreAdviceCard({ result }: { result: any }) {
 
 /** A family's fee for the year against SEBI's cap. */
 export function FeeCapChips({ cap }: { cap: any }) {
+  if (cap.exempt) {
+    return <span className="chip text-ok" title={cap.said} data-testid="fee-cap-exempt">Accredited: not capped</span>;
+  }
   const charged = Math.max((cap.billed_this_year ?? 0) + (cap.this_bill ?? 0), cap.yearly_charge ?? 0);
   return (
     <>
@@ -58,6 +61,7 @@ export function FeeCapChips({ cap }: { cap: any }) {
       </span>
       <span className="chip text-ink-muted">{cap.year}</span>
       {cap.over && <span className="chip text-crit">Bill held</span>}
+      {cap.second_opinion_fee > 0 && <span className="chip tabular-nums text-ink-muted" title="A second-opinion fee counts toward the family's year">incl. second opinion {money(cap.second_opinion_fee, "INR")}</span>}
     </>
   );
 }

@@ -11,6 +11,11 @@ figure stands. A figure with no row is "not reviewed", which is the default and 
 the review (its as-of day is later than the one reviewed) reads "changed since review". A corrected or not-confirmed outcome does
 not change the figure: that is a code change with its citation, as for every figure, and the status says so until it is made.
 Nothing here says a figure is right, or that the firm is compliant: "confirmed" is what the named reviewer said on that day.
+
+A figure the Union Budget sets can also be marked **awaiting the Budget** (B-300), by compliance with a reason, each February when the
+rate card is reviewed (`rate_card.py`). The mark reads beside the figure in place of the counsel state, which it keeps as the
+`reviewed_state`, and it stands until a version of the figure with a later as-of day is recorded in `law_figures` (a code change with its
+citation) or compliance releases it. It changes no figure.
 """
 from __future__ import annotations
 
@@ -22,14 +27,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import firm_time, law_figures, markets
 from app.core.security import UserRole
-from app.models.india_governance import CounselReview
+from app.core.db import utcnow
+from app.models.india_governance import CounselReview, FigureWatch
 from app.models.tenant import Firm
 from app.provenance import ledger
 
 RECORDERS = frozenset({UserRole.COMPLIANCE})
 OUTCOMES = {"confirmed": "Confirmed", "corrected": "Corrected: the figure is wrong as coded", "not_confirmed": "Not confirmed: counsel could not say"}
 STATES = {"not_reviewed": "Not reviewed", "confirmed": "Confirmed by counsel", "corrected": "Counsel corrected it", "not_confirmed": "Counsel could not confirm",
-          "changed_since": "Changed since the review"}
+          "changed_since": "Changed since the review", "awaiting_budget": "Awaiting the Budget"}
+WATCH_STATES = {"awaiting_budget": "Awaiting the Budget", "released": "Released"}
 FIGURE_KEYS = ("key", "source", "as_of", "unit")
 
 
@@ -54,14 +61,31 @@ async def standing(session: AsyncSession, firm_id: uuid.UUID) -> dict[str, Couns
     return latest
 
 
-def status_of(key: str, review: CounselReview | None, today: date) -> dict:
+async def standing_watch(session: AsyncSession, firm_id: uuid.UUID) -> dict[str, FigureWatch]:
+    latest: dict[str, FigureWatch] = {}
+    for r in (await session.execute(select(FigureWatch).where(FigureWatch.firm_id == firm_id)
+                                    .order_by(FigureWatch.marked_on, FigureWatch.created_at, FigureWatch.id))).scalars().all():
+        latest[r.figure_key] = r
+    return latest
+
+
+def status_of(key: str, review: CounselReview | None, today: date, watch: FigureWatch | None = None) -> dict:
     fig = law_figures.get(key, today)
     if review is None:
-        return {"state": "not_reviewed", "label": STATES["not_reviewed"]}
-    state = "changed_since" if fig.as_of > review.figure_as_of else review.outcome
-    return {"state": state, "label": STATES[state], "reviewer": review.reviewer, "reviewed_on": review.reviewed_on.isoformat(),
-            "outcome": review.outcome, "note": review.note, "document": review.source_document,
-            "figure_as_of_reviewed": review.figure_as_of.isoformat()}
+        out = {"state": "not_reviewed", "label": STATES["not_reviewed"]}
+    else:
+        state = "changed_since" if fig.as_of > review.figure_as_of else review.outcome
+        out = {"state": state, "label": STATES[state], "reviewer": review.reviewer, "reviewed_on": review.reviewed_on.isoformat(),
+               "outcome": review.outcome, "note": review.note, "document": review.source_document,
+               "figure_as_of_reviewed": review.figure_as_of.isoformat()}
+    if watch is not None and watch.state == "awaiting_budget":
+        if fig.as_of > watch.figure_as_of:
+            # A newer value is recorded: the wait is over, and the figure reads as changed since it was marked.
+            out["watch"] = {"state": "value_recorded", "marked_on": watch.marked_on.isoformat(), "reason": watch.reason}
+        else:
+            out = {**out, "reviewed_state": out["state"], "state": "awaiting_budget", "label": STATES["awaiting_budget"],
+                   "marked_on": watch.marked_on.isoformat(), "watch_reason": watch.reason, "marked_by": watch.recorded_by}
+    return out
 
 
 async def overview(session: AsyncSession, firm: Firm) -> dict:
@@ -69,10 +93,11 @@ async def overview(session: AsyncSession, firm: Firm) -> dict:
     if not applies(firm):
         return {"applies": False, "as_of": today.isoformat(), "figures": []}
     reviews = await standing(session, firm.id)
+    watches = await standing_watch(session, firm.id)
     rows = []
     for key in india_keys():
         fig = law_figures.get(key, today)
-        rows.append({**fig.view(today), "counsel": status_of(key, reviews.get(key), today)})
+        rows.append({**fig.view(today), "counsel": status_of(key, reviews.get(key), today, watches.get(key))})
     counts = {s: sum(1 for r in rows if r["counsel"]["state"] == s) for s in STATES}
     return {"applies": True, "as_of": today.isoformat(), "figures": rows, "counts": counts, "total": len(rows),
             "note": "Each figure's own source says how it was read. 'Confirmed' is what the named reviewer said on that day, not a finding that the "
@@ -160,7 +185,52 @@ async def annotate(session: AsyncSession, firm: Firm | None, result):
     if not found:
         return result
     reviews = await standing(session, firm.id)
+    watches = await standing_watch(session, firm.id)
     today = firm_time.today(firm)
     for f in found:
-        f["counsel"] = status_of(f["key"], reviews.get(f["key"]), today)
+        f["counsel"] = status_of(f["key"], reviews.get(f["key"]), today, watches.get(f["key"]))
     return result
+
+
+# ── Awaiting the Budget (B-300) ─────────────────────────────────────────────────────────────────────────────────────
+
+async def prepare_watch(session: AsyncSession, firm: Firm, role, *, figure_key: str | None, state: str | None = "awaiting_budget",
+                        reason: str | None = None) -> dict:
+    from app.aurea_core import rate_card
+
+    if not applies(firm):
+        raise CounselError("Awaiting the Budget is marked for an Indian firm.")
+    if role not in RECORDERS:
+        raise CounselError("Compliance marks a figure awaiting the Budget, or releases the mark.")
+    key = (figure_key or "").strip()
+    if key not in india_keys():
+        raise CounselError("That is not an Indian law figure. read_rate_card lists the ones the Budget or a SEBI circular sets, each with its key.")
+    today = firm_time.today(firm)
+    fig = law_figures.get(key, today)
+    kind = rate_card.kind_of(fig)
+    mark = (state or "awaiting_budget").strip().lower()
+    if mark not in WATCH_STATES:
+        raise CounselError("The state is awaiting_budget, or released.")
+    if len((reason or "").strip()) < 5:
+        raise CounselError("Say why: which Budget the figure waits on, or why the wait is released.")
+    before = (await standing_watch(session, firm.id)).get(key)
+    waiting = before is not None and before.state == "awaiting_budget" and fig.as_of <= before.figure_as_of
+    if mark == "awaiting_budget":
+        if kind != "budget":
+            raise CounselError("Only a figure the Union Budget sets can await the Budget; this one comes from a SEBI circular, a Regulation or another law.")
+        if waiting:
+            raise CounselError("That figure is already marked awaiting the Budget.")
+    elif not waiting:
+        raise CounselError("That figure is not marked awaiting the Budget.")
+    return {"figure": fig, "key": key, "state": mark, "reason": reason.strip(), "before": before, "today": today, "kind": kind}
+
+
+async def record_watch(session: AsyncSession, firm: Firm, role, *, by: str, **terms) -> dict:
+    p = await prepare_watch(session, firm, role, **terms)
+    row = FigureWatch(created_at=utcnow(), firm_id=firm.id, figure_key=p["key"], state=p["state"], marked_on=p["today"], figure_as_of=p["figure"].as_of,
+                      reason=p["reason"], recorded_by=by)
+    session.add(row)
+    await session.flush()
+    await ledger.append_entry(session, firm_id=firm.id, event_type="figure_watch_recorded", actor=by, content={
+        "figure": p["key"], "state": row.state, "marked_on": row.marked_on.isoformat(), "figure_as_of": row.figure_as_of.isoformat(), "reason": row.reason})
+    return await overview(session, firm)

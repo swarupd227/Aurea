@@ -418,6 +418,32 @@ ALL: tuple[LawFigure, ...] = (
               date(2026, 10, 31), applies_from=date(2027, 4, 1)),
     LawFigure("in_ad_code_start", "SEBI Common Advertisement Code operative (Intermediaries Regs 16G-16P)", None, "date",
               "SEBI (Intermediaries) Regulations, as read in the research report", date(2026, 10, 31), applies_from=date(2027, 4, 8)),
+    # ── India: the L100 India edition (Nov 2026), B-290 to B-292. Each is as that document reads it and none was re-read against the
+    # circular or the Regulations: it says to verify every threshold before client use, so each starts "not reviewed" in the counsel tracker.
+    LawFigure("in_sif_min_ticket", "Specialised Investment Fund: the least an investor puts in, across all of one manager's SIF strategies, per PAN", 1_000_000, "INR",
+              "SEBI circular of 27 Feb 2025 on Specialised Investment Funds (live from 1 Apr 2025), as read in the L100 India edition (Nov 2026) "
+              "section 2.2; the circular was not re-read. An accredited investor is exempt from it", date(2026, 11, 25)),
+    LawFigure("in_aif_min_ticket", "Alternative Investment Fund (Category I, II or III): the least an investor commits", 10_000_000, "INR",
+              "SEBI (Alternative Investment Funds) Regulations 2012, as read in the L100 India edition (Nov 2026) section 2.2; "
+              "the Regulation was not re-read", date(2026, 11, 25)),
+    LawFigure("in_aif_min_ticket_employee", "Alternative Investment Fund: the least a manager's own employee or director commits", 2_500_000, "INR",
+              "SEBI (Alternative Investment Funds) Regulations 2012, as read in the product-gate backlog row B-290; neither the L100 "
+              "edition nor the Regulation was re-read for this figure, so counsel confirms it first", date(2026, 11, 25)),
+    LawFigure("in_accredited_criteria", "Accredited investor, an individual: annual income Rs 2 crore, or net worth Rs 7.5 crore with at least half "
+              "in financial assets, or a combination of the two", None, "rule",
+              "SEBI (Alternative Investment Funds) Regulations 2012 accredited-investor framework, as read in the L100 India edition (Nov 2026) "
+              "section 2.2, which says to confirm the exact criteria before using them with a client. Never applied to a client's wealth here: "
+              "a certificate is recorded from its document", date(2026, 11, 25)),
+    LawFigure("in_ia_advance_fee_months", "Investment Adviser: fees may be collected in advance for at most, months", 12, "count",
+              "SEBI Master Circular for Investment Advisers (6 Feb 2026) as amended in April 2025 (earlier, two quarters), as read in the L100 "
+              "India edition (Nov 2026) section 4.2; the circular's clause was not re-read", date(2026, 11, 25)),
+    LawFigure("in_ia_second_opinion_cap", "Investment Adviser: an AUA-based fee for a second opinion on assets held under a distribution "
+              "arrangement, at most, share of those assets a year", 0.025, "rate",
+              "SEBI circular of October 2025 on second-opinion fees, as read in the L100 India edition (Nov 2026) section 4.2; the circular "
+              "was not re-read", date(2026, 11, 25), applies_from=date(2025, 10, 1)),
+    LawFigure("in_ia_deposit_liquid_funds", "Investment Adviser: the refundable deposit with IAASB may be held in liquid or overnight mutual funds", None, "rule",
+              "SEBI circular of August 2025 on the Investment Adviser deposit, as read in the L100 India edition (Nov 2026) section 4.2; the "
+              "circular was not re-read", date(2026, 11, 25), applies_from=date(2025, 8, 1)),
 )
 
 VERSIONS: dict[str, tuple[LawFigure, ...]] = {}

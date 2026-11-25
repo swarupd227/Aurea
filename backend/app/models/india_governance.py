@@ -47,3 +47,20 @@ class CounselReview(Base):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_document: Mapped[str] = mapped_column(String(300))
     recorded_by: Mapped[str] = mapped_column(String(200))
+
+
+class FigureWatch(Base):
+    """Compliance's mark that an Indian law figure awaits the Union Budget (B-300), or the release of that mark.
+
+    `state` is awaiting_budget or released. A mark stands until a version of the figure with a later as-of day is recorded in
+    `law_figures` (a code change with its citation) or compliance releases it with a reason. Nothing here changes a figure."""
+
+    __tablename__ = "figure_watch"
+
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
+    figure_key: Mapped[str] = mapped_column(String(80), index=True)
+    state: Mapped[str] = mapped_column(String(16))                                       # awaiting_budget | released
+    marked_on: Mapped[date] = mapped_column(Date)
+    figure_as_of: Mapped[date] = mapped_column(Date)                                     # the figure's as-of day when it was marked
+    reason: Mapped[str] = mapped_column(Text)
+    recorded_by: Mapped[str] = mapped_column(String(200))

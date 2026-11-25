@@ -146,7 +146,7 @@ def _day(value: date | None, today: date) -> date:
 async def prepare_decision(session: AsyncSession, firm_id: uuid.UUID, *, symbol: str | None, status: str | None, rationale: str | None,
                            document: str | None, reviewed_on: date | None = None, next_review_on: date | None = None, minimum_class: str | None = None,
                            family: str | None = None, share_class: str | None = None, expense_ratio: float | None = None,
-                           is_diversified: bool | None = None) -> dict:
+                           is_diversified: bool | None = None, category: str | None = None) -> dict:
     """Everything recording would refuse, refused without writing, and who it reaches."""
     firm = await session.get(Firm, firm_id)
     today = firm_time.today(firm)
@@ -169,6 +169,12 @@ async def prepare_decision(session: AsyncSession, firm_id: uuid.UUID, *, symbol:
         raise ShelfError(f"The minimum class must be one of {', '.join(INVESTOR_CLASSES[1:])}.")
     if expense_ratio is not None and not 0 <= expense_ratio < 0.2:
         raise ShelfError("The expense ratio must be between 0% and 20%.")
+    from app.aurea_core import product_gates
+
+    try:
+        kind = product_gates.check_category(category)
+    except product_gates.GateError as exc:
+        raise ShelfError(str(exc))
     was = (await decisions(session, firm_id)).get(inst.id)
     held = (await session.execute(select(func.count(Holding.id), func.sum(Holding.market_value)).where(
         Holding.instrument_id == inst.id, Holding.quantity > 0))).one()
@@ -176,6 +182,8 @@ async def prepare_decision(session: AsyncSession, firm_id: uuid.UUID, *, symbol:
             "family": (family or "").strip() or None, "share_class": (share_class or "").strip() or None, "expense": expense_ratio, "was": was,
             # What it is does not change with what the team thinks of it, so a later decision carries it over.
             "diversified": bool(was.diversified) if was and is_diversified is None else bool(is_diversified),
+            # Likewise its ticket-size category (B-290): a later decision keeps it unless the team names another.
+            "category": kind or (was.category if was else None),
             "holdings": int(held[0] or 0), "value_held": float(held[1] or 0)}
 
 
@@ -183,12 +191,13 @@ async def record_decision(session: AsyncSession, firm_id: uuid.UUID, *, by: str,
     ready = await prepare_decision(session, firm_id, **terms)
     row = ProductDecision(firm_id=firm_id, instrument_id=ready["instrument"].id, status=ready["status"], rationale=ready["rationale"],
                           document=ready["document"], reviewed_on=ready["day"], next_review_on=ready["next"], minimum_class=ready["minimum"],
-                          family=ready["family"], share_class=ready["share_class"], expense_ratio=ready["expense"], diversified=ready["diversified"], decided_by=by, decided_by_role=str(role))
+                          family=ready["family"], share_class=ready["share_class"], expense_ratio=ready["expense"], diversified=ready["diversified"],
+                          category=ready["category"], decided_by=by, decided_by_role=str(role))
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="product_decision_recorded", actor=by, content={
         "symbol": ready["instrument"].symbol, "status": row.status, "rationale": row.rationale, "document": row.document,
-        "minimum_class": row.minimum_class, "reviewed_on": row.reviewed_on.isoformat()})
+        "minimum_class": row.minimum_class, "category": row.category, "reviewed_on": row.reviewed_on.isoformat()})
     return row
 
 
@@ -275,7 +284,7 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict:
             "status": row.status if row else "not_reviewed", "mandates": mandates, "value_held": round(value, 2),
             "reviewed_on": row.reviewed_on.isoformat() if row else None, "next_review_on": row.next_review_on.isoformat() if row and row.next_review_on else None,
             "review_overdue": bool(row and row.next_review_on and row.next_review_on < today), "minimum_class": row.minimum_class if row else None,
-            "family": row.family if row else None, "share_class": row.share_class if row else None, "expense_ratio": expense, "diversified": bool(row and row.diversified),
+            "family": row.family if row else None, "share_class": row.share_class if row else None, "expense_ratio": expense, "diversified": bool(row and row.diversified), "category": row.category if row else None,
             "dearer_class": bool(row and row.family and expense is not None and expense > cheapest[row.family]),
             "rationale": row.rationale if row else None, "document": row.document if row else None, "decided_by": row.decided_by if row else None,
         })

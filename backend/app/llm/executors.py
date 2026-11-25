@@ -25,6 +25,7 @@ from app.llm.estate_care_executors import EstateCareExecutors
 from app.llm.india_data_executors import IndiaDataExecutors
 from app.llm.india_family_executors import IndiaFamilyExecutors
 from app.llm.india_polish_executors import IndiaPolishExecutors
+from app.llm.india_gates_executors import IndiaGatesExecutors
 from app.llm.india_governance_executors import IndiaGovernanceExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
 from app.models.enums import UserRole
@@ -63,7 +64,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 
 
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
-                    IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors):
+                    IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -355,6 +356,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             # India row 14: app/llm/india_governance_executors.py.
             **self._india_governance_map(),
             **self._india_polish_map(),
+            # India, the L100 items (B-290 to B-292, B-300): app/llm/india_gates_executors.py.
+            **self._india_gates_map(),
         }
 
         executor = executor_map.get(tool_key)
@@ -1573,7 +1576,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             raise ExecutorError("expense_ratio_pct must be a number.")
         return {"symbol": inputs.get("symbol"), "status": inputs.get("status"), "rationale": inputs.get("rationale"), "document": inputs.get("document"),
                 "next_review_on": self._exit_day(inputs.get("next_review_on"), "next_review_on"), "minimum_class": inputs.get("minimum_class") or None,
-                "family": inputs.get("family"), "share_class": inputs.get("share_class"), "expense_ratio": expense, "is_diversified": inputs.get("diversified")}
+                "family": inputs.get("family"), "share_class": inputs.get("share_class"), "expense_ratio": expense, "is_diversified": inputs.get("diversified"),
+                "category": inputs.get("category") or None}
 
     def _investor_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {"investor_class": inputs.get("investor_class"), "as_of": self._exit_day(inputs.get("as_of"), "as_of"), "document": inputs.get("document"),
@@ -1833,7 +1837,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                         ("Investors", r["minimum"].replace("_", " ").capitalize() + " only" if r["minimum"] else None),
                         ("Share class", " · ".join(x for x in (r["family"], r["share_class"]) if x) or None),
                         ("Expense ratio", f"{r['expense']:.2%}" if r["expense"] is not None else None),
-                        ("Position limits", "Not read against this fund" if r["diversified"] else None), ("Reason", r["rationale"]), ("Document", r["document"]),
+                        ("Position limits", "Not read against this fund" if r["diversified"] else None),
+                        ("Ticket-size category", r["category"].replace("_", " ").upper() if r["category"] else None),
+                        ("Reason", r["rationale"]), ("Document", r["document"]),
                         ("Next review", firm_time.spoken(r["next"]) if r["next"] else None)]
             if tool_key == "record_investor_status":
                 r = await shelf.prepare_certification(self.session, _parse_uuid(inputs.get("person_id") or "", "person_id"), firm_id=self.firm_id, **self._investor_args(inputs))
@@ -5409,6 +5415,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._india_polish_preview(tool_key, inputs))
         if tool_key in ("record_governance_policy", "record_counsel_review"):
             return rows(*await self._india_governance_preview(tool_key, inputs))
+        if tool_key in ("record_accredited_investor", "record_adviser_fee_term", "record_figure_watch"):
+            return rows(*await self._india_gates_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
             return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):
