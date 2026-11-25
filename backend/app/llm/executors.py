@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.aurea_core.graph import household_brain
 from app.llm.admin_executors import AdminToolExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
+from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
 from app.llm.india_data_executors import IndiaDataExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
@@ -58,7 +59,7 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID:
 _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "proposals", "recommendation", "recommendations"}
 
 
-class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors):
+class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -339,6 +340,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._estate_care_map(),
             # The advice file (B-175): app/llm/advice_file_executors.py.
             **self._advice_file_map(),
+            # India's tax records and KYC (rows 11 and 12): app/llm/india_executors.py.
+            **self._india_map(),
             # The plan of record (B-181): app/llm/plan_record_executors.py.
             **self._plan_record_map(),
             # India rows 9 and 10: app/llm/india_data_executors.py.
@@ -5370,6 +5373,12 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._estate_care_preview(tool_key, inputs))
         if tool_key in ("record_recommendation", "record_advice_outcome"):
             return rows(*await self._advice_preview(tool_key, inputs))
+        if tool_key == "record_tax_loss":
+            return rows(*await self._tax_loss_preview(inputs))
+        if tool_key == "record_grandfather_value":
+            return rows(*await self._fmv_preview(inputs))
+        if tool_key == "record_kyc":
+            return rows(*await self._kyc_preview(inputs))
         if tool_key in ("record_plan_baseline", "record_plan_review", "record_plan_delivery"):
             return rows(*await self._plan_record_preview(tool_key, inputs))
         if tool_key in ("record_aggregator_consent", "revoke_aggregator_consent", "pull_aggregator", "record_ecas", "record_complaint",

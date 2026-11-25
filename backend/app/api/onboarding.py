@@ -112,7 +112,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
         select(TransferRequest).where(TransferRequest.case_id == case.id)
     )).scalars().all())
     decided = await aml_review.decisions_for(db, [p.id for p in party_rows])
-    from app.aurea_core import consents, document_matrix
+    from app.aurea_core import consents, document_matrix, kyc_india
     disclosure_status = disclosures.status_for(firm.jurisdiction, case.registration_type, list(disc_rows), case.engagement_type)
     fee_status = await _fee_status(db, case)
     return gates_core.evaluate(
@@ -123,6 +123,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
                                             fee_assigned=bool(fee_status and fee_status.get("assigned"))),
         fee_status=fee_status,
         registration_status=await document_matrix.check_case(db, case, firm),
+        kyc_status=kyc_india.gate(await kyc_india.case_status(db, firm, case)),
         held_away_count=held_away_n,
         transfer_status=transfer_controls.status_for(
             xfer_rows, party_names=[p.legal_name for p in party_rows]
@@ -282,7 +283,7 @@ async def states_overview(db: AsyncSession, firm: Firm) -> dict:
     fills = await _first_fills(db, cases)
     now = utcnow()
     from app.agents.cip_identity_verifier import CIP_DAYS
-    from app.aurea_core import aml_risk, firm_time
+    from app.aurea_core import aml_risk, firm_time, kyc_india
 
     due_reviews = {d["case_id"]: d["due"] for d in await aml_risk.reviews_due(db, firm.id, today=firm_time.today(firm))}
     _aware = lambda t: t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t  # noqa: E731
@@ -298,6 +299,8 @@ async def states_overview(db: AsyncSession, firm: Firm) -> dict:
             kyc.append(f"Identity not verified {CIP_DAYS} days after opening: restrict or close, a person's decision")
         if str(c.id) in due_reviews:
             kyc.append(f"Periodic risk review due {due_reviews[str(c.id)]}")
+        # India: a recorded KYC that is overdue, blocked at the KRA or falling due is a KYC exception beside the gates.
+        kyc += kyc_india.queue_lines(await kyc_india.case_status(db, firm, c))
         rows.append(account_states.account_row(
             c, data_complete=bool(account and account["state"] == "complete"), gates_blocking=bool(gates["blocking"]),
             kyc=kyc, transfers=transfers.get(c.id, []), first_fill=fills.get(c.id), now=now))

@@ -633,6 +633,25 @@ async def main() -> int:
             check("the calendar's complaint filings read the register",
                   any(i.get("register") for i in (await compliance_calendar.overview(s, firm))["items"] if i["obligation"] == "complaints_monthly"), True)
             check("rows 9 and 10 add nothing a second time", (await india_row9.add(s, firm), await india_row10.add(s, firm)), (0, 0))
+            print("\n=== Rows 11 and 12: the tax engine's records and KYC in every state ===")
+            from app.aurea_core import kyc_india, tax_india_full
+            from seed import india_row11, india_row12
+            tr = await tax_intelligence.for_household(s, households["The Sharma Family"].id, "IN", firm_id=firm.id)
+            raj = next(t for t in tr["taxpayers"] if t["name"] == "Rajesh Sharma")
+            mee = next(t for t in tr["taxpayers"] if t["name"] == "Meera Sharma")
+            check("Rajesh's recorded losses are a ledger, and it gives the same Rs 40,000 his profile carried",
+                  (raj["engine"]["ledger_in_use"], raj["engine"]["loss_available"]), (True, {"short_term": 0.0, "long_term": 40000.0}))
+            check("one was filed late and one is past eight years, and each says so",
+                  sorted(r["state"] for r in raj["engine"]["loss_ledger"]), ["carried", "expired", "late_return"])
+            check("Meera's income and deductions make the regime comparison a finding, not a request",
+                  (mee["engine"]["regime"]["assessed"], mee["engine"]["regime"]["conclusive"], mee["engine"]["regime"]["cheaper"]), (True, True, "new"))
+            check("the engine is an estimate", "qualified person" in raj["engine"]["estimate"], True)
+            kyc = {p["name"]: p["state"] for p in (await kyc_india.overview(s, firm))["parties"]}
+            check("KYC is in every state, each worked out from what was recorded",
+                  (kyc["Rajesh Sharma"], kyc["Karthik Iyer"], kyc["Lakshmi Iyer"], kyc["Nandini Kapoor"], kyc["Subir Banerjee"], kyc["Anita Menon"],
+                   kyc["Elaine D'Souza"], kyc["Kapoor Family Trust"]),
+                  ("verified", "due", "overdue", "blocked", "due", "due", "not_on_file", "not_assessed"))
+            check("rows 11 and 12 add nothing a second time", (await india_row11.add(s, firm), await india_row12.add(s, firm)), (0, 0))
 
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)

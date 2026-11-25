@@ -43,7 +43,7 @@ def sanctions_open(case, party_status: dict) -> list[str]:
 def evaluate(case, *, party_status: dict, disclosure_status: dict,
              fee_status: dict | None = None, held_away_count: int | None = None,
              transfer_status: dict | None = None, consent_status: dict | None = None,
-             registration_status: dict | None = None) -> dict:
+             registration_status: dict | None = None, kyc_status: dict | None = None) -> dict:
     """All activation gates for a case, and whether any of them blocks.
 
     Optional arguments degrade gracefully: a caller that has not loaded the fee schedule or
@@ -217,6 +217,11 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
         else f"EDD status: {case.edd_status}.",
         track="financial_crime",
     ))
+
+    # India: the parties' KYC as a person recorded it (aurea_core/kyc_india.py). An overdue or blocked KYC fails; one on file
+    # that is falling due, or none on file, warns, because not on file does not mean not done.
+    if kyc_status is not None:
+        gates.append(_gate("kyc_current", "KYC on file and current", kyc_status["state"], kyc_status["detail"], track="financial_crime"))
 
     # ── Track D — funding controls ───────────────────────────────────────────
     # These gate *submitting the transfer*, not activating the account: L200 is explicit

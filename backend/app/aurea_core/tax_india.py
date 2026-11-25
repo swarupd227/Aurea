@@ -25,7 +25,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, markets
+from app.aurea_core import firm_time, law_figures, markets
 from app.aurea_core.pan import mask as pan_mask
 from app.aurea_core.valuation import latest_prices
 from app.models.graph import Account, LegalEntity, Mandate, Person
@@ -36,25 +36,29 @@ ST_EQUITY, LT_EQUITY, ST_SLAB, LT_OTHER = "st_equity", "lt_equity", "st_slab", "
 BUCKETS = (ST_EQUITY, LT_EQUITY, ST_SLAB, LT_OTHER)
 LONG_TERM_BUCKETS = (LT_EQUITY, LT_OTHER)
 
-LTCG_EXEMPTION = 125_000
-RATE_ST_EQUITY = 0.20
-RATE_LT = 0.125
-CESS = 0.04
-SURCHARGE_CAP = 0.15        # on dividends and gains at special rates; slab-taxed gains are not capped
-GRANDFATHER_BEFORE = date(2018, 2, 1)
+# Each figure is held once, in law_figures, with its source and the day it was read.
+LTCG_EXEMPTION = law_figures.value("in_cg_equity_lt_exemption")
+RATE_ST_EQUITY = law_figures.value("in_cg_equity_st_rate")
+RATE_LT = law_figures.value("in_cg_equity_lt_rate")
+CESS = law_figures.value("in_cess")
+SURCHARGE_CAP = law_figures.value("in_surcharge_special_cap")   # on dividends and gains at special rates; slab-taxed gains are not capped
+GRANDFATHER_BEFORE = date(2018, 2, 1)       # equity bought before this day: Income-tax Act 2025 s.90(7)-(8)
 GAAR_THRESHOLD = 30_000_000  # Rs 3 crore of tax benefit in a year; Rule 10U, 2026 equivalent unconfirmed
 HARVEST_MIN = 10_000        # below this a harvest is not worth a trade
 TURNING_LONG_DAYS = 30      # a short-term loss within this of going long-term is the better loss
 
 EQUITY_CLASSES = ("listed_equity", "equity_fund", "reit_invit")
+# The classes the Act gives its own holding period. A specified fund, a market-linked debenture and unlisted debt are never
+# long-term; unlisted and foreign shares, physical gold and land or buildings need more than 24 months; the rest 12.
+NEVER_LONG = ("specified_fund", "mld", "unlisted_debt")
+TWENTY_FOUR_MONTHS = ("unlisted", "foreign_shares", "physical_gold", "land_building")
 
 NOT_MODELLED = [
     "Marginal relief on surcharge",
-    "Section 156 rebate",
+    "Section 156 rebate on the capital gains estimate (the regime comparison applies it to ordinary income)",
     "Basic exemption shortfall",
-    "Old and new regime comparison",
-    "Grandfathering to 31 Jan 2018 value",
-    "Advance tax",
+    "Grandfathering for a lot with no 31 Jan 2018 value on file",
+    "Advance tax already paid, and relief for gains arising after an instalment date",
     "Dividends and interest",
     "TDS",
 ]
@@ -77,9 +81,9 @@ def add_months(day: date, months: int) -> date:
 
 def long_term_from(tax_class: str, acquired_on: date) -> date | None:
     """The first day a sale of this lot is long-term. None for what never goes long-term."""
-    if tax_class == "specified_fund":
+    if tax_class in NEVER_LONG:
         return None
-    months = 24 if tax_class == "unlisted" else 12
+    months = int(law_figures.value("in_cg_other_months" if tax_class in TWENTY_FOUR_MONTHS else "in_cg_equity_months"))
     return date.fromordinal(add_months(acquired_on, months).toordinal() + 1)
 
 
@@ -167,7 +171,16 @@ def _tax_inputs(person: Person | None, entity: LegalEntity | None) -> dict:
     }
 
 
-def _realised(txn: Transaction, tax_class: str) -> dict:
+def grandfathered_cost(tax_class: str, acquired_on: date, cost: float, sale_value: float, fmv: float | None) -> float:
+    """What a lot cost for tax: the higher of its cost and the lower of its 31 Jan 2018 value and the sale value, for listed
+    equity bought before 1 Feb 2018. With no value on file the cost stands, which is the cautious reading for a gain and the
+    generous one for a loss, so the report lists the lot as not grandfathered."""
+    if fmv is None or tax_class not in EQUITY_CLASSES or acquired_on >= GRANDFATHER_BEFORE:
+        return cost
+    return max(cost, min(fmv, sale_value))
+
+
+def _realised(txn: Transaction, tax_class: str, fmv_per_unit: float | None = None) -> dict:
     """A sale's gain by bucket, from the lots settlement relieved. It carries them because a lot's
     date is gone once the lot is."""
     out = {b: 0.0 for b in BUCKETS}
@@ -176,8 +189,11 @@ def _realised(txn: Transaction, tax_class: str) -> dict:
     fees = float(lineage.get("fees") or 0)
     for lot in lineage.get("lots") or []:
         share = float(lot["quantity"]) / qty
-        gain = float(lot["quantity"]) * float(txn.price) - float(lot["cost"]) - fees * share
-        out[bucket(tax_class, date.fromisoformat(lot["acquired_on"]), txn.trade_date)] += gain
+        acquired = date.fromisoformat(lot["acquired_on"])
+        proceeds = float(lot["quantity"]) * float(txn.price)
+        fmv = None if fmv_per_unit is None else float(fmv_per_unit) * float(lot["quantity"])
+        cost = grandfathered_cost(tax_class, acquired, float(lot["cost"]), proceeds, fmv)
+        out[bucket(tax_class, acquired, txn.trade_date)] += proceeds - cost - fees * share
     return out
 
 
@@ -196,12 +212,12 @@ async def _instruments(session: AsyncSession, ids: set) -> dict:
     return {i.id: i for i in (await session.execute(select(Instrument).where(Instrument.id.in_(ids)))).scalars().all()}
 
 
-async def realised_this_year(session: AsyncSession, account_ids: list, year: dict) -> dict:
+async def realised_this_year(session: AsyncSession, account_ids: list, year: dict, grandfather: dict | None = None) -> dict:
     sales = await _sales(session, account_ids, year)
     instruments = await _instruments(session, {t.instrument_id for t in sales if t.instrument_id})
     total = {b: 0.0 for b in BUCKETS}
     for t in sales:
-        total = _merge(total, _realised(t, tax_class_of(instruments.get(t.instrument_id))))
+        total = _merge(total, _realised(t, tax_class_of(instruments.get(t.instrument_id)), (grandfather or {}).get(t.instrument_id)))
     return total
 
 
@@ -228,10 +244,14 @@ async def position_for(session: AsyncSession, firm, mandate: Mandate, *, today: 
     """Where this mandate's taxpayer stands in the tax year, for sizing a proposal against it."""
     person = await session.get(Person, mandate.person_id) if mandate.person_id else None
     entity = await session.get(LegalEntity, mandate.entity_id) if mandate.entity_id else None
+    from app.aurea_core import tax_india_full as full
+
     inputs = _tax_inputs(person, entity)
     year = markets.tax_year(markets.MARKETS["IN"], today)
+    inputs["brought"] = await full.brought_forward(session, firm.id, person_id=person.id if person else None,
+                                                   entity_id=entity.id if entity else None, today=today, fallback=inputs["brought"])
     accounts = await owner_accounts(session, firm.id, mandate)
-    realised = await realised_this_year(session, [a.id for a in accounts], year)
+    realised = await realised_this_year(session, [a.id for a in accounts], year, await full.fmv_map(session, firm.id))
     return {
         "taxpayer": person.full_name if person else (entity.name if entity else None),
         "tax_year": year["label"], "tax_year_end": year["end"].isoformat(), "realised": realised,
@@ -343,6 +363,9 @@ async def report(session: AsyncSession, brain: dict, *, firm, today: date | None
             lots_by_holding.setdefault(lot.holding_id, []).append(lot)
     instruments = await _instruments(session, {h.instrument_id for h in holdings})
     prices = await latest_prices(session, firm.id)
+    from app.aurea_core import tax_india_full as full
+
+    fmv = await full.fmv_map(session, firm.id)
 
     owner_of: dict = {}     # account id -> taxpayer key
     for m in brain.get("mandates", []):
@@ -360,10 +383,14 @@ async def report(session: AsyncSession, brain: dict, *, firm, today: date | None
         qty = float(h.quantity or 0)
         price = float(price_row.close) if price_row else (float(h.market_value or 0) / qty if qty else 0.0)
         lots = sorted(lots_by_holding.get(h.id, []), key=lambda l: l.acquired_on)
+        klass = tax_class_of(inst)
         payers[key]["rows"].append({
             "symbol": inst.symbol if inst else "?", "name": inst.name if inst else "",
-            "tax_class": tax_class_of(inst), "account": acc.name, "account_id": str(acc.id), "price": price,
-            "lots": [{"quantity": float(l.quantity), "cost": float(l.cost_per_unit), "acquired_on": l.acquired_on}
+            "tax_class": klass, "account": acc.name, "account_id": str(acc.id), "price": price,
+            "instrument_id": h.instrument_id, "fmv": fmv.get(h.instrument_id),
+            # A pre-2018 equity lot is valued at the higher of its cost and the lower of its 2018 value and today's price.
+            "lots": [{"quantity": float(l.quantity), "acquired_on": l.acquired_on, "raw_cost": float(l.cost_per_unit),
+                      "cost": grandfathered_cost(klass, l.acquired_on, float(l.cost_per_unit), price, fmv.get(h.instrument_id))}
                      for l in lots],
         })
 
@@ -374,8 +401,10 @@ async def report(session: AsyncSession, brain: dict, *, firm, today: date | None
         if person is None and not key.startswith("account:"):
             entity = await session.get(LegalEntity, uuid.UUID(key))
         inputs = _tax_inputs(person, entity)
+        inputs["brought"] = await full.brought_forward(session, firm.id, person_id=person.id if person else None,
+                                                       entity_id=entity.id if entity else None, today=today, fallback=inputs["brought"])
         ids = [a.id for a in data["accounts"]]
-        realised = await realised_this_year(session, ids, year)
+        realised = await realised_this_year(session, ids, year, fmv)
         position = {"realised": realised}
         settled = set_off(realised, inputs["brought"], slab_rate=inputs["slab_rate"])
         tax = tax_on(settled, slab_rate=inputs["slab_rate"], income=inputs["income"])
@@ -393,8 +422,11 @@ async def report(session: AsyncSession, brain: dict, *, firm, today: date | None
             opportunities += _opportunities(row, position, inputs, today=today, tax_year_end=year["end"])
 
         lt_rate = RATE_LT * (1 + min(tax["surcharge_rate"], SURCHARGE_CAP)) * (1 + CESS)
+        # A holding with pre-2018 lots and no 2018 value on file cannot be sold for a known gain, so it is left out of the
+        # exemption walk; with the value recorded its cost is the grandfathered one.
         clean_rows = [r for r in data["rows"]
-                      if not any(l["acquired_on"] < GRANDFATHER_BEFORE for l in r["lots"])]
+                      if not any(l["acquired_on"] < GRANDFATHER_BEFORE for l in r["lots"]) or
+                      (r["fmv"] is not None and r["tax_class"] in EQUITY_CLASSES)]
         opportunities += _exemption_harvest(clean_rows, settled["exempt_left"], today, lt_rate)
 
         realised_loss = any(float(v) < 0 for v in realised.values())
@@ -421,6 +453,8 @@ async def report(session: AsyncSession, brain: dict, *, firm, today: date | None
             "unrealised": {b: round(v, 2) for b, v in unrealised.items()},
             "opportunities": sorted(opportunities, key=lambda o: -float(o.get("tax_saved") or 0)),
             "grandfathered": grandfathered,
+            "engine": await full.engine(session, firm, person, entity, inputs=inputs, rows=data["rows"], realised=realised,
+                                        settled=settled, tax=tax, opportunities=opportunities, today=today, year=year),
             "return_needed_by": return_due.isoformat() if realised_loss else None,
             "benefit": {"used": _harvest_benefit(realised, inputs), "limit": GAAR_THRESHOLD},
         })

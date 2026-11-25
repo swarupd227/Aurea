@@ -197,6 +197,9 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "end_employer_benefit":
     case "set_plan_tier":
     case "read_tax_position":
+    case "read_india_tax_records":
+    case "record_tax_loss":
+    case "record_grandfather_value":
     case "check_household_wash_sale":
       return onClient("/studio/tax");
     case "read_estate":
@@ -467,6 +470,8 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_complaints":
     case "record_complaint":
     case "record_complaint_step":
+    case "read_kyc":
+    case "record_kyc":
     case "read_compliance_calendar":
     case "record_compliance_filing":
     case "record_sebi_registration":

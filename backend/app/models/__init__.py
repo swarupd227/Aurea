@@ -80,3 +80,7 @@ from app.models import pms  # noqa: F401,E402
 # Account Aggregator consents and e-CAS statements (India row 9), and the complaints register (India row 10).
 from app.models import aggregator  # noqa: F401,E402
 from app.models import complaints  # noqa: F401,E402
+# Capital losses carried forward and an equity's 31 Jan 2018 value, as a person recorded them (India row 11).
+from app.models import india_tax  # noqa: F401,E402
+# A client's KYC as a person recorded it from the document (India row 12).
+from app.models import kyc  # noqa: F401,E402

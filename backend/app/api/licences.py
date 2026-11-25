@@ -439,3 +439,112 @@ async def check_advertising(body: AdvertisingIn, user: User = ReaderDep, firm: F
     from app.aurea_core import advertising
 
     return advertising.for_firm(firm, body.text, body.kind)
+# ── India row 11: the tax engine's records. Row 12: KYC ─────────────────────────────────────────────────────────
+
+class TaxLossIn(BaseModel):
+    person_id: uuid.UUID | None = None
+    entity_id: uuid.UUID | None = None
+    tax_year: str
+    kind: str
+    amount: float
+    used: float | None = None
+    return_filed_on: date | None = None
+    document: str
+    note: str | None = None
+
+
+class GrandfatherIn(BaseModel):
+    instrument_id: uuid.UUID | None = None
+    symbol: str | None = None
+    fmv_per_unit: float
+    document: str
+    note: str | None = None
+
+
+class KycIn(BaseModel):
+    person_id: uuid.UUID | None = None
+    entity_id: uuid.UUID | None = None
+    case_id: uuid.UUID | None = None
+    party_name: str | None = None
+    document: str
+    ckyc_number: str | None = None
+    kra_name: str | None = None
+    kra_status: str | None = None
+    kyc_completed_on: date | None = None
+    verification_mode: str | None = None
+    ipv_on: date | None = None
+    aadhaar_last4: str | None = None
+    aadhaar_xml_dated: date | None = None
+    pan_aadhaar_linked: bool | None = None
+    id_proof_kind: str | None = None
+    id_proof_valid_to: date | None = None
+    address_proof_kind: str | None = None
+    address_proof_dated: date | None = None
+    address_proof_valid_to: date | None = None
+    risk_band: str | None = None
+    pep: bool | None = None
+    structure: str | None = None
+    beneficial_owners: list[dict] | None = None
+    trigger: str | None = None
+    trigger_on: date | None = None
+    note: str | None = None
+
+
+@router.get("/tax-records")
+async def tax_records(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import tax_india_full
+
+    return {**await tax_india_full.records(db, firm), "can_record": user.role in tax_india_full.RECORDERS}
+
+
+@router.post("/tax-losses")
+async def record_tax_loss(body: TaxLossIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_tax_loss behind its Confirm card is the same action."""
+    from app.aurea_core import tax_india_full
+
+    if user.role not in tax_india_full.RECORDERS:
+        raise HTTPException(status_code=403, detail="A capital loss is recorded by an adviser, a paraplanner, operations or the portfolio team.")
+    try:
+        result = await tax_india_full.record_loss(db, firm, by=user.email, **body.model_dump())
+    except tax_india_full.TaxFactError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/grandfather-values")
+async def record_grandfather_value(body: GrandfatherIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_grandfather_value behind its Confirm card is the same action."""
+    from app.aurea_core import tax_india_full
+
+    if user.role not in tax_india_full.RECORDERS:
+        raise HTTPException(status_code=403, detail="A 2018 value is recorded by an adviser, a paraplanner, operations or the portfolio team.")
+    try:
+        result = await tax_india_full.record_fmv(db, firm, by=user.email, **body.model_dump())
+    except tax_india_full.TaxFactError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/kyc")
+async def kyc(household_id: uuid.UUID | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import kyc_india
+
+    return {**await kyc_india.overview(db, firm, household_id=household_id), "can_record": user.role in kyc_india.RECORDERS}
+
+
+@router.post("/kyc")
+async def record_kyc(body: KycIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_kyc behind its Confirm card is the same action."""
+    from app.aurea_core import kyc_india
+
+    if user.role not in kyc_india.RECORDERS:
+        raise HTTPException(status_code=403, detail="KYC is recorded by an adviser, a paraplanner, operations or compliance.")
+    data = body.model_dump(exclude={"note", "beneficial_owners"})
+    try:
+        result = await kyc_india.record(db, firm, by=user.email, note=body.note, beneficial_owners_text=body.beneficial_owners, **data)
+    except kyc_india.KycError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result

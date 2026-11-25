@@ -13,6 +13,7 @@ import { FeeCapChips, PreAdviceChecks } from "@/app/workspace/components/artifac
 import { GuardianChips, PmsClients, ResidencyPeople } from "@/app/workspace/components/artifacts/IndiaCard";
 import { AggregatorConsents, StatementChips } from "@/app/workspace/components/artifacts/AggregatorCard";
 import { AdvertisingChecker, AnnexureTable, ComplaintRows } from "@/app/workspace/components/artifacts/ComplaintsCard";
+import { KycCounts, KycParties } from "@/app/workspace/components/artifacts/IndiaKycCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -266,6 +267,17 @@ export function LicencesView() {
         <Card className="mb-4">
           <div className="tile-label mb-2">Minors and their guardians</div>
           <div className="-mx-3" data-testid="licence-guardians"><GuardianChips guardians={data.guardians} /></div>
+        </Card>
+      )}
+
+      {data.kyc?.applies && (data.kyc.parties ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">KYC, as recorded</span>
+            <KycCounts counts={data.kyc.counts} />
+            <span className="chip text-ink-muted" title={data.kyc.not_connected}>Lookups not connected</span>
+          </div>
+          <div className="-mx-3" data-testid="licence-kyc"><KycParties parties={data.kyc.parties} /></div>
         </Card>
       )}
 

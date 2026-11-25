@@ -403,6 +403,10 @@ async def build(s, *, quotes: dict | None = None) -> Firm:
 
     await india_row9.add(s, firm)
     await india_row10.add(s, firm)
+    from seed import india_row11, india_row12
+
+    await india_row11.add(s, firm)
+    await india_row12.add(s, firm)
     return firm
 
 

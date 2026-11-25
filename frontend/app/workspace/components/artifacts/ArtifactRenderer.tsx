@@ -35,6 +35,7 @@ import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
 import { PmsCard, PmsReportCard, ResidencyCard } from "./IndiaCard";
 import { AggregatorCard, EcasCard } from "./AggregatorCard";
 import { AdvertisingCard, ComplaintsCard } from "./ComplaintsCard";
+import { KycCard, TaxRecordsCard } from "./IndiaKycCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
@@ -463,6 +464,15 @@ export function artifactCard(artifact: Artifact) {
       case "check_advertising":
         if (!Array.isArray(artifact.result?.findings) && artifact.result?.applies !== false) return null;
         return <AdvertisingCard result={artifact.result as any} />;
+      case "read_kyc":
+      case "record_kyc":
+        if (!Array.isArray(artifact.result?.parties) && artifact.result?.applies !== false) return null;
+        return <KycCard result={artifact.result as any} />;
+      case "read_india_tax_records":
+      case "record_tax_loss":
+      case "record_grandfather_value":
+        if (!Array.isArray(artifact.result?.taxpayers) && artifact.result?.applies !== false) return null;
+        return <TaxRecordsCard result={artifact.result as any} />;
       case "read_pms_report":
         if (typeof artifact.result?.quarter !== "string") return null;
         return <PmsReportCard result={artifact.result as any} />;
