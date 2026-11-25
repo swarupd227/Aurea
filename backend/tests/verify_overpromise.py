@@ -43,6 +43,8 @@ PROMISES = {
     "A risk-free income for life.": ["risk-free"],
     "The fund will always outperform the index.": ["always outperform"],
     "We guarantee you will definitely retire early.": ["guarantee", "will definitely"],
+    "This fund is guaranteed": ["guaranteed"],          # the end of the text is not a closing quote
+    "Guaranteed to beat cash": ["guaranteed"],          # nor is its start an opening one
 }
 
 

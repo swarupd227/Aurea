@@ -459,6 +459,14 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_pms":
     case "read_pms_report":
     case "record_pms_agreement":
+    case "read_aggregator":
+    case "record_aggregator_consent":
+    case "revoke_aggregator_consent":
+    case "pull_aggregator":
+    case "record_ecas":
+    case "read_complaints":
+    case "record_complaint":
+    case "record_complaint_step":
     case "read_compliance_calendar":
     case "record_compliance_filing":
     case "record_sebi_registration":

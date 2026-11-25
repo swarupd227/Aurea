@@ -612,6 +612,28 @@ async def main() -> int:
                   (set(k["state"] for k in clients["Karthik Iyer"]["checks"]), clients["Kapoor Family Trust"]["agreement"]), ({"pass"}, None))
             check("rows 7 and 8 add nothing a second time", (await india_row7.add(s, firm), await india_row8.add(s, firm)), (0, 0))
 
+            print("\n=== Rows 9 and 10: a consolidated statement, and the complaints register ===")
+            from app.aurea_core import account_aggregator, complaints, held_away
+            from seed import india_row9, india_row10
+            iyer = households["The Iyer Family"]
+            statements = (await account_aggregator.overview(s, firm))["statements"]
+            check("one CAMS and KFintech statement for the Iyers, two lines, from a document",
+                  [(x["household"], x["kind"], x["lines"], x["added"]) for x in statements], [("The Iyer Family", "cams_kfintech", 2, 2)])
+            held = await held_away.for_household(s, iyer.id, firm_id=firm.id)
+            check("its lines are held-away lines a person recorded, in rupees, and the funds resolve to the firm's own by ISIN",
+                  (held["summary"]["holdings"], sorted(h["symbol"] for h in held["holdings"]), {h["institution"] for h in held["holdings"]}),
+                  (2, ["HDFC-CORPBOND-REGULAR", "UTI-NIFTY50-REGULAR"], {"HDFC Mutual Fund", "UTI Mutual Fund"}))
+            check("no aggregator consent is written by the seed: it is opt-in", (await account_aggregator.overview(s, firm))["consents"], [])
+            reg = await complaints.overview(s, firm)
+            check("the register carries every state", {k: reg["counts"][k] for k in ("overdue", "at_risk", "open", "resolved", "withdrawn")},
+                  {"overdue": 1, "at_risk": 1, "open": 2, "resolved": 2, "withdrawn": 1})
+            check("the unacknowledged complaint about impersonation is open and acknowledgement is due, not yet overdue",
+                  [c["ack_state"] for c in reg["complaints"] if c["category"] == "impersonation"], ["ack_due"])
+            check("a complaint about advice was told to compliance", [c["told_compliance"] for c in reg["complaints"] if c["category"] == "advice"], [True])
+            check("the calendar's complaint filings read the register",
+                  any(i.get("register") for i in (await compliance_calendar.overview(s, firm))["items"] if i["obligation"] == "complaints_monthly"), True)
+            check("rows 9 and 10 add nothing a second time", (await india_row9.add(s, firm), await india_row10.add(s, firm)), (0, 0))
+
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)
 

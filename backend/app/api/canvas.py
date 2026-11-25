@@ -187,6 +187,10 @@ async def post_message(
                 await txn_monitoring.tipping_off(db, firm.id, hid, body.body)
             except txn_monitoring.MonitoringError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
+            from app.aurea_core import advertising
+            why = advertising.refusal(firm, body.body)
+            if why:
+                raise HTTPException(status_code=400, detail=why)
             m = message_core.from_firm(firm.id, hid, body.body, author=user.full_name)
     except message_core.MessageError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

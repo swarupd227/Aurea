@@ -28,6 +28,18 @@ from app.core.db import Base
 
 PASS, FAIL = [], []
 ALLOWED = {"app/main.py", "app/atlas/worker.py"}
+# Which firms of the test fixture each simulation is seeded onto: the demonstration firm (New Zealand) and, since B-256 and
+# India row 9, the Indian demonstration firm. A simulation not listed here is seeded on the first only.
+FIRM_OF = {"demo": "firm", "india-demo": "india"}
+
+
+class _Targets(dict):
+    def __missing__(self, key):
+        return ["demo"]
+
+
+TARGETS = _Targets({"aa_feed": ["india-demo"], "held_away_feed": ["demo", "india-demo"], "news_source": ["demo", "india-demo"],
+                    "linkedin_export": ["demo", "india-demo"]})
 
 
 def check(label: str, got, want) -> None:
@@ -81,8 +93,8 @@ async def main() -> int:
     installed = sims_pkg.install_all()
     check("on installs every one", installed, sorted(sims))
 
-    for key, sim in sims.items():
-        print(f"\n=== {key}: seed, then discard ===")
+    for key, sim, slug in [(k, v, sl) for k, v in sims.items() for sl in TARGETS[k]]:
+        print(f"\n=== {key} on {slug}: seed, then discard ===")
         db = create_async_engine("sqlite+aiosqlite:///:memory:")
         try:
             async with db.begin() as conn:
@@ -94,7 +106,7 @@ async def main() -> int:
             async with Session() as s:
                 before = await snapshot(s)
             async with Session() as s:
-                firm = await s.get(type(fx.firm), fx.firm.id)
+                firm = await s.get(type(fx.firm), getattr(fx, FIRM_OF[slug]).id)
                 first = await sim.seed(s, firm)
                 await s.commit()
                 again = await sim.seed(s, firm)
@@ -103,7 +115,7 @@ async def main() -> int:
             async with Session() as s:
                 after_one = await counts(s)
             async with Session() as s:
-                firm = await s.get(type(fx.firm), fx.firm.id)
+                firm = await s.get(type(fx.firm), getattr(fx, FIRM_OF[slug]).id)
                 await sim.seed(s, firm)
                 await s.commit()
             async with Session() as s:
@@ -114,11 +126,11 @@ async def main() -> int:
                 await s.commit()
                 check("a firm that never opted in is left alone", any(gone.values()), False)
             async with Session() as s:
-                firm = await s.get(type(fx.firm), fx.firm.id)
+                firm = await s.get(type(fx.firm), getattr(fx, FIRM_OF[slug]).id)
                 await sim.discard(s, firm)
                 await s.commit()
             async with Session() as s:
-                firm = await s.get(type(fx.firm), fx.firm.id)
+                firm = await s.get(type(fx.firm), getattr(fx, FIRM_OF[slug]).id)
                 check("discarding takes the opt-in away", sims_pkg.enabled_for(firm, key), False)
                 now = await snapshot(s)
                 changed = sorted(t for t in before if before[t] != now[t] and t not in ("firm",))
@@ -126,7 +138,7 @@ async def main() -> int:
                 firm_settings = (firm.settings or {})
                 check("  the firm's settings included", "simulations" in firm_settings, False)
             async with Session() as s:
-                firm = await s.get(type(fx.firm), fx.firm.id)
+                firm = await s.get(type(fx.firm), getattr(fx, FIRM_OF[slug]).id)
                 twice = await sim.discard(s, firm)
                 await s.commit()
                 check("a second discard does nothing", any(twice.values()), False)

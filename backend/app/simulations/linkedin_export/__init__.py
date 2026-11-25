@@ -17,27 +17,36 @@ from app.simulations import Simulation, enabled_for, opt_in, opt_out, register, 
 
 KEY = "linkedin_export"
 RM_NAME = "Sophie Tran"
+RM_NAME_IN = "Ananya Rao"          # the Indian demonstration firm's adviser (B-256)
 FILE = pathlib.Path(__file__).with_name("Connections.csv")
+FILE_IN = pathlib.Path(__file__).with_name("Connections_in.csv")
 
 
 def install() -> None:
     """The import is a page upload and a tool; there is nothing to register. The file is read when seeding."""
 
 
-def export_text() -> str:
-    return FILE.read_text(encoding="utf-8")
+def _india(firm) -> bool:
+    from app.aurea_core import markets
+
+    return markets.code(getattr(firm, "jurisdiction", None)) == "IN"
+
+
+def export_text(firm=None) -> str:
+    return (FILE_IN if firm is not None and _india(firm) else FILE).read_text(encoding="utf-8")
 
 
 async def firms(session) -> list:
     from app.models.tenant import Firm
 
-    return list((await session.execute(select(Firm).where(Firm.slug == "demo"))).scalars().all())
+    return list((await session.execute(select(Firm).where(Firm.slug.in_(("demo", "india-demo"))))).scalars().all())
 
 
 async def _rm(session, firm):
+    name = RM_NAME_IN if _india(firm) else RM_NAME
     from app.models.identity import User
 
-    return (await session.execute(select(User).where(User.firm_id == firm.id, User.full_name == RM_NAME,
+    return (await session.execute(select(User).where(User.firm_id == firm.id, User.full_name == name,
                                                      User.is_active.is_(True)))).scalars().first()
 
 
@@ -46,7 +55,7 @@ async def seed(session, firm) -> dict:
     rm = await _rm(session, firm)
     if rm is None:
         return {"links": 0, "rm": None}
-    out = await linkedin_import.import_connections(session, firm, rm, export_text(), source=tag(KEY), audit=False)
+    out = await linkedin_import.import_connections(session, firm, rm, export_text(firm), source=tag(KEY), audit=False)
     return {"rm": rm.full_name, "rows": out["rows"], "links": out["linked"], "already": out["already"],
             "unmatched": out["unmatched"]}
 

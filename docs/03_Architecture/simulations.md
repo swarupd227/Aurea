@@ -53,6 +53,7 @@ seeding twice adds nothing, and a discard leaves every table exactly as it was b
 | `held_away_feed` | An aggregation feed or statements for money held elsewhere | The held-away holdings feature (B-198): a feed registry | B-223 |
 | `news_source` | A licensed news and company-data service | The persona card (B-202): a news-source registry | B-224 |
 | `linkedin_export` | An RM's own LinkedIn connections export | The network map and the connections import (B-201, internal part) | B-225 |
+| `aa_feed` | An RBI-licensed Account Aggregator, as a financial information user reads it | `held_away_feeds.register`, gated by `aurea_core.account_aggregator.permitted` (India row 9) | B-265 |
 
 The real features each simulation feeds are B-164 and B-165 (the wealth platform), B-198, B-202 and B-201; the
 simulation rows say what is simulated, the feature rows say what is real.
@@ -72,3 +73,20 @@ simulation rows say what is simulated, the feature rows say what is real.
 - When WealthSmart exposes its own server: switch the `foundation.mcp` connector live with its URL and auth header on a
   real firm, then discard these. Delete `tests/verify_sim_wealth_platform.py` with the packages; the real adapter's
   suite, `tests.verify_foundation_mcp`, runs against its own test server and stays.
+
+### `aa_feed` and India for the other three (B-265, B-256)
+
+- The real feature is `aurea_core/account_aggregator.py`: a consent artefact a person records, the gate (`permitted`,
+  `permits`) every source reads, a pull (`pull_aggregator`) and an e-CAS a person supplies. The simulation is only the source:
+  a feed registered at `held_away_feeds.register` with `account_aggregator = True`, which delivers invented statements for the
+  Indian demonstration firm's households under each active consent and nothing outside it.
+- It acts only for a firm that opted in and whose market is India. Seeding (`python -m app.simulations seed aa_feed`) opts
+  `india-demo` in, writes four consents tagged `simulated:aa_feed` (active for the Sharmas and the Banerjees, lapsed for the
+  D'Souzas, withdrawn for the Kapoor trust) and pulls; discarding deletes those consents, the lines and the opt-in, and writes
+  no ledger or audit entry. Lines carry `simulated: true`; every card shows a "simulated" chip.
+- `held_away_feed`, `news_source` and `linkedin_export` also act for `india-demo` now: broker statements (Zerodha, ICICI Direct,
+  HDFC Securities, Groww) in NSE-listed instruments the firm prices, invented articles from invented Indian publishers about the
+  firm's invented clients, and Ananya Rao's `Connections_in.csv`. `python -m app.simulations seed` seeds both demonstration firms.
+- `tests.verify_simulations` seeds, repeats and discards each on every firm it names and proves every table is as it was.
+- Live: `AUREA_SIMULATIONS` is on by default, so nothing to switch on; the Indian firm opts in by running
+  `python -m app.simulations seed aa_feed held_away_feed news_source linkedin_export` in the backend container.

@@ -5,7 +5,9 @@ goals on track, and its tax memos were written before their prompt named the hou
 This resets the goals from the seed and reruns the tax agent, which refreshes its open proposals
 rather than raising more. It touches no other firm. Safe to run twice.
 
-Row 7 (a non-resident household and a minor) and row 8 (a Portfolio Manager client's agreement and fee) are added once.
+Row 7 (a non-resident household and a minor), row 8 (a Portfolio Manager client's agreement and fee), row 9 (a consolidated
+statement) and row 10 (a complaints register) are added once. The simulated Account Aggregator is not written here: it is
+opt-in (`python -m app.simulations seed aa_feed`, with AUREA_SIMULATIONS on).
 
 Run: python -m seed.india_demo_backfill
 """
@@ -79,6 +81,10 @@ async def main() -> None:
 
         row7 = await india_row7.add(s, firm)
         row8 = await india_row8.add(s, firm)
+        from seed import india_row9, india_row10
+
+        row9 = await india_row9.add(s, firm)
+        row10 = await india_row10.add(s, firm)
         await s.commit()
         from app.conduit.service import sync_market_data
         priced = await sync_market_data(s, firm.id)
@@ -86,7 +92,7 @@ async def main() -> None:
         await run_agent(s, firm=firm, agent_key=AgentKey.TAX_INTELLIGENCE, trigger="seed_scan",
                         subject=Subject("firm", firm.id, firm.name), require_human=True)
         await s.commit()
-    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7 and {row8} row 8 record(s), priced {priced['resolved']} instrument(s) "
+    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9 and {row10} row 10 record(s), priced {priced['resolved']} instrument(s) "
           f"({len(priced['failed'])} failed), and refreshed the tax positions.\n")
 
 

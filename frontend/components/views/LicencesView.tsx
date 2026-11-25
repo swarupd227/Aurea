@@ -11,6 +11,8 @@ import { withRef } from "@/lib/refs";
 import { LicenceChips } from "@/app/workspace/components/artifacts/LicenceCard";
 import { FeeCapChips, PreAdviceChecks } from "@/app/workspace/components/artifacts/SebiCard";
 import { GuardianChips, PmsClients, ResidencyPeople } from "@/app/workspace/components/artifacts/IndiaCard";
+import { AggregatorConsents, StatementChips } from "@/app/workspace/components/artifacts/AggregatorCard";
+import { AdvertisingChecker, AnnexureTable, ComplaintRows } from "@/app/workspace/components/artifacts/ComplaintsCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -110,6 +112,11 @@ function FilingRow({ item, onDone }: { item: any; onDone: () => void }) {
         <span className="chip text-ink-muted tabular-nums">{item.due_on}</span>
         <span className={`chip ${CAL_TONE[item.state]}`} data-testid="calendar-state">{CAL_TEXT[item.state]}</span>
         {item.reference && <span className="chip text-ink-muted">{item.reference}</span>}
+        {item.register && (
+          <span className="chip text-ink-muted tabular-nums" title="Worked from the complaints register" data-testid="calendar-register">
+            {item.register.received} received · {item.register.resolved} resolved · {item.register.pending_at_end} pending
+          </span>
+        )}
       </div>
       {canRecord && (
         <div className="flex flex-wrap items-end gap-2">
@@ -162,6 +169,9 @@ function CalendarSection({ calendar, onDone }: { calendar: any; onDone: () => vo
 export function LicencesView() {
   const nav = useViewNav();
   const { data, loading, refetch } = useApi<any>("/api/licences");
+  // The complaints register is read by compliance, a branch leader and operations; an adviser may record one and reads none.
+  const canReadComplaints = ["compliance", "branch_leader", "operations"].includes(getUser()?.role);
+  const complaints = useApi<any>(canReadComplaints ? "/api/licences/complaints" : null);
   if (loading || !data) return <div className="view-container"><Spinner /></div>;
   if (!data.applies) {
     return (
@@ -267,6 +277,44 @@ export function LicencesView() {
             <span className={`chip ${data.pms.without_agreement ? "text-warn" : "text-ink-muted"}`}>{data.pms.without_agreement} not assessed</span>
           </div>
           <div className="-mx-3" data-testid="licence-pms"><PmsClients clients={data.pms.clients} /></div>
+        </Card>
+      )}
+
+      {data.aggregator?.applies && ((data.aggregator.consents ?? []).length > 0 || (data.aggregator.statements ?? []).length > 0) && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Account Aggregator and statements</span>
+            <span className="chip text-ok">{data.aggregator.counts.active} active</span>
+            {data.aggregator.counts.expired > 0 && <span className="chip text-warn">{data.aggregator.counts.expired} lapsed</span>}
+            {data.aggregator.counts.revoked > 0 && <span className="chip text-crit">{data.aggregator.counts.revoked} withdrawn</span>}
+          </div>
+          <div className="-mx-3" data-testid="licence-aggregator">
+            <AggregatorConsents consents={data.aggregator.consents} />
+            {(data.aggregator.statements ?? []).length > 0 && <StatementChips statements={data.aggregator.statements} />}
+          </div>
+        </Card>
+      )}
+
+      {complaints.data?.applies && (complaints.data.complaints ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Complaints register</span>
+            {complaints.data.counts.overdue > 0 && <span className="chip text-crit">{complaints.data.counts.overdue} overdue</span>}
+            {complaints.data.counts.at_risk > 0 && <span className="chip text-warn">{complaints.data.counts.at_risk} at risk</span>}
+            <span className="chip text-ink-muted">{complaints.data.counts.open} open</span>
+            <span className="chip text-ok">{complaints.data.counts.resolved} resolved</span>
+          </div>
+          <div className="-mx-3" data-testid="licence-complaints">
+            <ComplaintRows complaints={complaints.data.complaints} />
+            {complaints.data.annexure_c && <div className="border-t border-border-soft"><AnnexureTable table={complaints.data.annexure_c} /></div>}
+          </div>
+        </Card>
+      )}
+
+      {data.applies && (
+        <Card className="mb-4">
+          <div className="tile-label mb-2">Check client wording</div>
+          <AdvertisingChecker />
         </Card>
       )}
 

@@ -26,9 +26,15 @@ def promises(text: str) -> list[str]:
     """The banned phrases the text asserts. A phrase is not asserted where its clause denies it before it ("returns are
     not guaranteed"), where it is quoted ('avoid "guaranteed"'), or where it is named as an example of language ("such as
     risk-free"). Over-flagging hid real findings in hundreds of flags, so a denial is read as one (B-48)."""
+    return asserted(text, BANNED)
+
+
+def asserted(text: str, phrases) -> list[str]:
+    """The phrases (literal words) the text asserts, read as `promises` reads them: a denial, a quotation or a named example
+    is not an assertion. The advertising check (`aurea_core/advertising.py`) reads its own phrases through this."""
     found = set()
     low = (text or "").lower()
-    for phrase in BANNED:
+    for phrase in phrases:
         for m in re.finditer(r"(?<![a-z])" + re.escape(phrase) + r"(?![a-z])", low):
             before = low[:m.start()]
             # Only the few words before the phrase, in its clause, count: so "can't lose" and "no risk" are not denied by
@@ -36,7 +42,8 @@ def promises(text: str) -> list[str]:
             clause = _CLAUSE.split(before)[-1]
             if _NEGATION.search(" ".join(clause.split()[-_WINDOW:]) + " "):
                 continue
-            if before[-1:] in _QUOTES or low[m.end():m.end() + 1] in _QUOTES:
+            # An empty slice is "in" any string, so a phrase at the very start or end of the text is not a quoted one.
+            if (before[-1:] and before[-1:] in _QUOTES) or (low[m.end():m.end() + 1] and low[m.end():m.end() + 1] in _QUOTES):
                 continue
             if _MENTION.search(clause):
                 continue

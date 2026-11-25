@@ -46,6 +46,27 @@ STATEMENTS = [
 ]
 
 
+# India (B-256): broker statements for the Indian demonstration firm's invented households, in NSE-listed instruments the firm
+# prices (they overlap its managed books, so the overlap shows), plus a fund with no symbol so the "no performance" path shows.
+# Mutual funds, NPS and REITs held away arrive through the Account Aggregator stand-in (`aa_feed`) or a consolidated statement,
+# so none is repeated here. Values are in rupees, as a broker's statement states them; they are invented, and say so.
+STATEMENTS_IN = [
+    ("The Sharma Family", "Rajesh Sharma", "Zerodha", "Rajesh Sharma - Demat", "ITC.NS", "ITC Ltd", "equity", 1500, 397500),
+    ("The Sharma Family", "Rajesh Sharma", "Zerodha", "Rajesh Sharma - Demat", "INFY.NS", "Infosys Ltd", "equity", 400, 474000),
+    ("The Sharma Family", "Meera Sharma", "ICICI Direct", "Meera Sharma - Demat", "TCS.NS", "Tata Consultancy Services Ltd", "equity", 200, 500000),
+    ("The Banerjee Household", "Subir Banerjee", "HDFC Securities", "Subir Banerjee - Demat", "RELIANCE.NS", "Reliance Industries Ltd", "equity", 250, 291250),
+    ("The Banerjee Household", "Subir Banerjee", "Kotak Mutual Fund", "Subir Banerjee - Folio", None, "Kotak Emerging Equity Fund", "equity", None, 180000),
+    ("The D'Souza Household", "Elaine D'Souza", "Groww", "Elaine D'Souza - Demat", "HDFCBANK.NS", "HDFC Bank Ltd", "equity", 700, 483000),
+    ("The D'Souza Household", "Elaine D'Souza", "Groww", "Elaine D'Souza - Demat", "ICICIBANK.NS", "ICICI Bank Ltd", "equity", 300, 420000),
+]
+
+
+def _india(firm) -> bool:
+    from app.aurea_core import markets
+
+    return markets.code(getattr(firm, "jurisdiction", None)) == "IN"
+
+
 def _slug(text: str) -> str:
     return "".join(c if c.isalnum() else "-" for c in text.lower()).strip("-")[:40]
 
@@ -65,7 +86,7 @@ class SimulatedHeldAwayFeed:
         stated = today.replace(day=1) - timedelta(days=1)
         homes = {h.name: h for h in (await session.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all()}
         out = []
-        for household, owner, institution, account, symbol, name, cls, qty, value in STATEMENTS:
+        for household, owner, institution, account, symbol, name, cls, qty, value in (STATEMENTS_IN if _india(firm) else STATEMENTS):
             h = homes.get(household)
             if h is None:
                 continue
@@ -78,7 +99,7 @@ class SimulatedHeldAwayFeed:
             out.append(FeedLine(
                 external_id=f"{_slug(household)}:{_slug(institution)}:{_slug(symbol or name)}:{_slug(owner or 'joint')}",
                 household_id=h.id, person_id=person_id, institution=institution, account_label=account, symbol=symbol,
-                instrument_name=name, asset_class=cls, quantity=qty, value=value, currency=(firm.base_currency or "NZD"),
+                instrument_name=name, asset_class=cls, quantity=qty, value=value, currency=(firm.base_currency or ("INR" if _india(firm) else "NZD")),
                 value_on=stated, document=f"{institution} statement, {stated.isoformat()} (simulated)"))
         return out
 
@@ -91,7 +112,7 @@ def install() -> None:
 
 
 async def demo_firms(session) -> list:
-    return (await session.execute(select(Firm).where(Firm.slug == "demo"))).scalars().all()
+    return (await session.execute(select(Firm).where(Firm.slug.in_(("demo", "india-demo"))))).scalars().all()
 
 
 async def seed(session, firm) -> dict:

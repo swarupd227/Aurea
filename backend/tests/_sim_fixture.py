@@ -25,6 +25,7 @@ class Fixture:
     admin: User
     households: dict
     contacts: dict
+    india: Firm = None
 
 
 async def build(s) -> Fixture:
@@ -99,4 +100,27 @@ async def build(s) -> Fixture:
                                  opened_at=now - timedelta(days=20)))
         contacts[name] = c
     await s.flush()
-    return Fixture(firm, other, adviser, ops, admin, households, contacts)
+    india = await _india(s)
+    return Fixture(firm, other, adviser, ops, admin, households, contacts, india)
+
+
+async def _india(s) -> Firm:
+    """The Indian demonstration firm in small: an adviser, four households (one a trust) and their people, no books. Tests only."""
+    firm = Firm(id=uuid.uuid4(), name="Astra India", slug="india-demo", base_currency="INR", jurisdiction="IN", regulator="SEBI", settings={})
+    s.add(firm)
+    await s.flush()
+    adviser = User(id=uuid.uuid4(), firm_id=firm.id, email="adviser@astra-india.test", full_name="Ananya Rao", role=UserRole.ADVISER,
+                   hashed_password="x", is_active=True)
+    s.add(adviser)
+    await s.flush()
+    for name, people in (("The Sharma Family", ["Rajesh Sharma", "Meera Sharma"]), ("The Banerjee Household", ["Subir Banerjee"]),
+                         ("The D'Souza Household", ["Elaine D'Souza"]), ("The Kapoor Family Trust", ["Nandini Kapoor"]),
+                         ("The Iyer Family", ["Karthik Iyer"])):
+        h = Household(id=uuid.uuid4(), firm_id=firm.id, name=name)
+        s.add(h)
+        await s.flush()
+        for full in people:
+            s.add(Person(id=uuid.uuid4(), firm_id=firm.id, household_id=h.id, full_name=full, date_of_birth=date(1975, 1, 1)))
+        s.add(RelationshipEdge(firm_id=firm.id, kind="adviser", from_type="user", from_id=adviser.id, to_type="household", to_id=h.id, attributes={}))
+    await s.flush()
+    return firm

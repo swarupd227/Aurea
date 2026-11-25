@@ -283,6 +283,18 @@ ALL: tuple[LawFigure, ...] = (
               "SEBI Master Circular for Portfolio Managers (Jul 2025)", date(2026, 10, 31)),
     LawFigure("in_pms_exit_load_y3", "Portfolio Manager: exit load in the third year, at most", 0.01, "rate",
               "SEBI Master Circular for Portfolio Managers (Jul 2025)", date(2026, 10, 31)),
+    # ── India: complaints (row 10). Read in the research report (section 3): every licence resolves a complaint within
+    # 21 calendar days through the entity, then SCORES, then SMART ODR. The acknowledgement period was not found there,
+    # so the figure below is assumed by this build and is the firm's own target, never presented as the circular's.
+    LawFigure("in_complaint_resolve_days", "A complaint is resolved by the entity within, calendar days of receipt", 21, "days",
+              "SEBI circular of Sep 2023 on redressal of investor grievances through SCORES and linking it to online dispute "
+              "resolution, as read in the research report; the circular's clause was not re-read", date(2026, 10, 31)),
+    LawFigure("in_complaint_ack_days", "ASSUMED: the firm acknowledges a complaint within, calendar days of receipt", 3, "days",
+              "Assumed by this build: no acknowledgement period was found in the sources read. The firm's own policy "
+              "(settings complaints.ack_days) replaces it", date(2026, 10, 31)),
+    LawFigure("in_complaint_pending_months", "Annexure C counts a complaint as long pending after, months", 3, "count",
+              "SEBI complaints data format (Annexure C) as read in the research report: pending over three months; the table "
+              "was not re-read", date(2026, 10, 31)),
 )
 
 VERSIONS: dict[str, tuple[LawFigure, ...]] = {}

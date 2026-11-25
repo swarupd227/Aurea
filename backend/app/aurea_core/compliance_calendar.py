@@ -172,6 +172,13 @@ async def overview(session: AsyncSession, firm: Firm) -> dict:
                           "filed_on": filed.filed_on.isoformat() if filed else None,
                           "reference": filed.reference if filed else None,
                           "recorded_by": filed.recorded_by if filed else None})
+    # The monthly complaint data reads the complaints register for its month when one is kept (India row 10); with none
+    # recorded it carries no figure, and that does not mean no complaint was made.
+    from app.aurea_core import complaints
+
+    for i in items:
+        if i["obligation"] == "complaints_monthly":
+            i["register"] = await complaints.period_counts(session, firm, i["period"])
     order = {"overdue": 0, "due_soon": 1, "upcoming": 2, "filed": 3}
     items.sort(key=lambda i: (order[i["state"]], i["due_on"] if i["state"] != "filed" else "", i["label"]))
     counts = {s: sum(1 for i in items if i["state"] == s) for s in order}

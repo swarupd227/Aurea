@@ -73,3 +73,32 @@ ARTICLES: dict[str, list[tuple[int, str, str, str, str]]] = {
 
 def url(slug: str) -> str:
     return f"https://simulated-news.example/{slug}"
+
+
+# India (B-256): invented publishers, about the Indian demonstration firm's invented clients only. Days are before the firm's today.
+DBC, KMD, MSW = ("Deccan Business Courier (simulated)", "Konkan Markets Daily (simulated)", "Malabar Sports Weekly (simulated)")
+ARTICLES_IN: dict[str, list[tuple[int, str, str, str, str]]] = {
+    "Rajesh Sharma": [
+        (18, DBC, "Sharma Precision Tools opens a second plant near Pune", "sharma-second-plant",
+         "Rajesh Sharma said the new plant would add capacity for components sold to two-wheeler makers. "
+         "Sharma chairs the regional manufacturers' association's skills committee."),
+        (70, MSW, "Veterans' cricket league crowns its champions", "sharma-veterans-cricket",
+         "Rajesh Sharma captained the winning side in the veterans' league final. "
+         "He has played the league every season since it began."),
+        (300, DBC, "Sharma Precision Tools wins a state export award", "sharma-export-award",
+         "Rajesh Sharma accepted the state export award on behalf of the company."),
+    ],
+    "Karthik Iyer": [
+        (26, KMD, "Iyer Analytics raises a growth round", "iyer-growth-round",
+         "Karthik Iyer's analytics firm closed a growth round to expand its work with regional banks. "
+         "Iyer is a visiting lecturer at a management institute."),
+        (95, MSW, "Chess association names new patron", "iyer-chess-patron",
+         "Karthik Iyer, a lifelong chess player, was named patron of the state junior chess association. "
+         "He recently recovered from a long illness and thanked the doctors who treated him."),
+    ],
+    "Nandini Kapoor": [
+        (33, KMD, "Kapoor Family Trust funds a school library", "kapoor-school-library",
+         "Nandini Kapoor said the trust would fund a library and a reading programme at a municipal school. "
+         "She has supported the school for fifteen years."),
+    ],
+}

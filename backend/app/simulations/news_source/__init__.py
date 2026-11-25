@@ -19,7 +19,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.aurea_core import news_sources
 from app.aurea_core.introductions import plain
 from app.simulations import Simulation, enabled_for, opt_in, opt_out, register, tag
-from app.simulations.news_source.articles import ARTICLES, url
+from app.aurea_core import markets
+from app.simulations.news_source.articles import ARTICLES, ARTICLES_IN, url
 
 KEY = "news_source"
 BASIS = "Simulated for demonstration"
@@ -40,7 +41,8 @@ class SimulatedNews:
         today = firm_time.today(firm)
         want = plain(name.split(",")[0])
         out = []
-        for who, items in ARTICLES.items():
+        market = markets.for_firm(firm)
+        for who, items in (ARTICLES_IN if market is not None and market.code == "IN" else ARTICLES).items():
             if plain(who) != want:
                 continue
             for days, publisher, title, slug, text in items:
@@ -56,7 +58,7 @@ def install() -> None:
 async def firms(session) -> list:
     from app.models.tenant import Firm
 
-    return list((await session.execute(select(Firm).where(Firm.slug == "demo"))).scalars().all())
+    return list((await session.execute(select(Firm).where(Firm.slug.in_(("demo", "india-demo"))))).scalars().all())
 
 
 async def seed(session, firm) -> dict:
@@ -75,7 +77,8 @@ async def seed(session, firm) -> dict:
         flag_modified(firm, "settings")
         await session.flush()
         control = "switched on, basis simulated"
-    return {"people_with_articles": len(ARTICLES), "articles": sum(len(v) for v in ARTICLES.values()), "control": control}
+    pool = ARTICLES_IN if markets.code(firm.jurisdiction) == "IN" else ARTICLES
+    return {"people_with_articles": len(pool), "articles": sum(len(v) for v in pool.values()), "control": control}
 
 
 async def discard(session, firm) -> dict:

@@ -251,3 +251,191 @@ async def record_portfolio_manager_agreement(body: PmsIn, user: User = ReaderDep
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     return result
+
+
+# ── India row 9: the Account Aggregator and consolidated statements ────────────────────────────────────────
+
+class AaConsentIn(BaseModel):
+    household_id: uuid.UUID
+    artefact_id: str
+    aggregator: str
+    purpose_code: str
+    fi_types: list[str]
+    data_from: date
+    data_to: date
+    expires_on: date
+    document: str
+    person_id: uuid.UUID | None = None
+    fetch_type: str | None = "onetime"
+    consent_start: date | None = None
+    note: str | None = None
+
+
+class AaRevokeIn(BaseModel):
+    reason: str
+    document: str | None = None
+
+
+class EcasIn(BaseModel):
+    household_id: uuid.UUID
+    kind: str
+    statement_date: date
+    document: str
+    lines: str
+    person_id: uuid.UUID | None = None
+    period_from: date | None = None
+
+
+@router.get("/aggregator")
+async def aggregator_overview(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import account_aggregator
+
+    return {**await account_aggregator.overview(db, firm), "can_record": user.role in account_aggregator.RECORDERS}
+
+
+@router.post("/aggregator/consents")
+async def record_aggregator_consent(body: AaConsentIn, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                                    db: AsyncSession = Depends(get_db)):
+    """The tool record_aggregator_consent behind its Confirm card is the same action."""
+    from app.aurea_core import account_aggregator
+
+    if user.role not in account_aggregator.RECORDERS:
+        raise HTTPException(status_code=403, detail="A consent is recorded by an adviser, a paraplanner or operations.")
+    try:
+        result = await account_aggregator.record_consent(db, firm, by=user.email, **body.model_dump())
+    except account_aggregator.AggregatorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/aggregator/consents/{consent_id}/revoke")
+async def revoke_aggregator_consent(consent_id: uuid.UUID, body: AaRevokeIn, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                                    db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import account_aggregator
+
+    if user.role not in account_aggregator.RECORDERS:
+        raise HTTPException(status_code=403, detail="A withdrawal is recorded by an adviser, a paraplanner or operations.")
+    try:
+        result = await account_aggregator.revoke_consent(db, firm, by=user.email, consent_id=consent_id, reason=body.reason, document=body.document)
+    except account_aggregator.AggregatorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/aggregator/pull")
+async def pull_aggregator(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import account_aggregator
+
+    if user.role not in account_aggregator.RECORDERS:
+        raise HTTPException(status_code=403, detail="Fetching is for an adviser, a paraplanner or operations.")
+    try:
+        result = await account_aggregator.pull(db, firm, by=user.email)
+    except account_aggregator.AggregatorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/aggregator/statements")
+async def record_ecas(body: EcasIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_ecas behind its Confirm card is the same action."""
+    from app.aurea_core import account_aggregator
+
+    if user.role not in account_aggregator.RECORDERS:
+        raise HTTPException(status_code=403, detail="A statement is recorded by an adviser, a paraplanner or operations.")
+    data = body.model_dump()
+    try:
+        result = await account_aggregator.record_ecas(db, firm, by=user.email, lines_text=data.pop("lines"), **data)
+    except account_aggregator.AggregatorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    result.pop("held_away", None)
+    await db.commit()
+    return result
+
+
+# ── India row 10: the complaints register and the advertising check ────────────────────────────────────────
+
+class ComplaintIn(BaseModel):
+    complainant: str
+    source: str
+    category: str
+    summary: str
+    received_on: date | None = None
+    household_id: uuid.UUID | None = None
+    scores_reference: str | None = None
+    reference: str | None = None
+    document: str | None = None
+    about_advice: bool | None = None
+
+
+class ComplaintStepIn(BaseModel):
+    kind: str
+    happened_on: date | None = None
+    outcome: str | None = None
+    reference: str | None = None
+    note: str | None = None
+
+
+class AdvertisingIn(BaseModel):
+    text: str
+    kind: str = "message"
+
+
+@router.get("/complaints")
+async def complaints_register(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import complaints
+
+    return await complaints.staff_view(db, firm, user.role)
+
+
+@router.get("/complaints/annexure-c/{period}")
+async def complaints_annexure(period: str, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import complaints
+
+    if user.role not in complaints.READERS:
+        raise HTTPException(status_code=403, detail="The register is read by compliance, a branch leader and operations.")
+    try:
+        return {"annexure_c": await complaints.annexure_c(db, firm, period)}
+    except complaints.ComplaintError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/complaints")
+async def record_complaint(body: ComplaintIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_complaint behind its Confirm card is the same action."""
+    from app.aurea_core import complaints
+
+    try:
+        result = await complaints.record_complaint(db, firm, user.role, by=user.email, **body.model_dump())
+    except complaints.ComplaintError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    if user.role not in complaints.READERS:
+        return {"recorded": result["recorded"]}
+    return result
+
+
+@router.post("/complaints/{reference}/steps")
+async def record_complaint_step(reference: str, body: ComplaintStepIn, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                                db: AsyncSession = Depends(get_db)):
+    """The tool record_complaint_step behind its Confirm card is the same action."""
+    from app.aurea_core import complaints
+
+    try:
+        result = await complaints.record_event(db, firm, user.role, by=user.email, complaint=reference, **body.model_dump())
+    except complaints.ComplaintError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    if user.role not in complaints.READERS:
+        return {"recorded": result["recorded"]}
+    return result
+
+
+@router.post("/advertising/check")
+async def check_advertising(body: AdvertisingIn, user: User = ReaderDep, firm: Firm = Depends(current_firm)):
+    """Findings only: the check approves nothing, and its patterns are not exhaustive."""
+    from app.aurea_core import advertising
+
+    return advertising.for_firm(firm, body.text, body.kind)

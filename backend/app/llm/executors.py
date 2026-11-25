@@ -21,6 +21,7 @@ from app.aurea_core.graph import household_brain
 from app.llm.admin_executors import AdminToolExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
+from app.llm.india_data_executors import IndiaDataExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
 from app.models.enums import UserRole
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person
@@ -57,7 +58,7 @@ def _parse_uuid(value: Any, field: str) -> uuid.UUID:
 _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "proposals", "recommendation", "recommendations"}
 
 
-class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors):
+class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -340,6 +341,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._advice_file_map(),
             # The plan of record (B-181): app/llm/plan_record_executors.py.
             **self._plan_record_map(),
+            # India rows 9 and 10: app/llm/india_data_executors.py.
+            **self._india_data_map(),
         }
 
         executor = executor_map.get(tool_key)
@@ -5119,12 +5122,16 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             body = messages.clean(await product_distribution.with_disclosures(self.session, self.firm_id, body))
         except messages.MessageError as exc:
             raise ExecutorError(str(exc))
-        from app.aurea_core import txn_monitoring
+        from app.aurea_core import advertising, txn_monitoring
 
         try:
             await txn_monitoring.tipping_off(self.session, self.firm_id, household.id, body)
         except txn_monitoring.MonitoringError as exc:
             raise ExecutorError(str(exc))
+        # An Indian firm's adviser may not promise a return; the message is refused before its card and again at Confirm.
+        why = advertising.refusal(await self._firm(), body)
+        if why:
+            raise ExecutorError(why)
         return household, body
 
     async def send_client_message(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -5331,7 +5338,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
 
             household, body = await self._client_message(inputs)
             sender = await self.session.get(User, self.user_id)
-            return rows(("To", household.name), ("From", sender.full_name if sender else None), ("Message", body))
+            return rows(("To", household.name), ("From", sender.full_name if sender else None), ("Message", body),
+                        *await self._advertising_rows(body))
         if tool_key in ("record_client_review", "set_review_cadence", "book_client_review"):
             return rows(*await self._review_preview(tool_key, inputs))
         if tool_key == "record_ips":
@@ -5364,6 +5372,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._advice_preview(tool_key, inputs))
         if tool_key in ("record_plan_baseline", "record_plan_review", "record_plan_delivery"):
             return rows(*await self._plan_record_preview(tool_key, inputs))
+        if tool_key in ("record_aggregator_consent", "revoke_aggregator_consent", "pull_aggregator", "record_ecas", "record_complaint",
+                        "record_complaint_step"):
+            return rows(*await self._india_data_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
             return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):

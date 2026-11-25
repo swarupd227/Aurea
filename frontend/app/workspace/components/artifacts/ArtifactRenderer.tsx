@@ -33,6 +33,8 @@ import { PlanRecordCard } from "./PlanRecordCard";
 import { LicenceCard } from "./LicenceCard";
 import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
 import { PmsCard, PmsReportCard, ResidencyCard } from "./IndiaCard";
+import { AggregatorCard, EcasCard } from "./AggregatorCard";
+import { AdvertisingCard, ComplaintsCard } from "./ComplaintsCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
@@ -444,6 +446,23 @@ export function artifactCard(artifact: Artifact) {
       case "record_pms_agreement":
         if (!Array.isArray(artifact.result?.clients) && artifact.result?.applies !== false) return null;
         return <PmsCard result={artifact.result as any} />;
+      case "read_aggregator":
+      case "record_aggregator_consent":
+      case "revoke_aggregator_consent":
+      case "pull_aggregator":
+        if (!Array.isArray(artifact.result?.consents) && artifact.result?.added == null && artifact.result?.applies !== false) return null;
+        return <AggregatorCard result={artifact.result as any} />;
+      case "record_ecas":
+        if (typeof artifact.result?.statement_id !== "string") return null;
+        return <EcasCard result={artifact.result as any} />;
+      case "read_complaints":
+      case "record_complaint":
+      case "record_complaint_step":
+        if (!Array.isArray(artifact.result?.complaints) && artifact.result?.applies !== false) return null;
+        return <ComplaintsCard result={artifact.result as any} />;
+      case "check_advertising":
+        if (!Array.isArray(artifact.result?.findings) && artifact.result?.applies !== false) return null;
+        return <AdvertisingCard result={artifact.result as any} />;
       case "read_pms_report":
         if (typeof artifact.result?.quarter !== "string") return null;
         return <PmsReportCard result={artifact.result as any} />;

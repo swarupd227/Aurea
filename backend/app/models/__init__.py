@@ -77,3 +77,6 @@ from app.models import employer_benefit  # noqa: F401,E402
 from app.models import residency  # noqa: F401,E402
 # A Portfolio Manager's agreement with a client (India row 8).
 from app.models import pms  # noqa: F401,E402
+# Account Aggregator consents and e-CAS statements (India row 9), and the complaints register (India row 10).
+from app.models import aggregator  # noqa: F401,E402
+from app.models import complaints  # noqa: F401,E402
