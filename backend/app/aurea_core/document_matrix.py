@@ -34,6 +34,10 @@ DOCUMENTS = {
     "letters_testamentary": "Letters testamentary or of administration", "beneficiary_form": "Beneficiary designation form",
     "custodian_application": "Custodian account application", "transfer_form": "Transfer form", "w9": "Form W-9",
     "plan_distribution_form": "Plan distribution form",
+    "huf_declaration": "HUF declaration", "pan_card": "PAN card",
+    "overseas_address_proof": "Overseas address proof", "visa_or_oci": "Visa or OCI card", "fatca_crs_self_cert": "FATCA and CRS self-certification",
+    "pis_permission": "PIS permission letter from the designated bank", "nre_nro_bank_proof": "NRE or NRO bank account proof",
+    "birth_certificate": "Birth certificate", "guardian_proof": "Guardian's authority (birth certificate or court order)",
 }
 _ID = ("id", "Government photo ID", ("passport", "drivers_licence"))
 _BENEFICIARY_FORM = ("beneficiaries", "Beneficiary designation", ("beneficiary_form",))
@@ -68,6 +72,19 @@ MATRIX: dict[str, dict] = {
     # is recorded against the entity from that card (aurea_core/pan.py), not as a registration field.
     "huf": {"documents": [_ID, ("huf", "HUF declaration", ("huf_declaration",)), ("pan", "PAN card of the HUF", ("pan_card",))],
             "fields": []},
+    # India: a non-resident's account. The passport, an overseas address, the visa or OCI card that shows the status, the
+    # PAN, the bank account it is funded from, and the FATCA and CRS self-certification (Income-tax Rules 2026, r.238-240).
+    # The portfolio investment permission is recorded when held; whether it is still required was not settled in research,
+    # so it is not asked for here.
+    "nri_nre": {"documents": [_ID, ("overseas", "Overseas address proof", ("overseas_address_proof",)), ("status", "Visa or OCI card", ("visa_or_oci",)),
+                              ("pan", "PAN card", ("pan_card",)), ("bank", "NRE bank account proof", ("nre_nro_bank_proof",)),
+                              ("fatca", "FATCA and CRS self-certification", ("fatca_crs_self_cert",))], "fields": ["country_of_residence"]},
+    "nri_nro": {"documents": [_ID, ("overseas", "Overseas address proof", ("overseas_address_proof",)), ("status", "Visa or OCI card", ("visa_or_oci",)),
+                              ("pan", "PAN card", ("pan_card",)), ("bank", "NRO bank account proof", ("nre_nro_bank_proof",)),
+                              ("fatca", "FATCA and CRS self-certification", ("fatca_crs_self_cert",))], "fields": ["country_of_residence"]},
+    # India: a minor's account is run by a guardian: the guardian's identity and authority, the minor's age proof and PAN.
+    "minor_guardian": {"documents": [_ID, ("age", "Minor's birth certificate", ("birth_certificate",)), ("guardian", "Guardian's authority", ("guardian_proof",)),
+                                     ("pan", "PAN card of the minor", ("pan_card",))], "fields": ["guardian_name", "guardian_relationship"]},
 }
 FIELD_LABELS = {
     "state": "State", "married": "Owners married to each other", "funding": "Funding (contribution, rollover, conversion or transfer)",
@@ -75,11 +92,12 @@ FIELD_LABELS = {
     "year_of_death_rmd": "Year-of-death RMD", "trust_date": "Trust date", "tax_id_type": "Tax ID type", "tax_id": "EIN",
     "termination_age": "Age of termination (from the state's act)", "successor": "Successor", "signed_by": "Signed by",
     "signed_on": "Application signed on", "tod": "Transfer on death",
+    "country_of_residence": "Country of residence", "guardian_name": "Guardian", "guardian_relationship": "Guardian's relationship to the minor",
 }
 FUNDING = ("contribution", "rollover", "conversion", "transfer")
 RMD_STATES = ("taken", "not_taken", "not_required")
 SIGNERS = {PartyRole.OWNER, PartyRole.JOINT_OWNER, PartyRole.TRUSTEE, PartyRole.CUSTODIAN, PartyRole.CONTROL_PERSON,
-           PartyRole.AUTHORISED_SIGNER, PartyRole.EXECUTOR}
+           PartyRole.AUTHORISED_SIGNER, PartyRole.EXECUTOR, PartyRole.GUARDIAN}
 SHARE_HOLDERS = {"joint_tic"}                       # owners' shares make 100
 BENEFICIARY_SHARES = {"traditional_ira", "roth_ira", "sep_ira", "simple_ira", "employer_rollover"}
 NEEDS_STATE = {"joint_tbe", "community_property", "custodial_utma", "custodial_ugma"}

@@ -28,11 +28,12 @@ LABELS = {
     R.TRUST: "Trust", R.ENTITY_LLC: "Company (LLC)", R.ENTITY_CORP: "Company (corporation)", R.ENTITY_PARTNERSHIP: "Partnership",
     R.CUSTODIAL_UTMA: "Custodial (UTMA)", R.CUSTODIAL_UGMA: "Custodial (UGMA)", R.ESTATE_INHERITED: "Estate", R.INHERITED_IRA: "Inherited IRA",
     R.PLAN_529: "529 plan", R.DAF: "Donor-advised fund", R.HSA: "Health savings account", R.HUF: "Hindu Undivided Family (HUF)",
+    R.NRI_NRE: "NRI account (NRE)", R.NRI_NRO: "NRI account (NRO)", R.MINOR_GUARDIAN: "Minor, run by a guardian",
 }
 # Account types that exist only in one market's law.
 ONLY_IN = {**{t: "US" for t in (R.JOINT_TBE, R.COMMUNITY_PROPERTY, R.TRADITIONAL_IRA, R.ROTH_IRA, R.SEP_IRA, R.SIMPLE_IRA,
                                  R.EMPLOYER_ROLLOVER, R.CUSTODIAL_UTMA, R.CUSTODIAL_UGMA, R.INHERITED_IRA, R.PLAN_529, R.DAF, R.HSA)},
-           R.HUF: "IN"}
+           R.HUF: "IN", R.NRI_NRE: "IN", R.NRI_NRO: "IN", R.MINOR_GUARDIAN: "IN"}
 # Account types a market does not use, though others do. An LLC is a US form; India's are the company and the LLP.
 NOT_IN = {"IN": frozenset({R.ENTITY_LLC})}
 # The legal entity an entity account becomes at activation (models.enums.EntityType).

@@ -15,6 +15,7 @@ const REGISTRATION_LABELS: Record<string, string> = {
   entity_llc: "LLC", entity_corp: "Corp", entity_partnership: "Partnership",
   custodial_utma: "Custodial UTMA", custodial_ugma: "Custodial UGMA",
   estate_inherited: "Estate/Inherited", huf: "HUF",
+  nri_nre: "NRI (NRE)", nri_nro: "NRI (NRO)", minor_guardian: "Minor",
 };
 
 const AML_TIER_STYLE: Record<string, string> = {
@@ -271,10 +272,13 @@ export const REGISTRATION_OPTIONS: { value: string; label: string; only?: string
   { value: "custodial_ugma", label: "Custodial — UGMA", only: "US" },
   { value: "estate_inherited", label: "Estate / Inherited" },
   { value: "huf", label: "HUF", only: "IN" },
+  { value: "nri_nre", label: "NRI account (NRE)", only: "IN" },
+  { value: "nri_nro", label: "NRI account (NRO)", only: "IN" },
+  { value: "minor_guardian", label: "Minor, run by a guardian", only: "IN" },
 ];
 
 // Indian account types come first, in the order an Indian family opens them, then the rest as listed.
-const IN_FIRST = ["individual", "joint_jtwros", "huf", "trust", "entity_corp", "entity_partnership", "estate_inherited"];
+const IN_FIRST = ["individual", "joint_jtwros", "huf", "trust", "entity_corp", "entity_partnership", "estate_inherited", "nri_nre", "nri_nro", "minor_guardian"];
 
 /** The account types a market offers, named and ordered for it. */
 export function registrationOptionsFor(market: string): { value: string; label: string }[] {

@@ -231,6 +231,7 @@ class PartyRole(StrEnum):
     EXECUTOR = "executor"                   # estate / inherited
     KARTA = "karta"                         # India: the HUF's manager, who acts and signs for it
     COPARCENER = "coparcener"               # India: a member with a birthright in the HUF's property
+    GUARDIAN = "guardian"                   # India: runs a minor's account; the minor never trades
 
 
 class PartyScreeningStatus(StrEnum):
@@ -264,6 +265,9 @@ class RegistrationType(StrEnum):
     DAF = "daf"
     HSA = "hsa"
     HUF = "huf"                          # India: a Hindu Undivided Family, a taxpayer of its own, run by its karta
+    NRI_NRE = "nri_nre"                  # India: a non-resident Indian's account funded from abroad (NRE), repatriable
+    NRI_NRO = "nri_nro"                  # India: a non-resident Indian's account for Indian income (NRO), repatriation limited
+    MINOR_GUARDIAN = "minor_guardian"    # India: a minor's account, run by a guardian; the minor never trades
 
 
 class NIGORootCause(StrEnum):

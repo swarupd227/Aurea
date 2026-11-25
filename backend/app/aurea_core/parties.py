@@ -119,6 +119,12 @@ _REQUIRED: dict[str, list[tuple[str, int, str]]] = {
     "huf": [
         (PartyRole.KARTA, 1, "The karta manages the HUF and acts and signs for it."),
     ],
+    "nri_nre": [(PartyRole.OWNER, 1, "The non-resident account holder.")],
+    "nri_nro": [(PartyRole.OWNER, 1, "The non-resident account holder.")],
+    "minor_guardian": [
+        (PartyRole.MINOR, 1, "The minor the account is for; the minor never trades."),
+        (PartyRole.GUARDIAN, 1, "The guardian who operates the account and signs for the minor."),
+    ],
 }
 
 _ENTITY_TYPES = {"entity_llc", "entity_corp", "entity_partnership"}

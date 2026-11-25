@@ -143,7 +143,7 @@ async def overview(session: AsyncSession, firm) -> dict:
 
 async def _india_pack(session: AsyncSession, firm) -> dict:
     """Before advice, the fee cap per family and the filing calendar, for a firm whose licences are India's."""
-    from app.aurea_core import billing, compliance_calendar, pre_advice
+    from app.aurea_core import billing, compliance_calendar, guardianship, pms, pre_advice, residency
 
     caps: dict[str, dict] = {}
     for e in (await billing.preview(session, firm.id))["arrangements"]:
@@ -151,4 +151,6 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
             caps[e["household_id"]] = {"household_id": e["household_id"], "household": e["household_name"], **e["fee_cap"]}
     return {"pre_advice": await pre_advice.for_firm(session, firm),
             "fee_caps": sorted(caps.values(), key=lambda c: c["household"] or ""),
-            "calendar": await compliance_calendar.overview(session, firm)}
+            "calendar": await compliance_calendar.overview(session, firm),
+            "residency": await residency.overview(session, firm), "guardians": await guardianship.overview(session, firm),
+            "pms": await pms.overview(session, firm)}

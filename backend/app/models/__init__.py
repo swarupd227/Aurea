@@ -73,3 +73,7 @@ from app.models import plan_record  # noqa: F401,E402
 from app.models import plan_tier  # noqa: F401,E402
 # A retirement match or a deferred compensation election, from the plan document (B-193).
 from app.models import employer_benefit  # noqa: F401,E402
+# A client's residence, FATCA and CRS declarations and a minor's guardian (India row 7).
+from app.models import residency  # noqa: F401,E402
+# A Portfolio Manager's agreement with a client (India row 8).
+from app.models import pms  # noqa: F401,E402

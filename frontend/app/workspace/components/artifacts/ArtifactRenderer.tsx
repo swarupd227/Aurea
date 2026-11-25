@@ -32,6 +32,7 @@ import { AdviceFileCard } from "./AdviceFileCard";
 import { PlanRecordCard } from "./PlanRecordCard";
 import { LicenceCard } from "./LicenceCard";
 import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
+import { PmsCard, PmsReportCard, ResidencyCard } from "./IndiaCard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
@@ -433,6 +434,19 @@ export function artifactCard(artifact: Artifact) {
       case "read_pre_advice":
         if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.checks)) return null;
         return <PreAdviceCard result={artifact.result as any} />;
+      case "read_residency":
+      case "record_residency":
+      case "record_guardian":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.people) && !Array.isArray(artifact.result?.minors)
+            && artifact.result?.applies !== false) return null;
+        return <ResidencyCard result={artifact.result as any} />;
+      case "read_pms":
+      case "record_pms_agreement":
+        if (!Array.isArray(artifact.result?.clients) && artifact.result?.applies !== false) return null;
+        return <PmsCard result={artifact.result as any} />;
+      case "read_pms_report":
+        if (typeof artifact.result?.quarter !== "string") return null;
+        return <PmsReportCard result={artifact.result as any} />;
       case "read_compliance_calendar":
       case "record_compliance_filing":
       case "record_sebi_registration":

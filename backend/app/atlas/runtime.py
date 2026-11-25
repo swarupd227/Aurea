@@ -301,6 +301,12 @@ async def decide(
         why = await pre_advice.refusal(session, firm, rec)
         if why:
             raise pre_advice.PreAdviceError(why)
+        # A Portfolio Manager's client whose recorded agreement breaks a stated rule waits for the record to be put right.
+        from app.aurea_core import pms
+
+        why = await pms.refusal(session, firm, rec)
+        if why:
+            raise pre_advice.PreAdviceError(why)
     rec.decided_by = actor_id
     rec.decided_at = utcnow()
     rec.decision_note = note

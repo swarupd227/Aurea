@@ -16,6 +16,7 @@ const REGISTRATION_LABELS: Record<string, string> = {
   entity_llc: "LLC", entity_corp: "Corp", entity_partnership: "Partnership",
   custodial_utma: "Custodial UTMA", custodial_ugma: "Custodial UGMA",
   estate_inherited: "Estate/Inherited", huf: "HUF",
+  nri_nre: "NRI (NRE)", nri_nro: "NRI (NRO)", minor_guardian: "Minor",
 };
 
 const NIGO_LABELS: Record<string, string> = {

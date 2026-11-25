@@ -32,6 +32,18 @@ class ExecutorError(Exception):
     pass
 
 
+def residency_recorders():
+    from app.aurea_core import residency
+
+    return residency.RECORDERS
+
+
+def markets_money(amount):
+    from app.aurea_core import markets
+
+    return None if amount is None else markets.money(amount, "INR")
+
+
 def _parse_uuid(value: Any, field: str) -> uuid.UUID:
     if isinstance(value, uuid.UUID):
         return value
@@ -77,6 +89,12 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "read_pre_advice": self.read_pre_advice,
             "read_compliance_calendar": self.read_compliance_calendar,
             "record_compliance_filing": self.record_compliance_filing,
+            "read_residency": self.read_residency,
+            "record_residency": self.record_residency,
+            "record_guardian": self.record_guardian,
+            "read_pms": self.read_pms,
+            "read_pms_report": self.read_pms_report,
+            "record_pms_agreement": self.record_pms_agreement,
             "record_sebi_registration": self.record_sebi_registration,
             "read_protection": self.read_protection,
             "record_protection_policy": self.record_protection_policy,
@@ -784,6 +802,166 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             raise ExecutorError(str(exc))
         result["message"] = "Recorded."
         return result
+
+    async def read_residency(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import guardianship, residency
+
+        firm = await self._firm()
+        if not residency.applies(firm):
+            return {"applies": False, "message": "Residence is read for an Indian firm; this firm's market is not India."}
+        if inputs.get("household_id"):
+            try:
+                view = await residency.household_view(self.session, firm, _parse_uuid(inputs["household_id"], "household_id"))
+            except ValueError as exc:
+                raise ExecutorError(str(exc))
+            recorded = [p for p in view["people"] if p["recorded"]]
+            view["message"] = (f"{view['household']}: {len(recorded)} of {len(view['people'])} people have a residence on file; "
+                               f"the rest are not assessed, which does not mean resident.")
+            view["applies"] = True
+            return view
+        result = await residency.overview(self.session, firm)
+        result["guardians"] = await guardianship.overview(self.session, firm)
+        c = result["counts"]
+        result["message"] = (f"{len(result['households'])} household(s) with a residence on file, {c['non_resident']} non-resident "
+                             f"or overseas citizen; {c['not_on_file']} people have none on file and are not assessed.")
+        return result
+
+    async def _residency_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import residency
+
+        keys = (*residency.YEAR_FIELDS, *residency.PERSON_FIELDS)
+        return {"person_id": inputs.get("person_id"), "document": inputs.get("document"), "tax_year": inputs.get("tax_year"),
+                **{k: inputs.get(k) for k in keys if inputs.get(k) not in (None, "")}}
+
+    async def _residency_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import residency
+
+        if self.role not in residency.RECORDERS:
+            raise ExecutorError("A residence is recorded by an adviser, a paraplanner or operations.")
+        try:
+            p = await residency.prepare(self.session, await self._firm(), **await self._residency_args(inputs))
+        except residency.ResidencyError as exc:
+            raise ExecutorError(str(exc))
+        status = p["status"]
+        return [("Client", p["person"].full_name), ("Tax year", p["tax_year"]),
+                *((c["label"], f"{c['before'] if c['before'] is not None else 'not on file'} -> {c['after']}") for c in p["changes"]),
+                ("Residence test then", status["label"] + (f"; still needed: {', '.join(status['needs'])}" if status["needs"] else "")),
+                ("Evidence", p["document"]), ("Note", "Worked from what is recorded; a qualified person checks it")]
+
+    async def record_residency(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import residency
+
+        if self.role not in residency.RECORDERS:
+            raise ExecutorError("A residence is recorded by an adviser, a paraplanner or operations.")
+        try:
+            result = await residency.record(self.session, await self._firm(), by=await self._shelf_user(), **await self._residency_args(inputs))
+        except residency.ResidencyError as exc:
+            raise ExecutorError(str(exc))
+        return {"households": [{"household_id": result["household_id"], "people": [result]}], "applies": True, "message": "Recorded."}
+
+    def _guardian_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return {"minor_person_id": inputs.get("minor_person_id"), "guardian_name": inputs.get("guardian_name"),
+                "relationship": inputs.get("relationship"), "document": inputs.get("document"),
+                "guardian_person_id": inputs.get("guardian_person_id") or None}
+
+    async def _guardian_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import guardianship
+
+        if self.role not in residency_recorders():
+            raise ExecutorError("A guardian is recorded by an adviser, a paraplanner or operations.")
+        try:
+            p = await guardianship.prepare(self.session, await self._firm(), **self._guardian_args(inputs))
+        except guardianship.GuardianError as exc:
+            raise ExecutorError(str(exc))
+        s = p["status"]
+        return [("Minor", p["minor"].full_name), ("Guardian", p["guardian_name"]),
+                ("Relationship", guardianship.RELATIONSHIPS[p["relationship"]]),
+                ("Replaces", p["before"]), ("Becomes an adult on", s.get("majority_on")), ("Evidence", p["document"]),
+                ("Note", "The guardian operates the account; the minor never trades")]
+
+    async def record_guardian(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import guardianship
+
+        if self.role not in residency_recorders():
+            raise ExecutorError("A guardian is recorded by an adviser, a paraplanner or operations.")
+        try:
+            result = await guardianship.record(self.session, await self._firm(), by=await self._shelf_user(), **self._guardian_args(inputs))
+        except guardianship.GuardianError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = "Recorded."
+        return result
+
+    async def read_pms(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import pms
+        from app.models.graph import Mandate
+
+        firm = await self._firm()
+        if not pms.applies(firm):
+            return {"applies": False, "clients": [], "message": "This firm holds no Portfolio Manager licence, so it has no PMS clients here."}
+        if inputs.get("mandate_id"):
+            mandate = await self.session.get(Mandate, _parse_uuid(inputs["mandate_id"], "mandate_id"))
+            if mandate is None or mandate.firm_id != self.firm_id or mandate not in await pms.pms_mandates(self.session, firm):
+                raise ExecutorError("That is not a PMS client of this firm. read_pms without an id lists them.")
+            s = await pms.status(self.session, firm, mandate)
+            return {"applies": True, "clients": [s], "held": 1 if s["held"] else 0, "without_agreement": 0 if s["agreement"] else 1,
+                    "message": f"{s['client'] or s['mandate']}: " + (f"held, {'; '.join(s['held']).lower()}." if s["held"] else
+                                                                      "nothing breaks a stated rule." if s["agreement"] else "no agreement recorded, not assessed.")}
+        result = await pms.overview(self.session, firm)
+        result["message"] = (f"{len(result['clients'])} PMS client(s); {result['held']} held for a recorded breach; "
+                             f"{result['without_agreement']} with no agreement recorded, not assessed.")
+        return result
+
+    async def read_pms_report(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import pms
+
+        try:
+            result = await pms.client_report(self.session, await self._firm(), _parse_uuid(inputs.get("mandate_id"), "mandate_id"))
+        except pms.PmsError as exc:
+            raise ExecutorError(str(exc))
+        result["message"] = (f"{result['client']}, {result['quarter']}: " + (f"{result['return'] * 100:.2f}% over {result['months']} month(s), "
+                                                                              "a draft for the manager, not publishable." if result["return"] is not None
+                                                                              else "no monthly return on file, not assessed."))
+        return result
+
+    def _pms_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        keys = ("mandate_id", "strategy", "kind", "signed_on", "document", "initial_corpus", "segregated", "benchmarks", "fee_type",
+                "fixed_rate", "performance_rate", "hurdle_rate", "high_water_mark", "operating_expense_rate", "exit_load")
+        return {k: inputs.get(k) for k in keys}
+
+    async def _pms_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        from app.aurea_core import firm_time, pms
+
+        if self.role not in pms.RECORDERS:
+            raise ExecutorError("A PMS agreement is recorded by the portfolio team, operations or an adviser.")
+        firm = await self._firm()
+        try:
+            p = await pms.prepare(self.session, firm, **self._pms_args(inputs))
+        except pms.PmsError as exc:
+            raise ExecutorError(str(exc))
+        f, today = p["fields"], firm_time.today(firm)
+        agreement = type("A", (), {**f, "mandate_id": p["mandate"].id})()
+        cs = pms.checks(firm, p["mandate"], agreement, await pms._accounts(self.session, p["mandate"].id), 0.0, today)
+        pct = lambda v: None if v is None else f"{v * 100:.2f}%"   # noqa: E731
+        return [("Mandate", p["mandate"].name), ("Strategy", f["strategy"]), ("Kind", pms.KINDS[f["kind"]]),
+                ("Signed", firm_time.spoken(f["signed_on"])), ("Opening corpus", markets_money(f["initial_corpus"])),
+                ("Own demat", None if f["segregated"] is None else ("Yes" if f["segregated"] else "No, pooled")),
+                ("Benchmarks", ", ".join(f["benchmarks"]) or None), ("Fee", pms.FEE_TYPES.get(f["fee_type"] or "")),
+                ("Fixed", pct(f["fixed_rate"])), ("Performance", pct(f["performance_rate"])), ("Hurdle", pct(f["hurdle_rate"])),
+                ("High-water mark", None if f["high_water_mark"] is None else ("On the client's own" if f["high_water_mark"] else "None")),
+                ("Operating expenses", pct(f["operating_expense_rate"])),
+                ("Against the rules", "; ".join(f"{c['label']}: {c['state'].replace('_', ' ')}" for c in cs)),
+                ("Replaces", p["before"].strategy if p["before"] else None), ("Evidence", f["document"])]
+
+    async def record_pms_agreement(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import pms
+
+        if self.role not in pms.RECORDERS:
+            raise ExecutorError("A PMS agreement is recorded by the portfolio team, operations or an adviser.")
+        try:
+            s = await pms.record(self.session, await self._firm(), by=await self._shelf_user(), **self._pms_args(inputs))
+        except pms.PmsError as exc:
+            raise ExecutorError(str(exc))
+        return {"applies": True, "clients": [s], "held": 1 if s["held"] else 0, "without_agreement": 0, "message": "Recorded."}
 
     async def _registration_details(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import compliance_calendar
@@ -5057,6 +5235,11 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             why = await pre_advice.refusal(self.session, await self.session.get(Firm, self.firm_id), rec)
             if why:
                 raise ExecutorError(why)
+            from app.aurea_core import pms
+
+            why = await pms.refusal(self.session, await self.session.get(Firm, self.firm_id), rec)
+            if why:
+                raise ExecutorError(why)
         if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.IPS_MONITORING.value:
             return self._ips_decision_preview(rec, inputs)
         if rec is not None and rec.firm_id == self.firm_id and str(rec.agent_key) == AgentKey.PROTECTION_PLANNING.value:
@@ -5269,6 +5452,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         named = {"record_tax_document": self._tax_document_preview, "execute_orders": self._orders_preview, "credit_invoice": self._credit_preview,
                  "record_valuation": self._valuation_preview, "record_client_consent": self._consent_preview,
                  "record_compliance_filing": self._filing_preview, "record_sebi_registration": self._sebi_registration_preview,
+                 "record_residency": self._residency_preview, "record_guardian": self._guardian_preview, "record_pms_agreement": self._pms_preview,
                  "refresh_prices": self._refresh_preview, "run_billing": self._billing_preview,
                  "set_account_registration": self._registration_preview, "add_account_beneficiary": self._beneficiary_preview,
                  "update_goal": self._goal_preview, "mark_conflict_reviewed": self._conflict_preview,

@@ -17,7 +17,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import cash_movement, exits, firm_time, harvest_guard, ips, product_fit, shelf, wash_sale
+from app.aurea_core import cash_movement, exits, firm_time, guardianship, harvest_guard, ips, product_fit, shelf, wash_sale
 from app.aurea_core import orders as order_engine
 from app.aurea_core.equity_comp import CONCENTRATED
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX
@@ -111,6 +111,7 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
     sale's estimated gain on its order and writes nothing else. An order with no real price will not fill,
     so it moves nothing and is measured against nothing."""
     held = exits.order_refusal(mandate, orders)
+    held = held or await guardianship.order_refusal(session, firm, mandate)    # a minor's account is run by a guardian
     if held:
         return {"refused": [held], "flags": [], "policy": None, "watched": [], "concentrated": []}
     symbols = [o["symbol"] for o in orders]

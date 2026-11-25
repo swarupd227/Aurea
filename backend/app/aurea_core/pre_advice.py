@@ -175,6 +175,13 @@ async def status(session: AsyncSession, firm, household_id: uuid.UUID) -> dict:
         checks.append(_check("non_sebi", "Non-SEBI products declared", FAIL,
                              f"holds {', '.join(outside)}; no declaration on file", "para 1(xi)"))
 
+    # 6. A non-resident or overseas citizen needs their own FATCA and CRS self-certification (India row 7).
+    from app.aurea_core import residency
+
+    nri = await residency.gate_check(session, firm, household_id)
+    if nri is not None:
+        checks.append(nri)
+
     missing = [c["label"] for c in checks if c["state"] == FAIL]
     return {**base, "applies": True, "met": not missing, "checks": checks, "missing": missing,
             "mandates": [{"id": str(m.id), "name": m.name} for m in mandates], "stands_in": STANDS_IN}

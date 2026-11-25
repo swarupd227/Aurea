@@ -145,7 +145,7 @@ async def main() -> int:
 
             print("\n=== Every mandate through the rebalancer ===")
             mandates = (await s.execute(select(Mandate).where(Mandate.firm_id == firm.id))).scalars().all()
-            check("seven taxpayers with mandates", len(mandates), 7)
+            check("seven taxpayers and the Menons' NRO account hold mandates", len(mandates), 8)
             recs = {}
             for m in mandates:
                 run = await runtime.run_agent(s, firm=firm, agent_key=AgentKey.DRIFT_REBALANCING,
@@ -471,7 +471,7 @@ async def main() -> int:
             households = {h.name: h for h in (await s.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all()}
             gate = {n: await pre_advice.status(s, firm, households[n].id) for n in households}
             check("the adviser's households are gated, the portfolio manager's are not",
-                  sorted(n for n, g in gate.items() if g["applies"]), ["The Banerjee Household", "The D'Souza Household", "The Sharma Family"])
+                  sorted(n for n, g in gate.items() if g["applies"]), ["The Banerjee Household", "The D'Souza Household", "The Menon NRI Household", "The Sharma Family"])
             check("the Sharmas have all five on file, the declaration included because they hold policies",
                   (gate["The Sharma Family"]["met"], [c["state"] for c in gate["The Sharma Family"]["checks"]]), (True, ["pass"] * 5))
             check("the D'Souzas hold nothing outside SEBI's purview, so no declaration is asked",
@@ -545,7 +545,7 @@ async def main() -> int:
             check("no fee with no signed agreement standing", all(any(c["code"] == "no_signed_agreement" for c in e["checks"]) and e["blocked"] for e in withdrawn), True)
             overview = await licences.overview(s, firm)
             check("the licences page carries the gate, the caps and the calendar",
-                  (len(overview["pre_advice"]), len(overview["fee_caps"]), overview["calendar"]["applies"]), (3, 3, True))
+                  (len(overview["pre_advice"]), len(overview["fee_caps"]), overview["calendar"]["applies"]), (4, 3, True))
 
             print("\n=== Row 6: the compliance calendar ===")
             firm.created_at = firm.created_at.replace(year=2026, month=10, day=31)
@@ -595,6 +595,22 @@ async def main() -> int:
             firm.settings = {**firm.settings, "sebi_registration": {**firm.settings["sebi_registration"], "compliance_officer": india_row6.WRONG_OFFICER}}
             check("a firm seeded with the old name is corrected", (await india_row6.correct_names(s, firm) >= 1,
                   firm.settings["sebi_registration"]["compliance_officer"]), (True, "Neha Kulkarni (demonstration)"))
+
+            print("\n=== Rows 7 and 8: a non-resident household, a minor, and a Portfolio Manager's client ===")
+            from app.aurea_core import guardianship, pms, residency
+            from seed import india_row7, india_row8
+            menon = households["The Menon NRI Household"]
+            gate7 = await pre_advice.status(s, firm, menon.id)
+            check("the Menons wait only for Anita's FATCA and CRS self-certification", gate7["missing"], ["FATCA and CRS self-certification"])
+            overview7 = await residency.overview(s, firm)
+            check("two Menons are on file, both non-resident", (overview7["households"][0]["household"], overview7["households"][0]["non_resident"]),
+                  ("The Menon NRI Household", 2))
+            minors = {m["name"]: m["state"] for m in (await guardianship.overview(s, firm))["minors"]}
+            check("Ira has her father as guardian and Kabir has none", (minors["Ira Menon"], minors["Kabir Menon"]), ("guardian_on_file", "no_guardian"))
+            clients = {c["client"]: c for c in (await pms.overview(s, firm))["clients"]}
+            check("Karthik's agreement passes every check; the Kapoor Trust has none and is not assessed",
+                  (set(k["state"] for k in clients["Karthik Iyer"]["checks"]), clients["Kapoor Family Trust"]["agreement"]), ({"pass"}, None))
+            check("rows 7 and 8 add nothing a second time", (await india_row7.add(s, firm), await india_row8.add(s, firm)), (0, 0))
 
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)

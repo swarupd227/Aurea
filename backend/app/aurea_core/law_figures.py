@@ -233,6 +233,56 @@ ALL: tuple[LawFigure, ...] = (
               "SEBI Master Circular for Investment Advisers (6 Feb 2026) para 1(iii)", date(2026, 2, 6)),
     LawFigure("in_ia_fee_aua_cap", "Investment Adviser fee cap, AUA mode, share of AUA per family a year", 0.025, "rate",
               "SEBI Master Circular for Investment Advisers (6 Feb 2026) para 1(iii)", date(2026, 2, 6)),
+    # ── India: residency (row 7). Taken from the research report's reading of 31 Oct 2026 and the statute's text as
+    # amended by the Finance Act 2020. The Income-tax Act 2025 (in force from 1 Apr 2026) carries the test under a
+    # renumbered section that was not read, so each is checked by a qualified person before a client relies on it.
+    LawFigure("in_res_days_year", "Resident in India: days in India in the year, on their own", 182, "days",
+              "Income-tax Act 1961 s.6(1)(a), carried into the Income-tax Act 2025 (renumbered section not read)", date(2026, 10, 31)),
+    LawFigure("in_res_days_short", "Resident in India: days in the year, with the earlier years below", 60, "days",
+              "Income-tax Act 1961 s.6(1)(c), carried into the Income-tax Act 2025 (renumbered section not read)", date(2026, 10, 31)),
+    LawFigure("in_res_days_prior_four", "Resident in India: days in the four years before the year, with the short test", 365, "days",
+              "Income-tax Act 1961 s.6(1)(c), carried into the Income-tax Act 2025 (renumbered section not read)", date(2026, 10, 31)),
+    LawFigure("in_res_days_citizen_away", "Indian citizen or person of Indian origin who is abroad: the short test's days become", 182, "days",
+              "Income-tax Act 1961 s.6(1) Explanation 1, as amended by the Finance Act 2020", date(2026, 10, 31)),
+    LawFigure("in_res_days_high_income", "Citizen or person of Indian origin visiting with high Indian income: the short test's days become", 120, "days",
+              "Income-tax Act 1961 s.6(1) Explanation 1(b), as amended by the Finance Act 2020", date(2026, 10, 31)),
+    LawFigure("in_res_income_line", "Indian income, other than foreign sources, above which the 120-day test and deemed residence apply", 1_500_000, "INR",
+              "Income-tax Act 1961 s.6(1) Explanation 1(b) and s.6(1A), as amended by the Finance Act 2020", date(2026, 10, 31)),
+    LawFigure("in_res_rnor_days_prior_seven", "Not ordinarily resident: at most this many days in the seven years before the year", 729, "days",
+              "Income-tax Act 1961 s.6(6)(b), carried into the Income-tax Act 2025 (renumbered section not read)", date(2026, 10, 31)),
+    LawFigure("in_res_rnor_years_nonresident", "Not ordinarily resident: non-resident in at least this many of the ten years before the year", 9, "count",
+              "Income-tax Act 1961 s.6(6)(a), carried into the Income-tax Act 2025 (renumbered section not read)", date(2026, 10, 31)),
+    # FEMA and RBI conditions for a non-resident's accounts and holdings, laid out and not advised on.
+    LawFigure("in_nro_repatriation", "NRO balances and sale proceeds an NRI may remit abroad, a financial year, after tax", 1_000_000, "USD",
+              "RBI Master Direction on Remittance of Assets (FED Master Direction 14/2015-16) and FEMA (Non-debt Instruments) Rules 2019; "
+              "not re-read in this build, counsel to confirm", date(2026, 10, 31)),
+    LawFigure("in_pis_individual_limit", "Portfolio investment: one NRI's or OCI's share of an Indian company's paid-up equity, at most", 0.05, "rate",
+              "FEMA (Non-debt Instruments) Rules 2019, Schedule III. The Budget proposal to move the limits to 10% and 24% "
+              "is not law and is not encoded", date(2026, 10, 31)),
+    LawFigure("in_pis_aggregate_limit", "Portfolio investment: all NRIs' and OCIs' share of an Indian company's paid-up equity, at most, "
+              "unless the company resolves higher", 0.10, "rate",
+              "FEMA (Non-debt Instruments) Rules 2019, Schedule III. The Budget proposal to move the limits to 10% and 24% "
+              "is not law and is not encoded", date(2026, 10, 31)),
+    LawFigure("in_majority_age", "Age at which a person is no longer a minor in India", 18, "count",
+              "Indian Majority Act 1875 s.3", date(2026, 10, 31)),
+    LawFigure("in_majority_age_court_guardian", "Age at which a minor for whom a court appointed a guardian stops being a minor", 21, "count",
+              "Indian Majority Act 1875 s.3(1)", date(2026, 10, 31)),
+    # ── India: Portfolio Managers (row 8). PM Master Circular (Jul 2025) and the SEBI (Portfolio Managers)
+    # Regulations 2020 as read in the research report (section 2 and 3.4); the 2026 Regulations restate them from
+    # 1 Apr 2027 and their implementing circulars had not issued on 31 Oct 2026.
+    LawFigure("in_pms_min_ticket", "Portfolio Manager: the least a client invests at the start", 5_000_000, "INR",
+              "SEBI (Portfolio Managers) Regulations 2020, as read in the research report; the clause was not re-read. "
+              "An accredited investor's lower figure is not recorded here", date(2026, 10, 31)),
+    LawFigure("in_pms_opex_cap", "Portfolio Manager: operating expenses excluding brokerage, a year, share of average daily AUM, at most", 0.005, "rate",
+              "SEBI Master Circular for Portfolio Managers (Jul 2025)", date(2026, 10, 31)),
+    LawFigure("in_pms_benchmarks", "Portfolio Manager: benchmarks a strategy may name, at most", 3, "count",
+              "SEBI Master Circular for Portfolio Managers (Jul 2025): APMI's list of benchmarks", date(2026, 10, 31)),
+    LawFigure("in_pms_exit_load_y1", "Portfolio Manager: exit load in the first year, at most", 0.03, "rate",
+              "SEBI Master Circular for Portfolio Managers (Jul 2025)", date(2026, 10, 31)),
+    LawFigure("in_pms_exit_load_y2", "Portfolio Manager: exit load in the second year, at most", 0.02, "rate",
+              "SEBI Master Circular for Portfolio Managers (Jul 2025)", date(2026, 10, 31)),
+    LawFigure("in_pms_exit_load_y3", "Portfolio Manager: exit load in the third year, at most", 0.01, "rate",
+              "SEBI Master Circular for Portfolio Managers (Jul 2025)", date(2026, 10, 31)),
 )
 
 VERSIONS: dict[str, tuple[LawFigure, ...]] = {}

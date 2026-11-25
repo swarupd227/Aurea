@@ -453,6 +453,12 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
       return "/studio/beneficiary-audit";
     case "read_licences":
     case "read_pre_advice":
+    case "read_residency":
+    case "record_residency":
+    case "record_guardian":
+    case "read_pms":
+    case "read_pms_report":
+    case "record_pms_agreement":
     case "read_compliance_calendar":
     case "record_compliance_filing":
     case "record_sebi_registration":

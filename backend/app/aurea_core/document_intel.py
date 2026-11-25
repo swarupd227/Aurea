@@ -59,6 +59,13 @@ DOC_LABELS = {
     "trust_deed": "Trust Deed",
     "huf_declaration": "HUF Declaration",
     "pan_card": "PAN Card",
+    "overseas_address_proof": "Overseas Address Proof",
+    "visa_or_oci": "Visa or OCI Card",
+    "fatca_crs_self_cert": "FATCA and CRS Self-Certification",
+    "pis_permission": "PIS Permission Letter",
+    "nre_nro_bank_proof": "NRE or NRO Bank Account Proof",
+    "birth_certificate": "Birth Certificate",
+    "guardian_proof": "Guardian's Authority",
     "overseas_pension": "Overseas Pension Statement",
     "capital_call_notice": "Capital-Call Notice",
 }

@@ -333,6 +333,10 @@ async def preview(session: AsyncSession, firm_id: uuid.UUID, *, as_of: date | No
     from app.models.tenant import Firm
 
     await fee_cap.apply(session, await session.get(Firm, firm_id), entries, as_of)
+    # A Portfolio Manager's client: what its recorded agreement states, beside the bill (India row 8).
+    from app.aurea_core import pms
+
+    await pms.apply(session, await session.get(Firm, firm_id), entries, as_of)
 
     by_currency: dict[str, float] = defaultdict(float)
     for e in entries:

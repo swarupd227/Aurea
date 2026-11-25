@@ -44,6 +44,7 @@ function Taxpayer({ t, full }: { t: any; full: boolean }) {
         <span className="chip text-ink-muted">{REGIME_TEXT[t.regime] ?? t.regime}</span>
         {t.slab_rate != null && <span className="chip text-ink-muted">{Math.round(t.slab_rate * 100)}% slab</span>}
         {t.surcharge_rate > 0 && <span className="chip text-ink-muted">{Math.round(t.surcharge_rate * 100)}% surcharge</span>}
+        {t.residency?.recorded && <span className="chip text-ink-muted" title={t.residency.treatment ? `Tax is taken at source on a non-resident's gains; treaty relief is not modelled` : undefined} data-testid="tax-residency">{t.residency.label}</span>}
         <span className="chip text-ink-muted" data-testid="tax-pan">{t.pan ? `PAN ${t.pan}` : "PAN not on file"}</span>
         {(t.incomplete as string[]).map((m) => <span key={m} className="chip text-warn">{m.replace(/_/g, " ")} not on file</span>)}
       </div>

@@ -112,3 +112,142 @@ async def record_registration(body: RegistrationIn, user: User = ReaderDep, firm
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     return result
+
+
+# ── India row 7: residence and a minor's guardian ───────────────────────────────────────────────────────────
+
+class ResidencyIn(BaseModel):
+    person_id: uuid.UUID
+    document: str
+    tax_year: str | None = None
+    days_in_india: int | None = None
+    days_prior_four_years: int | None = None
+    days_prior_seven_years: int | None = None
+    nonresident_years_of_prior_ten: int | None = None
+    indian_citizen_or_pio: bool | None = None
+    left_for_employment_abroad: bool | None = None
+    india_income: float | None = None
+    taxed_elsewhere: bool | None = None
+    fema_status: str | None = None
+    country_of_residence: str | None = None
+    accounts: list[str] | None = None
+    pis_permission: str | None = None
+    tax_residencies: list[str] | None = None
+    us_person: bool | None = None
+    us_indicia: list[str] | None = None
+    self_certified_on: date | None = None
+    note: str | None = None
+
+
+class GuardianIn(BaseModel):
+    minor_person_id: uuid.UUID
+    guardian_name: str | None = None
+    relationship: str
+    document: str
+    guardian_person_id: uuid.UUID | None = None
+    note: str | None = None
+
+
+@router.get("/residency")
+async def residence(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import guardianship, residency
+
+    return {**await residency.overview(db, firm), "guardians": await guardianship.overview(db, firm),
+            "can_record": user.role in residency.RECORDERS}
+
+
+@router.get("/residency/{household_id}")
+async def household_residence(household_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                              db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import residency
+
+    try:
+        return await residency.household_view(db, firm, household_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/residency")
+async def record_residence(body: ResidencyIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_residency behind its Confirm card is the same action."""
+    from app.aurea_core import residency
+
+    if user.role not in residency.RECORDERS:
+        raise HTTPException(status_code=403, detail="A residence is recorded by an adviser, a paraplanner or operations.")
+    data = body.model_dump(exclude={"note"})
+    try:
+        result = await residency.record(db, firm, by=user.email, note=body.note, **data)
+    except residency.ResidencyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/guardians")
+async def record_guardian(body: GuardianIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_guardian behind its Confirm card is the same action."""
+    from app.aurea_core import guardianship, residency
+
+    if user.role not in residency.RECORDERS:
+        raise HTTPException(status_code=403, detail="A guardian is recorded by an adviser, a paraplanner or operations.")
+    try:
+        result = await guardianship.record(db, firm, by=user.email, **body.model_dump())
+    except guardianship.GuardianError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+# ── India row 8: Portfolio Manager clients ──────────────────────────────────────────────────────────────────
+
+class PmsIn(BaseModel):
+    mandate_id: uuid.UUID
+    strategy: str
+    kind: str
+    signed_on: date
+    document: str
+    initial_corpus: float | None = None
+    segregated: bool | None = None
+    benchmarks: list[str] | None = None
+    fee_type: str | None = None
+    fixed_rate: float | None = None
+    performance_rate: float | None = None
+    hurdle_rate: float | None = None
+    high_water_mark: bool | None = None
+    operating_expense_rate: float | None = None
+    exit_load: list[float] | None = None
+    note: str | None = None
+
+
+@router.get("/pms")
+async def portfolio_manager_clients(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import pms
+
+    return {**await pms.overview(db, firm), "can_record": user.role in pms.RECORDERS}
+
+
+@router.get("/pms/{mandate_id}/report")
+async def portfolio_manager_report(mandate_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                                   db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import pms
+
+    try:
+        return await pms.client_report(db, firm, mandate_id)
+    except pms.PmsError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/pms")
+async def record_portfolio_manager_agreement(body: PmsIn, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                                             db: AsyncSession = Depends(get_db)):
+    """The tool record_pms_agreement behind its Confirm card is the same action."""
+    from app.aurea_core import pms
+
+    if user.role not in pms.RECORDERS:
+        raise HTTPException(status_code=403, detail="A PMS agreement is recorded by the portfolio team, operations or an adviser.")
+    try:
+        result = await pms.record(db, firm, by=user.email, **body.model_dump())
+    except pms.PmsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result

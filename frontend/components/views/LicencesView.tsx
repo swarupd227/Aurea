@@ -10,6 +10,7 @@ import { money, titleCase } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { LicenceChips } from "@/app/workspace/components/artifacts/LicenceCard";
 import { FeeCapChips, PreAdviceChecks } from "@/app/workspace/components/artifacts/SebiCard";
+import { GuardianChips, PmsClients, ResidencyPeople } from "@/app/workspace/components/artifacts/IndiaCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -237,6 +238,35 @@ export function LicencesView() {
               </div>
             ))}
           </div>
+        </Card>
+      )}
+
+      {(data.residency?.households ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Residence, as recorded</span>
+            <span className="chip text-ink-muted">{data.residency.counts.non_resident} non-resident</span>
+            <span className={`chip ${data.residency.counts.not_on_file ? "text-warn" : "text-ok"}`}>{data.residency.counts.not_on_file} not assessed</span>
+          </div>
+          <div className="-mx-3" data-testid="licence-residency"><ResidencyPeople households={data.residency.households} /></div>
+        </Card>
+      )}
+
+      {(data.guardians?.minors ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="tile-label mb-2">Minors and their guardians</div>
+          <div className="-mx-3" data-testid="licence-guardians"><GuardianChips guardians={data.guardians} /></div>
+        </Card>
+      )}
+
+      {data.pms?.applies && (data.pms.clients ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Portfolio Manager clients</span>
+            <span className={`chip ${data.pms.held ? "text-crit" : "text-ok"}`}>{data.pms.held} held</span>
+            <span className={`chip ${data.pms.without_agreement ? "text-warn" : "text-ink-muted"}`}>{data.pms.without_agreement} not assessed</span>
+          </div>
+          <div className="-mx-3" data-testid="licence-pms"><PmsClients clients={data.pms.clients} /></div>
         </Card>
       )}
 

@@ -114,7 +114,7 @@ _BY_JURISDICTION: dict[str, list[str]] = {
 
 # An Indian account held by one person carries a nomination or an opt-out; an HUF's karta cannot nominate for it,
 # and a joint or entity account is outside the single-holder rule.
-_IN_SINGLE_HOLDER = {"individual"}
+_IN_SINGLE_HOLDER = {"individual", "nri_nre", "nri_nro", "minor_guardian"}
 
 # Registration types that add a conditional disclosure on top of the baseline.
 _ROLLOVER_TYPES = {"employer_rollover", "traditional_ira", "roth_ira"}

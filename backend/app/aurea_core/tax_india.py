@@ -398,7 +398,16 @@ async def report(session: AsyncSession, brain: dict, *, firm, today: date | None
         opportunities += _exemption_harvest(clean_rows, settled["exempt_left"], today, lt_rate)
 
         realised_loss = any(float(v) < 0 for v in realised.values())
+        # Residence, as a person recorded it: a non-resident's gains carry tax at source and treaty relief is not modelled.
+        res = None
+        if person is not None:
+            from app.aurea_core import residency
+
+            view = await residency.person_view(session, firm, person, today=today)
+            res = {"recorded": view["recorded"], "status": view["tax"]["status"], "label": view["tax"]["label"],
+                   "fema_status": view.get("fema_status"), "needs": view["tax"]["needs"], "treatment": view.get("treatment")}
         taxpayers.append({
+            "residency": res,
             "id": key,
             "name": person.full_name if person else (entity.name if entity else data["accounts"][0].name),
             "kind": str(entity.entity_type) if entity else "individual",
@@ -425,6 +434,7 @@ async def report(session: AsyncSession, brain: dict, *, firm, today: date | None
         "summary": {
             "total_flags": len(opportunities) + sum(1 for t in taxpayers if t["grandfathered"]),
             "taxpayers": len(taxpayers),
+            "non_resident_taxpayers": sum(1 for t in taxpayers if (t.get("residency") or {}).get("status") == "non_resident"),
             "estimated_tax": round(sum(t["estimated_tax"] for t in taxpayers), 2),
             "harvestable_loss": round(sum(-o["net_loss"] for o in opportunities if o["kind"] == "loss"), 2),
             "estimated_tax_saving": round(sum(float(o.get("tax_saved") or 0) for o in opportunities), 2),
