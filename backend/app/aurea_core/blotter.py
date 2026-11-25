@@ -17,7 +17,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, markets
+from app.aurea_core import firm_time, markets, mf_orders
 from app.aurea_core.billing import _mandate_households
 from app.conduit.execution import venue_for_firm
 from app.core.db import utcnow
@@ -55,6 +55,8 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, household_id: u
     owners = await _mandate_households(session, firm_id, list(mandates))
     names = {h.id: h.name for h in (await session.execute(select(Household).where(Household.firm_id == firm_id))).scalars().all()}
     instruments = {i.id: i for i in (await session.execute(select(Instrument).where(Instrument.firm_id == firm_id))).scalars().all()}
+    # A mutual fund order's order date and NAV date, apart (B-294): read for an Indian firm that holds a licence only, empty otherwise.
+    mf = await mf_orders.for_blotter(session, firm, [o.id for o in rows])
     venue = venue_for_firm(firm)
     # The product that owns the book (B-165) is not the paper venue, though it claims no market for itself either.
     paper = not venue.reaches_market and not getattr(venue, "platform", False)
@@ -75,7 +77,8 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, household_id: u
         row = {"id": str(o.id), "confirmation": confirmation(o, day) if filled else None, "trade_date": day.isoformat(), "settles_on": settles.isoformat() if settles else None,
                "settled": bool(settles and settles <= today), "side": side, "symbol": inst.symbol if inst else "?", "quantity": filled or float(o.quantity), "price": price, "gross": gross, "fees": fees,
                "net": round(gross + fees if side == "buy" else gross - fees, 2), "realised_gain": float(o.realised_gain or 0) if side == "sell" and filled else None, "status": str(o.status), "rejected_reason": o.rejected_reason,
-               "account": account.name if account else None, "client": names.get(home), "household_id": str(home) if home else None, "source": "proposal" if o.recommendation_id else "direct", "reason": o.reason, "venue": o.venue}
+               "account": account.name if account else None, "client": names.get(home), "household_id": str(home) if home else None, "source": "proposal" if o.recommendation_id else "direct", "reason": o.reason, "venue": o.venue,
+               "mf": mf.get(str(o.id))}
         trades.append(row)
         if filled:
             groups[(day, row["symbol"], side)].append(row)
@@ -89,4 +92,4 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, household_id: u
     return {"trades": trades, "blocks": sorted(blocks, key=lambda b: b["trade_date"], reverse=True), "paper_venue": paper, "as_of": today.isoformat(), "days": days,
             "settle_days": market.settle_days if market else None, "household_id": str(household_id) if household_id else None,
             "summary": {"trades": len(trades), "filled": sum(1 for t in trades if t["confirmation"]), "unsettled": sum(1 for t in trades if t["confirmation"] and not t["settled"]),
-                        "direct": sum(1 for t in trades if t["source"] == "direct"), "rejected": sum(1 for t in trades if t["status"] == "rejected"), "blocks": len(blocks)}}
+                        "direct": sum(1 for t in trades if t["source"] == "direct"), "nav_breaks": sum(1 for t in trades if (t["mf"] or {}).get("nav_state") == "differs"), "rejected": sum(1 for t in trades if t["status"] == "rejected"), "blocks": len(blocks)}}

@@ -88,7 +88,7 @@ async def main() -> int:
             check("the compliance calendar carries the register", cal["governance"]["counts"], reg["counts"])
             lic = await licences.overview(s, firm)
             check("the Licences payload carries the register, the map and counsel's review", (sorted(lic["governance"]), lic["counsel"]["total"] > 10),
-                  (["map", "policies"], True))
+                  (["certifications", "map", "policies"], True))
 
             print("\n=== Recording a policy ===")
             comp = users[UserRole.COMPLIANCE]

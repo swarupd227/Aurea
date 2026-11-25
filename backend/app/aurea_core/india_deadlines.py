@@ -81,6 +81,13 @@ async def firm_items(session: AsyncSession, firm: Firm) -> dict:
         items.append(_item("policy", f"{p['label']} policy review", due, today, source=p["citation"],
                            detail="not recorded in the governance register" if due is None else None,       # who owns it stays in the register
                            state=state, assumed="a year after approval" if due and not p["review_set_by_document"] else None))
+    # Each adviser's NISM certificate (B-298): expired, due within 90 days, or not on file. A certificate that stands is not an item.
+    from app.aurea_core import adviser_certification
+
+    for _who, label, due, cstate, detail in await adviser_certification.deadline_items(session, firm):
+        items.append(_item("certification", label, due, today, source=adviser_certification.CITATION, detail=detail,
+                           state="overdue" if cstate == "expired" else "due_soon" if cstate == "due_soon" else "not_dated",
+                           extra={"remind_within": adviser_certification.DUE_WITHIN}))
     held = {l.key for l in licences.held(firm)}
     for key, label, only in RULE_CHANGES:
         fig = law_figures.get(key, today)

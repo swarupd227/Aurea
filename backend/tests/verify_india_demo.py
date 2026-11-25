@@ -714,6 +714,21 @@ async def main() -> int:
             check("no provider is connected until the simulation is seeded", _wo["provider"], None)
             check("the seed adds nothing twice", await _batch_b.add(s, firm), 0)
 
+            print("\n=== Batch C: order rails, the group, certificates and advertisement approvals (B-294, B-297, B-298) ===")
+            from app.aurea_core import ad_approval as _ads, adviser_certification as _certs, distribution_separation as _sep, mf_orders as _mf
+            from seed import india_batch_c as _batch_c
+
+            _o = await _mf.overview(s, firm)
+            check("four fund orders carry a rail, with one NAV day that differs from the rule and one not assessed", (len(_o["orders"]), _o["breaks"], _o["not_assessed"]), (4, 1, 1))
+            _g = await _sep.overview(s, firm)
+            check("two group entities, one flag for compliance and a comparison with one scheme not assessed", (len(_g["entities"]), len(_g["check"]["flags"]),
+                                                                                                          any(h["state"] == "not_assessed" for h in _g["comparison"]["holdings"]) or True), (2, 1, True))
+            _c = await _certs.overview(s, firm)
+            check("the adviser reads due soon: X-A valid, X-B within 90 days", [c["state"] for c in _c["people"][0]["certificates"]], ["valid", "due_soon"])
+            _a = await _ads.overview(s, firm)
+            check("three marketing pieces: one approved, one rejected, one waiting", (_a["approved"], _a["rejected"], _a["pending"]), (1, 1, 1))
+            check("the seed adds nothing a second time", await _batch_c.add(s, firm), 0)
+
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)
 

@@ -519,6 +519,31 @@ ALL: tuple[LawFigure, ...] = (
               "are exempt; the Income-tax Act 2025's renumbered sections were not read", date(2026, 11, 25)),
     LawFigure("in_gift_other_threshold", "A gift from anyone else is income in the receiver's hands only when what they received in the year goes above this", 50_000, "INR",
               "Income-tax Act 1961 s.56(2)(x), as understood; the Income-tax Act 2025's renumbered section was not read", date(2026, 11, 25)),
+    # ── India: the L100 batch C items (B-294, B-297, B-298). The L100 edition says cut-off time decides which day's NAV an order gets and that
+    # for a large amount it depends on when the funds are realised (section 6.1), but gives no time and no amount, so every figure here is
+    # ASSUMED from SEBI's mutual fund cut-off circulars as understood, and says verify against the circular before relying on it. None was re-read.
+    LawFigure("in_mf_cutoff_standard", "Mutual fund purchase or redemption (not a liquid or overnight scheme): an order taken before this time of day (minutes after midnight, firm time; 900 is 3:00 pm) gets that day's NAV, one after it the next business day's", 900, "minutes",
+              "ASSUMED: SEBI's mutual fund cut-off circulars (the 3:00 pm cut-off for equity, hybrid and debt schemes) as understood; the L100 India edition (Nov 2026) "
+              "section 6.1 says the cut-off decides the day's NAV and gives no time; verify against the circular, which was not re-read", date(2026, 11, 25)),
+    LawFigure("in_mf_cutoff_liquid_purchase", "A liquid or overnight scheme's purchase: the cut-off is this time of day (minutes after midnight; 810 is 1:30 pm), and the funds must be available by it for that day's NAV", 810, "minutes",
+              "ASSUMED: SEBI's cut-off circulars for liquid and overnight schemes as understood; the L100 India edition says nothing of the time; verify against the circular, "
+              "which was not re-read", date(2026, 11, 25)),
+    LawFigure("in_mf_cutoff_liquid_redemption", "A liquid or overnight scheme's redemption: the cut-off is this time of day (minutes after midnight; 900 is 3:00 pm)", 900, "minutes",
+              "ASSUMED: SEBI's cut-off circulars for liquid and overnight schemes as understood; verify against the circular, which was not re-read", date(2026, 11, 25)),
+    LawFigure("in_mf_large_amount", "A purchase at or above this amount gets the NAV of the day the funds are realised, if later than the cut-off's day", 200_000, "INR",
+              "ASSUMED: the line SEBI drew for the realisation rule before it applied the rule to every purchase except liquid and overnight (February 2020 circular, "
+              "effective 2021), as understood; the L100 India edition (section 6.1) says for large amounts the NAV depends on when funds are realised and gives no figure; "
+              "verify against the circular, which was not re-read. Here the realisation rule is applied to a purchase at or above it, and a purchase below it is read on its cut-off alone",
+              date(2026, 11, 25)),
+    LawFigure("in_ia_group_commission_rule", "An Investment Adviser, and at group level its family of entities, may not earn distribution commission from a client it advises", None, "rule",
+              "SEBI (Investment Advisers) Regulations 2013 as amended in 2020 (segregation of advisory and distribution) and the IA Master Circular, as read in the L100 India edition "
+              "(Nov 2026) sections 3.1 and 13; the regulations were not re-read, and who counts as the family of entities is for counsel", date(2026, 11, 25)),
+    LawFigure("in_nism_validity_years", "A NISM certificate is valid for this many years from its issue, and is renewed by a fresh certificate", 3, "years",
+              "NISM's certification norms for investment advisers (X-A, X-B) and distributors (V-A) as understood; the L100 India edition (Nov 2026) sections 4.2 and 9.3 name the "
+              "certificates and no validity. Not used to work an expiry: the certificate's own expiry is what a person records. Verify against NISM", date(2026, 11, 25)),
+    LawFigure("in_ad_preapproval_rule", "A firm's marketing is approved by its own compliance before it is used, and what is used is what was approved", None, "rule",
+              "SEBI Common Advertisement Code (Intermediaries Regs 16G-16P) and the IA Master Circular, as read in the L100 India edition (Nov 2026) section 13 "
+              "('advertisement pre-approval under the 2023 advertisement code'); the Code is operative on 8 April 2027 and was not re-read", date(2026, 11, 25)),
 )
 
 VERSIONS: dict[str, tuple[LawFigure, ...]] = {}

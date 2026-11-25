@@ -3,7 +3,8 @@
 The compliance calendar and the countdown only showed dates. This reads the same items (`india_deadlines`, which reads
 `compliance_calendar`, `governance` and the KYC records) and raises one task per item, once, for its owner:
 
-  the firm's    a filing, the registration's expiry and a policy's review go to compliance (the compliance officer the firm
+  the firm's    a filing, the registration's expiry, a policy's review and an adviser's NISM certificate (expired or due within 90 days, once
+                per person, certificate and expiry: B-298) go to compliance (the compliance officer the firm
                 recorded when a user carries that name, else the firm's first active compliance user, else nobody in particular)
   a client's    a periodic KYC and risk review coming up or past, a KYC the KRA holds or has rejected or that has run out, and a
                 minor who is now an adult go to the household's recorded adviser (`advisers.adviser_of`), never someone
@@ -31,7 +32,7 @@ from app.models.tenant import Firm
 
 SOURCE = "india_reminder"
 WITHIN_DAYS = 14
-FIRM_KINDS = ("filing", "registration", "policy")
+FIRM_KINDS = ("filing", "registration", "policy", "certification")
 HOUSEHOLD_KINDS = ("kyc_review", "majority")
 KYC_STOPS = ("overdue", "blocked")
 
@@ -49,7 +50,7 @@ async def compliance_owner(session: AsyncSession, firm: Firm) -> User | None:
 
 def _near(item: dict) -> bool:
     return item.get("due_on") is not None and item.get("days") is not None and item["state"] in ("overdue", "due_soon", "upcoming") \
-        and item["days"] <= WITHIN_DAYS
+        and item["days"] <= item.get("remind_within", WITHIN_DAYS)
 
 
 async def _exists(session: AsyncSession, firm_id: uuid.UUID, title: str, household_id: uuid.UUID | None) -> bool:

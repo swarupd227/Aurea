@@ -95,7 +95,19 @@ async def recommendation_detail(
     rec = await db.get(Recommendation, rec_id)
     if not rec or rec.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Recommendation not found")
-    return _rec_dict(rec, user.role)
+    out = _rec_dict(rec, user.role)
+    # A WARNING, never a block (B-298): the household's recorded adviser, who would approve a book-moving proposal, holds an expired NISM
+    # certificate or none on file. Decision rights and the pre-advice gate are separate controls.
+    from app.aurea_core import adviser_certification, advisers
+    from app.core import decision_rights
+    from app.models.enums import AgentKey
+
+    if str(rec.status) == str(RecommendationStatus.PROPOSED) and adviser_certification.applies(firm) and decision_rights.moves_the_book(AgentKey(str(rec.agent_key))):
+        home = (await advisers.subject_households(db, firm.id, [rec])).get(rec.id)
+        found = await adviser_certification.warning_for_household(db, firm, home)
+        if found:
+            out["warnings"] = [{"kind": "adviser_certification", **found}]
+    return out
 
 
 @router.get("/recommendations/{rec_id}/compliance")

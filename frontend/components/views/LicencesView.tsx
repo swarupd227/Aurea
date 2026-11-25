@@ -21,6 +21,7 @@ import { IndiaDateItems } from "@/app/workspace/components/artifacts/RegulatoryC
 import { AccreditedRows, FeeTermRows, RateCardChips, RateCardRows, TicketGateFleet } from "@/app/workspace/components/artifacts/IndiaGatesCard";
 import { ChannelChips, ChannelRows, StackChips, StackRows, TemplateRows } from "@/app/workspace/components/artifacts/IndiaChannelsCard";
 import { LrsRows, MandateRows, PledgeRows, SavingsRows } from "@/app/workspace/components/artifacts/IndiaBatchACard";
+import { AdApprovalRows, CertificationRows, MfOrderRows, SeparationRows } from "@/app/workspace/components/artifacts/IndiaBatchCCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -416,6 +417,17 @@ export function LicencesView() {
           <div className="-mx-3">
             <LicenceMapTable map={data.governance.map} />
             <div className="border-t border-border-soft"><PolicyRows policies={data.governance.policies.policies} /></div>
+            {data.governance.certifications?.applies && (data.governance.certifications.people ?? []).length > 0 && (
+              <div className="border-t border-border-soft">
+                <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2">
+                  <span className="tile-label mr-auto">Adviser certifications</span>
+                  {data.governance.certifications.counts?.expired > 0 && <span className="chip text-crit">{data.governance.certifications.counts.expired} expired</span>}
+                  {data.governance.certifications.counts?.not_on_file > 0 && <span className="chip text-warn">{data.governance.certifications.counts.not_on_file} not on file</span>}
+                  {data.governance.certifications.counts?.due_soon > 0 && <span className="chip text-warn" title="Expires within 90 days">{data.governance.certifications.counts.due_soon} due soon</span>}
+                </div>
+                <CertificationRows data={data.governance.certifications} />
+              </div>
+            )}
             {canRecordPolicy && <div className="border-t border-border-soft"><PolicyForm onDone={() => { refetch(); nav.changed(); }} /></div>}
           </div>
         </Card>
@@ -513,6 +525,37 @@ export function LicencesView() {
             <span className="chip tabular-nums text-ink-muted" title="Counted once in net worth, as held away">{money(data.savings.total, "INR")}</span>
           </div>
           <div className="-mx-3"><SavingsRows data={{ ...data.savings, rules: data.savings.rules }} /></div>
+        </Card>
+      )}
+
+      {data.mf_orders?.applies && ((data.mf_orders.orders ?? []).length > 0 || data.mf_orders.unrecorded > 0) && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Mutual fund order rails and NAV days</span>
+            {data.mf_orders.breaks > 0 && <span className="chip text-crit" title="Reported, not repaired">{data.mf_orders.breaks} NAV day differs</span>}
+            {data.mf_orders.not_assessed > 0 && <span className="chip text-warn">{data.mf_orders.not_assessed} not assessed</span>}
+          </div>
+          <div className="-mx-3"><MfOrderRows data={data.mf_orders} /></div>
+        </Card>
+      )}
+
+      {data.separation?.applies && ((data.separation.entities ?? []).length > 0 || (data.separation.comparison?.holdings ?? []).length > 0) && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Advice kept apart from distribution</span>
+            {(data.separation.check?.flags ?? []).length > 0 && <span className="chip text-warn" title="A flag for compliance, never a finding of breach">{data.separation.check.flags.length} flag for compliance</span>}
+          </div>
+          <div className="-mx-3"><SeparationRows data={data.separation} /></div>
+        </Card>
+      )}
+
+      {data.ad_approvals?.applies && (data.ad_approvals.submissions ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Advertisement approvals</span>
+            {data.ad_approvals.pending > 0 && <span className="chip text-warn">{data.ad_approvals.pending} waiting for compliance</span>}
+          </div>
+          <div className="-mx-3"><AdApprovalRows data={data.ad_approvals} /></div>
         </Card>
       )}
 

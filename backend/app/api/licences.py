@@ -44,6 +44,7 @@ async def read(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: A
     if user.role not in governance.READERS:
         result.pop("rate_card", None)
         result.pop("governance", None)      # the register and the licence map are compliance's, a branch leader's, operations' and the admin's
+        result.pop("separation", None)      # the group and its flags are read by the same people
     return {**result, "can_record": user.role in RECORDERS}
 
 
@@ -1063,6 +1064,199 @@ async def record_gift(body: GiftIn, user: User = ReaderDep, firm: Firm = Depends
     try:
         result = await tax_habits.record_gift(db, firm, user.role, by=user.email, **body.model_dump())
     except tax_habits.HabitError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+# ── India, batch C: a mutual fund order's rail and NAV day (B-294), advice kept apart from distribution (B-297), adviser certification and
+# advertisement pre-approval (B-298) ──
+
+class MfOrderIn(BaseModel):
+    order_id: uuid.UUID
+    document: str
+    rail: str | None = None
+    rta: str | None = None
+    cutoff_rule: str | None = None
+    order_on: date | None = None
+    order_time: str | None = None
+    nav_date_reported: date | None = None
+    folio: str | None = None
+    funds_realised_on: date | None = None
+    amount_inr: float | None = None
+    reason: str | None = None
+
+
+class GroupEntityIn(BaseModel):
+    name: str
+    document: str
+    relationship: str | None = None
+    holds_arn: bool | None = None
+    arn: str | None = None
+    ended: bool = False
+    reason: str | None = None
+
+
+class GroupTrailIn(BaseModel):
+    household_id: uuid.UUID
+    entity: str
+    statement_on: date
+    document: str
+    amount_inr: float | None = None
+    ceased: bool = False
+    reason: str | None = None
+
+
+class SchemeTerIn(BaseModel):
+    scheme: str
+    plan: str
+    ter_pct: float
+    as_of: date
+    document: str
+
+
+class CertificationIn(BaseModel):
+    user_id: uuid.UUID
+    kind: str
+    certificate_number: str
+    issued_on: date
+    expires_on: date
+    document: str
+    status: str = "valid"
+
+
+class AdSubmitIn(BaseModel):
+    title: str
+    text: str
+    channel: str
+    supersedes_id: uuid.UUID | None = None
+
+
+class AdDecideIn(BaseModel):
+    decision: str
+    reason: str
+
+
+@router.get("/mf-orders")
+async def mf_orders_view(household_id: uuid.UUID | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, mf_orders
+
+    return await counsel_review.annotate(db, firm, {**await mf_orders.overview(db, firm, household_id=household_id), "can_record": user.role in mf_orders.RECORDERS})
+
+
+@router.post("/mf-orders")
+async def record_mf_order(body: MfOrderIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_mf_order behind its Confirm card is the same action."""
+    from app.aurea_core import mf_orders
+
+    try:
+        result = await mf_orders.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except mf_orders.MfOrderError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/separation")
+async def separation_view(household_id: uuid.UUID | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import distribution_separation as ds, governance
+
+    result = await ds.overview(db, firm, household_id=household_id)
+    if user.role not in governance.READERS and user.role != UserRole.RESEARCH_CIO:
+        result.pop("check", None)     # the flags are compliance's, a branch leader's, operations' and the admin's
+    return {**result, "can_record_group": user.role in ds.ENTITY_RECORDERS, "can_record_trail": user.role in ds.TRAIL_RECORDERS, "can_record_ter": user.role in ds.TER_RECORDERS}
+
+
+@router.post("/group-entities")
+async def record_group_entity(body: GroupEntityIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_group_entity behind its Confirm card is the same action."""
+    from app.aurea_core import distribution_separation as ds
+
+    try:
+        result = await ds.record_entity(db, firm, user.role, by=user.email, **body.model_dump())
+    except ds.SeparationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/group-trail")
+async def record_group_trail(body: GroupTrailIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_group_trail behind its Confirm card is the same action."""
+    from app.aurea_core import distribution_separation as ds
+
+    try:
+        result = await ds.record_trail(db, firm, user.role, by=user.email, **body.model_dump())
+    except ds.SeparationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/scheme-ter")
+async def record_scheme_ter(body: SchemeTerIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_scheme_ter behind its Confirm card is the same action."""
+    from app.aurea_core import distribution_separation as ds
+
+    try:
+        result = await ds.record_ter(db, firm, user.role, by=user.email, **body.model_dump())
+    except ds.SeparationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/certifications")
+async def certifications_view(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import adviser_certification as ac
+
+    return {**await ac.overview(db, firm), "can_record": user.role in ac.RECORDERS}
+
+
+@router.post("/certifications")
+async def record_certification(body: CertificationIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_adviser_certification behind its Confirm card is the same action."""
+    from app.aurea_core import adviser_certification as ac
+
+    try:
+        result = await ac.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except ac.CertificationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/ad-approvals")
+async def ad_approvals_view(approval_id: uuid.UUID | None = None, text: str | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                            db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import ad_approval
+
+    if approval_id is not None:
+        return await ad_approval.verify_citation(db, firm, approval_id, text)
+    return {**await ad_approval.overview(db, firm), "can_decide": user.role in ad_approval.DECIDERS, "can_submit": user.role in ad_approval.SUBMITTERS}
+
+
+@router.post("/ad-approvals")
+async def submit_ad(body: AdSubmitIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool submit_ad_copy behind its Confirm card is the same action."""
+    from app.aurea_core import ad_approval
+
+    try:
+        result = await ad_approval.submit(db, firm, user, **body.model_dump())
+    except ad_approval.AdApprovalError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/ad-approvals/{submission_id}/decide")
+async def decide_ad(submission_id: uuid.UUID, body: AdDecideIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool decide_ad_copy behind its Confirm card is the same action."""
+    from app.aurea_core import ad_approval
+
+    try:
+        result = await ad_approval.decide(db, firm, user, submission_id=submission_id, **body.model_dump())
+    except ad_approval.AdApprovalError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     return result

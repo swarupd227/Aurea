@@ -150,6 +150,7 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
                                 india_reminders, kyc_india, pms, pre_advice, residency, sebi_family)
     from app.aurea_core import accredited, adviser_fees, india_stack, product_gates, rate_card, whatsapp
     from app.aurea_core import india_savings, lrs, pledges, sip_mandates
+    from app.aurea_core import ad_approval, adviser_certification, distribution_separation, mf_orders
 
     caps: dict[str, dict] = {}
     for e in (await billing.preview(session, firm.id))["arrangements"]:
@@ -163,7 +164,8 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
             "pms": await pms.overview(session, firm), "aggregator": await account_aggregator.overview(session, firm),
             "kyc": await kyc_india.overview(session, firm), "reminders": await india_reminders.view(session, firm),
             "family": await sebi_family.overview(session, firm), "estate": await india_estate.overview(session, firm),
-            "governance": {"policies": await governance.policies(session, firm), "map": await governance.licence_map(session, firm)},
+            "governance": {"policies": await governance.policies(session, firm), "map": await governance.licence_map(session, firm),
+                           "certifications": await adviser_certification.overview(session, firm)},
             "counsel": await counsel_review.overview(session, firm),
             # The L100 items: ticket-size gates, accredited investors, an adviser's fee terms and the February rate card.
             "ticket_gates": await product_gates.for_firm(session, firm), "accredited": await accredited.overview(session, firm),
@@ -172,4 +174,7 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
             "channels": await whatsapp.overview(session, firm), "india_stack": await india_stack.overview(session, firm),
             # Batch A: overseas remittances, SIP debit mandates, the Indian shelf's other classes, and units pledged to a lender.
             "lrs": await lrs.overview(session, firm), "sip_mandates": await sip_mandates.overview(session, firm),
-            "savings": await india_savings.overview(session, firm), "pledges": await pledges.overview(session, firm)}
+            "savings": await india_savings.overview(session, firm), "pledges": await pledges.overview(session, firm),
+            # Batch C: a mutual fund order's rail and NAV day, advice kept apart from distribution, and advertisement pre-approval.
+            "mf_orders": await mf_orders.overview(session, firm), "separation": await distribution_separation.overview(session, firm),
+            "ad_approvals": await ad_approval.overview(session, firm)}
