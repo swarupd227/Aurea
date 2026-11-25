@@ -97,7 +97,7 @@ async def add(s: AsyncSession, firm: Firm) -> int:
     # B-297: the group, trail from an advised household, and two schemes' expense ratios.
     doc = f"The group structure chart, filed ({SOURCE})"
     await ds.record_entity(s, firm, UserRole.COMPLIANCE, by=BY, name="Demonstration Distribution Private Limited (invented)", relationship="subsidiary", holds_arn=True,
-                           arn="ARN-000000 (invented for the demonstration)", document=doc)
+                           arn="ARN-000000 (invented)", document=doc)
     await ds.record_entity(s, firm, UserRole.COMPLIANCE, by=BY, name="Demonstration Holdings Limited (invented)", relationship="parent", holds_arn=False, document=doc)
     n += 2
     advised = await ds._advised_households(s, firm)
