@@ -403,6 +403,34 @@ async def gratuity_of(session: AsyncSession, firm_id, household_id: uuid.UUID) -
             for r in rows]
 
 
+async def _book_differences(session: AsyncSession, firm: Firm, person_ids: list[uuid.UUID], noms: list) -> list[dict]:
+    """A nomination a person recorded against a demat account or a folio, read against the beneficiaries the book holds for the account of the
+    same name (B-280): two sources that name different people are shown, and neither is changed. An account the book does not hold by that name,
+    or one with no beneficiary on it, is not compared: not on file is not a difference."""
+    from app.models.graph import Account, AccountBeneficiary, Mandate
+
+    wanted = {r.label.strip().lower(): r for r in noms if r.status == "nominated" and r.asset_kind in ("demat", "mutual_fund") and r.nominees}
+    if not wanted or not person_ids:
+        return []
+    accounts = (await session.execute(select(Account).join(Mandate, Mandate.id == Account.mandate_id).where(
+        Mandate.firm_id == firm.id, Mandate.person_id.in_(person_ids)))).scalars().all()
+    out: list[dict] = []
+    for a in accounts:
+        rec = wanted.get(a.name.strip().lower())
+        if rec is None:
+            continue
+        held = {b.beneficiary_name.strip().lower(): b.beneficiary_name for b in (await session.execute(select(AccountBeneficiary).where(
+            AccountBeneficiary.account_id == a.id))).scalars().all()}
+        if not held:
+            continue
+        said = {n["name"].strip().lower(): n["name"] for n in rec.nominees if n.get("name")}
+        if set(held) != set(said):
+            out.append({"account": rec.label, "name": None,
+                        "issue": f"the nominees recorded here ({', '.join(said.values())}) differ from the beneficiaries on the account in the book "
+                                 f"({', '.join(held.values())}): neither is changed, and a person records which stands from the form"})
+    return out
+
+
 # ── The household's view ───────────────────────────────────────────────────────────────────────────────────────────────
 
 async def household_view(session: AsyncSession, firm: Firm, household_id: uuid.UUID) -> dict:
@@ -425,6 +453,7 @@ async def household_view(session: AsyncSession, firm: Firm, household_id: uuid.U
     heirs = {r.person_id: docs[r.person_id].named for r in noms if docs.get(r.person_id) is not None and docs[r.person_id].named}
     issues = nominations.check([_nomination_view(r, names) for r in noms], today=today, gone=gone,
                                heirs={str(k): v for k, v in heirs.items()})
+    issues += await _book_differences(session, firm, ids, noms)
     people_view = []
     for p in people:
         w, d = wills.get(p.id), docs.get(p.id)

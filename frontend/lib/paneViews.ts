@@ -253,6 +253,8 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "sync_connector":
     case "set_cmas":
     case "set_model_routing":
+    case "read_kyc_review_period":
+    case "set_kyc_review":
       return typeof r.section === "string" ? `/admin?tab=${ADMIN_TAB[r.section] ?? "firm"}` : "/admin";
     // The Foundation layer (B-161 to B-163): its section is on the Connectors page.
     case "read_foundation_sources":
@@ -515,6 +517,14 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_agreement_contents":
     case "record_family_determination":
     case "cite_report_ad_approval":
+    case "read_manager_staff":
+    case "record_manager_affiliation":
+    case "read_pms_ledger":
+    case "record_pms_unit_value":
+    case "record_pms_verification":
+    case "debit_pms_fee_line":
+    case "read_guardian_papers":
+    case "read_real_estate_choice":
     case "read_ticket_gates":
     case "read_accredited_investors":
     case "record_accredited_investor":

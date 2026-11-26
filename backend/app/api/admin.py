@@ -176,6 +176,28 @@ async def set_foundation_owner(domain: str, body: FoundationOwnerIn, user: User 
     return {"owners": owners.owners(firm)}
 
 
+class KycReviewIn(BaseModel):
+    band: str
+    months: int
+    reason: str | None = None
+
+
+@router.get("/kyc-review-months")
+async def kyc_review_months(user: User = AdminOnly, firm: Firm = Depends(current_firm)):
+    """How often an Indian client's KYC is refreshed, by band, with whose each figure is (B-283)."""
+    return platform_admin.kyc_review_table(firm)
+
+
+@router.put("/kyc-review-months")
+async def set_kyc_review_months(body: KycReviewIn, user: User = AdminOnly, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """One band's refresh period, with the reason on the audit log. The conversation's set_kyc_review runs the same write."""
+    try:
+        await platform_admin.set_kyc_review(db, firm, user, band=body.band, months=body.months, reason=body.reason)
+    except AdminError as exc:
+        raise _refused(exc)
+    return platform_admin.kyc_review_table(firm)
+
+
 class CmaIn(BaseModel):
     cmas: dict  # {"equity": [0.08, 0.17], "fixed_income": [0.04, 0.07], ...}
 

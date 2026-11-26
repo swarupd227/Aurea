@@ -114,7 +114,8 @@ async def main() -> int:
             amount = view["assets"]["amount"]
             check("every category is read against that figure",
                   all((c["state"] == "open") == (amount >= c["minimum"]) for c in view["categories"] if not c["waived"]), True)
-            check("the employee minimum is shown and not applied", (view["employee_minimum"]["minimum"], "not applied" in view["employee_minimum"]["said"]), (2_500_000.0, True))
+            check("the employee minimum is shown, and applied only to a person recorded as a manager's staff (B-303)",
+                  (view["employee_minimum"]["minimum"], "standard minimum applies" in view["employee_minimum"]["said"] or view["employee_minimum"]["recorded"]), (2_500_000.0, True))
             check("a category that opens is never a recommendation", "never a recommendation" in view["note"], True)
             fleet = await product_gates.for_firm(s, firm)
             check("the Licences payload lists every household with what opens to it", (len(fleet["households"]) >= 5, all("categories" in h for h in fleet["households"])), (True, True))

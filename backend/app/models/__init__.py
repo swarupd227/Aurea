@@ -93,3 +93,5 @@ from app.models import india_batch_b  # noqa: F401,E402
 from app.models import india_batch_a  # noqa: F401,E402
 from app.models import india_batch_c  # noqa: F401,E402
 from app.models import india_rem_e  # noqa: F401,E402
+# A manager's own staff, a PMS client's unit values, a verifier's letter and a PMS fee debit (B-303, B-283).
+from app.models import india_rem_d  # noqa: F401,E402

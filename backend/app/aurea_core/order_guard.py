@@ -149,7 +149,8 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
     # India's ticket-size gate (B-290): a gated product the household's recorded assets do not reach is refused; with no asset
     # figure on file it goes ahead and is named, because a fact not on file is not a no.
     gated, unknown = await product_gates.order_review(session, firm, mandate, filling, instruments)
-    refused += gated
+    # The shelf's bar already carries a gated product out of reach (B-303), so the same buy is not refused twice.
+    refused += [g for g in gated if not any(r.startswith(g.split(":", 1)[0] + " is ") for r in refused)]
     outside += unknown
     for o in filling:
         if o["side"] == "buy":

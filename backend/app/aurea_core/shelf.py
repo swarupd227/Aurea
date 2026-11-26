@@ -103,6 +103,12 @@ async def barred(session: AsyncSession, firm: Firm, mandate: Mandate) -> dict[uu
 
     for instrument_id, reason in (await product_distribution.negative_bars(session, firm, mandate)).items():
         out.setdefault(instrument_id, reason)
+    # India's ticket-size category (B-303): a SIF, AIF or PMS product the household's recorded assets do not reach is not bought, by a
+    # proposal or a direct order alike. A household with no asset figure on file is not barred.
+    from app.aurea_core import product_gates
+
+    for instrument_id, reason in (await product_gates.bars(session, firm, mandate)).items():
+        out.setdefault(instrument_id, reason)
     return out
 
 

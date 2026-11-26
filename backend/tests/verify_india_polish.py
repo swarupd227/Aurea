@@ -12,7 +12,7 @@ import asyncio
 import sys
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  - registers every table on Base.metadata
@@ -26,6 +26,7 @@ from app.models.enums import UserRole
 from app.models.graph import Account, Household, Mandate, Person
 from app.models.identity import User
 from app.models.india_polish import MajorityConversion, PmsFeeLine
+from app.models.india_rem_d import PmsUnitValue
 from app.models.onboarding import OnboardingCase
 from app.models.residency import GuardianshipRecord, ResidencyRecord
 from app.models.tenant import Firm, FirmSegment
@@ -223,6 +224,9 @@ async def main() -> int:
 
             print("\n=== B-261: a performance fee is its own line, only on confirmation ===")
             karthik_m = (await s.execute(select(Mandate).where(Mandate.person_id == people["Karthik Iyer"].id))).scalars().first()
+            # This section is about the estimate on the book; the demonstration unit-value ledger (B-283) would give the exact fee instead.
+            await s.execute(delete(PmsUnitValue))
+            await s.flush()
             await refused("with no estimate above zero there is nothing to confirm", pms.prepare_fee_line(s, firm, mandate_id=karthik_m.id), "not assessed")
             original = pms.performance_fee
             pms.performance_fee = lambda agreement, periods, start, end: {"estimate": 12_345.67, "period_return": 0.04, "hurdle_for_period": 0.025,

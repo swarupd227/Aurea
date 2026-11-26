@@ -14,11 +14,15 @@ cannot buy an AIF. With none of those on file the answer is **needs a fact first
 and not stopped. With assets on file and under the minimum it is a no, with the minimum and the assets beside it.
 
 **An accredited investor is exempt from the SIF minimum** (`accredited.py`, recorded from a certificate); the PMS and AIF minimums
-have no such exemption here. SEBI reads the SIF minimum per PAN across all of a manager's strategies; this reads the household's
-assets, which is the larger figure, and says so. An AIF's lower minimum for the manager's own employees and directors is shown beside
-the AIF rows and is not applied, because who works for a manager is not on file.
+have no such exemption here. SEBI reads the SIF minimum per PAN across all of a manager's strategies: where the holder's PAN is
+recorded (masked, `pan.py`) the holder's own recorded assets are read, else the household's, which is the larger figure, and the line says
+which (B-303). An AIF's lower minimum for the manager's own employees and directors is applied only to a person recorded from a document
+as that manager's employee or director (`manager_staff.py`), and only to a product of that manager.
 
-Read in `product_fit` (a line on the mandate's fit) and in `order_guard` (a buy). Nothing here changes a mandate, a holding or an order.
+A categorised product the household's recorded assets do not reach is barred through `shelf.barred` (`bars`), so the rebalancer does not
+propose it and a direct order is refused, with the same sentence. A household with no asset figure on file is not barred.
+
+Read in `product_fit` (a line on the mandate's fit), in `shelf.barred` and in `order_guard` (a buy). Nothing here changes a mandate, a holding or an order.
 """
 from __future__ import annotations
 
@@ -28,9 +32,11 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import accredited, balance_sheet, firm_time, law_figures, markets
+from app.aurea_core import accredited, balance_sheet, firm_time, law_figures, manager_staff, markets, pan
 from app.aurea_core.graph import list_households
-from app.models.graph import Mandate, Person
+from app.models.graph import Account, Mandate, Person
+from app.models.held_away import HeldAwayHolding
+from app.models.portfolio import Holding
 from app.models.portfolio import Instrument
 from app.models.shelf import ProductDecision
 from app.models.tenant import Firm
@@ -91,20 +97,48 @@ def _money(firm: Firm, amount: float) -> str:
     return markets.money(amount, firm.base_currency or "INR")
 
 
-def read(firm: Firm, category: str, assets: float | None, *, accredited_investor: bool, today: date) -> dict:
-    """One category against the household's assets: open, below the minimum, or needing a fact first."""
+def read(firm: Firm, category: str, assets: float | None, *, accredited_investor: bool, today: date, employee_of: str | None = None,
+         basis: str | None = None) -> dict:
+    """One category against the assets read for it: open, below the minimum, or needing a fact first. `employee_of` names a manager whose own
+    employee or director this person is recorded to be, which lowers an AIF's minimum alone; `basis` says whose assets were read."""
     spec = CATEGORIES[category]
     minimum = float(law_figures.value(spec["figure"], today))
+    staff = bool(employee_of and category.startswith("aif_"))
+    if staff:
+        minimum = float(law_figures.value(EMPLOYEE_FIGURE, today))
     waived = bool(spec["accredited_waives"] and accredited_investor)
-    row = {"category": category, "label": spec["label"], "about": spec["about"], "minimum": minimum, "figure": spec["figure"],
-           "waived": waived, "assets": assets}
+    row = {"category": category, "label": spec["label"], "about": spec["about"], "minimum": minimum, "figure": EMPLOYEE_FIGURE if staff else spec["figure"],
+           "waived": waived, "assets": assets, "employee_of": employee_of if staff else None, "basis": basis}
+    why = f" ({basis})" if basis else ""
+    if staff:
+        why = f" (the lower minimum for {employee_of}'s own employees and directors, as recorded{', ' + basis if basis else ''})"
     if waived:
         return {**row, "state": OPEN, "said": f"{spec['label']} opens: the minimum of {_money(firm, minimum)} is waived for an accredited investor"}
     if assets is None:
-        return {**row, "state": NEEDS, "said": f"{spec['label']} takes {_money(firm, minimum)}: no asset figure is on file, so this needs a fact first"}
+        return {**row, "state": NEEDS, "said": f"{spec['label']} takes {_money(firm, minimum)}{why}: no asset figure is on file, so this needs a fact first"}
     if assets >= minimum:
-        return {**row, "state": OPEN, "said": f"{spec['label']} opens: recorded assets of {_money(firm, assets)} meet its minimum of {_money(firm, minimum)}"}
-    return {**row, "state": BELOW, "said": f"{spec['label']} takes {_money(firm, minimum)}, and the recorded assets are {_money(firm, assets)}"}
+        return {**row, "state": OPEN, "said": f"{spec['label']} opens: recorded assets of {_money(firm, assets)} meet its minimum of {_money(firm, minimum)}{why}"}
+    return {**row, "state": BELOW, "said": f"{spec['label']} takes {_money(firm, minimum)}{why}, and the recorded assets are {_money(firm, assets)}"}
+
+
+async def holder_assets(session: AsyncSession, firm: Firm, person_id: uuid.UUID) -> dict:
+    """One holder's own assets, for a minimum SEBI reads per PAN (the SIF): the managed book and cash of the mandates in the person's own name
+    and what the household holds elsewhere in the person's name. `pan` is the masked PAN, or None where none is recorded (then the holder's own
+    assets are not read at all). `amount` is None when nothing of the person's is on file. Never netted against a product already held."""
+    person = await session.get(Person, person_id)
+    if person is None or person.firm_id != firm.id or not person.pan:
+        return {"pan": None, "amount": None}
+    mandates = list((await session.execute(select(Mandate.id).where(Mandate.firm_id == firm.id, Mandate.person_id == person_id))).scalars().all())
+    managed = cash = 0.0
+    if mandates:
+        cash = sum(float(a.cash_balance or 0) for a in (await session.execute(select(Account).where(Account.mandate_id.in_(mandates)))).scalars().all())
+        managed = sum(float(v or 0) for v in (await session.execute(select(Holding.market_value).join(Account, Account.id == Holding.account_id).where(
+            Account.mandate_id.in_(mandates), Holding.quantity > 0))).scalars().all())
+    away = sum(float(v or 0) for v in (await session.execute(select(HeldAwayHolding.value).where(
+        HeldAwayHolding.firm_id == firm.id, HeldAwayHolding.person_id == person_id, HeldAwayHolding.status == "current"))).scalars().all())
+    total = managed + cash + away
+    return {"pan": pan.mask(person.pan), "amount": round(total, 2) if total > 0 else None, "managed": round(managed, 2), "cash": round(cash, 2),
+            "held_away": round(away, 2)}
 
 
 async def _household_accredited(session: AsyncSession, firm: Firm, household_id: uuid.UUID, today: date) -> tuple[bool, list[str]]:
@@ -123,11 +157,26 @@ async def open_to(session: AsyncSession, firm: Firm, household_id: uuid.UUID) ->
     is_accredited, names = await _household_accredited(session, firm, household_id, today)
     rows = [read(firm, key, money["amount"], accredited_investor=is_accredited, today=today) for key in CATEGORIES]
     opens = [r["label"] for r in rows if r["state"] == OPEN]
+    persons = (await session.execute(select(Person).where(Person.firm_id == firm.id, Person.household_id == household_id).order_by(Person.full_name))).scalars().all()
+    ok = await accredited.accredited_persons(session, firm, today)
+    sif_holders: list[dict] = []
+    staff: list[dict] = []
+    for p in persons:
+        holder = await holder_assets(session, firm, p.id)
+        line = read(firm, "sif", holder["amount"] if holder["pan"] else money["amount"], accredited_investor=p.id in ok, today=today,
+                    basis=(f"read per PAN {holder['pan']}, the holder's own assets" if holder["pan"] else "read per household, because no PAN is recorded for this holder"))
+        sif_holders.append({"person_id": str(p.id), "person": p.full_name, "pan": holder["pan"], "per_pan": bool(holder["pan"]), "assets": line["assets"],
+                            "state": line["state"], "said": line["said"]})
+        for post in await manager_staff.for_person(session, firm, p.id, today):
+            staff.append({"person_id": str(p.id), "person": p.full_name, "manager": post.manager, "role": post.role})
     return {"applies": True, "household_id": str(household_id), "as_of": today.isoformat(), "assets": money, "accredited": names,
             "categories": rows, "open": [r["category"] for r in rows if r["state"] == OPEN], "open_labels": opens,
             "counts": {s: sum(1 for r in rows if r["state"] == s) for s in (OPEN, BELOW, NEEDS)},
-            "employee_minimum": {"figure": EMPLOYEE_FIGURE, "minimum": float(law_figures.value(EMPLOYEE_FIGURE, today)),
-                                 "said": "The AIF minimum is lower for the manager's own employees and directors; who works for a manager is not on file, so it is not applied."},
+            "employee_minimum": {"figure": EMPLOYEE_FIGURE, "minimum": float(law_figures.value(EMPLOYEE_FIGURE, today)), "recorded": staff,
+                                 "said": ("The AIF minimum is lower for a manager's own employees and directors, and it applies to a product of the manager a person "
+                                          "is recorded for (a post recorded from a document). " + (f"Recorded here: {'; '.join(s['person'] + ' at ' + s['manager'] for s in staff)}."
+                                                                                                   if staff else "No post is recorded for anyone in this household, so the standard minimum applies."))},
+            "sif_by_holder": sif_holders,
             "figures": law_figures.cited(LAW_KEYS, today), "note": NOT_ADVICE}
 
 
@@ -148,11 +197,58 @@ async def line_for(session: AsyncSession, firm: Firm, inst: Instrument, *, house
         return None
     today = firm_time.today(firm)
     ok = await accredited.accredited_persons(session, firm, today) if person_id else set()
+    employee_of = None
+    if category.startswith("aif_"):
+        employee_of = await employee_manager(session, firm, person_id, inst, today)
     if household_id is None:
-        return read(firm, category, None, accredited_investor=person_id in ok, today=today)
+        return read(firm, category, None, accredited_investor=person_id in ok, today=today, employee_of=employee_of)
+    accredited_now = person_id in ok if person_id else (await _household_accredited(session, firm, household_id, today))[0]
+    if category == "sif" and person_id is not None:
+        # SEBI reads the SIF minimum per PAN: where the holder's PAN is recorded, their own assets are read, else the household's, and it says so.
+        holder = await holder_assets(session, firm, person_id)
+        if holder["pan"]:
+            return read(firm, category, holder["amount"], accredited_investor=accredited_now, today=today, basis=f"read per PAN {holder['pan']}, the holder's own assets")
+        money = await investable(session, firm, household_id)
+        return read(firm, category, money["amount"], accredited_investor=accredited_now, today=today,
+                    basis="read per household, because no PAN is recorded for this holder")
     money = await investable(session, firm, household_id)
-    return read(firm, category, money["amount"], accredited_investor=person_id in ok if person_id else (await _household_accredited(session, firm, household_id, today))[0],
-                today=today)
+    return read(firm, category, money["amount"], accredited_investor=accredited_now, today=today, employee_of=employee_of)
+
+
+async def employee_manager(session: AsyncSession, firm: Firm, person_id: uuid.UUID | None, inst: Instrument | None, today: date) -> str | None:
+    """The manager whose own employee or director this person is recorded to be, where it is this product's manager; else None."""
+    if inst is None:
+        return None
+    for row in await manager_staff.for_person(session, firm, person_id, today):
+        if manager_staff.matches(row, product_name=inst.name, product_manager=(inst.values_tags or {}).get("manager")):
+            return row.manager
+    return None
+
+
+async def bars(session: AsyncSession, firm: Firm, mandate: Mandate) -> dict[uuid.UUID, str]:
+    """Each categorised product this mandate's household cannot yet reach, for `shelf.barred`: the rebalancer and a direct order read it alike.
+    A product with no category, or a household with no asset figure on file, bars nothing (a fact not on file is not a no)."""
+    if not applies(firm):
+        return {}
+    rows = (await session.execute(select(ProductDecision).where(ProductDecision.firm_id == firm.id, ProductDecision.category.is_not(None))
+                                  .order_by(ProductDecision.reviewed_on, ProductDecision.created_at))).scalars().all()
+    latest = {r.instrument_id: r for r in rows}
+    if not latest:
+        return {}
+    from app.aurea_core import pre_advice
+
+    household_id = await pre_advice.household_of_mandate(session, mandate)
+    out: dict[uuid.UUID, str] = {}
+    for instrument_id, row in latest.items():
+        if row.category not in CATEGORIES:
+            continue
+        inst = await session.get(Instrument, instrument_id)
+        if inst is None:
+            continue
+        line = await line_for(session, firm, inst, household_id=household_id, person_id=mandate.person_id, category=row.category)
+        if line is not None and line["state"] == BELOW:
+            out[instrument_id] = f"out of reach: {line['said']}"
+    return out
 
 
 async def order_review(session: AsyncSession, firm: Firm, mandate: Mandate, orders: list[dict], instruments: dict) -> tuple[list[str], list[str]]:

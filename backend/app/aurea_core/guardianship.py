@@ -180,7 +180,52 @@ async def order_refusal(session: AsyncSession, firm: Firm, mandate: Mandate) -> 
     if s["minor"] and g is None:
         return (f"{person.full_name} is a minor, and an account for one is run by a guardian. Record the guardian from the "
                 f"document before an order is placed ({CITATION}).")
+    if s["minor"]:
+        return await _minor_papers(session, firm, person, g)
     return None
+
+
+async def _minor_papers(session: AsyncSession, firm: Firm, minor: Person, g: GuardianshipRecord) -> str | None:
+    """What a minor's account needs beyond a named guardian (B-283): the guardian's own KYC record, which needs the guardian to be a person on
+    file, and the minor's PAN, recorded from a document with the guardian linked. Each missing paper is named; none is worked out."""
+    from app.aurea_core import kyc_india
+
+    lacking: list[str] = []
+    if g.guardian_person_id is None:
+        lacking.append(f"{g.guardian_name} is recorded by name alone, so has no KYC record: record the guardian as a person, linked to the minor")
+    elif ("person", g.guardian_person_id) not in await kyc_india.latest(session, firm.id):
+        lacking.append(f"the guardian {g.guardian_name} has no KYC record of their own")
+    if not minor.pan:
+        lacking.append(f"no PAN is recorded for {minor.full_name} (record it from the document, with the guardian linked)")
+    if not lacking:
+        return None
+    return (f"{minor.full_name} is a minor, and an order on the account waits for the guardian's papers: {'; '.join(lacking)} "
+            f"(record_kyc, record_pan) ({CITATION}).")
+
+
+async def papers(session: AsyncSession, firm: Firm) -> dict:
+    """Each minor's guardian KYC and PAN on file, for the Licences page and the conversation: what is there, and what a person still records."""
+    from app.aurea_core import kyc_india, pan as pan_mod
+
+    base = await overview(session, firm)
+    if not base.get("applies"):
+        return {"applies": False, "minors": []}
+    latest = await kyc_india.latest(session, firm.id)
+    out = []
+    for m in base["minors"]:
+        if not m["minor"]:
+            continue
+        g = m["guardian"]
+        person = await session.get(Person, uuid.UUID(m["person_id"]))
+        gid = uuid.UUID(g["person_id"]) if g and g.get("person_id") else None
+        rec = latest.get(("person", gid)) if gid else None
+        out.append({"person_id": m["person_id"], "name": m["name"], "age": m["age"], "guardian": g["name"] if g else None,
+                    "guardian_linked": gid is not None, "guardian_kyc": ("on_file" if rec is not None else "not_on_file") if gid else "no_person",
+                    "guardian_kyc_on": rec.kyc_completed_on.isoformat() if rec is not None and rec.kyc_completed_on else None,
+                    "pan": pan_mod.mask(person.pan) if person is not None else None,
+                    "ready": bool(g and gid is not None and rec is not None and person is not None and person.pan)})
+    return {"applies": True, "as_of": base["as_of"], "minors": out, "waiting": [r["name"] for r in out if not r["ready"]],
+            "note": "A minor's account trades only with the guardian's own KYC record and the minor's PAN on file. Not on file does not mean not done."}
 
 
 # ── A minor's account converted at majority (B-262) ─────────────────────────────────────────────────────────────

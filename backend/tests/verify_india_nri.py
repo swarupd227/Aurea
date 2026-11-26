@@ -257,7 +257,9 @@ async def main() -> int:
                                             relationship="father", document="Birth certificate naming the father")
             row = next(m for m in out["minors"] if m["name"] == "Ira Menon")
             check("recorded: she is a minor with a guardian, adult on her 18th birthday", (row["state"], row["majority_on"]), ("guardian_on_file", "2033-09-02"))
-            check("an order on her account is no longer refused for want of one", await guardianship.order_refusal(s, firm, kid_mandate), None)
+            why = await guardianship.order_refusal(s, firm, kid_mandate)
+            check("an order on her account is no longer refused for want of a guardian: it waits for the guardian's KYC and her PAN (B-283)",
+                  (why is not None and "run by a guardian" not in why, "guardian's papers" in (why or "")), (True, True))
             court = GuardianshipRecord(firm_id=firm.id, minor_person_id=child.id, guardian_name="Court-appointed", relationship="court_appointed",
                                        document="Court order", recorded_by="x")
             check("a court-appointed guardian moves majority to 21", guardianship.majority_age(court, today), 21)

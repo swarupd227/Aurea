@@ -330,6 +330,23 @@ async def gifts(session: AsyncSession, firm: Firm, household_id: uuid.UUID, toda
 
 # ── Reads ─────────────────────────────────────────────────────────────────────────────────────
 
+async def for_firm(session: AsyncSession, firm: Firm, *, limit: int = 40) -> dict:
+    """Each taxpayer's gain-harvesting room across the book, for the Licences page (B-312): the same per-person reading the conversation gives,
+    laid out as rows. Only people with an account are listed; the room is per taxpayer, never netted across a family."""
+    from app.aurea_core.graph import list_households
+
+    today = firm_time.today(firm)
+    if not applies(firm):
+        return {"applies": False, "as_of": today.isoformat(), "gain_harvest": []}
+    rows: list[dict] = []
+    for h in (await list_households(session, firm.id))[:limit]:
+        for p in await _people(session, firm.id, uuid.UUID(h["id"])):
+            if await _person_accounts(session, firm.id, p):
+                rows.append({**await gain_harvest(session, firm, p, today), "household": h["name"]})
+    return {"applies": True, "as_of": today.isoformat(), "year": _year(today)["label"], "gain_harvest": rows, "not_modelled": NOT_MODELLED, "estimate": full.ESTIMATE,
+            "note": "Laid out for a qualified person to check. Nothing here advises a sale or a rebuy."}
+
+
 async def household_view(session: AsyncSession, firm: Firm, household_id: uuid.UUID) -> dict:
     today = firm_time.today(firm)
     if not applies(firm):

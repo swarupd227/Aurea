@@ -150,7 +150,7 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
                                 india_reminders, kyc_india, pms, pre_advice, residency, sebi_family)
     from app.aurea_core import accredited, adviser_fees, india_stack, product_gates, rate_card, whatsapp
     from app.aurea_core import india_savings, lrs, pledges, sip_mandates
-    from app.aurea_core import ad_approval, adviser_certification, distribution_separation, mf_orders
+    from app.aurea_core import ad_approval, adviser_certification, distribution_separation, manager_staff, mf_orders, platform_admin, tax_habits
 
     caps: dict[str, dict] = {}
     for e in (await billing.preview(session, firm.id))["arrangements"]:
@@ -177,4 +177,19 @@ async def _india_pack(session: AsyncSession, firm) -> dict:
             "savings": await india_savings.overview(session, firm), "pledges": await pledges.overview(session, firm),
             # Batch C: a mutual fund order's rail and NAV day, advice kept apart from distribution, and advertisement pre-approval.
             "mf_orders": await mf_orders.overview(session, firm), "separation": await distribution_separation.overview(session, firm),
-            "ad_approvals": await ad_approval.overview(session, firm)}
+            "ad_approvals": await ad_approval.overview(session, firm),
+            # The remainders (B-303, B-283): a manager's own staff, the PMS unit-value ledger with its verification and fee lines, a minor's guardian papers,
+            # and the KYC review period by band.
+            "manager_staff": await manager_staff.overview(session, firm), "pms_ledger": await _pms_ledger(session, firm),
+            "guardian_papers": await guardianship.papers(session, firm), "kyc_review": platform_admin.kyc_review_table(firm),
+            # B-312: each taxpayer's gain-harvesting room.
+            "gain_harvest": await tax_habits.for_firm(session, firm)}
+
+
+async def _pms_ledger(session: AsyncSession, firm) -> dict:
+    from app.aurea_core import pms_ledger
+
+    view = await pms_ledger.ledger_view(session, firm)
+    if view["applies"]:
+        view["lines"] = await pms_ledger.open_lines(session, firm)
+    return view

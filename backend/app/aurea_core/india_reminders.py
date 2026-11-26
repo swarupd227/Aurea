@@ -33,7 +33,7 @@ from app.models.tenant import Firm
 SOURCE = "india_reminder"
 WITHIN_DAYS = 14
 FIRM_KINDS = ("filing", "registration", "policy", "certification")
-HOUSEHOLD_KINDS = ("kyc_review", "majority")
+HOUSEHOLD_KINDS = ("kyc_review", "majority", "mandate", "lrs", "maturity")
 KYC_STOPS = ("overdue", "blocked")
 
 
@@ -78,6 +78,41 @@ def _task(firm_id: uuid.UUID, item: dict, *, household: Household | None, owner:
                 assigned_to=owner.id if owner else None, assigned_by=None)
 
 
+MATURITY_WITHIN_DAYS = 30
+LRS_NEAR = 0.90          # a person who has remitted this share of the year's limit gets a reminder (B-310)
+
+
+def _item(kind: str, label: str, due: date, today: date, source: str, assumed: str | None = None) -> dict:
+    days = (due - today).days
+    return {"kind": kind, "label": label, "due_on": due.isoformat(), "state": "overdue" if days < 0 else "due_soon", "source": source, "assumed": assumed, "days": days}
+
+
+async def _batch_items(session: AsyncSession, firm: Firm, household_id: uuid.UUID, today: date) -> list[dict]:
+    """A household's other dates (B-310, B-311): a SIP debit mandate that ends within 30 days, a person who has remitted nine tenths of the year's
+    overseas limit, and a small-savings or bond holding that matures, or a lock-in that ends, within 30 days. Each reads what a person recorded:
+    a holding with no maturity day is not raised, and none of it moves money or registers anything."""
+    from app.aurea_core import india_savings, lrs, sip_mandates
+
+    out: list[dict] = []
+    for m in (await sip_mandates.overview(session, firm, household_id=household_id)).get("mandates", []):
+        if m["state"] == "active" and m.get("expires_on"):
+            due = date.fromisoformat(m["expires_on"])
+            if (due - today).days <= MATURITY_WITHIN_DAYS:
+                out.append(_item("mandate", f"SIP mandate {m['reference']} ends on {m['expires_on']}: a debit after it fails until it is renewed", due, today,
+                                 "The debit mandate's own end day, as a person recorded it"))
+    for p in (await lrs.household_view(session, firm, household_id)).get("people", []):
+        if p.get("state") == "assessed" and p["limit_usd"] and p["remitted_usd"] >= LRS_NEAR * p["limit_usd"]:
+            out.append(_item("lrs", f"Overseas remittance limit nearly reached for {p['person']}, {p['year']}: a further remittance may go over it", today, today,
+                             "RBI's Liberalised Remittance Scheme limit as recorded in law_figures; the remittances are those a person recorded"))
+    for h in (await india_savings.household_view(session, firm, household_id)).get("holdings", []):
+        for key, verb in (("maturity_on", "matures"), ("locked_in_to", "is out of its lock-in")):
+            day = h.get(key)
+            if day and (date.fromisoformat(day) - today).days <= MATURITY_WITHIN_DAYS and (today - date.fromisoformat(day)).days <= MATURITY_WITHIN_DAYS:
+                out.append(_item("maturity", f"{h['label']} at {h['institution']} {verb} on {day}", date.fromisoformat(day), today,
+                                 "The statement's own maturity or lock-in day, as a person recorded it"))
+    return out
+
+
 async def plan(session: AsyncSession, firm: Firm) -> dict:
     """What would be raised now, with who each goes to and whether a task for it already exists. Writes nothing."""
     today = firm_time.today(firm)
@@ -104,6 +139,8 @@ async def plan(session: AsyncSession, firm: Firm) -> dict:
                         "due_on": due.isoformat(), "state": "overdue", "source": kyc_india.CITATION, "assumed": None,
                         "days": (due - today).days}
                 out.append({"item": item, "household": h, "owner": adviser, "scope": "household", "note": note})
+        for item in await _batch_items(session, firm, h.id, today):
+            out.append({"item": item, "household": h, "owner": adviser, "scope": "household", "note": note})
     for row in out:
         row["exists"] = await _exists(session, firm.id, _title(row["item"]), row["household"].id if row["household"] else None)
     return {"applies": True, "as_of": today.isoformat(), "items": out}

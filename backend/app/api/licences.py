@@ -158,19 +158,19 @@ class GuardianIn(BaseModel):
 
 @router.get("/residency")
 async def residence(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    from app.aurea_core import guardianship, residency
+    from app.aurea_core import counsel_review, guardianship, residency
 
-    return {**await residency.overview(db, firm), "guardians": await guardianship.overview(db, firm),
-            "can_record": user.role in residency.RECORDERS}
+    return await counsel_review.annotate(db, firm, {**await residency.overview(db, firm), "guardians": await guardianship.overview(db, firm),
+                                                    "can_record": user.role in residency.RECORDERS})
 
 
 @router.get("/residency/{household_id}")
 async def household_residence(household_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
                               db: AsyncSession = Depends(get_db)):
-    from app.aurea_core import residency
+    from app.aurea_core import counsel_review, residency
 
     try:
-        return await residency.household_view(db, firm, household_id)
+        return await counsel_review.annotate(db, firm, await residency.household_view(db, firm, household_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -229,18 +229,18 @@ class PmsIn(BaseModel):
 
 @router.get("/pms")
 async def portfolio_manager_clients(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    from app.aurea_core import pms
+    from app.aurea_core import counsel_review, pms
 
-    return {**await pms.overview(db, firm), "can_record": user.role in pms.RECORDERS}
+    return await counsel_review.annotate(db, firm, {**await pms.overview(db, firm), "can_record": user.role in pms.RECORDERS})
 
 
 @router.get("/pms/{mandate_id}/report")
 async def portfolio_manager_report(mandate_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
                                    db: AsyncSession = Depends(get_db)):
-    from app.aurea_core import pms
+    from app.aurea_core import counsel_review, pms
 
     try:
-        return await pms.client_report(db, firm, mandate_id)
+        return await counsel_review.annotate(db, firm, await pms.client_report(db, firm, mandate_id))
     except pms.PmsError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -393,9 +393,9 @@ class AdvertisingIn(BaseModel):
 
 @router.get("/complaints")
 async def complaints_register(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
-    from app.aurea_core import complaints
+    from app.aurea_core import complaints, counsel_review
 
-    return await complaints.staff_view(db, firm, user.role)
+    return await counsel_review.annotate(db, firm, await complaints.staff_view(db, firm, user.role))
 
 
 @router.get("/complaints/annexure-c/{period}")
@@ -1343,3 +1343,116 @@ async def record_agreement_contents(body: AgreementContentsIn, user: User = Read
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     return result
+
+
+# ── The remainders (B-303, B-283): a manager's staff, the PMS unit ledger, a verifier's letter, a fee-line debit, a minor's papers ──
+
+class AffiliationIn(BaseModel):
+    person_id: uuid.UUID
+    manager: str
+    document: str
+    affiliation: str = "employee"
+    state: str = "in_force"
+    effective_on: str | None = None
+
+
+class UnitValueIn(BaseModel):
+    mandate_id: uuid.UUID
+    as_of: str
+    nav_per_unit: float
+    document: str
+    units: float | None = None
+
+
+class VerificationIn(BaseModel):
+    strategy: str
+    verifier: str
+    period_start: str
+    period_end: str
+    letter_date: str
+    scope: str
+    document: str
+    state: str = "verified"
+    reason: str | None = None
+
+
+class FeeDebitIn(BaseModel):
+    fee_line_id: uuid.UUID
+
+
+@router.get("/manager-staff")
+async def manager_staff_view(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, manager_staff
+
+    return await counsel_review.annotate(db, firm, {**await manager_staff.overview(db, firm), "can_record": user.role in manager_staff.RECORDERS})
+
+
+@router.post("/manager-staff")
+async def record_manager_staff(body: AffiliationIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_manager_affiliation behind its Confirm card is the same action."""
+    from app.aurea_core import manager_staff
+
+    try:
+        result = await manager_staff.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except manager_staff.StaffError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/pms-ledger")
+async def pms_ledger_view(mandate_id: uuid.UUID | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, pms_ledger
+
+    view = await pms_ledger.ledger_view(db, firm, mandate_id=mandate_id)
+    if view["applies"]:
+        view["lines"] = await pms_ledger.open_lines(db, firm)
+        view["can_record"] = user.role in pms_ledger.RECORDERS
+        view["can_debit"] = user.role in pms_ledger.DEBITORS
+    return await counsel_review.annotate(db, firm, view)
+
+
+@router.post("/pms-ledger/values")
+async def record_pms_value(body: UnitValueIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_pms_unit_value behind its Confirm card is the same action."""
+    from app.aurea_core import pms_ledger
+
+    try:
+        result = await pms_ledger.record_unit_value(db, firm, user.role, by=user.email, **body.model_dump())
+    except pms_ledger.LedgerError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/pms-ledger/verifications")
+async def record_pms_letter(body: VerificationIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_pms_verification behind its Confirm card is the same action."""
+    from app.aurea_core import pms_ledger
+
+    try:
+        result = await pms_ledger.record_verification(db, firm, user.role, by=user.email, **body.model_dump())
+    except pms_ledger.LedgerError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/pms-ledger/debit")
+async def debit_pms_line(body: FeeDebitIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool debit_pms_fee_line behind its Confirm card is the same action; the page's button is the same Confirm."""
+    from app.aurea_core import pms_ledger
+
+    try:
+        result = await pms_ledger.debit_fee_line(db, firm, user.role, by=user.email, fee_line_id=body.fee_line_id)
+    except pms_ledger.LedgerError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/guardian-papers")
+async def guardian_papers(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import counsel_review, guardianship
+
+    return await counsel_review.annotate(db, firm, await guardianship.papers(db, firm))

@@ -20,9 +20,10 @@ import { CounselRows, LicenceMapTable, PolicyForm, PolicyRows } from "@/app/work
 import { IndiaDateItems } from "@/app/workspace/components/artifacts/RegulatoryCountdownCard";
 import { AccreditedRows, FeeTermRows, RateCardChips, RateCardRows, TicketGateFleet } from "@/app/workspace/components/artifacts/IndiaGatesCard";
 import { ChannelChips, ChannelRows, StackChips, StackRows, TemplateRows } from "@/app/workspace/components/artifacts/IndiaChannelsCard";
-import { LrsRows, MandateRows, PledgeRows, SavingsRows } from "@/app/workspace/components/artifacts/IndiaBatchACard";
+import { LrsRows, MandateRows, PledgeRows, SavingsRows, TaxHabitRows } from "@/app/workspace/components/artifacts/IndiaBatchACard";
 import { AdApprovalRows, CertificationRows, MfOrderRows, SeparationRows } from "@/app/workspace/components/artifacts/IndiaBatchCCard";
 import { MfFigureRows } from "@/app/workspace/components/artifacts/IndiaRemECard";
+import { GuardianPaperRows, KycReviewChips, ManagerStaffRows, PmsLedgerRows } from "@/app/workspace/components/artifacts/IndiaRemDCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -340,6 +341,56 @@ export function LicencesView() {
             <span className={`chip ${data.pms.without_agreement ? "text-warn" : "text-ink-muted"}`}>{data.pms.without_agreement} not assessed</span>
           </div>
           <div className="-mx-3" data-testid="licence-pms"><PmsClients clients={data.pms.clients} /></div>
+        </Card>
+      )}
+
+      {data.pms_ledger?.applies && (data.pms_ledger.clients ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">PMS unit ledger and verification</span>
+            <span className="chip text-ink-muted" title="Clients with a value per unit recorded from the manager's statement">{data.pms_ledger.counts.with_values} with values</span>
+            <span className={`chip ${data.pms_ledger.counts.not_verified ? "text-warn" : "text-ok"}`} title="A return is stated to a client only when a verifier's letter covers the quarter">{data.pms_ledger.counts.not_verified} not verified</span>
+          </div>
+          <div className="-mx-3"><PmsLedgerRows data={data.pms_ledger} /></div>
+        </Card>
+      )}
+
+      {data.guardian_papers?.applies && (data.guardian_papers.minors ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Minors: guardian KYC and PAN</span>
+            {(data.guardian_papers.waiting ?? []).length > 0 && <span className="chip text-warn" title="A minor's account trades only with both on file">{data.guardian_papers.waiting.length} waiting</span>}
+          </div>
+          <div className="-mx-3"><GuardianPaperRows data={data.guardian_papers} /></div>
+        </Card>
+      )}
+
+      {data.manager_staff?.applies && (data.manager_staff.people ?? []).length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Fund managers' own staff</span>
+            <span className="chip text-ink-muted" title="An AIF's lower minimum applies to the recorded manager's own products only">lower AIF minimum</span>
+          </div>
+          <div className="-mx-3"><ManagerStaffRows data={data.manager_staff} /></div>
+        </Card>
+      )}
+
+      {data.gain_harvest?.applies && (data.gain_harvest.gain_harvest ?? []).some((g: any) => g.state === "assessed") && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Gain harvesting room, per taxpayer</span>
+            <span className="chip text-warn" title={data.gain_harvest.not_modelled}>Estimate</span>
+          </div>
+          <div className="-mx-3"><TaxHabitRows data={{ gain_harvest: (data.gain_harvest.gain_harvest ?? []).filter((g: any) => g.state === "assessed") }} /></div>
+        </Card>
+      )}
+
+      {data.kyc_review?.applies && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">KYC review period</span>
+            <KycReviewChips data={data.kyc_review} />
+          </div>
         </Card>
       )}
 

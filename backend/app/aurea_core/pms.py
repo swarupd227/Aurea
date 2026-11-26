@@ -361,11 +361,22 @@ async def apply(session: AsyncSession, firm: Firm, entries: list[dict], as_of: d
                                     "detail": f"The bill's rate is {billed_rate / 100:.2f}% and the agreement states {_pct(agreement.fixed_rate)}."})
             if agreement.fee_type in ("performance", "hybrid"):
                 perf = await performance.performance_for_accounts(session, [a.id for a in accounts], firm_id=firm.id)
-                view["performance"] = {**performance_fee(agreement, perf["periods"], date.fromisoformat(e["period_start"]),
-                                                         date.fromisoformat(e["period_end"])),
-                                       "rate": float(agreement.performance_rate), "hurdle_rate": float(agreement.hurdle_rate or 0),
-                                       "high_water_mark": bool(agreement.high_water_mark), "added_to_bill": False,
-                                       "basis": "Securities only, gross, monthly-linked; the manager's own computation on unit values decides"}
+                p_start, p_end = date.fromisoformat(e["period_start"]), date.fromisoformat(e["period_end"])
+                estimate = performance_fee(agreement, perf["periods"], p_start, p_end)
+                from app.aurea_core import pms_ledger
+
+                # The unit-value ledger a person recorded from the manager's statements makes the high-water mark exact (B-283); without a value
+                # either side of the period the fee stays the monthly-linked estimate on the book, and says so.
+                exact = pms_ledger.fee(agreement, await pms_ledger.series(session, firm.id, mandate.id), p_start, p_end)
+                if exact.get("estimate") is not None:
+                    view["performance"] = {**exact, "rate": float(agreement.performance_rate), "hurdle_rate": float(agreement.hurdle_rate or 0),
+                                           "high_water_mark": bool(agreement.high_water_mark), "added_to_bill": False,
+                                           "previous_estimate": estimate.get("estimate"), "basis": pms_ledger.BASIS}
+                else:
+                    view["performance"] = {**estimate, "exact": False, "basis_label": "estimate", "ledger_reason": exact.get("reason"),
+                                           "rate": float(agreement.performance_rate), "hurdle_rate": float(agreement.hurdle_rate or 0),
+                                           "high_water_mark": bool(agreement.high_water_mark), "added_to_bill": False,
+                                           "basis": "An estimate on securities only, gross, monthly-linked; the manager's own computation on unit values decides"}
                 line = await fee_line(session, firm.id, mandate.id, date.fromisoformat(e["period_start"]), date.fromisoformat(e["period_end"]))
                 # A confirmed estimate is its own line on the bill. It is never added to the invoice's amount, so the fee cap does not read it.
                 view["line"] = _line_view(line)
@@ -385,7 +396,8 @@ def _line_view(line: PmsFeeLine | None) -> dict | None:
     return {"amount": float(line.amount), "currency": line.currency, "confirmed_by": line.confirmed_by,
             "confirmed_on": line.created_at.date().isoformat() if line.created_at else None, "working": line.working,
             "in_fee_cap": False, "debited": False,
-            "note": "A separate line: the invoice's amount, and so the fee cap, is the fixed fee alone. Nothing debits this line here."}
+            "note": "A separate line: the invoice's amount, and so the fee cap, is the fixed fee alone. Nothing debits this line by itself: "
+                    "taking it from the client's cash is a second person's step behind a Confirm card (debit_pms_fee_line)."}
 
 
 async def prepare_fee_line(session: AsyncSession, firm: Firm, *, mandate_id, period_start=None) -> dict:
@@ -480,6 +492,15 @@ async def client_report(session: AsyncSession, firm: Firm, mandate_id) -> dict:
         Invoice.firm_id == firm.id, Invoice.mandate_id == mandate.id, Invoice.status.in_(("issued", "debited", "credited")),
         Invoice.period_end >= start, Invoice.period_end <= end))).scalars().all()))
     agreement = s["agreement"]
+    from app.aurea_core import pms_ledger
+
+    # The quarter's return from the unit-value ledger, and a verifier's letter for it (B-283): both on file, and it may be stated.
+    values = await pms_ledger.series(session, firm.id, mandate.id)
+    opening = [v for v in values if v.as_of < start]
+    window = ([opening[-1]] if opening and (start - opening[-1].as_of).days <= pms_ledger.BASE_WITHIN_DAYS else []) + [v for v in values if start <= v.as_of <= end]
+    unit_twrr = pms_ledger.twrr(window, window[0].as_of, end) if len(window) >= 2 else {"return": None, "reason": "Fewer than two values per unit are on file for the quarter."}
+    verification = pms_ledger.verification_for(await pms_ledger.verifications(session, firm.id), agreement["strategy"] if agreement else None, start, end)
+    stateable = unit_twrr.get("return") is not None and verification["state"] == "verified"
     return {"mandate_id": str(mandate.id), "client": s["client"], "strategy": agreement["strategy"] if agreement else None,
             "kind": agreement["kind_label"] if agreement else None, "quarter": label, "start": start.isoformat(), "end": end.isoformat(),
             "opening_value": months[0]["start_value"] if months else None, "closing_value": months[-1]["end_value"] if months else None,
@@ -489,6 +510,9 @@ async def client_report(session: AsyncSession, firm: Firm, mandate_id) -> dict:
             "benchmarks": [{"name": b, "return": None, "note": "Not on file: APMI's benchmark values are not fetched here"}
                            for b in (agreement["benchmarks"] if agreement else [])],
             "fees_billed": round(fees, 2), "basis": "monthly-linked, securities only, gross of fees",
-            "publishable": False, "not_publishable_because": NOT_PUBLISHABLE,
+            "unit_twrr": {"return": unit_twrr.get("return"), "months": unit_twrr.get("months", 0), "gaps": unit_twrr.get("gaps", []), "reason": unit_twrr.get("reason")},
+            "verification": verification,
+            "publishable": stateable,
+            "not_publishable_because": None if stateable else (NOT_PUBLISHABLE if unit_twrr.get("return") is None else pms_ledger.NOT_VERIFIED),
             "disclosures": perf["disclosures"],
             "not_assessed": ["No monthly return in the quarter on file"] if twr is None else []}

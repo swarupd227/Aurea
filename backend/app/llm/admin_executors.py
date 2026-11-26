@@ -31,12 +31,14 @@ WRITE_ROLES: dict[str, frozenset] = {
     "add_connector": _SETUP, "set_connector": _SETUP, "sync_connector": _SYNC,
     # The Foundation (B-161 to B-163): an owner is a firm setting, so the admin's; a sync runs a connector, operations'.
     "set_foundation_owner": _ADMIN, "sync_foundation_source": _SETUP,
+    # How often an Indian client's KYC is refreshed, by risk band (B-283).
+    "set_kyc_review": _ADMIN,
 }
 OWNERS = {_ADMIN: "an administrator", _MODELS: "the portfolio team, research or an administrator",
           _SETUP: "operations or an administrator", _SYNC: "operations, the portfolio team or an administrator"}
 # A change whose reason goes on the audit log, and is asked for.
 NEEDS_REASON = {"set_agent_switches", "save_segment", "save_mandate_type", "set_mandate_suitability", "set_cmas",
-                "set_model_routing", "set_foundation_owner"}
+                "set_model_routing", "set_foundation_owner", "set_kyc_review"}
 # Writes that always make something, so "already so" does not apply.
 ALWAYS_CHANGES = {"invite_user", "add_research", "add_connector", "sync_connector", "sync_foundation_source"}
 
@@ -208,6 +210,17 @@ class AdminToolExecutors:
 
     async def sync_foundation_source(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return await self._admin_write("sync_foundation_source", inputs)
+
+    async def read_kyc_review_period(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        from app.aurea_core import platform_admin
+
+        out = platform_admin.kyc_review_table(await self._firm())
+        out["message"] = ("; ".join(f"{b}: {v['months']} months ({v['source']})" for b, v in out["bands"].items())
+                          if out["applies"] else "The KYC review period is set for an Indian firm.")
+        return out
+
+    async def set_kyc_review(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        return await self._admin_write("set_kyc_review", inputs)
 
     # ─── The card and the write share their checks ─────────────────────────────────────────
 
@@ -395,6 +408,8 @@ class AdminToolExecutors:
             return {"domain": _text(g("domain")) or "", "owner": _text(g("owner")) or ""}
         if tool_key == "sync_foundation_source":
             return {"domain": _text(g("domain")) or ""}
+        if tool_key == "set_kyc_review":
+            return {"band": (_text(g("band")) or "").lower(), "months": _text(g("months")) or ""}
         raise _refuse(f"No admin tool called '{tool_key}'.")
 
     @staticmethod
@@ -468,6 +483,8 @@ class AdminToolExecutors:
             return await pa.prepare_foundation_owner(s, firm, domain=a["domain"], owner=a["owner"])
         if tool_key == "sync_foundation_source":
             return await pa.prepare_foundation_sync(s, firm, domain=a["domain"])
+        if tool_key == "set_kyc_review":
+            return pa.prepare_kyc_review(firm, band=a["band"], months=a["months"])
         raise pa.AdminError(f"No admin tool called '{tool_key}'.")
 
     @staticmethod
@@ -536,6 +553,8 @@ class AdminToolExecutors:
         if tool_key == "sync_foundation_source":
             done, _sync = await pa.sync_foundation_source(s, firm, me, domain=a["domain"])
             return done
+        if tool_key == "set_kyc_review":
+            return await pa.set_kyc_review(s, firm, me, band=a["band"], months=a["months"], reason=reason)
         raise pa.AdminError(f"No admin tool called '{tool_key}'.")
 
     @staticmethod

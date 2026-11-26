@@ -48,6 +48,8 @@ INDIA_READ_TOOLS = {
     "read_ticket_gates": {"household": "The Iyer Family"}, "read_tax_habits": {"household": "The Sharma Family"},
     "check_advertising": {"text": "Investments in the securities market are subject to market risks."},
     "read_mf_figures": {}, "read_agreement_contents": {"household": "The Sharma Family"},
+    "read_manager_staff": {}, "read_pms_ledger": {}, "read_guardian_papers": {}, "read_kyc_review_period": {},
+    "read_real_estate_choice": {"acquired_on": "2015-04-01", "sold_on": "2026-06-01", "cost": 5000000, "proceeds": 12000000, "resident_individual_or_huf": "yes"},
 }
 # Tools only compliance, a branch leader, operations or the administrator hold (the registers are theirs).
 OVERSIGHT_ONLY = ("read_complaints", "read_governance", "read_rate_card", "read_compliance_calendar")
@@ -330,10 +332,11 @@ async def g_licences(P: Proof):
              {k: v.get("mandates") for k, v in lm.items() if v.get("held")})
         for section in ("pre_advice", "fee_caps", "calendar", "residency", "guardians", "pms", "aggregator", "kyc", "reminders", "family",
                         "estate", "counsel", "ticket_gates", "accredited", "fee_terms", "rate_card", "channels", "india_stack", "lrs",
-                        "sip_mandates", "savings", "pledges", "mf_orders", "separation", "ad_approvals"):
+                        "sip_mandates", "savings", "pledges", "mf_orders", "separation", "ad_approvals",
+                        "manager_staff", "pms_ledger", "guardian_papers", "kyc_review", "gain_harvest"):
             if section not in r:
                 P.ok("The licences page carries its section", "compliance", False, f"missing {section}")
-        P.ok("The licences page carries all twenty-five India sections", "compliance",
+        P.ok("The licences page carries all thirty India sections", "compliance",
              all(s in r for s in ("pre_advice", "fee_caps", "calendar", "kyc", "lrs", "ad_approvals")), f"{len(r)} keys")
     async with P.section("Licences page", "adviser"):
         r = await P.tool("adviser", "read_licences")

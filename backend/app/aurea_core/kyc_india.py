@@ -66,6 +66,7 @@ MODES = {"ipv": "In-person verification", "video_kyc": "Video KYC", "aadhaar_eky
 NEEDS_IPV = ("ipv",)                    # the other modes are themselves the verification: IPV is waived (paras 54-61)
 BANDS = ("low", "medium", "high")
 DEFAULT_REVIEW_MONTHS = {"high": 24, "medium": 96, "low": 120}
+REVIEW_RANGE = (6, 120)                 # the months a firm may set for a band (B-283): half a year to the longest default
 REVIEW_SOURCE = ("Assumed: SEBI's KYC Master Circular para 29 asks for periodic updating by risk category and sets no limit. The default is the "
                  "period the RBI's KYC Master Direction sets for banks (high 2 years, medium 8, low 10); the firm may set its own.")
 DUE_SOON_DAYS = 60

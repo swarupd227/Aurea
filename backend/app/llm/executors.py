@@ -30,6 +30,7 @@ from app.llm.india_batch_b_executors import IndiaBatchBExecutors
 from app.llm.india_batch_a_executors import IndiaBatchAExecutors
 from app.llm.india_batch_c_executors import IndiaBatchCExecutors
 from app.llm.india_rem_e_executors import IndiaRemEExecutors
+from app.llm.india_rem_d_executors import IndiaRemDExecutors
 from app.llm.india_governance_executors import IndiaGovernanceExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
 from app.models.enums import UserRole
@@ -69,7 +70,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
-                    IndiaRemEExecutors):
+                    IndiaRemEExecutors, IndiaRemDExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -371,6 +372,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_batch_c_map(),
             # India, batch E (B-324, B-330, B-331, B-332): app/llm/india_rem_e_executors.py.
             **self._india_rem_e_map(),
+            # India, the remainders (B-303, B-283, B-274): app/llm/india_rem_d_executors.py, and the KYC review period (admin_executors.py).
+            **self._india_rem_d_map(),
+            "read_kyc_review_period": self.read_kyc_review_period,
+            "set_kyc_review": self.set_kyc_review,
         }
 
         executor = executor_map.get(tool_key)
@@ -5570,8 +5575,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                         "save_model_portfolio", "set_model_targets", "delete_model_portfolio", "add_connector", "set_connector",
                         "sync_connector", "set_cmas", "set_model_routing"):
             return rows(*await self._admin_preview(tool_key, inputs))
-        if tool_key in ("set_foundation_owner", "sync_foundation_source"):   # the Foundation (B-161 to B-163)
+        if tool_key in ("set_foundation_owner", "sync_foundation_source", "set_kyc_review"):   # the Foundation (B-161 to B-163); the KYC period (B-283)
             return rows(*await self._admin_preview(tool_key, inputs))
+        if tool_key in ("record_manager_affiliation", "record_pms_unit_value", "record_pms_verification", "debit_pms_fee_line"):
+            return rows(*await self._india_rem_d_preview(tool_key, inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

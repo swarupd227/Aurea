@@ -108,7 +108,7 @@ BRANDING_NAMES = {"primary": "primary_color", "accent": "accent_color", "tagline
                   "logo_url": "logo_url"}
 # Settings that only their own routes change, each with its own checks: the regulatory rules, the foundation
 # policy, the capital market assumptions and PII handling.
-RESERVED_SETTINGS = {"compliance", "foundation", "cmas", "pii"}
+RESERVED_SETTINGS = {"compliance", "foundation", "cmas", "pii", "kyc_review_months"}
 # The tasks a model is chosen for (app/llm/service.TASK_DEFAULTS).
 MODEL_TASKS = ("advice", "narrative", "classify")
 
@@ -342,6 +342,60 @@ async def set_cma(session: AsyncSession, firm: Firm, actor: User, *, asset_class
 
 
 # ── An agent's switches ──────────────────────────────────────────────────────────────────────────
+
+def kyc_review_table(firm: Firm) -> dict:
+    """The refresh period by risk band as the KYC clock reads it: each band's months and whose they are (the firm's, or the assumed default)."""
+    from app.aurea_core import kyc_india
+
+    return {"applies": kyc_india.applies(firm), "bands": kyc_india.review_months(firm), "range": list(kyc_india.REVIEW_RANGE),
+            "default_source": kyc_india.REVIEW_SOURCE}
+
+
+def prepare_kyc_review(firm: Firm, *, band: Any, months: Any) -> Plan:
+    from app.aurea_core import kyc_india
+
+    if not kyc_india.applies(firm):
+        raise AdminError("The KYC review period is set for an Indian firm.")
+    b = str(band or "").strip().lower()
+    if b not in kyc_india.BANDS:
+        raise AdminError(f"A risk band is one of {', '.join(kyc_india.BANDS)}.")
+    try:
+        n = int(str(months).strip())
+    except (TypeError, ValueError):
+        raise AdminError("Give the months as a whole number, for example 24.")
+    low, high = kyc_india.REVIEW_RANGE
+    if not low <= n <= high:
+        raise AdminError(f"A KYC review period is between {low} and {high} months.")
+    now = kyc_india.review_months(firm)
+    after = {k: v["months"] for k, v in now.items()}
+    after[b] = n
+    if not after["high"] <= after["medium"] <= after["low"]:
+        raise AdminError("A higher risk is reviewed no less often than a lower one: high no longer than medium, and medium no longer than low "
+                         f"(high {after['high']}, medium {after['medium']}, low {after['low']} months).")
+    if now[b]["months"] == n and now[b]["source"] == "the firm's setting":
+        raise AdminError(f"Already so: the {b} band is reviewed every {n} months.")
+    changes: list[dict] = []
+    _diff(changes, f"{b}_months", now[b]["months"], n)
+    notes = [("Source now", now[b]["source"]), ("Source after", "the firm's setting"),
+             ("Default", f"{kyc_india.DEFAULT_REVIEW_MONTHS[b]} months, assumed from the RBI's KYC Master Direction"),
+             ("Effect", "A client's re-KYC date is read again from the band; no record is changed, and a KYC that is now overdue holds the household's book")]
+    stored = {**((firm.settings or {}).get("kyc_review_months") or {}), b: n}
+    return Plan("kyc", firm, f"KYC review period · {b} risk", changes, notes, values={"kyc_review_months": stored, "band": b, "months": n})
+
+
+async def set_kyc_review(session: AsyncSession, firm: Firm, actor: User, *, band: Any, months: Any, reason: str | None) -> Outcome:
+    """Sets one band's refresh period (PUT /api/admin/kyc-review-months), with the reason on the audit log. Changes nobody's KYC record."""
+    reason = (reason or "").strip()
+    if len(reason) < 5:
+        raise AdminError("Give the reason for the change; it goes on the audit log.")
+    plan = prepare_kyc_review(firm, band=band, months=months)
+    before = (firm.settings or {}).get("kyc_review_months") or {}
+    firm.settings = {**(firm.settings or {}), "kyc_review_months": plan.values["kyc_review_months"]}
+    audit(session, firm.id, actor, "kyc.review_months_set", subject=plan.label,
+          detail={"band": plan.values["band"], "before": before.get(plan.values["band"]), "after": plan.values["months"], "reason": reason})
+    await session.flush()
+    return _done(plan)
+
 
 MARKET_DATA_KEY = "market_data"
 SCHEDULE_PICKED_UP = "within 15 minutes"

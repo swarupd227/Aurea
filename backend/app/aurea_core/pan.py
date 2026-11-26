@@ -51,6 +51,20 @@ async def _holder(session: AsyncSession, firm: Firm, person_id: uuid.UUID | None
     return row, kind
 
 
+async def _minor_needs_guardian(session: AsyncSession, firm: Firm, person: Person) -> None:
+    """A minor's PAN is recorded from a document with the guardian linked (B-283): an Indian firm's minor with no guardian person on file is
+    refused, naming what to record first. A person with no date of birth is not read as a minor."""
+    from app.aurea_core import firm_time, guardianship
+
+    if not guardianship._applies(firm) or person.date_of_birth is None:
+        return
+    g = await guardianship.standing(session, firm.id, person.id)
+    status = guardianship.status_of(person, g, firm_time.today(firm), await guardianship.conversion_of(session, firm.id, person.id))
+    if status["minor"] and (g is None or g.guardian_person_id is None):
+        raise PanError(f"{person.full_name} is a minor: record the guardian as a person linked to the minor (record_guardian) before the PAN, "
+                       "which is recorded from the document with the guardian linked.")
+
+
 async def prepare(session: AsyncSession, firm: Firm, *, person_id: uuid.UUID | None = None, entity_id: uuid.UUID | None = None,
                   pan: str | None, source_document: str | None) -> dict:
     row, kind = await _holder(session, firm, person_id, entity_id)
@@ -64,6 +78,8 @@ async def prepare(session: AsyncSession, firm: Firm, *, person_id: uuid.UUID | N
     named = (source_document or "").strip()
     if len(named) < 5:
         raise PanError("Say which document the PAN is read from: the PAN card, a KYC record, a return.")
+    if person_id is not None:
+        await _minor_needs_guardian(session, firm, row)
     taken = (await session.execute(select(Person.id).join(Household, Household.id == Person.household_id).where(
         Household.firm_id == firm.id, Person.pan == value, Person.id != (person_id or uuid.uuid4())))).first() or \
         (await session.execute(select(LegalEntity.id).join(Household, Household.id == LegalEntity.household_id).where(
