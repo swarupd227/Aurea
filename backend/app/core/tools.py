@@ -4047,6 +4047,107 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.OPERATIONS},
     ),
 
+    # ─── India: the consolidation workbench (B-389, aurea_core/consolidation.py). It records what people did; it moves nothing.
+    "read_consolidation": Tool(
+        key="read_consolidation",
+        name="Read Consolidation",
+        speaking_agent="astra",
+        description="India: the consolidation workbench over a household's holdings held elsewhere (the statement lines already recorded). It gives the fund-house and folio roll-up and demat accounts; each holding with its line_id, the adviser's classification (keep and re-map, transfer, exit) and reason, the recorded cost lots, and what redeeming it today would crystallise (gain, estimated tax, exit load) or 'not assessed' with what is missing; every distributor code change, off-market demat transfer, PMS transition and exit request with its item_id, status and dated steps; and the exit schedule by taxpayer and tax year against the gain budget on the mandate. All tax figures are estimates; it moves nothing and places no order. Without household_id it lists the households. Use search_households for the household_id. To show it beside the conversation call open_view with view consolidation.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household, from search_households", required=False)],
+        output=ToolOutput("object", "The household's holdings, requests, exit schedule and redeem-instead figures, or the households"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE, UserRole.OPERATIONS,
+                        UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "record_holding_facts": Tool(
+        key="record_holding_facts",
+        name="Record Holding Facts",
+        speaking_agent="astra",
+        description="India: records what a person read off a document about one holding held elsewhere that its statement line does not carry: lots (each as 'units @ cost per unit on YYYY-MM-DD', separated by semicolons; they must cover exactly the units held before tax can be estimated), tax_class (listed_equity, equity_fund, reit_invit, specified_fund, other_listed, mld, unlisted_debt, unlisted, foreign_shares, physical_gold, land_building), exit_load_rate (a fraction from the scheme document, 0.01 is 1%) with exit_load_days, distributor_code on the folio, form (folio or demat). line_id is from read_consolidation; document says where it was read. Never fill a figure in: record only what the person gave from the document. An adviser, paraplanner or operations.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record these facts about the holding?",
+        inputs=[
+            ToolInput("line_id", "uuid", "The holding's line, from read_consolidation", required=True),
+            ToolInput("document", "string", "The document read, and where it is filed", required=True),
+            ToolInput("lots", "string", "'units @ cost per unit on YYYY-MM-DD; ...'", required=False),
+            ToolInput("tax_class", "string", "How the Act treats it, as the document shows", required=False),
+            ToolInput("exit_load_rate", "number", "Exit load as a fraction, from the scheme document", required=False),
+            ToolInput("exit_load_days", "number", "Charged on units held fewer than this many days", required=False),
+            ToolInput("distributor_code", "string", "The distributor or broker code on the folio", required=False),
+            ToolInput("form", "string", "folio or demat", required=False),
+        ],
+        output=ToolOutput("object", "The household's workbench"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
+    ),
+
+    "classify_holding": Tool(
+        key="classify_holding",
+        name="Classify Holding",
+        speaking_agent="astra",
+        description="India: records an adviser's classification of holdings held elsewhere for consolidation: keep_remap (stays; its folio's distributor code is re-mapped, no sale), transfer (moves in kind, no sale) or exit (should be sold), each with the person's reason. An exit is one holding at a time and needs product_reason about the product itself (unsuitable, concentration, cost, performance, product_change, other_product), a planned_on day so it is scheduled against the gain budget, and optionally units for part of it; consolidating is never a reason to exit. Ask for the reason; never write it for them. line_ids from read_consolidation. It sells nothing, places no order and is not the client's consent. An adviser or paraplanner only.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this classification?",
+        inputs=[
+            ToolInput("line_ids", "string", "One line_id, or several comma separated for keep_remap or transfer", required=True),
+            ToolInput("decision", "string", "keep_remap, transfer or exit", required=True),
+            ToolInput("reason", "string", "The adviser's reason, in their words", required=True),
+            ToolInput("product_reason", "string", "For exit: unsuitable, concentration, cost, performance, product_change or other_product", required=False),
+            ToolInput("planned_on", "string", "For exit: the planned day, YYYY-MM-DD", required=False),
+            ToolInput("units", "number", "For exit: part of the holding; leave out for all", required=False),
+        ],
+        output=ToolOutput("object", "The household's workbench"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    "open_consolidation_request": Tool(
+        key="open_consolidation_request",
+        name="Record Consolidation Request",
+        speaking_agent="astra",
+        description="India: records that a consolidation request was made, from its document. kind: code_change (a distributor code change on one folio: line_ids of a holding in it classified keep_remap, to_code, and from_code if not already recorded), demat_transfer (an off-market transfer: holdings classified transfer, to_account, transfer_kind own_account, gift, sale or other, reason_code exactly as on the delivery instruction, consideration for a sale, stamp_duty_stated if the document states it), pms_transition (securities in kind to a new Portfolio Manager: holdings classified transfer, manager_from, manager_to, to_account) or exit (one holding classified exit). It sends nothing to a registrar or depository, moves no holding or cash and places no order. Never invent a code. Operations only.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this request?",
+        inputs=[
+            ToolInput("kind", "string", "code_change, demat_transfer, pms_transition or exit", required=True),
+            ToolInput("line_ids", "string", "The holdings' line ids, comma separated, from read_consolidation", required=True),
+            ToolInput("evidence", "string", "The request form or instruction, and where it is filed", required=True),
+            ToolInput("on", "string", "The day it was made, YYYY-MM-DD. Defaults to today", required=False),
+            ToolInput("from_code", "string", "code_change: the code on the folio now", required=False),
+            ToolInput("to_code", "string", "code_change: the code to re-map to", required=False),
+            ToolInput("to_account", "string", "demat_transfer, pms_transition: the receiving demat account", required=False),
+            ToolInput("transfer_kind", "string", "demat_transfer: own_account, gift, sale or other", required=False),
+            ToolInput("reason_code", "string", "demat_transfer: the reason code on the delivery instruction", required=False),
+            ToolInput("consideration", "number", "demat_transfer: the consideration stated, if any", required=False),
+            ToolInput("stamp_duty_stated", "number", "demat_transfer: stamp duty the document states", required=False),
+            ToolInput("manager_from", "string", "pms_transition: the manager the securities leave", required=False),
+            ToolInput("manager_to", "string", "pms_transition: the manager they join", required=False),
+            ToolInput("note", "string", "Anything the document adds", required=False),
+        ],
+        output=ToolOutput("object", "The household's workbench"),
+        roles_required={UserRole.OPERATIONS},
+    ),
+
+    "record_consolidation_step": Tool(
+        key="record_consolidation_step",
+        name="Record Consolidation Step",
+        speaking_agent="astra",
+        description="India: records what happened to a code change, demat transfer, PMS transition or exit, from its document: step consented (the client's consent, with evidence), submitted, confirmed (by the registrar or the depository or the redemption statement; needs its reference), rejected (needs the reason; it may then be submitted again) or withdrawn (needs the reason). item_id from read_consolidation. Steps go in order and cannot be edited. It moves no holding or cash and places no order, even when confirmed. Operations only.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this step?",
+        inputs=[
+            ToolInput("item_id", "uuid", "The request, from read_consolidation", required=True),
+            ToolInput("step", "string", "consented, submitted, confirmed, rejected or withdrawn", required=True),
+            ToolInput("evidence", "string", "The document that shows it, and where it is filed", required=True),
+            ToolInput("on", "string", "The day it happened, YYYY-MM-DD. Defaults to today", required=False),
+            ToolInput("reference", "string", "For confirmed: the confirmation's reference", required=False),
+            ToolInput("reason", "string", "For rejected or withdrawn: why", required=False),
+            ToolInput("stamp_duty_stated", "number", "For a demat transfer: stamp duty the document states", required=False),
+        ],
+        output=ToolOutput("object", "The household's workbench"),
+        roles_required={UserRole.OPERATIONS},
+    ),
+
     # ─── Opening a view beside the conversation. It reads nothing and states nothing: the view loads
     # its own data, and the only ids it takes are ones a tool returned earlier in the same turn.
     "open_view": Tool(
@@ -4066,21 +4167,21 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) advice_file (the recommendations advisers made, what became of each, and the implementation rate) plans (the firm's plans of record: coverage, freshness, QC pass rate, scenario depth and each household's state) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), rulebook (the regime's rules as the firm runs them, and the agent controls), book_integration (acquired books), book_batch (one acquired book; give batch_id), canvas (a client's home page as they see it), canvas_retirement (their retirement page), canvas_goals (their goals page), canvas_next_gen (a next-gen member's journey), canvas_questionnaire (their risk questionnaire, to record answers), admin (the firm's settings, users and agents; give tab to open one tab: firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage) or connectors (the firm's connectors and feeds). ips, reviews, protection, risk_profiles, net_worth and "
-            "exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural, regulatory_countdown and the canvas views show every client unless given household_id: when the conversation is about one client, look them up "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) advice_file (the recommendations advisers made, what became of each, and the implementation rate) plans (the firm's plans of record: coverage, freshness, QC pass rate, scenario depth and each household's state) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consolidation (India: holdings held elsewhere being brought together), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), rulebook (the regime's rules as the firm runs them, and the agent controls), book_integration (acquired books), book_batch (one acquired book; give batch_id), canvas (a client's home page as they see it), canvas_retirement (their retirement page), canvas_goals (their goals page), canvas_next_gen (a next-gen member's journey), canvas_questionnaire (their risk questionnaire, to record answers), admin (the firm's settings, users and agents; give tab to open one tab: firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage) or connectors (the firm's connectors and feeds). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, consolidation, tax, estate, family, behavioural, regulatory_countdown and the canvas views show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
             "this turn (search_households, read_household, read_recommendations, read_billing, explain_invoice, "
-            "read_onboarding_cases, read_meetings, read_reports, read_messages, read_balance_sheet, read_protection, "
+            "read_onboarding_cases, read_meetings, read_reports, read_messages, read_consolidation, read_balance_sheet, read_protection, "
             "read_client_reviews, read_risk_profiles, read_ips_monitoring, read_client_exits, read_equity_comp, read_financial_plan, read_client_file, read_advice_file, read_plan_record, read_cash_movements, read_tax_position, read_estate, read_family, read_behavioural, read_regulatory_countdown, read_client_canvas, screen_book, read_book_batches); an id from memory or an earlier turn is refused."
         ),
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, advice_file, plans, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, account_features, onboarding_scoreboard, repapering, onboarding_queues, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, rulebook, book_integration, book_batch, canvas, canvas_retirement, canvas_goals, canvas_next_gen, canvas_questionnaire, admin or connectors", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, advice_file, plans, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, account_features, onboarding_scoreboard, repapering, onboarding_queues, consolidation, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, rulebook, book_integration, book_batch, canvas, canvas_retirement, canvas_goals, canvas_next_gen, canvas_questionnaire, admin or connectors", required=True),
             ToolInput("tab", "string", "For admin: the tab to open on - firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage", required=False),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, tax, estate, family, behavioural, regulatory_countdown, canvas, canvas_retirement, canvas_goals, canvas_next_gen or canvas_questionnaire to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, consolidation, tax, estate, family, behavioural, regulatory_countdown, canvas, canvas_retirement, canvas_goals, canvas_next_gen or canvas_questionnaire to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -5822,6 +5923,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "onboarding_scoreboard": ("/studio/onboarding-scoreboard", "Onboarding scoreboard", {_A, _P, _C, _O, _B}),
     "repapering": ("/studio/repapering", "Repapering", {_A, _P, _C, _O, _B}),
     "onboarding_queues": ("/studio/onboarding-queues", "Onboarding queues", {_A, _P, _C, _O, _B}),
+    "consolidation": ("/studio/consolidation", "Consolidation", {_A, _P, _PT, _C, _O, _B}),
     "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
     "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),
     "agent_history": ("/studio/agent-history", "Agent history", {_A, _PT, _C, _B}),
@@ -5857,7 +5959,7 @@ ADMIN_TABS = ("firm", "branding", "users", "clients", "assignments", "segments",
               "schedules", "notifications", "data-quality", "rule-impact", "audit", "agents", "research", "models", "usage")
 # The views of every client that can open on one, through `?household=`.
 ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "advice_file", "cash", "trades", "tax_documents",
-                    "tax", "estate", "family", "behavioural", "regulatory_countdown", "consents",
+                    "tax", "estate", "family", "behavioural", "regulatory_countdown", "consents", "consolidation",
                     "canvas", "canvas_retirement", "canvas_goals", "canvas_next_gen", "canvas_questionnaire"}
 
 

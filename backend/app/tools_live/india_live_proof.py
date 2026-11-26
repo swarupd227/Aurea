@@ -39,6 +39,7 @@ INSTITUTIONAL = {"research_cio"}
 
 # The India tools that read; a staff role runs the ones the registry gives it. `{"household": ...}` is filled in per firm.
 INDIA_READ_TOOLS = {
+    "read_consolidation": {},
     "read_licences": {}, "read_pre_advice": {}, "read_compliance_calendar": {}, "read_residency": {}, "read_pms": {},
     "read_india_tax_records": {}, "read_kyc": {}, "read_aggregator": {}, "read_complaints": {}, "read_sebi_family": {},
     "read_india_estate": {}, "read_governance": {}, "read_india_reminders": {}, "read_accredited_investors": {},

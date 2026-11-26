@@ -86,6 +86,7 @@ export const VIEWS: View[] = [
   { href: "/studio/money-in", label: "Money in", icon: Wallet, roles: [A, P, C, O, B], intent: "govern", hiddenIn: ["IN"], keywords: ["ach", "deposit", "bank link", "micro-deposit", "return", "hold", "standing instruction", "revalidate"] },
   { href: "/studio/monitoring", label: "Transaction monitoring", icon: ShieldCheck, roles: [C, O], intent: "govern", keywords: ["aml", "monitoring", "sar", "str", "suspicious", "investigation", "structuring", "alerts"] },
   { href: "/studio/transfers", label: "Transfers in", icon: ArrowLeftRight, roles: [A, P, C, O, B], intent: "govern", hiddenIn: ["IN"], keywords: ["acat", "transfer", "reject", "cost basis", "rollover", "1035", "asset memo", "residual"] },
+  { href: "/studio/consolidation", label: "Consolidation", icon: GitMerge, roles: [A, P, PT, C, O, B], intent: "operate", market: "IN", keywords: ["folio", "fund house", "code change", "arn", "off-market transfer", "demat", "pms transition", "gain budget", "redeem", "cas"] },
   { href: "/studio/document-matrix", label: "Document matrix", icon: ScrollText, roles: [A, P, C, O, B], intent: "govern", keywords: ["nigo", "documents", "registration", "tenancy", "custodian forms", "signatures", "beneficiaries"] },
   { href: "/studio/consents", label: "Consents", icon: BadgeCheck, roles: [A, P, C, O, B], intent: "govern", keywords: ["consent", "e-delivery", "householding", "aggregation", "fee debit", "redelivery", "brochure"] },
   { href: "/studio/aml", label: "AML reviews", icon: ShieldCheck, roles: [A, C, O, B], intent: "govern", keywords: ["screening", "sanctions", "pep", "edd", "source of wealth", "kyc", "hits"] },
@@ -147,7 +148,7 @@ export const CLIENT_ONLY = new Set([
 export const TAKES_HOUSEHOLD = new Set([
   ...CLIENT_ONLY, "/studio/ips", "/studio/reviews", "/studio/protection", "/studio/risk-profiles", "/studio/net-worth",
   "/studio/equity-comp", "/studio/client-file", "/studio/advice-file", "/studio/cash", "/studio/trades", "/studio/tax-documents",
-  "/studio/consents", "/studio/exits", "/studio/tax",
+  "/studio/consents", "/studio/exits", "/studio/tax", "/studio/consolidation",
 ]);
 
 export interface Section {
@@ -164,7 +165,7 @@ export const SECTIONS: Section[] = [
     "/studio/reviews", "/studio/ips", "/studio/risk-profiles", "/studio/protection", "/studio/net-worth", "/studio/tax",
     "/studio/equity-comp", "/studio/client-file", "/studio/advice-file", "/studio/plans", "/studio/exits", "/studio/beneficiary-audit"] },
   { key: "onboarding", label: "Onboarding", icon: UserPlus, intent: "operate", members: [
-    "/studio/onboarding", "/studio/onboarding-queues", "/studio/document-matrix", "/studio/consents", "/studio/transfers",
+    "/studio/onboarding", "/studio/onboarding-queues", "/studio/consolidation", "/studio/document-matrix", "/studio/consents", "/studio/transfers",
     "/studio/money-in", "/studio/account-features", "/studio/aml", "/studio/onboarding-scoreboard"] },
   { key: "money", label: "Money & trades", icon: ArrowLeftRight, intent: "operate", members: [
     "/studio/trades", "/studio/cash", "/studio/tax-documents", "/studio/reconciliation", "/studio/valuations", "/studio/prices",
@@ -200,6 +201,7 @@ const CLIENT_SECTION_PAIRS: [string, string][] = [
   ["/canvas/goals", "Goals"],
   ["/canvas/retirement", "Retirement"],
   ["/studio/net-worth", "Net worth"],
+  ["/studio/consolidation", "Consolidation"],
   ["/studio/protection", "Protection"],
   ["/studio/risk-profiles", "Risk profile"],
   ["/studio/ips", "IPS"],

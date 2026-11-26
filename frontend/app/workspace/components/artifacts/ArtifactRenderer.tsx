@@ -34,6 +34,7 @@ import { LicenceCard } from "./LicenceCard";
 import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
 import { PmsCard, PmsReportCard, ResidencyCard } from "./IndiaCard";
 import { AggregatorCard, EcasCard } from "./AggregatorCard";
+import { ConsolidationCard } from "./ConsolidationCard";
 import { AdvertisingCard, ComplaintsCard } from "./ComplaintsCard";
 import { KycCard, TaxRecordsCard } from "./IndiaKycCard";
 import { FamilyEstateCard } from "./FamilyEstateCard";
@@ -288,6 +289,14 @@ export function artifactCard(artifact: Artifact) {
       case "end_held_away_holding":
         if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.holdings)) return null;
         return <HeldAwayCard result={artifact.result as any} />;
+      // The consolidation workbench, India (B-389).
+      case "read_consolidation":
+      case "record_holding_facts":
+      case "classify_holding":
+      case "open_consolidation_request":
+      case "record_consolidation_step":
+        if (!Array.isArray(artifact.result?.households) && !artifact.result?.summary && artifact.result?.applies !== false) return null;
+        return <ConsolidationCard result={artifact.result as any} />;
       case "read_repapering":
       case "start_repapering":
       case "record_repapering":

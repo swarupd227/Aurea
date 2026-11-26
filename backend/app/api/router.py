@@ -82,3 +82,7 @@ api_router.include_router(advice_file_api.router)
 from app.api import plan_record as plan_record_api  # noqa: E402
 
 api_router.include_router(plan_record_api.router)
+# The consolidation workbench, India (B-389).
+from app.api import consolidation as consolidation_api  # noqa: E402
+
+api_router.include_router(consolidation_api.router)

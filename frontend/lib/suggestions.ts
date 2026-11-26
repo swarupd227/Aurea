@@ -172,6 +172,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
       { label: "Concentration", prompt: withRef(india ? "Does this household have a concentrated position, and what is the plan?" : "Does this household have a concentrated position or equity grants, and what is the plan?", "household", household) },
       { label: "Leaving or estate", prompt: withRef("Is a departure or an estate open for this household, and what is left to do?", "household", household) },
       { label: "Net worth", prompt: withRef("What is this household's net worth, and what is on file for it?", "household", household) },
+      ...(india ? [{ label: "Consolidation", prompt: withRef("Where does consolidating this household's holdings elsewhere stand?", "household", household) }] : []),
     ];
   }
   const route = pathname.replace(/\/$/, "");
@@ -201,6 +202,13 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "How fresh are my prices", prompt: "How fresh are my prices, and which ones can't be trusted?" },
         { label: "Fetch prices now", prompt: "Fetch prices now." },
         { label: "Failed symbols", prompt: "Did the last price run fail for any symbol, and why?" },
+      ];
+    case "/studio/consolidation":
+      return [
+        { label: "Still to classify", prompt: "Which households have holdings elsewhere still to classify for consolidation?" },
+        { label: "Rejected requests", prompt: "Which consolidation requests were rejected, and why?" },
+        h1 ? { label: `${short(h1)}'s exits`, prompt: `Which of ${the(h1)}'s holdings are marked to exit, and how do they sit against the gain budget?` }
+          : { label: "Redeem instead", prompt: "What would redeeming instead of transferring crystallise, household by household?" },
       ];
     case "/studio/licences":
       return [

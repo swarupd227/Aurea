@@ -549,6 +549,19 @@ ALL: tuple[LawFigure, ...] = (
     LawFigure("in_ad_preapproval_rule", "A firm's marketing is approved by its own compliance before it is used, and what is used is what was approved", None, "rule",
               "SEBI Common Advertisement Code (Intermediaries Regs 16G-16P) and the IA Master Circular, as read in the L100 India edition (Nov 2026) section 13 "
               "('advertisement pre-approval under the 2023 advertisement code'); the Code is operative on 8 April 2027 and was not re-read", date(2026, 11, 25)),
+    # ── India: the consolidation workbench (B-389). From the L200-1 India edition section 6.2; no circular, Act or bye-law was re-read, so every row
+    # is ASSUMED and stands "not reviewed" in the counsel tracker.
+    LawFigure("in_code_change_rule", "A distributor or broker code change re-maps who services a folio at the registrar: no unit moves, nothing is sold and no tax event arises", None, "rule",
+              "ASSUMED: the L200-1 India edition (Nov 2026) section 6.2; the AMFI and registrar procedures, with their consent and cooling rules, were not re-read and are not encoded",
+              date(2026, 11, 27)),
+    LawFigure("in_same_owner_transfer_rule", "An off-market transfer between one person's own demat accounts is not a sale: the cost and the holding period carry; a gift is a transfer with its own tax treatment",
+              None, "rule", "ASSUMED: the L200-1 India edition (Nov 2026) section 6.2; the Income-tax Act's provision on what is a transfer was not re-read", date(2026, 11, 27)),
+    LawFigure("in_stamp_duty_securities_transfer", "Stamp duty on a transfer of securities other than debentures on a delivery basis, share of the consideration", 0.00015, "rate",
+              "ASSUMED: Indian Stamp Act 1899, Schedule I, as amended with effect from 1 July 2020, as understood; the L200-1 India edition (section 6.2) says duty "
+              "'where applicable' and gives no rate; the Act was not re-read", date(2026, 11, 27), applies_from=date(2020, 7, 1)),
+    LawFigure("in_stamp_duty_no_consideration_rule", "A transfer of securities that states no consideration (between one person's own accounts, or a gift) carries no stamp duty", None, "rule",
+              "ASSUMED: Indian Stamp Act 1899 as amended from 1 July 2020, which charges duty on consideration, as understood; the Act and the depositories' notices were not re-read",
+              date(2026, 11, 27)),
 )
 
 VERSIONS: dict[str, tuple[LawFigure, ...]] = {}

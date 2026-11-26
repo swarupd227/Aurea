@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core.graph import household_brain
 from app.llm.admin_executors import AdminToolExecutors
+from app.llm.consolidation_executors import ConsolidationExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
@@ -71,7 +72,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
-                    IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors):
+                    IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -377,6 +378,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_rem_d_map(),
             # B-393: what the Indian regime comparison reads about a person: app/llm/planning_fix_executors.py.
             "record_tax_inputs": self.record_tax_inputs,
+            # India, the consolidation workbench (B-389): app/llm/consolidation_executors.py.
+            **self._consolidation_map(),
             "read_kyc_review_period": self.read_kyc_review_period,
             "set_kyc_review": self.set_kyc_review,
         }
@@ -5510,6 +5513,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._kyc_preview(inputs))
         if tool_key in ("record_plan_baseline", "record_plan_review", "record_plan_delivery"):
             return rows(*await self._plan_record_preview(tool_key, inputs))
+        if tool_key in ("record_holding_facts", "classify_holding", "open_consolidation_request", "record_consolidation_step"):
+            return rows(*await self._consolidation_preview(tool_key, inputs))
         if tool_key in ("record_aggregator_consent", "revoke_aggregator_consent", "pull_aggregator", "record_ecas", "record_complaint",
                         "record_complaint_step"):
             return rows(*await self._india_data_preview(tool_key, inputs))

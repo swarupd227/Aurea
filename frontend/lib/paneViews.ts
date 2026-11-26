@@ -12,6 +12,7 @@ export type PaneViewKey =
   | "cockpit" | "recommendations" | "clients" | "client" | "billing" | "valuations" | "onboarding" | "onboarding_case"
   | "meetings" | "meeting" | "tasks" | "reports" | "report" | "messages" | "message_thread" | "ips"
   | "reviews" | "protection" | "risk_profiles" | "reconciliation" | "net_worth" | "exits" | "products" | "equity_comp" | "plan" | "client_file" | "advice_file" | "plans" | "cash" | "trades" | "tax_documents" | "aml" | "consents" | "document_matrix" | "transfers" | "monitoring" | "money_in" | "account_features" | "onboarding_scoreboard" | "repapering" | "onboarding_queues"
+  | "consolidation"
   | "analytics" | "capacity" | "agent_history" | "provenance" | "composites" | "prices" | "beneficiary_audit" | "licences"
   | "corporate_actions" | "pipeline" | "tax" | "estate" | "family" | "behavioural" | "regulatory_countdown" | "workforce"
   | "skills" | "book_integration" | "book_batch" | "rulebook"
@@ -78,6 +79,7 @@ export const PANE_VIEWS: PaneViewDef[] = [
   { key: "prices", pattern: /^\/studio\/prices\/?$/, base: "/studio/prices", label: "Prices" },
   { key: "beneficiary_audit", pattern: /^\/studio\/beneficiary-audit\/?$/, base: "/studio/beneficiary-audit", label: "Beneficiary audit" },
   { key: "licences", pattern: /^\/studio\/licences\/?$/, base: "/studio/licences", label: "Licences" },
+  { key: "consolidation", pattern: /^\/studio\/consolidation\/?$/, base: "/studio/consolidation", label: "Consolidation" },
   { key: "corporate_actions", pattern: /^\/studio\/corporate-actions\/?$/, base: "/studio/corporate-actions", label: "Corporate actions" },
   { key: "pipeline", pattern: /^\/studio\/pipeline\/?$/, base: "/studio/pipeline", label: "Growth pipeline" },
   { key: "tax", pattern: /^\/studio\/tax\/?$/, base: "/studio/tax", label: "Tax intelligence" },
@@ -325,6 +327,13 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_held_away_holding":
     case "end_held_away_holding":
       return onClient("/studio/net-worth");
+    // The consolidation workbench, India (B-389): a client's opens on that client, the list on everyone.
+    case "read_consolidation":
+    case "record_holding_facts":
+    case "classify_holding":
+    case "open_consolidation_request":
+    case "record_consolidation_step":
+      return onClient("/studio/consolidation");
     case "read_repapering":
     case "start_repapering":
     case "record_repapering":
