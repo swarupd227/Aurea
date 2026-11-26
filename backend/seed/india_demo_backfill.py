@@ -14,6 +14,8 @@ A tier on each seeded goal and each household's essential spending (B-393) are a
 The consolidation workbench's folios, classifications and requests (B-389, `seed/india_consolidation.py`) are added once.
 Health policies, an endowment and a unit-linked statement, a waiver rider and a stated health cover figure (B-397,
 `seed/india_protection.py`) are added once; a renewal date of theirs that is near or past is moved ahead.
+Three more goals and a step-up SIP (B-394, seed/india_goals.py) are added where missing. A seeded goal a person has changed
+from the conversation is not reset.
 
 Every run also moves the dated demonstration scenarios back to their distance from today (`seed/india_redate.py`) and rewrites the
 description of an open reminder task still in the older wording.
@@ -38,8 +40,14 @@ from seed.india_demo import HOUSEHOLDS, INSTRUMENTS, SLUG, _closes_or_fallback, 
 
 
 async def reset_goals(s, firm: Firm) -> int:
-    """Set each seeded goal's target and assumptions, by household and goal name."""
+    """Set each seeded goal's target and assumptions, by household and goal name. A goal a person has changed from the
+    conversation (B-394) is theirs now and stays as they left it."""
+    from app.models.governance import LedgerEntry
+
     changed = 0
+    changed_by_a_person = {str((e.content or {}).get("goal_id")) for e in (await s.execute(select(LedgerEntry).where(
+        LedgerEntry.firm_id == firm.id, LedgerEntry.event_type.in_(("goal_updated", "goal_recorded"))))).scalars().all()
+        if not (e.actor or "").startswith("seed:")}
     for spec in HOUSEHOLDS:
         household = (await s.execute(select(Household).where(
             Household.firm_id == firm.id, Household.name == spec["name"]))).scalar_one_or_none()
@@ -48,7 +56,7 @@ async def reset_goals(s, firm: Firm) -> int:
         for name, _kind, target, years, assumptions in spec["goals"]:
             goal = (await s.execute(select(Goal).where(
                 Goal.firm_id == firm.id, Goal.household_id == household.id, Goal.name == name))).scalar_one_or_none()
-            if goal is None:
+            if goal is None or str(goal.id) in changed_by_a_person:
                 continue
             goal.target_amount = target
             # A tier is what a person said (B-393), so one on file is not reset with the rest.
@@ -138,6 +146,9 @@ async def main() -> None:
         from seed import india_protection
 
         protection_rows = await india_protection.add(s, firm)
+        from seed import india_goals
+
+        goal_rows = await india_goals.add(s, firm)
         # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
         # open reminder tasks raised in the older wording (B-372).
         from app.aurea_core import india_reminders
@@ -152,7 +163,7 @@ async def main() -> None:
         await run_agent(s, firm=firm, agent_key=AgentKey.TAX_INTELLIGENCE, trigger="seed_scan",
                         subject=Subject("firm", firm.id, firm.name), require_human=True)
         await s.commit()
-    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11, {row12} row 12, {row13} row 13, {row14} row 14, {polish} polish, {l100a} L100, {batch_a} batch A, {batch_c} batch C, {rem_e} batch E, {rem_d} remainder(s), {planning_records} goal tier(s) and spending record(s), {money} money-in record(s) and {batch_b} language and WhatsApp record(s), priced {priced['resolved']} instrument(s) "
+    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11, {row12} row 12, {row13} row 13, {row14} row 14, {polish} polish, {l100a} L100, {batch_a} batch A, {batch_c} batch C, {rem_e} batch E, {rem_d} remainder(s), {planning_records} goal tier(s) and spending record(s), {money} money-in record(s), {goal_rows} goal(s) and step-up SIP and {batch_b} language and WhatsApp record(s), priced {priced['resolved']} instrument(s) "
           f"({len(priced['failed'])} failed), and refreshed the tax positions.\n"
           f"Re-dated for today: {', '.join(f'{n} {k}' for k, n in redated.items() if n) or 'nothing'}. "
           f"Rewrote {reworded} open reminder task description(s). Consolidation workbench: {consolidation_rows} holding(s) added or re-dated. Health cover and policy values: {protection_rows} added or re-dated.\n")

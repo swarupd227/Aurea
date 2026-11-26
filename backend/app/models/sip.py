@@ -32,3 +32,10 @@ class Sip(Base):
     # The month (YYYY-MM) of the last instalment tried: one try a month, as a bank's SIP debit is.
     last_month: Mapped[str | None] = mapped_column(String(7))
     history: Mapped[list] = mapped_column(JSON, default=list)
+    # A step-up, only as the registration states it (B-394, aurea_core/sip_step_up.py): a percentage, how often, and the
+    # most any one instalment may be. All empty is a level SIP.
+    step_up_percent: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    step_up_every_months: Mapped[int | None] = mapped_column(Integer)
+    step_up_cap: Mapped[float | None] = mapped_column(Numeric(20, 2))
+    # The goal a person recorded this SIP as saving towards: that goal's contributions in every projection are this schedule.
+    goal_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("goal.id", ondelete="SET NULL"), index=True)

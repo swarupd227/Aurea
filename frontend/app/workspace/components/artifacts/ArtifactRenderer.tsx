@@ -57,6 +57,7 @@ import { HeldAwayCard } from "./HeldAwayCard";
 import { EquityCompCard } from "./EquityCompCard";
 import { CashCard } from "./CashCard";
 import { SipCard } from "./SipCard";
+import { GoalSizingCard } from "./GoalSizingCard";
 import { ClientFileCard } from "./ClientFileCard";
 import { ExitsCard } from "./ExitsCard";
 import { PlanCard } from "./PlanCard";
@@ -401,8 +402,14 @@ export function artifactCard(artifact: Artifact) {
       case "end_phase_in":
         if (!Array.isArray(artifact.result?.requests)) return null;
         return <CashCard result={artifact.result as any} />;
+      case "read_goal_sizing":
+      case "add_goal":
+        // Goals sized and funded (B-394).
+        if (!Array.isArray(artifact.result?.goals)) return null;
+        return <GoalSizingCard result={artifact.result as any} />;
       case "read_sips":
       case "record_sip":
+      case "link_sip_goal":
       case "end_sip":
         if (!Array.isArray(artifact.result?.sips)) return null;
         return <SipCard result={artifact.result as any} />;

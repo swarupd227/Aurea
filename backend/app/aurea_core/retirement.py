@@ -49,15 +49,22 @@ def _draws(need_today: float, streams: list[dict], *, acc: int, dec: int, inflat
     return out
 
 
+def _added(annual_contribution: float | list[float], year: int) -> float:
+    """What is saved in working year `year` (from 0): a level amount, or a year-by-year schedule (a step-up SIP's, B-394)."""
+    if isinstance(annual_contribution, list):
+        return annual_contribution[year] if year < len(annual_contribution) else 0.0
+    return annual_contribution
+
+
 def _simulate(
     current_value: float, mu: float, sigma: float, *, acc_years: int, draws: list[float],
-    annual_contribution: float, sims: int, seed: int, first_year_shock: float | None = None,
+    annual_contribution: float | list[float], sims: int, seed: int, first_year_shock: float | None = None,
 ) -> dict:
     rng = np.random.default_rng(seed)
     paths = np.full(sims, float(current_value))
-    for _ in range(acc_years):
+    for year in range(acc_years):
         shocks = rng.normal(mu, sigma, sims)
-        paths = np.maximum(paths * (1 + shocks) + annual_contribution, 0.0)
+        paths = np.maximum(paths * (1 + shocks) + _added(annual_contribution, year), 0.0)
     at_retirement = paths.copy()
 
     depletion = np.full(sims, -1)  # year index of depletion in retirement; -1 = survived
@@ -81,7 +88,7 @@ def _simulate(
 
 
 def simulate_guardrails(
-    current_value: float, mu: float, sigma: float, *, acc_years: int, dec_years: int, annual_contribution: float, sims: int,
+    current_value: float, mu: float, sigma: float, *, acc_years: int, dec_years: int, annual_contribution: float | list[float], sims: int,
     seed: int, inflation: float, terms: dict, start_rate: float,
 ) -> dict:
     """Spending that follows guardrails on the withdrawal rate (B-180), on the same random returns as `_simulate`.
@@ -93,9 +100,9 @@ def simulate_guardrails(
     is not governed here. Nothing changes spending by itself: this is a run, beside fixed spending, for the client to see."""
     rng = np.random.default_rng(seed)
     paths = np.full(sims, float(current_value))
-    for _ in range(acc_years):
+    for year in range(acc_years):
         shocks = rng.normal(mu, sigma, sims)
-        paths = np.maximum(paths * (1 + shocks) + annual_contribution, 0.0)
+        paths = np.maximum(paths * (1 + shocks) + _added(annual_contribution, year), 0.0)
     at_retirement = paths.copy()
     upper, lower = start_rate * (1 + terms["upper_band"]), start_rate * (1 - terms["lower_band"])
     draw = np.zeros(sims)
@@ -424,8 +431,22 @@ async def for_household(
         assumed.append("stream_start")
     annual_contribution = float(overrides.get("annual_contribution") if overrides.get("annual_contribution") is not None
                                 else a.get("annual_contribution", 0.0))
+    basis = "what_if" if overrides.get("annual_contribution") is not None \
+        else "recorded" if a.get("annual_contribution") is not None else "not_on_file"
+    # SIPs recorded against the retirement goal are counted by their schedule, step-ups included, in place of the figure
+    # recorded on the goal (B-394).
+    schedule = None
+    if rgoal and rgoal.get("sips") and overrides.get("annual_contribution") is None:
+        from app.aurea_core import sip_step_up
+
+        schedule, basis = sip_step_up.yearly(rgoal["sips"], today), "sip_registration"
+        annual_contribution = schedule[0]
     # A scenario's extra saving each year (B-179), on top of what is on file.
-    annual_contribution += float(overrides.get("extra_contribution") or 0.0)
+    extra = float(overrides.get("extra_contribution") or 0.0)
+    annual_contribution += extra
+    first_year_saved = annual_contribution
+    if schedule is not None:
+        annual_contribution = [v + extra for v in schedule]
 
     retire_at = max(retirement_age, current_age + 1)
     # Healthcare the plan funds on top of the income (B-191): only a US household, only what the firm has stated. With
@@ -477,6 +498,7 @@ async def for_household(
     plan["assumptions_version"] = plan["assumptions"]["version"] = planning.version_of(brain)
     plan["goal"] = rgoal["name"] if rgoal else "Retirement"
     plan["funding_share"] = funding_share
+    plan["contribution"] = {"basis": basis, "first_year": round(first_year_saved, 2)}
     if plan["income_basis"] == "assumed_draw":
         assumed.append("annual_income")
     plan["assumed"] = assumed

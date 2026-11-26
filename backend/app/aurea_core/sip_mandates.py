@@ -130,7 +130,9 @@ async def for_sip(session: AsyncSession, sip: Sip, today: date) -> dict:
     rows.sort(key=lambda r: (ORDER.index(state_of(r, today)), -(r.expires_on.toordinal() if r.expires_on else 10 ** 7)))
     best = rows[0]
     state = state_of(best, today)
-    unfit = reason_unfit(best, float(sip.amount), today)
+    from app.aurea_core import sip as sip_engine
+
+    unfit = reason_unfit(best, sip_engine.amount_due(sip, today), today)   # the next instalment, step-up included (B-394)
     return {"state": state, "label": STATES[state], "row": best, "fits": unfit is None,
             "warning": unfit and f"This SIP's debit would fail: {unfit}."}
 

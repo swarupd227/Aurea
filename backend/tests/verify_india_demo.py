@@ -125,8 +125,9 @@ async def main() -> int:
             # India's suggested assumptions (row 5) move these: the check is the mix, not a count.
             met = sum(on_track.values())
             check("a book with some goals met and some to talk about", 0 < met < len(on_track), True)
+            # Sharma's three: the postgraduate study, the wedding (B-394) and retirement, in name order.
             check("the client we sign in as has one of each", [v for k, v in sorted(on_track.items()) if "Sharma" in k],
-                  [False, True])
+                  [False, False, True])
 
             print("\n=== The client's own tools ===")
             # The client asks in the conversation (B-95); their tools read the Sharma household and no other.
@@ -375,8 +376,8 @@ async def main() -> int:
             check("the Confirm card names the fund, the plan and the registration",
                   (shown.get("Plan"), shown.get("Registration")), ("Direct", "Simulated, demonstration firm"))
             read = await ex.execute("read_sips", {})
-            mine = next(x for x in read["sips"] if x["bought"] == 1)       # the demonstration firm also carries batch A's two SIPs and B-388's three
-            check("the SIP is read back, with what it bought", (read["active"], mine["bought"], mine["plan"]), (6, 1, "direct"))
+            mine = next(x for x in read["sips"] if x["bought"] == 1)       # the demonstration firm also carries batch A's two SIPs, B-388's three and B-394's
+            check("the SIP is read back, with what it bought", (read["active"], mine["bought"], mine["plan"]), (7, 1, "direct"))
             await sip_core.end(s, firm, row.id, by="adviser@astra-india.demo", reason="the client asked to stop")
             check("ended, nothing more is bought", await sip_core.run_due(s, firm, today=_date(2030, 3, 5)), {"bought": 0, "missed": 0})
 

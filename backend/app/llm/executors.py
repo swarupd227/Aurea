@@ -24,6 +24,7 @@ from app.llm.health_cover_executors import HealthCoverExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
+from app.llm.goal_executors import GoalExecutors
 from app.llm.india_data_executors import IndiaDataExecutors
 from app.llm.india_family_executors import IndiaFamilyExecutors
 from app.llm.india_polish_executors import IndiaPolishExecutors
@@ -75,7 +76,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
-                    IndiaMoneyExecutors, HealthCoverExecutors):
+                    IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -387,6 +388,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._consolidation_map(),
             # India, health cover and a savings policy's values (B-397): app/llm/health_cover_executors.py.
             **self._health_map(),
+            # B-394: goals recorded and sized, and a SIP's goal: app/llm/goal_executors.py.
+            **self._goal_tools_map(),
             "read_kyc_review_period": self.read_kyc_review_period,
             "set_kyc_review": self.set_kyc_review,
         }
@@ -2327,7 +2330,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         return {"instrument": inputs.get("instrument"), "amount": inputs.get("amount"), "day_of_month": inputs.get("day_of_month"),
                 "starts_on": self._exit_day(inputs.get("starts_on"), "starts_on"),
                 "ends_on": self._exit_day(inputs.get("ends_on"), "ends_on") if inputs.get("ends_on") else None,
-                "evidence_ref": inputs.get("evidence_ref"), "simulated": str(inputs.get("simulated")).lower() == "true"}
+                "evidence_ref": inputs.get("evidence_ref"), "simulated": str(inputs.get("simulated")).lower() == "true",
+                # The step-up the registration states, and the goal it saves towards (B-394).
+                **{k: inputs.get(k) for k in ("step_up_percent", "step_up_every_months", "step_up_cap", "goal_id") if inputs.get(k) not in (None, "")}}
 
     async def _sip_write(self, write, message: str) -> dict[str, Any]:
         from app.aurea_core import sip
@@ -2353,6 +2358,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                                      "Ended. Nothing more is bought under it.")
 
     async def _sip_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
+        import datetime as dt
+
         from app.aurea_core import firm_time, markets, sip as e
 
         firm = await self._firm()
@@ -2363,6 +2370,11 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 tags = r["instrument"].values_tags or {}
                 return [("Account", r["account"].name), ("Fund", r["instrument"].name), ("Plan", (tags.get("fund_plan") or "").capitalize() or None),
                         ("Each month", f"{say(r['amount'])} on day {r['day']}"), ("First instalment", firm_time.spoken(r["first"])),
+                        ("Step-up", r["step_label"] or "None on the registration"),
+                        ("First step-up", f"{say(r['next_step']['amount'])} from {firm_time.spoken(dt.date.fromisoformat(r['next_step']['on']))}"
+                         if r["next_step"] else None),
+                        ("Debit mandate", r["debit_mandate"]),
+                        ("Saves towards", r["goal"].name if r["goal"] else "No goal recorded"),
                         ("Ends", firm_time.spoken(r["ends_on"]) if r["ends_on"] else "Not set"),
                         ("Licence", r["licence"].name if r["licence"] else None),
                         ("Registration", "Simulated, demonstration firm" if r["simulated"] else r["evidence"]),
@@ -5542,6 +5554,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._advice_preview(tool_key, inputs))
         if tool_key == "record_tax_inputs":
             return rows(*await self._tax_inputs_preview(inputs))
+        if tool_key in ("add_goal", "link_sip_goal"):
+            return rows(*await self._goal_tools_preview(tool_key, inputs))
         if tool_key == "record_tax_loss":
             return rows(*await self._tax_loss_preview(inputs))
         if tool_key == "record_grandfather_value":
@@ -6639,9 +6653,19 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 raise ExecutorError("priority must be high, medium or low.")
             changes["priority"] = mapped
         changes.update(self._goal_basis_changes(goal, basis, index))
+        from app.aurea_core import goal_record
+
+        try:
+            more = await goal_record.more_changes(self.session, await self._firm(), goal, inputs)
+        except goal_record.GoalError as exc:
+            raise ExecutorError(str(exc))
         changes.update(self._goal_tier_change(goal, inputs.get("tier")))
+        if more["rows"]:
+            changes["_more"] = more
         if not changes:
-            raise ExecutorError("Say what to change on this goal: its target, year, priority, target basis, index or tier.")
+            raise ExecutorError("Say what to change on this goal: its target, year or date, priority, target basis, index, tier, "
+                                "name, retirement age or spending, monthly contribution or funding share. What is already on file "
+                                "is no change.")
         return goal, changes
 
     @staticmethod
@@ -6712,7 +6736,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 ("Priority", f"{rank.get(goal.priority, goal.priority)} becomes {rank[c['priority']]}" if "priority" in c else None),
                 *self._goal_basis_rows(goal, c),
                 ("Tier", f"{self._tier_word((goal.assumptions or {}).get('tier'))} becomes {self._tier_word(c['tier'])}"
-                 if "tier" in c else None)]
+                 if "tier" in c else None),
+                *(c.get("_more") or {}).get("rows", [])]
 
     @staticmethod
     def _tier_word(tier: Any) -> str:
@@ -6736,9 +6761,12 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         """Update a household goal's target, timeline, priority, or whether its target is in today's money and the
         index it grows with (B-211)."""
         goal, changes = await self._goal_changes(inputs)
+        more = changes.pop("_more", None) or {"columns": {}, "terms": {}}
         basis = {k: changes.pop(k) for k in ("target_basis", "index", "tier") if k in changes}
+        changes.update(more["columns"])
         for field, value in changes.items():
             setattr(goal, field, value)
+        basis.update(more["terms"])
         if basis:
             # Nothing else in the goal's assumptions changes (B-211).
             terms = dict(goal.assumptions or {})
@@ -6751,6 +6779,11 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         await self.session.flush()
 
         updates = {**changes, **basis}
+        from app.provenance import ledger
+
+        await ledger.append_entry(self.session, firm_id=self.firm_id, event_type="goal_updated", actor=await self._shelf_user(), content={
+            "goal_id": str(goal.id), "name": goal.name,
+            "changes": {k: v.isoformat() if hasattr(v, "isoformat") else float(v) if k == "target_amount" else v for k, v in updates.items()}})
         if "target_date" in updates:
             updates["target_date"] = updates["target_date"].isoformat()
         if "priority" in updates:
@@ -6762,10 +6795,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         plan = await goal_tradeoff.for_household(self.session, goal.household_id, firm_id=self.firm_id) if goal.household_id else None
         row = next((g for g in (plan or {}).get("goals", []) if g.get("id") == str(goal.id)), None)
         keep = ("name", "target_amount", "target_basis", "target_today", "index", "inflation", "tier", "success_probability", "on_track", "years", "assumed")
+        held = goal.assumptions or {}
+        recorded = {k: held.get(k) for k in ("retirement_age", "monthly_contribution", "funding_share")}
         return {
             "goal_id": str(goal.id),
+            "household_id": str(goal.household_id) if goal.household_id else None,
             "updates": updates,
-            "goal": {k: row.get(k) for k in keep} if row else None,
+            "goal": {**{k: row.get(k) for k in keep}, **recorded, "contribution_basis": row.get("contribution_basis")} if row else None,
             "assumptions_source": (plan or {}).get("assumptions_source"),
             "tiers": (plan or {}).get("tiers"),
             "message": f"Updated goal '{goal.name}'."

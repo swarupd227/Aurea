@@ -6,6 +6,10 @@ horizon), the share of the wealth recorded for it, its priority and the contribu
 A goal with a share is funded from that share; the goals without one draw on the rest in priority
 order, each residual compounding for the next. Whatever it has to assume is named in `assumed`.
 
+What is saved for a goal is the contribution recorded on it, level. Where SIP registrations are recorded against the
+goal (B-394), their schedule is counted instead, instalment by instalment with each registered step-up, until each ends or
+the goal's date, as if every instalment is bought: the recorded figure is not added to it, so nothing counts twice.
+
 Returns are the firm's capital market assumptions when it has set them (the brain carries them, B-167). A goal
 whose target is in today's money grows with its own index (CPI, education, healthcare) to its date; an education
 goal recorded with a yearly cost, a start and a length is today's money by construction, and grows with education
@@ -23,7 +27,7 @@ from datetime import date
 
 import numpy as np
 
-from app.aurea_core import markets, planning
+from app.aurea_core import markets, planning, sip_step_up
 from app.aurea_core.planning import _blended_assumptions
 
 _DISCOUNT_RATE = 0.04   # risk-free rate used to PV human capital
@@ -51,6 +55,14 @@ def human_capital_pv(
 
 
 # ── Core MC ───────────────────────────────────────────────────────────────────
+
+def _saved_in(goal: dict, year: int) -> float:
+    """What is saved for a goal in year `year` from today: its level contribution, or where SIPs are recorded against
+    it their schedule for that year, up to the goal's date."""
+    schedule = goal.get("schedule")
+    if schedule is None:
+        return float(goal.get("contribution") or 0.0)
+    return float(schedule[year - 1]) if year <= min(len(schedule), int(goal.get("years") or ASSUMED_YEARS)) else 0.0
 
 def run_tradeoff(
     *,
@@ -98,11 +110,9 @@ def run_tradeoff(
     rest = max(0.0, 1.0 - sum(shares.values()))
 
     own = {k: np.full(sims, float(total_portfolio) * v) for k, v in shares.items()}
-    own_add = {str(g["id"]): float(g.get("contribution") or 0.0) + annual_contribution_total * shares[str(g["id"])]
-               for g in sorted_goals if str(g["id"]) in shares}
+    earmarked = {str(g["id"]): g for g in sorted_goals if str(g["id"]) in shares}
+    pooled = [g for g in sorted_goals if str(g["id"]) not in shares]
     shared = np.full(sims, float(total_portfolio) * rest)
-    shared_add = annual_contribution_total * rest + sum(float(g.get("contribution") or 0.0)
-                                                        for g in sorted_goals if str(g["id"]) not in shares)
 
     due: dict[int, list[dict]] = {}
     for g in sorted_goals:
@@ -112,9 +122,9 @@ def run_tradeoff(
     funded: dict[str, np.ndarray] = {}   # per goal, the futures in which it is met
     for y in range(1, max_years + 1):
         growth = 1 + shocks[:, y - 1]
-        shared = np.maximum(shared * growth + shared_add, 0.0)
+        shared = np.maximum(shared * growth + annual_contribution_total * rest + sum(_saved_in(g, y) for g in pooled), 0.0)
         for k in own:
-            own[k] = np.maximum(own[k] * growth + own_add[k], 0.0)
+            own[k] = np.maximum(own[k] * growth + _saved_in(earmarked[k], y) + annual_contribution_total * shares[k], 0.0)
         for g in due.get(y, []):
             gid = str(g["id"])
             target = float(g.get("target_amount") or 0.0)
@@ -122,7 +132,6 @@ def run_tradeoff(
             drawn = np.minimum(avail, target) if target > 0 else np.zeros(sims)
             if gid in own:
                 shared = shared + np.maximum(own.pop(gid) - drawn, 0.0)   # what it leaves joins the shared pool
-                own_add.pop(gid, None)
             else:
                 shared = np.maximum(shared - drawn, 0.0)
             met = avail >= target if target > 0 else np.ones(sims, dtype=bool)
@@ -352,6 +361,8 @@ def prepare(brain: dict, today: date, *, priority_overrides: dict | None = None,
         years = max(1, years + int(ov.get("years_delta", 0)))
         target = target * float(ov.get("target_scale", 1.0))
         grown = grown_target(g, target, years, today, brain.get("planning"), years_delta=int(ov.get("years_delta", 0)))
+        schedule = sip_step_up.yearly(g["sips"], today) if g.get("sips") else None
+        recorded = float(a.get("annual_contribution") or 0.0)
         goals.append({"id": gid, "name": g.get("name") or _kind_label(g.get("kind", "other")),
                       "kind": g.get("kind", "other"), "priority": priority, "target_amount": round(grown["target"], 2),
                       "tier": a.get("tier") if a.get("tier") in TIERS else None,
@@ -359,7 +370,9 @@ def prepare(brain: dict, today: date, *, priority_overrides: dict | None = None,
                       "target_basis": grown["target_basis"], "target_today": grown["target_today"], "index": grown["index"],
                       "inflation": grown["inflation"], "rates_assumed": grown["assumed"],
                       "share": float(a["funding_share"]) if a.get("funding_share") is not None else None,
-                      "contribution": float(a.get("annual_contribution") or 0.0)})
+                      "contribution": schedule[0] if schedule is not None else recorded, "schedule": schedule,
+                      "contribution_basis": "sip_registration" if schedule is not None
+                      else "recorded" if a.get("annual_contribution") is not None else "not_on_file"})
     extra = sum(float(((goal_overrides or {}).get(g["id"]) or {}).get("extra_contribution", 0)) for g in goals)
     earned = earnings(brain, today, annual_income=annual_income)
     what_if = bool(priority_overrides or goal_overrides or annual_income is not None)
@@ -371,7 +384,7 @@ def prepare(brain: dict, today: date, *, priority_overrides: dict | None = None,
 def _annotate(results: list[dict], goals: list[dict]) -> list[dict]:
     by_id = {g["id"]: g for g in goals}
     return [{**r, "horizon": by_id[r["id"]]["horizon"],
-             **{k: by_id[r["id"]][k] for k in ("target_basis", "target_today", "index", "inflation", "tier")},
+             **{k: by_id[r["id"]][k] for k in ("target_basis", "target_today", "index", "inflation", "tier", "contribution", "contribution_basis")},
              "assumed": (["years"] if by_id[r["id"]]["horizon"] == "assumed" else []) + by_id[r["id"]]["rates_assumed"],
              "estimate": True} for r in results]
 

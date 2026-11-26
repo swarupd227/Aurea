@@ -767,8 +767,9 @@ async def queue(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID | 
     def attach(entry: dict, s: Sip) -> None:
         name = funds.get(s.instrument_id, "a fund")
         if all(x["sip_id"] != str(s.id) for x in entry["sips"]):
-            entry["sips"].append({"sip_id": str(s.id), "fund": name, "amount": float(s.amount)})
-            entry["monthly"] = round(entry["monthly"] + float(s.amount), 2)
+            due = sip_engine.amount_due(s, today)      # the next instalment, step-up included (B-394)
+            entry["sips"].append({"sip_id": str(s.id), "fund": name, "amount": due})
+            entry["monthly"] = round(entry["monthly"] + due, 2)
 
     # A mandate still asked for, or refused, until a registration recorded after it is in force.
     for r in rows:
@@ -807,7 +808,7 @@ async def queue(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID | 
             continue
         if state != "active":              # not yet in force: nothing is due under it
             continue
-        if float(s.amount) > float(row.per_debit_limit) + 1e-9:
+        if sip_engine.amount_due(s, today) > float(row.per_debit_limit) + 1e-9:
             attach(add((s.account_id, row.reference, "limit"), account, "over_limit", recorded(row), row=row, chase=0), s)
         debit = first.get((s.account_id, row.reference))
         if debit is not None and debit.outcome == "failed":

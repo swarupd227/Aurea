@@ -32,8 +32,15 @@ export function GoalUpdatedCard({ result }: { result: any }) {
       </div>
       <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-2" data-testid="goal-updated-basis">
         <TierChip tier={g.tier} />
+        {g.retirement_age != null && <span className="chip tabular-nums text-ink-muted">retire at {g.retirement_age}</span>}
+        {g.monthly_contribution != null && <span className="chip tabular-nums text-ink-muted">saving {money(g.monthly_contribution)} a month</span>}
+        {g.contribution_basis === "sip_registration" && <span className="chip text-ink-muted">projected from its SIP registration</span>}
+        {g.funding_share != null && <span className="chip tabular-nums text-ink-muted">share {Math.round(g.funding_share * 100)}%</span>}
         {basis ? <span className="chip text-ink-muted">{basis}</span> : <span className="chip text-ink-muted">target as stated</span>}
-        {Object.keys(result.updates || {}).map((k) => <span key={k} className="chip text-ink-muted">{k.replace(/_/g, " ")} changed</span>)}
+        {/* The yearly figure follows the monthly one, and `annual_income` is a retirement goal's spending. */}
+        {Object.keys(result.updates || {}).filter((k) => k !== "annual_contribution").map((k) => (
+          <span key={k} className="chip text-ink-muted">{k === "annual_income" ? "retirement spending" : k.replace(/_/g, " ")} changed</span>
+        ))}
       </div>
       {result.tiers && <div className="border-t border-border-soft px-3 py-2"><TiersRow tiers={result.tiers} /></div>}
     </div>

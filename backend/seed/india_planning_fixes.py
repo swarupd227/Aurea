@@ -18,15 +18,21 @@ from app.models.tenant import Firm
 SOURCE = "Demonstration record, invented for the demonstration firm"
 BY = "seed: India planning (demonstration)"
 
-# (household, goal) -> the tier the family would say: needs, wants or wishes.
+# (household, goal) -> the tier the family would say: needs, wants or wishes, as the engines read them.
 TIERS = {
-    ("The Sharma Family", "Retirement at 60"): "need",
-    ("The Sharma Family", "Aarav's postgraduate study"): "want",
-    ("The Iyer Family", "Retirement at 58"): "need",
-    ("The Kapoor Family Trust", "Next generation endowment"): "wish",
-    ("The Banerjee Household", "Income through retirement"): "need",
-    ("The D'Souza Household", "Retirement at 60"): "need",
+    ("The Sharma Family", "Retirement at 60"): "needs",
+    ("The Sharma Family", "Aarav's postgraduate study"): "wants",
+    ("The Iyer Family", "Retirement at 58"): "needs",
+    ("The Kapoor Family Trust", "Next generation endowment"): "wishes",
+    ("The Banerjee Household", "Income through retirement"): "needs",
+    ("The D'Souza Household", "Retirement at 60"): "needs",
+    # The goals B-394 adds (seed/india_goals.py).
+    ("The Sharma Family", "Aarav's wedding"): "wishes",
+    ("The Iyer Family", "A second home"): "wants",
+    ("The D'Souza Household", "Home renovation"): "wants",
 }
+# What this seed first wrote, which no engine reads as a tier: corrected where it is still there (B-394).
+SINGULAR = {"need": "needs", "want": "wants", "wish": "wishes"}
 # Rupees a year a household cannot do without.
 ESSENTIAL_SPENDING = {
     "The Sharma Family": 2_400_000,
@@ -47,9 +53,12 @@ async def add(s, firm: Firm) -> int:
             continue
         goal = (await s.execute(select(Goal).where(Goal.firm_id == firm.id, Goal.household_id == household.id,
                                                    Goal.name == name))).scalars().first()
-        if goal is None or (goal.assumptions or {}).get("tier"):
+        if goal is None:
             continue
-        goal.assumptions = {**(goal.assumptions or {}), "tier": tier}
+        on_file = (goal.assumptions or {}).get("tier")
+        if on_file and on_file not in SINGULAR:
+            continue
+        goal.assumptions = {**(goal.assumptions or {}), "tier": SINGULAR.get(on_file, tier)}
         written += 1
     for home, amount in ESSENTIAL_SPENDING.items():
         household = households.get(home)

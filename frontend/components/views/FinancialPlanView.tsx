@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
+
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { money } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { bandChip, pct1 } from "@/app/workspace/components/artifacts/PlanCard";
 import { ScenariosTable } from "@/app/workspace/components/artifacts/ScenarioCard";
+import { GoalSizingBody, GoalSizingChips } from "@/app/workspace/components/artifacts/GoalSizingCard";
 import { SocialSecurityTable } from "@/app/workspace/components/artifacts/SocialSecurityCard";
 import { HealthcareChips, HealthcareTable } from "@/app/workspace/components/artifacts/HealthcareCard";
 import { TriggerChips, TriggersTable } from "@/app/workspace/components/artifacts/PlanTriggersCard";
@@ -28,6 +31,40 @@ function Tile({ label, value, tone = "text-ink" }: { label: string; value: strin
 }
 
 const th = "px-4 py-2 font-medium";
+
+/** Every goal sized and funded, with its horizon's vehicle categories (B-394). The step-up typed here is only tried out:
+ * a goal is recorded or changed through the conversation, and in the pane these buttons are sentences handed to it. */
+function PlanGoals({ household, name, canRecord }: { household: string; name: string; canRecord: boolean }) {
+  const [typed, setTyped] = useState("");
+  const [step, setStep] = useState<number | null>(null);
+  const nav = useViewNav();
+  const { data, error } = useApi<any>(`/api/plan/goals?household=${household}${step != null ? `&step_up=${step}` : ""}`, [household, step]);
+  if (error || !data || data.household_id !== household) return null;
+  const say = nav.say;
+  const apply = () => {
+    const v = Number(typed);
+    setStep(typed.trim() && v > 0 && v <= 50 ? v : null);
+  };
+  return (
+    <Card className="mb-4 overflow-hidden p-0" data-testid="plan-goals">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="mr-1 text-sm font-medium text-ink">Goals</div>
+          <GoalSizingChips result={data} />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+            Step-up % a year
+            <input className="input w-20 text-xs" inputMode="decimal" value={typed} onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && apply()} onBlur={apply} data-testid="plan-goals-step-up" />
+          </label>
+          {say && canRecord && <button className="btn-outline text-xs" data-testid="plan-goals-add" onClick={() => say(withRef(`Add a goal for ${name}.`, "household", household))}>Add goal</button>}
+        </div>
+      </div>
+      <GoalSizingBody result={data} />
+    </Card>
+  );
+}
 
 /** Social Security for a US couple, pair by pair (B-184). It lays the claims out; the claim is the client's. */
 function PlanSocialSecurity({ household }: { household: string }) {
@@ -337,6 +374,8 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           )}
         </Card>
       )}
+
+      <PlanGoals household={data.household_id} name={data.household} canRecord={!!data.can_record} />
 
       <Card className="mb-4 overflow-hidden p-0">
         <div className="border-b border-border-soft px-4 py-2.5 text-sm font-medium text-ink">Income to count on</div>

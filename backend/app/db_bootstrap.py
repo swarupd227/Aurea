@@ -271,6 +271,12 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE standing_instruction ADD COLUMN IF NOT EXISTS bank_link_id UUID REFERENCES bank_link(id) ON DELETE SET NULL"))
         # B-397: what a schedule says a rider or a critical-illness cover does, as recorded. Empty on every policy before.
         await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS terms_stated VARCHAR(500)"))
+        # B-394: a step-up as a term of the SIP registration, and the goal a SIP saves towards. Every SIP before is level.
+        await conn.execute(text("ALTER TABLE sip ADD COLUMN IF NOT EXISTS step_up_percent NUMERIC(5,2)"))
+        await conn.execute(text("ALTER TABLE sip ADD COLUMN IF NOT EXISTS step_up_every_months INTEGER"))
+        await conn.execute(text("ALTER TABLE sip ADD COLUMN IF NOT EXISTS step_up_cap NUMERIC(20,2)"))
+        await conn.execute(text("ALTER TABLE sip ADD COLUMN IF NOT EXISTS goal_id UUID REFERENCES goal(id) ON DELETE SET NULL"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sip_goal_id ON sip (goal_id)"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

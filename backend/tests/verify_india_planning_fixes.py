@@ -384,7 +384,7 @@ async def main() -> int:
                              if h.name in seeded}
                     goals = (await s.execute(select(Goal).where(Goal.household_id.in_(list(homes))))).scalars().all()
                     check("every seeded goal has a tier a person would have said",
-                          sorted({(g.assumptions or {}).get("tier") for g in goals}, key=str), ["need", "want", "wish"])
+                          sorted({(g.assumptions or {}).get("tier") for g in goals}, key=str), ["needs", "wants", "wishes"])
                     spending = (await s.execute(select(BalanceItem).where(BalanceItem.firm_id == firm.id,
                                                                           BalanceItem.kind == "essential_spending"))).scalars().all()
                     check("each seeded household has essential spending, said to be a demonstration record",
@@ -392,11 +392,11 @@ async def main() -> int:
                           (len(seeded), True))
                     check("a second run adds nothing", await india_planning_fixes.add(s, firm), 0)
                     goal = goals[0]
-                    goal.assumptions = {**goal.assumptions, "tier": "wish"}
+                    goal.assumptions = {**goal.assumptions, "tier": "wishes"}
                     await s.flush()
                     await india_demo_backfill.reset_goals(s, firm)
                     await india_planning_fixes.add(s, firm)
-                    check("a tier a person changed stays through the backfill", goal.assumptions["tier"], "wish")
+                    check("a tier a person changed stays through the backfill", goal.assumptions["tier"], "wishes")
                     for g in goals:
                         g.assumptions = {k: v for k, v in g.assumptions.items() if k != "tier"}
                     for i in spending:

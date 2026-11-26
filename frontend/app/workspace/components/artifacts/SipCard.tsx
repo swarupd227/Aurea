@@ -29,6 +29,8 @@ export function SipCard({ result }: { result: any }) {
                     <td className="px-3 py-1.5">
                       <div className="flex flex-wrap gap-1">
                         {r.plan && <span className="chip text-ink-muted">{r.plan}</span>}
+                        {r.step_up && <span className="chip text-ink" data-testid="sip-step-up" title={r.step_up.next ? `next step ${r.step_up.next.on}: ${money(r.step_up.next.amount, ccy)}` : undefined}>step-up {r.step_up.label}</span>}
+                        {r.goal && <span className="chip text-ink-muted" data-testid="sip-goal">for {r.goal}</span>}
                         {r.simulated && <span className="chip text-warn">simulated</span>}
                         {r.status === "ended" && <span className="chip text-ink-muted">ended</span>}
                         {missed && <span className="chip text-crit" title={r.last.reason}>missed {r.last.month}</span>}
@@ -36,6 +38,7 @@ export function SipCard({ result }: { result: any }) {
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink-muted">
                       {money(r.amount, ccy)} · day {r.day_of_month}
+                      {r.step_up && r.amount !== r.registered_amount && <div className="text-[11px]">first {money(r.registered_amount, ccy)}</div>}
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink-muted">
                       {r.bought}/{r.instalments} · {r.units} units

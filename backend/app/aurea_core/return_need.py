@@ -36,10 +36,17 @@ def _annuity(rate: float, years: int) -> float:
     return float(years) if abs(rate) < 1e-9 else (1 - (1 + rate) ** -years) / rate
 
 
+def _saved_today(rate: float, goal: dict) -> float:
+    """What a goal's savings are worth today at `rate`: a level amount a year, or a SIP schedule's years (B-394)."""
+    if goal.get("schedule") is None:
+        return goal["contribution"] * _annuity(rate, goal["years"])
+    return sum(v / (1 + rate) ** (k + 1) for k, v in enumerate(goal["schedule"][:goal["years"]]))
+
+
 def _gap(rate: float, wealth: float, goals: list[dict]) -> float:
     """What the goals cost today, discounted at `rate`, less what the book and the contributions are worth today."""
     owed = sum(g["target"] / (1 + rate) ** g["years"] for g in goals)
-    held = wealth + sum(g["contribution"] * _annuity(rate, g["years"]) for g in goals)
+    held = wealth + sum(_saved_today(rate, g) for g in goals)
     return owed - held
 
 
@@ -79,7 +86,8 @@ def lay_out(brain: dict, today: date) -> dict:
                   else "No goal with a target is on file, so there is no need to work a return for.")
         return {**base, "status": "not_assessed", "reason": reason}
     wealth = float((brain.get("totals") or {}).get("total_value") or 0.0)
-    rows = [{"target": float(g["target_amount"]), "years": int(g["years"]), "contribution": float(g.get("contribution") or 0.0)} for g in counted]
+    rows = [{"target": float(g["target_amount"]), "years": int(g["years"]), "contribution": float(g.get("contribution") or 0.0),
+             "schedule": g.get("schedule")} for g in counted]
     got = required_return(wealth, rows)
     expected = expected_compound(brain)
     required = got["rate"]

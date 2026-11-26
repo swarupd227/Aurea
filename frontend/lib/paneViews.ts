@@ -429,7 +429,13 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_income_stream":
     case "end_income_stream":
     case "record_education_goal":
+    // Goals recorded, changed and sized open the client's plan, where each goal is laid out (B-394).
+    case "read_goal_sizing":
+    case "add_goal":
+    case "update_goal":
       return onClient("/studio/plan");
+    case "link_sip_goal":
+      return "/studio/plan";
     case "read_equity_comp":
     case "record_equity_grant":
     case "end_equity_grant":

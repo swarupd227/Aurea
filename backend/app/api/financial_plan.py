@@ -34,6 +34,22 @@ async def read(household: uuid.UUID | None = None, user: User = ReaderDep, firm:
     return {**result, "can_record": user.role in WRITERS}
 
 
+@router.get("/goals")
+async def goals_route(household: uuid.UUID, step_up: float | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                      session: AsyncSession = Depends(get_db)) -> dict:
+    """Each goal sized and funded, with the vehicle categories for its horizon (B-394). It reads and records nothing; the
+    step-up is a figure someone is trying out, and a goal is recorded or changed through the conversation."""
+    from app.aurea_core import goal_sizing
+
+    try:
+        out = await goal_sizing.for_household(session, household, firm_id=firm.id, step_up_percent=step_up)
+    except goal_sizing.SizingError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    if out is None:
+        raise HTTPException(status_code=404, detail="Household not found.")
+    return {**out, "can_record": user.role in WRITERS}
+
+
 @router.get("/scenarios")
 async def scenarios(household: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm),
                     session: AsyncSession = Depends(get_db)) -> dict:

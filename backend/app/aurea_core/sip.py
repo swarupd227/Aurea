@@ -6,6 +6,10 @@ fixed amount, monthly, from a start date to an end date or until it is ended. No
 licence that needs the client's consent to each trade is met by the registration, and a licence that places no
 trades takes no SIP.
 
+A step-up is one more term of that registration (B-394, `sip_step_up`): each instalment is the registration's amount
+for its month, raised only as registered. No SIP is stepped up afterwards: a new step-up is a new registration. A person
+may record which goal a SIP saves towards, and that goal's projections then read its schedule.
+
 Each month the worker places one instalment, on or after the day the SIP names: an order for the amount, in units
 at the latest real NAV (`execution._units_for_amount`), on the firm's venue. It is tried once a month, as a bank
 debit is: before it, the licence and the plan are read again (`shelf.barred`), and the cash the account may spend
@@ -20,8 +24,8 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, licences, markets, shelf, sip_mandates
-from app.models.graph import Account, Mandate
+from app.aurea_core import firm_time, licences, markets, shelf, sip_mandates, sip_step_up
+from app.models.graph import Account, Goal, Mandate
 from app.models.portfolio import Instrument
 from app.models.sip import Sip
 from app.models.tenant import Firm
@@ -81,8 +85,73 @@ async def _may_buy(session: AsyncSession, firm: Firm, mandate: Mandate, inst: In
         raise SipError(f"{inst.name} is {reason}.")
 
 
+def _step_up(amount: float, percent, every, cap) -> dict:
+    """The step-up terms as the registration states them, or none. Nothing is supplied that was not given."""
+    if all(v in (None, "") for v in (percent, every, cap)):
+        return {"step_up_percent": None, "step_up_every_months": None, "step_up_cap": None}
+    try:
+        pct = round(float(str(percent).replace("%", "").strip()), 2)
+    except (TypeError, ValueError):
+        raise SipError("A step-up needs its percentage, as the registration states it.")
+    if not 0 < pct <= sip_step_up.MAX_PERCENT:
+        raise SipError("The step-up percentage must be more than nothing and at most 100.")
+    word = str(every).strip().lower() if every not in (None, "") else ""
+    word = {"yearly": "12", "annual": "12", "annually": "12", "half-yearly": "6", "half yearly": "6", "6.0": "6", "12.0": "12"}.get(word, word)
+    if word not in {str(f) for f in sip_step_up.FREQUENCIES}:
+        raise SipError("Say how often the step-up applies, as the registration states it: every 12 months (yearly) or every 6 months.")
+    top = None
+    if cap not in (None, ""):
+        try:
+            top = round(float(str(cap).replace(",", "")), 2)
+        except (TypeError, ValueError):
+            raise SipError("The step-up cap must be an amount.")
+        if top < amount:
+            raise SipError("The cap is the most any one instalment may be, so it cannot be below the first instalment.")
+    return {"step_up_percent": pct, "step_up_every_months": int(word), "step_up_cap": top}
+
+
+async def _goal(session: AsyncSession, firm: Firm, account: Account, goal_id) -> Goal | None:
+    """The goal a SIP saves towards: one of the account's own household's."""
+    if goal_id in (None, ""):
+        return None
+    from app.aurea_core.performance import household_account_ids
+
+    try:
+        row = await session.get(Goal, goal_id if isinstance(goal_id, uuid.UUID) else uuid.UUID(str(goal_id)))
+    except ValueError:
+        row = None
+    if row is None or row.firm_id != firm.id or row.household_id is None:
+        raise SipError("No such goal at this firm.")
+    own = await household_account_ids(session, row.household_id, firm_id=firm.id) or []
+    if account.id not in own:
+        raise SipError(f"{row.name} is another household's goal: a SIP saves only towards its own household's.")
+    return row
+
+
+async def _mandate_limit(session: AsyncSession, firm: Firm, account: Account, terms: dict) -> str | None:
+    """Where a stepped-up instalment passes the debit mandate's per-debit limit, said on the card before it is recorded."""
+    if not sip_mandates.applies(firm) or not terms.get("step_up_percent"):
+        return None
+    rows = [r for r in await sip_mandates.standing(session, firm.id, [account.id]) if r.kind != "cancelled"]
+    if not rows:
+        return "No debit mandate on file for this account"
+    say = markets.money_for(firm)
+    limit = max(float(r.per_debit_limit) for r in rows)
+    first, ends = sip_step_up.first_instalment(terms), terms.get("ends_on")
+    for k in range(sip_step_up.HORIZON_YEARS * 12):
+        on = date(first.year + (first.month - 1 + k) // 12, (first.month - 1 + k) % 12 + 1, first.day)
+        if ends is not None and on > ends:
+            break
+        amount = sip_step_up.amount_on(terms, on)
+        if amount > limit + 1e-9:
+            return (f"{say(amount)} from {firm_time.spoken(on)} is above its limit of {say(limit)} a debit: "
+                    "that instalment is missed unless a higher mandate is recorded")
+    return f"Every instalment is within its limit of {say(limit)} a debit"
+
+
 async def prepare(session: AsyncSession, firm: Firm, account_id: uuid.UUID, *, instrument: str, amount, day_of_month,
-                  starts_on: date | None, ends_on: date | None, evidence_ref: str | None, simulated: bool = False) -> dict:
+                  starts_on: date | None, ends_on: date | None, evidence_ref: str | None, simulated: bool = False,
+                  step_up_percent=None, step_up_every_months=None, step_up_cap=None, goal_id=None) -> dict:
     """Everything a SIP would be, checked, with nothing written: the Confirm card and the write read the same."""
     account, mandate = await _account_mandate(session, firm, account_id)
     inst = await _instrument(session, firm, instrument)
@@ -110,23 +179,32 @@ async def prepare(session: AsyncSession, firm: Firm, account_id: uuid.UUID, *, i
     elif len(named) < 5:
         raise SipError("Say where the client's signed SIP registration is on file.")
     today = firm_time.today(firm)
+    step = _step_up(value, step_up_percent, step_up_every_months, step_up_cap)
+    goal = await _goal(session, firm, account, goal_id)
+    first = next_instalment(day, starts_on, today)
+    schedule = {"id": "", "amount": value, "day": day, "starts_on": starts_on, "ends_on": ends_on, "simulated": bool(simulated), **step}
     return {"account": account, "mandate": mandate, "instrument": inst, "amount": value, "day": day,
             "starts_on": starts_on, "ends_on": ends_on, "evidence": None if simulated else named, "simulated": bool(simulated),
-            "licence": licences.track_for(firm, mandate), "first": next_instalment(day, starts_on, today)}
+            "licence": licences.track_for(firm, mandate), "first": first, "step": step, "goal": goal,
+            "next_step": sip_step_up.next_step(schedule, first), "step_label": sip_step_up.label(schedule, markets.money_for(firm)),
+            "debit_mandate": await _mandate_limit(session, firm, account, schedule)}
 
 
 async def record(session: AsyncSession, firm: Firm, account_id: uuid.UUID, *, by: str, **terms) -> Sip:
     ready = await prepare(session, firm, account_id, **terms)
     row = Sip(firm_id=firm.id, account_id=account_id, instrument_id=ready["instrument"].id, amount=ready["amount"],
               day_of_month=ready["day"], starts_on=ready["starts_on"], ends_on=ready["ends_on"], evidence_ref=ready["evidence"],
-              simulated=ready["simulated"], recorded_by=by, history=[])
+              simulated=ready["simulated"], recorded_by=by, history=[], goal_id=ready["goal"].id if ready["goal"] else None,
+              **ready["step"])
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm.id, event_type="sip_recorded", actor=by, content={
         "sip_id": str(row.id), "account_id": str(account_id), "fund": ready["instrument"].name, "amount": ready["amount"],
         "day_of_month": ready["day"], "starts_on": ready["starts_on"].isoformat(),
         "ends_on": ready["ends_on"].isoformat() if ready["ends_on"] else None,
-        "evidence_ref": ready["evidence"], "simulated": ready["simulated"]})
+        "evidence_ref": ready["evidence"], "simulated": ready["simulated"],
+        **{k: v for k, v in ready["step"].items() if v is not None},
+        **({"goal_id": str(ready["goal"].id), "goal": ready["goal"].name} if ready["goal"] else {})})
     return row
 
 
@@ -152,6 +230,38 @@ async def end(session: AsyncSession, firm: Firm, sip_id: uuid.UUID, *, by: str, 
     return row
 
 
+async def prepare_link(session: AsyncSession, firm: Firm, sip_id: uuid.UUID, *, goal_id) -> dict:
+    """Which goal a SIP saves towards, checked. `goal_id` empty or "none" takes the link off."""
+    row = await session.get(Sip, sip_id)
+    if row is None or row.firm_id != firm.id:
+        raise SipError("No such SIP at this firm.")
+    if row.ended_on:
+        raise SipError(f"This SIP ended on {row.ended_on.isoformat()}: nothing more is saved under it.")
+    account = await session.get(Account, row.account_id)
+    wanted = None if str(goal_id or "").strip().lower() in ("", "none") else goal_id
+    goal = await _goal(session, firm, account, wanted)
+    if (goal.id if goal else None) == row.goal_id:
+        raise SipError(f"This SIP already saves towards {goal.name}." if goal else "This SIP is not recorded against any goal.")
+    before = await session.get(Goal, row.goal_id) if row.goal_id else None
+    return {"sip": row, "account": account, "instrument": await session.get(Instrument, row.instrument_id), "goal": goal, "before": before}
+
+
+async def link_goal(session: AsyncSession, firm: Firm, sip_id: uuid.UUID, *, goal_id, by: str) -> Sip:
+    """Record which goal a SIP saves towards. It changes nothing on the registration."""
+    ready = await prepare_link(session, firm, sip_id, goal_id=goal_id)
+    row = ready["sip"]
+    row.goal_id = ready["goal"].id if ready["goal"] else None
+    await ledger.append_entry(session, firm_id=firm.id, event_type="sip_goal_linked", actor=by, content={
+        "sip_id": str(row.id), "goal_id": str(row.goal_id) if row.goal_id else None,
+        "goal": ready["goal"].name if ready["goal"] else None, "before": ready["before"].name if ready["before"] else None})
+    return row
+
+
+def amount_due(row: Sip, today: date) -> float:
+    """The next instalment under the registration: this month's where it is still to be tried, else the next one's."""
+    return sip_step_up.amount_on(sip_step_up.terms(row), next_instalment(row.day_of_month, row.starts_on, today, row.last_month))
+
+
 def _active(row: Sip, today: date) -> bool:
     return row.ended_on is None and row.starts_on <= today and (row.ends_on is None or today <= row.ends_on)
 
@@ -169,7 +279,12 @@ async def run_due(session: AsyncSession, firm: Firm, today: date | None = None) 
         if not _active(row, today) or today.day < row.day_of_month or row.last_month == month:
             continue
         row.last_month = month
-        entry = {"month": month, "on": today.isoformat(), "amount": float(row.amount)}
+        # This month's instalment as registered: the amount, raised only by the step-up on the registration (B-394).
+        terms = sip_step_up.terms(row)
+        due = sip_step_up.amount_on(terms, today)
+        entry = {"month": month, "on": today.isoformat(), "amount": due}
+        if sip_step_up.steps_by(terms, today):
+            entry["step_ups"] = sip_step_up.steps_by(terms, today)
         account = await session.get(Account, row.account_id)
         inst = await session.get(Instrument, row.instrument_id)
         try:
@@ -179,17 +294,17 @@ async def run_due(session: AsyncSession, firm: Firm, today: date | None = None) 
             # is a warning on the SIP and not a no, because SIPs recorded before mandates were a record went ahead.
             behind = await sip_mandates.for_sip(session, row, today) if sip_mandates.applies(firm) else None
             if behind and behind["row"] is not None:
-                unfit = sip_mandates.reason_unfit(behind["row"], float(row.amount), today)
+                unfit = sip_mandates.reason_unfit(behind["row"], due, today)
                 if unfit:
                     raise SipError(unfit)
             elif behind:
                 entry["warning"] = "mandate not on file"
             spendable = float(account.cash_balance or 0) - (await cash_movement.held_back(session, firm, mandate))["total"]
-            if spendable < float(row.amount):
+            if spendable < due:
                 raise SipError(f"short of cash: {markets.money_for(firm)(max(spendable, 0))} free for a "
-                               f"{markets.money_for(firm)(float(row.amount))} instalment")
+                               f"{markets.money_for(firm)(due)} instalment")
             result = await execution.execute_order_set(session, firm=firm, mandate_id=mandate.id, actor="sip", order_set=[{
-                "account_id": str(account.id), "instrument_id": str(inst.id), "side": "buy", "amount": float(row.amount),
+                "account_id": str(account.id), "instrument_id": str(inst.id), "side": "buy", "amount": due,
                 "symbol": inst.symbol, "asset_class": inst.asset_class, "custodian": account.custodian,
                 "reason": f"SIP instalment, {month}"}])
             settled = result["settled"][0] if result["settled"] else None
@@ -210,14 +325,24 @@ async def run_due(session: AsyncSession, firm: Firm, today: date | None = None) 
     return out
 
 
-def _row(row: Sip, inst: Instrument | None, account: Account | None, firm: Firm, today: date) -> dict:
+def _row(row: Sip, inst: Instrument | None, account: Account | None, firm: Firm, today: date, goal: Goal | None = None) -> dict:
     tags = (inst.values_tags or {}) if inst else {}
     last = (row.history or [])[-1] if row.history else None
     active = _active(row, today) or (row.ended_on is None and row.starts_on > today)
+    terms = sip_step_up.terms(row)
+    due = amount_due(row, today) if active else float(row.amount)
+    stepped = None
+    if row.step_up_percent is not None:
+        upcoming = sip_step_up.next_step(terms, next_instalment(row.day_of_month, row.starts_on, today, row.last_month)) if active else None
+        stepped = {"percent": terms["step_up_percent"], "every_months": terms["step_up_every_months"], "cap": terms["step_up_cap"],
+                   "label": sip_step_up.label(terms, markets.money_for(firm)), "next": upcoming}
     return {
         "id": str(row.id), "fund": inst.name if inst else None, "symbol": inst.symbol if inst else None,
         "plan": tags.get("fund_plan"), "scheme": tags.get("scheme"), "account": account.name if account else None,
-        "amount": float(row.amount), "currency": firm.base_currency, "day_of_month": row.day_of_month,
+        # `amount` is the next instalment under the registration; `registered_amount` the first, before any step-up.
+        "amount": due, "registered_amount": float(row.amount), "step_up": stepped,
+        "goal_id": str(row.goal_id) if row.goal_id else None, "goal": goal.name if goal else None,
+        "currency": firm.base_currency, "day_of_month": row.day_of_month,
         "starts_on": row.starts_on.isoformat(), "ends_on": row.ends_on.isoformat() if row.ends_on else None,
         "status": "active" if active else "ended", "ended_on": row.ended_on.isoformat() if row.ended_on else None,
         "end_reason": row.end_reason, "simulated": row.simulated, "evidence_ref": row.evidence_ref,
@@ -240,7 +365,8 @@ async def for_firm(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
         stmt = stmt.where(Sip.account_id.in_(ids)) if ids else stmt.where(Sip.id.is_(None))
     rows = (await session.execute(stmt.order_by(Sip.starts_on))).scalars().all()
     today = firm_time.today(firm)
-    out = [_row(r, await session.get(Instrument, r.instrument_id), await session.get(Account, r.account_id), firm, today)
+    out = [_row(r, await session.get(Instrument, r.instrument_id), await session.get(Account, r.account_id), firm, today,
+                await session.get(Goal, r.goal_id) if r.goal_id else None)
            for r in rows]
     if sip_mandates.applies(firm):
         for view, r in zip(out, rows):

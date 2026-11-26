@@ -97,6 +97,15 @@ async def household_brain(
         await session.execute(select(Goal).where(Goal.household_id == household_id))
     ).scalars().all()
 
+    from app.aurea_core import sip_step_up
+    from app.models.sip import Sip
+
+    sips_by_goal: dict = defaultdict(list)
+    if goals:
+        for row in (await session.execute(select(Sip).where(Sip.firm_id == firm_id, Sip.ended_on.is_(None),
+                                                            Sip.goal_id.in_([g.id for g in goals])).order_by(Sip.starts_on))).scalars().all():
+            sips_by_goal[row.goal_id].append({k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in sip_step_up.terms(row).items()})
+
     edges = (
         await session.execute(
             select(RelationshipEdge).where(RelationshipEdge.firm_id == firm_id)
@@ -187,7 +196,9 @@ async def household_brain(
         "goals": [
             {"id": str(g.id), "name": g.name, "kind": g.kind,
              "target_amount": float(g.target_amount), "target_date": g.target_date.isoformat() if g.target_date else None,
-             "assumptions": g.assumptions, "priority": g.priority}
+             "assumptions": g.assumptions, "priority": g.priority,
+             # The SIP registrations recorded against it (B-394), only where there are any.
+             **({"sips": sips_by_goal[g.id]} if g.id in sips_by_goal else {})}
             for g in goals
         ],
         "relationships": related_edges,
