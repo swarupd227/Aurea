@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CheckSquare, Square, UserPlus, X } from "lucide-react";
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
-import { api } from "@/lib/api";
+import { api, getUser } from "@/lib/api";
 import { titleCase } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
@@ -16,6 +16,8 @@ const warn = "chip bg-warn-bg text-warn";
  * conversation's tool behind its Confirm card; on a page the controls act directly. */
 export function TasksView() {
   const nav = useViewNav();
+  // Compliance reads tasks and finishes them; giving one to somebody is not a tool it holds.
+  const mayAssign = getUser()?.role !== "compliance";
   const [status, setStatus] = useState("open");
   const [mine, setMine] = useState(false);
   const { data, loading, error, refetch } = useApi<any[]>(
@@ -104,7 +106,7 @@ export function TasksView() {
                   {t.assigned_to_name && <span className={chip}>{t.assigned_to_name}</span>}
                 </div>
               </div>
-              {t.status === "open" && (
+              {t.status === "open" && mayAssign && (
                 assigning === t.id ? (
                   <div className="flex shrink-0 items-center gap-1">
                     <select className="input h-7 py-0.5 text-xs" aria-label={`Assign "${t.title}"`} data-testid="task-assign-select"

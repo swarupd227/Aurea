@@ -54,7 +54,7 @@ export const VIEWS: View[] = [
   // Decide
   { href: "/studio", label: "Cockpit", icon: LayoutDashboard, roles: [A, P, PT, B], intent: "decide", keywords: ["home", "feed", "delegate"] },
   { href: "/studio/review", label: "Recommendations", icon: ClipboardCheck, roles: [A, PT, C], intent: "decide", keywords: ["approve", "proposals", "review", "decisions"] },
-  { href: "/studio/tasks", label: "Tasks", icon: CheckSquare, roles: [A, P], intent: "decide", keywords: ["to do", "todo"] },
+  { href: "/studio/tasks", label: "Tasks", icon: CheckSquare, roles: [A, P, C], intent: "decide", keywords: ["to do", "todo"] },
 
   // Clients & advice
   { href: "/studio/clients", label: "Clients", icon: Users, roles: [A, P, PT, R, O, B], intent: "clients", keywords: ["households", "families"] },

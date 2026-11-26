@@ -4182,7 +4182,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("limit", "number", "Max tasks to return (default 20, at most 50)", required=False),
         ],
         output=ToolOutput("object", "Tasks with due dates and assignees, and how many are overdue or unassigned"),
-        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.ADMIN},
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.ADMIN},
     ),
 
     "complete_task": Tool(
@@ -4194,7 +4194,7 @@ TOOLS: dict[str, Tool] = {
         confirmation="Mark this task as done?",
         inputs=[ToolInput("task_id", "uuid", "The task, from read_tasks", required=True)],
         output=ToolOutput("object", "The task as it now stands"),
-        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE},
     ),
 
     "assign_task": Tool(
@@ -5770,7 +5770,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "onboarding_case": ("/studio/onboarding", "Onboarding case", {_O, _C, _A}),
     "meetings": ("/studio/meetings", "Meetings", {_A, _P}),
     "meeting": ("/studio/meetings", "Meeting", {_A, _P}),
-    "tasks": ("/studio/tasks", "Tasks", {_A, _P}),
+    "tasks": ("/studio/tasks", "Tasks", {_A, _P, _C}),
     "reports": ("/studio/reports", "Reports", {_A, _P, _R}),
     "report": ("/studio/reports", "Report", {_A, _P, _R}),
     "messages": ("/studio/messages", "Messages", {_A, _P}),

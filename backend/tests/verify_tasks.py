@@ -29,7 +29,7 @@ import app.models  # noqa: F401  — registers every table on Base.metadata
 from app.api import engage
 from app.aurea_core import firm_time
 from app.core.db import Base
-from app.core.tools import TOOLS, ToolChangeState, tools_for_role
+from app.core.tools import OPEN_VIEWS, TOOLS, ToolChangeState, tools_for_role
 from app.llm import gateway as gw_mod
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.llm.gateway import Gateway
@@ -73,8 +73,14 @@ def gating() -> None:
     for key in ("complete_task", "assign_task", "create_task"):
         tool = TOOLS[key]
         check(f"{key} pauses for confirmation", tool.change_state, ToolChangeState.PAUSE_FOR_CONFIRMATION)
-        check(f"{key} is an adviser's and paraplanner's", tool.roles_required, {R.ADVISER, R.PARAPLANNER})
         check(f"an administrator holds no {key}", key in tools_for_role(R.ADMIN), False)
+    check("complete_task is an adviser's, paraplanner's and compliance's", TOOLS["complete_task"].roles_required,
+          {R.ADVISER, R.PARAPLANNER, R.COMPLIANCE})
+    for key in ("assign_task", "create_task"):
+        check(f"{key} is an adviser's and paraplanner's", TOOLS[key].roles_required, {R.ADVISER, R.PARAPLANNER})
+        check(f"compliance holds no {key}", key in tools_for_role(R.COMPLIANCE), False)
+    check("compliance reads the tasks it is given", "read_tasks" in tools_for_role(R.COMPLIANCE), True)
+    check("and has the Tasks view beside the conversation", R.COMPLIANCE in OPEN_VIEWS["tasks"][2], True)
     for key in ("read_tasks", "complete_task", "assign_task", "create_task"):
         check(f"a client holds no {key}", key in tools_for_role(R.CLIENT), False)
 
@@ -444,6 +450,24 @@ async def behaviour() -> None:
             await refused("a due date already gone", ex(grace).preview_change(
                 "refer_proposal", {**refer, "recommendation_id": str(second.id), "due_date": (today - timedelta(days=1)).isoformat()}), "already passed")
             check("only the one referral was added", await count(*referrals), 1)
+
+            print("\n=== compliance works its own tasks ===")
+            filing = task(mine, "File the monthly report", due_date=today - timedelta(days=2), source="india_reminders", assigned_to=grace.id)
+            await s.commit()
+            own = await ex(grace).execute("read_tasks", {"assigned_to_me": True})
+            check("compliance reads the task it was given", [(t["title"], t["overdue"]) for t in own["tasks"]], [("File the monthly report", True)])
+            t7 = Thread(firm_id=mine.id, kind=ThreadKind.ASK_ASTRA, created_by_user_id=grace.id, title="t7")
+            s.add(t7)
+            await s.commit()
+            gw_mod.llm_service.stream = script(tool_round("complete_task", {"task_id": str(filing.id)}), say("Done."))
+            events = [e async for e in Gateway(s, grace.id, grace.role, grace.firm_id).send_message(t7.id, "please")]
+            ev = next((e for e in events if e["type"] == "pending_action"), None)
+            check("finishing it pauses for a Confirm", (ev is not None, str(filing.status)), (True, "open"))
+            gw_mod.llm_service.stream = script(say("Done."))
+            await Gateway(s, grace.id, grace.role, grace.firm_id).confirm_pending_action((await pending_of(t7)).id, True)
+            await s.refresh(filing)
+            check("confirming completes it", str(filing.status), "done")
+            await refused("another firm's task stays out of reach", ex(grace).preview_change("complete_task", {"task_id": str(theirs_task.id)}), "not found")
 
             print("\n=== today is the firm's ===")
             # 8pm UTC on a Friday is already Saturday morning in Auckland.
