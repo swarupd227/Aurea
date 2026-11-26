@@ -110,6 +110,9 @@ async def main() -> None:
         from seed import india_batch_c
 
         batch_c = await india_batch_c.add(s, firm)
+        from seed import india_rem_e
+
+        rem_e = await india_rem_e.add(s, firm)
         await s.commit()
         from app.conduit.service import sync_market_data
         priced = await sync_market_data(s, firm.id)
@@ -117,7 +120,7 @@ async def main() -> None:
         await run_agent(s, firm=firm, agent_key=AgentKey.TAX_INTELLIGENCE, trigger="seed_scan",
                         subject=Subject("firm", firm.id, firm.name), require_human=True)
         await s.commit()
-    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11, {row12} row 12, {row13} row 13, {row14} row 14, {polish} polish, {l100a} L100, {batch_a} batch A, {batch_c} batch C and {batch_b} language and WhatsApp record(s), priced {priced['resolved']} instrument(s) "
+    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11, {row12} row 12, {row13} row 13, {row14} row 14, {polish} polish, {l100a} L100, {batch_a} batch A, {batch_c} batch C, {rem_e} batch E and {batch_b} language and WhatsApp record(s), priced {priced['resolved']} instrument(s) "
           f"({len(priced['failed'])} failed), and refreshed the tax positions.\n")
 
 

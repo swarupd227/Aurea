@@ -62,6 +62,26 @@ class ReportError(Exception):
     """A report that cannot be reached or changed, in words a person can act on."""
 
 
+def client_text(report: ClientReport) -> str:
+    """The words of a report as a client reads them: its title, then each section's heading and body. This is the text an advertisement approval is
+    submitted for and cited against (B-332), so it is built one way only."""
+    parts = [report.title or ""]
+    for sec in report.sections or []:
+        if isinstance(sec, dict):
+            parts.append(f"{sec.get('heading') or ''}\n{sec.get('body') or ''}".strip())
+    return "\n\n".join(p for p in parts if p).strip()
+
+
+async def promotion_refusal(session: AsyncSession, firm, report: ClientReport) -> str | None:
+    """Why a report may not reach a client yet: in an Indian firm a promotional report (marked so on it, or read so by the advertising check) cites an
+    advertisement approval whose approved wording is its text. None for a plain report, for a firm outside India, and when the approval stands."""
+    from app.aurea_core import ad_approval
+
+    data = report.data or {}
+    result = await ad_approval.gate(session, firm, client_text(report), promotional=data.get("promotional"), approval_id=data.get("ad_approval_id"), strict=False)
+    return result["refusal"]
+
+
 async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, status: str = "all",
                    household_id: uuid.UUID | None = None) -> list[ClientReport]:
     """Newest first."""

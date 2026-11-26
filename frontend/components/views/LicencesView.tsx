@@ -22,6 +22,7 @@ import { AccreditedRows, FeeTermRows, RateCardChips, RateCardRows, TicketGateFle
 import { ChannelChips, ChannelRows, StackChips, StackRows, TemplateRows } from "@/app/workspace/components/artifacts/IndiaChannelsCard";
 import { LrsRows, MandateRows, PledgeRows, SavingsRows } from "@/app/workspace/components/artifacts/IndiaBatchACard";
 import { AdApprovalRows, CertificationRows, MfOrderRows, SeparationRows } from "@/app/workspace/components/artifacts/IndiaBatchCCard";
+import { MfFigureRows } from "@/app/workspace/components/artifacts/IndiaRemECard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
 
@@ -536,6 +537,17 @@ export function LicencesView() {
             {data.mf_orders.not_assessed > 0 && <span className="chip text-warn">{data.mf_orders.not_assessed} not assessed</span>}
           </div>
           <div className="-mx-3"><MfOrderRows data={data.mf_orders} /></div>
+        </Card>
+      )}
+
+      {data.mf_orders?.applies && data.mf_orders.figure_set?.applies && (
+        <Card className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="tile-label mr-auto">Mutual fund cut-off figures</span>
+            <span className="chip text-ink-muted" title="Figures the firm recorded from a circular">{data.mf_orders.figure_set.recorded} recorded</span>
+            {data.mf_orders.figure_set.assumed > 0 && <span className="chip text-warn" title="The platform's default, from SEBI's circulars as understood and unreviewed">{data.mf_orders.figure_set.assumed} assumed</span>}
+          </div>
+          <div className="-mx-3"><MfFigureRows data={data.mf_orders.figure_set} /></div>
         </Card>
       )}
 

@@ -47,6 +47,7 @@ INDIA_READ_TOOLS = {
     "read_distribution_separation": {}, "read_adviser_certifications": {}, "read_ad_approvals": {}, "read_billing": {},
     "read_ticket_gates": {"household": "The Iyer Family"}, "read_tax_habits": {"household": "The Sharma Family"},
     "check_advertising": {"text": "Investments in the securities market are subject to market risks."},
+    "read_mf_figures": {}, "read_agreement_contents": {"household": "The Sharma Family"},
 }
 # Tools only compliance, a branch leader, operations or the administrator hold (the registers are theirs).
 OVERSIGHT_ONLY = ("read_complaints", "read_governance", "read_rate_card", "read_compliance_calendar")
@@ -650,13 +651,38 @@ async def g_batch_c(P: Proof):
         P.ok("A differing NAV day is reported with a likely cause, never repaired", "operations", bool(d) and d["gap_days"] == 3 and bool(d["likely_cause"]), d and d["gap_days"])
     async with P.section("Advice kept apart from distribution", "compliance"):
         r = await P.tool("compliance", "read_distribution_separation")
-        P.ok("Two group entities and one flag for compliance", "compliance", (len(r["entities"]), len(r["check"]["flags"])) == (2, 1), (len(r["entities"]), len(r["check"]["flags"])))
+        P.ok("Three group entities and one flag for compliance", "compliance", (len(r["entities"]), len(r["check"]["flags"])) == (3, 1), (len(r["entities"]), len(r["check"]["flags"])))
+        seen = sorted(e["determination"] for e in r["entities"] if e["holds_arn"])
+        P.ok("The flagged entity awaits counsel; the associate counsel determined outside the family is not flagged", "compliance",
+             [f["determination"] for f in r["check"]["flags"]] == ["awaiting_counsel"] and seen == ["awaiting_counsel", "outside"], seen)
         cmp_ = r["comparison"]
         P.ok("Beside a comparison of direct and regular expense ratios; a scheme with no ratio on file is not assessed, never guessed", "compliance",
              "holdings" in cmp_ and "not_assessed" in cmp_, f"{len(cmp_['holdings'])} holding(s), {cmp_['not_assessed']} not assessed")
     async with P.section("Advertisement pre-approval", "compliance"):
         r = await P.tool("compliance", "read_ad_approvals")
         P.ok("Three marketing pieces: one approved, one rejected, one waiting", "compliance", (r["approved"], r["rejected"], r["pending"]) == (1, 1, 1), (r["approved"], r["rejected"], r["pending"]))
+
+
+@group
+async def g_batch_e(P: Proof):
+    from app.aurea_core import client_channel_request, pre_advice
+
+    async with P.section("What each advisory agreement carried", "adviser"):
+        gated = await pre_advice.for_firm(P.session, P.firm)
+        got = {g["household"]: next(c["state"] for c in g["checks"] if c["key"] == "agreement") for g in gated}
+        P.ok("Every gated household's agreement passes: Annexure A and the MITC are recorded (needs seed.india_demo_backfill)", "adviser",
+             bool(got) and set(got.values()) == {"pass"}, got)
+        r = await P.tool("adviser", "read_agreement_contents", P.inputs_for("read_agreement_contents"))
+        P.ok("The Sharmas' agreement is recorded as carrying both", "adviser", r["annexure_a"] is True and r["mitc"] is True, (r["annexure_a"], r["mitc"], r["source"]))
+    async with P.section("Mutual fund cut-off figures", "operations"):
+        r = await P.tool("operations", "read_mf_figures")
+        P.ok("A figure the firm recorded reads recorded and the others read assumed", "operations",
+             len(r["figures"]) == 4 and r["recorded"] >= 1 and all(f["state_label"] == "assumed" or f["state_label"].startswith("recorded: ") for f in r["figures"]),
+             (r["recorded"], r["assumed"]))
+    async with P.section("A client's own language and WhatsApp requests (the page's read)", "client"):
+        v = await client_channel_request.view(P.session, P.firm, P.houses["The Sharma Family"].id)
+        P.ok("The client's page reads what is recorded for them, and offers the languages to ask for", "client",
+             v["applies"] and v["language"] == "hi" and len(v["languages"]) == 8, (v["language"], v["whatsapp_on_file"]))
 
 
 # -- the conversation as every role, and the client ------------------------------------------------------------------------

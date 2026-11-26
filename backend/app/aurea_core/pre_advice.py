@@ -123,18 +123,24 @@ async def status(session: AsyncSession, firm, household_id: uuid.UUID) -> dict:
         return f"delivered {firm_time.today(firm, d.delivered_at).isoformat()} by {d.method}" if d else None
 
     checks = []
-    # 1. The agreement, with Annexure A and the MITC.
+    # 1. The agreement, with Annexure A and the MITC: a signature is not enough, the contents are what a person recorded (B-324).
+    from app.aurea_core import agreement_contents
+
     signed_case = next((c for c in cases if c.agreement_status == "signed" and c.agreement_signed_at), None)
     agreement = _given(stands, "advisory_agreement")
-    if agreement:
-        checks.append(_check("agreement", "Agreement signed, with the MITC", PASS, _evidence(agreement), "para 1(ii)(g)"))
-    elif signed_case and delivered.get("in_mitc"):
-        checks.append(_check("agreement", "Agreement signed, with the MITC", PASS,
-                             f"signed {firm_time.today(firm, signed_case.agreement_signed_at).isoformat()}; MITC {delivery('in_mitc')}", "para 1(ii)(g)"))
-    elif signed_case:
-        checks.append(_check("agreement", "Agreement signed, with the MITC", FAIL, "signed, but no MITC delivery on file", "para 1(ii)(g)"))
+    label = "Agreement signed, with Annexure A and the MITC"
+    contents = await agreement_contents.standing(session, firm.id, household_id)
+    gaps = agreement_contents.not_recorded(contents, mitc_elsewhere=bool(delivered.get("in_mitc")))
+    if agreement or signed_case:
+        signed_text = _evidence(agreement) if agreement else f"signed {firm_time.today(firm, signed_case.agreement_signed_at).isoformat()}"
+        if gaps:
+            checks.append(_check("agreement", label, FAIL, f"{signed_text}; {agreement_contents.incomplete_text(gaps)}", "para 1(ii)(g)"))
+        else:
+            seen = (f"Annexure A and the MITC recorded ({contents.source}: {contents.source_document})" if contents and contents.mitc
+                    else f"Annexure A recorded ({contents.source_document}); MITC {delivery('in_mitc')}")
+            checks.append(_check("agreement", label, PASS, f"{signed_text}; {seen}", "para 1(ii)(g)"))
     else:
-        checks.append(_check("agreement", "Agreement signed, with the MITC", FAIL, "no signed agreement on file", "para 1(ii)(g)"))
+        checks.append(_check("agreement", label, FAIL, "no signed agreement on file", "para 1(ii)(g)"))
     # 2 and 3. Disclosures the client receives.
     for key, kind, doc, label, source in (("ai_disclosure", "ai_use_disclosure", "in_ai_use_disclosure", "AI use disclosed", "Reg 18(9)"),
                                           ("investor_charter", "investor_charter", "in_investor_charter", "Investor charter given", "investor charter")):
@@ -193,7 +199,13 @@ async def status(session: AsyncSession, firm, household_id: uuid.UUID) -> dict:
             ", ".join(m["name"] for m in f["members"]) for f in family["families"])
             + (f" (outside this household: {', '.join(apart)})" if apart else ""), "para 1(iii)"))
 
-    missing = [c["label"] for c in checks if c["state"] == FAIL]
+    def _named(c: dict) -> str:
+        # An agreement with a part not recorded says which: "agreement incomplete: Annexure A / MITC not recorded" (B-324).
+        if c["key"] == "agreement" and "agreement incomplete:" in c["detail"]:
+            return f"{c['label']} ({c['detail'][c['detail'].index('agreement incomplete:'):]})"
+        return c["label"]
+
+    missing = [_named(c) for c in checks if c["state"] == FAIL]
     return {**base, "applies": True, "met": not missing, "checks": checks, "missing": missing,
             "mandates": [{"id": str(m.id), "name": m.name} for m in mandates], "stands_in": None if recorded else STANDS_IN,
             "family": {"basis": family.get("basis"), "families": family.get("families", [])}}

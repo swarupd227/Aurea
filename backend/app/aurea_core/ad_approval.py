@@ -187,5 +187,87 @@ async def overview(session: AsyncSession, firm: Firm, *, focus: uuid.UUID | None
                      "text": s.body if (focus == s.id or d is None) else None})
     return {"applies": True, "as_of": today.isoformat(), "submissions": rows[:limit], "pending": sum(1 for r in rows if r["state"] == "pending"),
             "approved": sum(1 for r in rows if r["state"] == "approved"), "rejected": sum(1 for r in rows if r["state"] == "rejected"),
-            "rule": law_figures.cited([RULE_KEY], today)[0], "channels": CHANNELS,
+            "rule": law_figures.cited([RULE_KEY], today)[0], "channels": CHANNELS, "cited": await citations(session, firm, limit=10), "promotion_rule": PROMOTION_SAID,
             "said": "An approval is for exactly the wording submitted and carries its id; a changed text is a new submission. It does not say the firm is compliant."}
+
+
+# ── Client-facing texts that are promotional cite an approval (B-332) ─────────────────────────────────────────────────
+
+# The advertising findings that read as promotion rather than as an adviser's plain words: a superlative, a testimonial, pressure to act. A past-return
+# figure is not among them: a report of a client's own return is not promotion, and the check flags it for a person already.
+SUGGESTS_PROMOTION = ("superlative", "testimonial", "pressure")
+PROMOTION_SAID = ("A message, report or research item to a client of an Indian firm that is promotional carries an advertisement approval whose approved wording is the "
+                  "wording sent. A text is promotional when the person drafting it says so, or when the advertising check finds a superlative, a testimonial or "
+                  "pressure to act in it; the person's flag can raise a text to promotional and cannot lower one the check found. A plain message is unchanged. "
+                  "An approval does not say the firm is compliant.")
+
+
+def _truthy(value) -> bool:
+    return value if isinstance(value, bool) else str(value or "").strip().lower() in ("true", "yes", "1")
+
+
+def classify(firm: Firm | None, text: str | None, *, promotional=None) -> dict:
+    """Whether a client-facing text is promotional, and why. Pure: the person's flag, plus what `advertising.check` finds that suggests promotion."""
+    if firm is None or not advertising.applies(firm):
+        return {"applies": False, "promotional": False, "why": None, "labels": []}
+    found = [f for f in advertising.check(text, "message", today=firm_time.today(firm))["findings"] if f["rule"] in SUGGESTS_PROMOTION]
+    flagged = _truthy(promotional)
+    labels = sorted({f["label"] for f in found})
+    why = ("marked promotional by the person drafting it" if flagged else None)
+    if found:
+        why = (why + "; " if why else "") + "the advertising check reads it as promotional: " + ", ".join(labels)
+    return {"applies": True, "promotional": bool(flagged or found), "flagged": flagged, "why": why, "labels": labels}
+
+
+async def gate(session: AsyncSession, firm: Firm | None, text: str | None, *, promotional=None, approval_id=None, strict: bool = True) -> dict:
+    """What stands behind a client-facing text. A text that is not promotional needs nothing and is unchanged. A promotional one needs an approval id whose
+    approved text hash equals this text's: with none, or one that is missing, a rejection or for other wording, this raises `AdApprovalError` naming what
+    is wrong (`strict=False` returns the refusal in `refusal` instead). Reads and writes nothing."""
+    kind = classify(firm, text, promotional=promotional)
+    if not kind["applies"] or not kind["promotional"]:
+        return {**kind, "required": False, "ok": True, "approval": None, "refusal": None}
+    refusal = None
+    approval = None
+    if approval_id in (None, ""):
+        refusal = (f"This text is promotional ({kind['why']}), so it goes out only with an approved advertisement: submit it to compliance (submit_ad_copy), "
+                   "and cite the approval's id (ad_approval_id) once it is approved. No approval is cited.")
+    else:
+        approval = await verify_citation(session, firm, approval_id, text)
+        said = {"not_found": "No approval with that id is on file here.", "rejected": approval.get("said"),
+                "text_changed": "The text differs from the wording that was approved: a changed text needs a new submission.",
+                "not_applicable": "Advertisement approvals are kept for a firm that holds an Indian licence, so none can stand behind this text."}
+        if approval["state"] != "approved":
+            refusal = (f"This text is promotional ({kind['why']}), and the approval cited does not cover it: "
+                       f"{said.get(approval['state']) or approval.get('said') or approval['state']} Submit the exact wording to compliance, or reword the text.")
+    if refusal and strict:
+        raise AdApprovalError(refusal)
+    return {**kind, "required": True, "ok": refusal is None, "approval": approval, "refusal": refusal}
+
+
+def card_rows(result: dict) -> list[tuple[str, str]]:
+    """What a Confirm card shows of the gate: nothing for a plain text; for a promotional one, the approval standing behind these exact words."""
+    if not result.get("required"):
+        return []
+    a = result.get("approval") or {}
+    return [("Promotional", result.get("why") or "Yes"),
+            ("Advertisement approval", f"{a.get('title') or 'Approved piece'}: approved by {a.get('approved_by')} on {a.get('approved_on')}, id {a.get('approval_id')}; "
+                                       "the words are the approved wording")]
+
+
+async def cite(session: AsyncSession, firm: Firm, *, kind: str, item_id, household_id, approval_id, text: str, by: str) -> None:
+    """Keep what stood behind a promotional text that went out."""
+    from app.models.india_rem_e import AdCitation
+
+    session.add(AdCitation(created_at=utcnow(), firm_id=firm.id, item_kind=kind, item_id=item_id, household_id=household_id, approval_id=uuid.UUID(str(approval_id)),
+                           text_hash=text_hash(text), cited_by=by))
+    await session.flush()
+    await ledger.append_entry(session, firm_id=firm.id, event_type="ad_cited", actor=by, content={
+        "item_kind": kind, "item_id": str(item_id) if item_id else None, "approval_id": str(approval_id), "text_hash": text_hash(text)})
+
+
+async def citations(session: AsyncSession, firm: Firm, *, limit: int = 20) -> list[dict]:
+    from app.models.india_rem_e import AdCitation
+
+    rows = (await session.execute(select(AdCitation).where(AdCitation.firm_id == firm.id).order_by(AdCitation.created_at.desc()).limit(limit))).scalars().all()
+    return [{"item_kind": r.item_kind, "item_id": str(r.item_id) if r.item_id else None, "approval_id": str(r.approval_id), "text_hash": r.text_hash[:12],
+             "cited_by": r.cited_by, "on": firm_time.today(firm, r.created_at).isoformat()} for r in rows]

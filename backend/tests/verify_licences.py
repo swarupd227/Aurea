@@ -27,6 +27,7 @@ from app.atlas import runtime
 from app.atlas.base import Subject
 from app.aurea_core import consent, firm_time, licences, pre_advice, risk_profile
 from app.models.consent_registry import ConsentRecord
+from app.models.india_rem_e import AgreementContent
 from app.compliance.rules import CheckContext, client_consent
 from app.core.db import Base
 from app.llm.executors import ExecutorError, ToolExecutors
@@ -172,6 +173,8 @@ async def main() -> int:
                     for kind in ("advisory_agreement", "ai_use_disclosure", "investor_charter", "risk_profile"):
                         s.add(ConsentRecord(firm_id=f.id, household_id=h.id, kind=kind, status="granted", given_by=name,
                                             given_on=firm_time.today(f), method="e_signature", evidence="Signed pack", recorded_by="test"))
+                    # And what the signed agreement carried (B-324): a signature alone no longer satisfies the gate.
+                    s.add(AgreementContent(firm_id=f.id, household_id=h.id, annexure_a=True, mitc=True, source="person", source_document="Signed pack", recorded_by="test"))
                     await s.flush()
                 return m, a
 

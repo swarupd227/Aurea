@@ -29,6 +29,7 @@ from app.llm.india_gates_executors import IndiaGatesExecutors
 from app.llm.india_batch_b_executors import IndiaBatchBExecutors
 from app.llm.india_batch_a_executors import IndiaBatchAExecutors
 from app.llm.india_batch_c_executors import IndiaBatchCExecutors
+from app.llm.india_rem_e_executors import IndiaRemEExecutors
 from app.llm.india_governance_executors import IndiaGovernanceExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
 from app.models.enums import UserRole
@@ -67,7 +68,8 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 
 
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
-                    IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors):
+                    IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
+                    IndiaRemEExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -367,6 +369,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_batch_a_map(),
             # India, batch C (B-294, B-297, B-298): app/llm/india_batch_c_executors.py.
             **self._india_batch_c_map(),
+            # India, batch E (B-324, B-330, B-331, B-332): app/llm/india_rem_e_executors.py.
+            **self._india_rem_e_map(),
         }
 
         executor = executor_map.get(tool_key)
@@ -5186,18 +5190,33 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         except (whatsapp.WhatsappError, messages.MessageError) as exc:
             raise ExecutorError(str(exc))
 
+    async def _promotion_gate(self, inputs: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+        """B-332: a promotional message of an Indian firm cites an advertisement approval whose approved wording is the wording that goes. A plain message
+        passes unchanged. Shared by the Confirm card and the send, so the card shows what the send will check."""
+        from app.aurea_core import ad_approval
+
+        try:
+            return await ad_approval.gate(self.session, await self._firm(), plan["local"], promotional=inputs.get("promotional"),
+                                          approval_id=inputs.get("ad_approval_id"))
+        except ad_approval.AdApprovalError as exc:
+            raise ExecutorError(str(exc))
+
     async def send_client_message(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import messages
         from app.models.identity import User
 
-        from app.aurea_core import whatsapp
+        from app.aurea_core import ad_approval, whatsapp
 
         household, body = await self._client_message(inputs)
         plan = await self._message_plan(household, inputs, body)
+        promotion = await self._promotion_gate(inputs, plan)
         user = await self.session.get(User, self.user_id)
         sent = messages.from_firm(self.firm_id, household.id, plan["local"], author=user.full_name)
         self.session.add(sent)
         await self.session.flush()
+        if promotion["required"]:
+            await ad_approval.cite(self.session, await self._firm(), kind="message", item_id=sent.id, household_id=household.id,
+                                   approval_id=promotion["approval"]["approval_id"], text=plan["local"], by=user.email)
         delivery = None
         if plan["channel"] != "portal" or plan["translation_state"] != "english":
             try:
@@ -5404,13 +5423,14 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         if tool_key == "send_client_message":
             from app.models.identity import User
 
-            from app.aurea_core import whatsapp
+            from app.aurea_core import ad_approval, whatsapp
 
             household, body = await self._client_message(inputs)
             sender = await self.session.get(User, self.user_id)
             plan = await self._message_plan(household, inputs, body)
+            promotion = await self._promotion_gate(inputs, plan)
             return rows(("To", household.name), ("From", sender.full_name if sender else None),
-                        *whatsapp.card_rows(plan), *await self._advertising_rows(plan["local"]),
+                        *whatsapp.card_rows(plan), *ad_approval.card_rows(promotion), *await self._advertising_rows(plan["local"]),
                         *(await self._advertising_rows(plan["english"]) if plan["english"] != plan["local"] else []))
         if tool_key in ("record_client_review", "set_review_cadence", "book_client_review"):
             return rows(*await self._review_preview(tool_key, inputs))
@@ -5469,6 +5489,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         if tool_key in ("record_mf_order", "record_group_entity", "record_group_trail", "record_scheme_ter", "record_adviser_certification", "submit_ad_copy",
                         "decide_ad_copy"):
             return rows(*await self._india_batch_c_preview(tool_key, inputs))
+        if tool_key in ("record_mf_figure", "record_agreement_contents", "record_family_determination", "cite_report_ad_approval"):
+            return rows(*await self._india_rem_e_preview(tool_key, inputs))
         if tool_key in ("record_income_stream", "end_income_stream", "record_education_goal"):
             return rows(*await self._plan_preview(tool_key, inputs))
         if tool_key in ("record_equity_grant", "end_equity_grant", "record_concentration_plan"):

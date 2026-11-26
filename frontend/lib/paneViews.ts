@@ -509,6 +509,12 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_ad_approvals":
     case "submit_ad_copy":
     case "decide_ad_copy":
+    case "read_mf_figures":
+    case "record_mf_figure":
+    case "read_agreement_contents":
+    case "record_agreement_contents":
+    case "record_family_determination":
+    case "cite_report_ad_approval":
     case "read_ticket_gates":
     case "read_accredited_investors":
     case "record_accredited_investor":

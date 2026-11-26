@@ -20,6 +20,7 @@ from app.aurea_core import compliance_calendar, consent, licences, pre_advice
 from app.core.db import get_db
 from app.core.security import UserRole, require_roles
 from app.models.governance import Recommendation
+from app.models.graph import Household
 from app.models.identity import User
 from app.models.tenant import Firm
 
@@ -1257,6 +1258,88 @@ async def decide_ad(submission_id: uuid.UUID, body: AdDecideIn, user: User = Rea
     try:
         result = await ad_approval.decide(db, firm, user, submission_id=submission_id, **body.model_dump())
     except ad_approval.AdApprovalError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+# ── India, batch E: the mutual fund cut-off figures (B-330), counsel's family-of-entities determination (B-331), what an agreement carried (B-324) ──
+
+class MfFigureIn(BaseModel):
+    figure_key: str
+    value: str
+    source: str
+    as_of: date
+    reason: str
+
+
+class FamilyDeterminationIn(BaseModel):
+    entity: str
+    determination: str
+    counsel_name: str
+    determined_on: date
+    document: str
+
+
+class AgreementContentsIn(BaseModel):
+    household_id: uuid.UUID
+    annexure_a: bool
+    mitc: bool
+    document: str
+    reason: str | None = None
+
+
+@router.get("/mf-figures")
+async def mf_figures_view(user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import mf_figures
+
+    return {**await mf_figures.overview(db, firm), "can_record": user.role in mf_figures.RECORDERS}
+
+
+@router.post("/mf-figures")
+async def record_mf_figure(body: MfFigureIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_mf_figure behind its Confirm card is the same action."""
+    from app.aurea_core import mf_figures
+
+    try:
+        result = await mf_figures.record(db, firm, user.role, by=user.email, actor=user, **body.model_dump())
+    except mf_figures.FigureError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.post("/family-determinations")
+async def record_family_determination(body: FamilyDeterminationIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_family_determination behind its Confirm card is the same action."""
+    from app.aurea_core import distribution_separation as ds
+
+    try:
+        result = await ds.record_determination(db, firm, user.role, by=user.email, **body.model_dump())
+    except ds.SeparationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
+@router.get("/agreement-contents/{household_id}")
+async def agreement_contents_view(household_id: uuid.UUID, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    from app.aurea_core import agreement_contents
+
+    hh = await db.get(Household, household_id)
+    if hh is None or hh.firm_id != firm.id:
+        raise HTTPException(status_code=404, detail="Household not found")
+    return {**await agreement_contents.view(db, firm, household_id), "can_record": user.role in agreement_contents.RECORDERS}
+
+
+@router.post("/agreement-contents")
+async def record_agreement_contents(body: AgreementContentsIn, user: User = ReaderDep, firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)):
+    """The tool record_agreement_contents behind its Confirm card is the same action."""
+    from app.aurea_core import agreement_contents
+
+    try:
+        result = await agreement_contents.record(db, firm, user.role, by=user.email, **body.model_dump())
+    except agreement_contents.AgreementContentError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     return result

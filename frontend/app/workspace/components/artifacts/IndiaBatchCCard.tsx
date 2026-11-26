@@ -10,6 +10,7 @@ const NAV_TONE: Record<string, string> = { matches: "text-ok", differs: "text-cr
 const NAV_TEXT: Record<string, string> = { matches: "NAV day matches", differs: "NAV day differs", not_assessed: "Not assessed" };
 const CERT_TONE: Record<string, string> = { valid: "text-ok", due_soon: "text-warn", expired: "text-crit", not_on_file: "text-warn", not_required: "text-ink-muted" };
 const AD_TONE: Record<string, string> = { approved: "text-ok", rejected: "text-crit", pending: "text-warn" };
+const DETERMINATION_TONE: Record<string, string> = { within: "text-crit", outside: "text-ink-muted", awaiting_counsel: "text-warn" };
 
 /** Each recorded mutual fund order: the order date and the NAV date apart, the rail and the registrar, and what the cut-off rule gives. */
 export function MfOrderRows({ data }: { data: any }) {
@@ -50,6 +51,10 @@ export function SeparationRows({ data }: { data: any }) {
           <span className="mr-auto text-sm text-ink">{e.name}</span>
           <span className="chip text-ink-muted">{e.relationship_label}</span>
           <span className={`chip ${e.holds_arn ? "text-warn" : "text-ink-muted"}`} title={e.arn ?? undefined}>{e.holds_arn ? "Holds an ARN" : "No ARN"}</span>
+          <span className={`chip ${DETERMINATION_TONE[e.determination] ?? "text-warn"}`} data-testid="entity-determination"
+                title={e.counsel ? `${e.counsel}, ${e.determined_on}. ${e.determination_document ?? ""}` : "Counsel has not determined whether this company is within the family of entities"}>
+            {e.determination_label ?? "Awaiting counsel"}
+          </span>
         </div>
       ))}
       {check && check.state === "not_assessed" && <div className="px-3 py-1.5"><span className="chip text-warn" title={check.said}>Not assessed: no group entity on file</span></div>}
@@ -58,7 +63,15 @@ export function SeparationRows({ data }: { data: any }) {
           <span className="mr-auto text-sm text-ink">{f.household} · {f.entity}</span>
           <span className="chip tabular-nums text-ink-muted" title="The statement compliance recorded">Statement {f.statement_on}</span>
           {f.amount != null && <span className="chip tabular-nums text-ink-muted">{money(f.amount, "INR")}</span>}
+          {f.determination_label && <span className={`chip ${DETERMINATION_TONE[f.determination] ?? "text-warn"}`} data-testid="flag-determination"
+                                              title={f.counsel ? `${f.counsel}, ${f.determined_on}` : "Counsel has not determined whether this company is within the family of entities"}>{f.determination_label}</span>}
           <span className="chip text-warn">Flag for compliance</span>
+        </div>
+      ))}
+      {(check?.determined_outside ?? []).map((f: any) => (
+        <div key={`${f.household_id}-${f.entity}-o`} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5" data-testid="separation-outside" title={f.said}>
+          <span className="mr-auto text-sm text-ink-soft">{f.household} · {f.entity}</span>
+          <span className="chip text-ink-muted" title={`${f.counsel}, ${f.determined_on}`}>Outside the family of entities</span>
         </div>
       ))}
       {(check?.facts_needed ?? []).map((f: any) => (
@@ -118,6 +131,13 @@ export function AdApprovalRows({ data }: { data: any }) {
           <span className="chip tabular-nums text-ink-muted" title="The first twelve characters of the SHA-256 of the text as submitted">{a.text_hash}</span>
           {a.approval_id && <span className="chip tabular-nums text-ink-muted" title={a.approval_id}>Approval {a.approval_id.slice(0, 8)}</span>}
           <span className={`chip ${AD_TONE[a.state]}`} data-testid="ad-approval-state">{a.state_label}</span>
+        </div>
+      ))}
+      {(data.cited ?? []).map((c: any) => (
+        <div key={`${c.item_id}-${c.approval_id}`} className="flex flex-wrap items-center gap-1.5 px-3 py-1" data-testid="ad-citation" title={`By ${c.cited_by}, ${c.on}`}>
+          <span className="mr-auto text-xs text-ink-soft">Cited by a {c.item_kind}</span>
+          <span className="chip tabular-nums text-ink-muted" title={c.approval_id}>Approval {c.approval_id.slice(0, 8)}</span>
+          <span className="chip tabular-nums text-ink-muted" title="The first twelve characters of the SHA-256 of the text that went">{c.text_hash}</span>
         </div>
       ))}
     </div>

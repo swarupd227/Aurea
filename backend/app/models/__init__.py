@@ -92,3 +92,4 @@ from app.models import india_gates  # noqa: F401,E402
 from app.models import india_batch_b  # noqa: F401,E402
 from app.models import india_batch_a  # noqa: F401,E402
 from app.models import india_batch_c  # noqa: F401,E402
+from app.models import india_rem_e  # noqa: F401,E402

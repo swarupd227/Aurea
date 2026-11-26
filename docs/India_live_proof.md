@@ -87,7 +87,7 @@ consents; Waiting on clients. Cards, in order, each with what must be on screen:
 |---|---|
 | Compliance calendar (`licence-calendar`, `licence-officers`) | Complaint data (Annexure C) and the Portfolio Manager's monthly report with due days and the circular; a chip "from the register" on the complaints filing; officers not recorded (Designated Director, CISO). Compliance, branch, operations and admin see the filing form. |
 | Held by this firm (`licence-matrix`) | Investment Adviser and Portfolio Manager, discretionary, each "held" with what it allows. |
-| Before advice (`licence-pre-advice`) | Four adviser households. Sharma all green; D'Souza met, declaration "n/a"; **Banerjee fails "Risk profile complete and consented"**; **Menon fails "FATCA and CRS self-certification"** (the "No advice yet" household). |
+| Before advice (`licence-pre-advice`) | Four adviser households. Each agreement reads Annexure A and the MITC recorded (after `seed.india_demo_backfill`). Sharma all green; D'Souza met, declaration "n/a"; **Banerjee fails "Risk profile complete and consented"**; **Menon fails "FATCA and CRS self-certification"** (the "No advice yet" household). |
 | Fees against SEBI's cap (`licence-fee-caps`) | **D'Souza over the cap, fixed-fee mode, Rs 1,51,000**, shown blocked; Sharma within 2.5% in AUA mode (three arrangements, HUF included); Banerjee within. |
 | Residence | The Menons: two people, non-resident. |
 | Minors and their guardians (`licence-guardians`) | Ira: guardian on file (father); Kabir: no guardian; Tara: now an adult, conversion to be recorded. |
@@ -107,8 +107,9 @@ consents; Waiting on clients. Cards, in order, each with what must be on screen:
 | Overseas remittances | FY 2026-27: Karthik US$1,00,000 remitted, US$1,50,000 headroom of 2,50,000, TCS collected. |
 | SIP mandates | UMRN-DEMO-IYER-0001 in force, limit Rs 25,000; SIPs listed against mandates. |
 | Savings, pension and other classes | Banerjee government security and market-linked debenture, held away, in rupees. |
+| Mutual fund cut-off figures | One figure recorded (standard cut-off), three assumed. |
 | Mutual fund order rails and NAV days | Four orders with rail, RTA and folio; **one NAV day differs (3 days), one not assessed**. |
-| Advice kept apart from distribution | Two group entities, one flag for compliance, and the direct-against-regular expense ratio comparison (empty until a scheme ratio is recorded; a scheme with none reads not assessed). |
+| Advice kept apart from distribution | Three group entities (one determined outside the family of entities, one awaiting counsel), one flag for compliance, and the direct-against-regular expense ratio comparison (empty until a scheme ratio is recorded; a scheme with none reads not assessed). |
 | Advertisement approvals | One approved, one rejected, one waiting for compliance. |
 | Pledged units | 5,000 Nifty ETF units under lien of 20,000; 15,000 sellable. |
 | February rate card | One figure "awaiting the Budget"; the rest not reviewed. |
@@ -143,7 +144,8 @@ track, two on the Portfolio Manager track.
   tiers capped by the licence (no Tier 3).
 * **client@ (Rajesh Sharma).** `/workspace` and `/canvas`, no staff menu. Ask "what is my net worth" or "how are my goals":
   the answer is in rupees, for the Sharma household only, goals carrying a likelihood as an estimate. `/studio/licences`
-  is refused by the API (403); no India staff tool is offered to the conversation.
+  is refused by the API (403); no India staff tool is offered to the conversation. On `/canvas`, Requests shows the recorded language
+  (Hindi) and WhatsApp state with an ask for another language; pressing one writes a task for the adviser (a write: not in the harness).
 * **research@ (Dr. Meenakshi Sundaram).** `/studio/reports`. No Licences & SEBI page and no licence or pre-advice tool;
   Product shelf and the advertisement check are the India pages in reach.
 

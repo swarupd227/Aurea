@@ -43,6 +43,7 @@ import { IndiaGatesCard } from "./IndiaGatesCard";
 import { IndiaChannelsCard } from "./IndiaChannelsCard";
 import { IndiaBatchACard } from "./IndiaBatchACard";
 import { IndiaBatchCCard } from "./IndiaBatchCCard";
+import { IndiaRemECard } from "./IndiaRemECard";
 import { TaxPositionCard } from "./TaxPositionCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
@@ -539,6 +540,15 @@ export function artifactCard(artifact: Artifact) {
       case "decide_ad_copy":
         if (!Array.isArray(artifact.result?.orders) && !Array.isArray(artifact.result?.entities) && !Array.isArray(artifact.result?.submissions)
             && !Array.isArray(artifact.result?.people) && typeof artifact.result?.state !== "string" && artifact.result?.applies !== false) return null;
+        return <IndiaBatchCCard result={artifact.result as any} />;
+      case "read_mf_figures":
+      case "record_mf_figure":
+      case "read_agreement_contents":
+      case "record_agreement_contents":
+        if (!Array.isArray(artifact.result?.figures) && typeof artifact.result?.recorded !== "boolean" && artifact.result?.applies !== false) return null;
+        return <IndiaRemECard result={artifact.result as any} />;
+      case "record_family_determination":
+        if (!Array.isArray(artifact.result?.entities) && artifact.result?.applies !== false) return null;
         return <IndiaBatchCCard result={artifact.result as any} />;
       case "check_advertising":
         if (!Array.isArray(artifact.result?.findings) && artifact.result?.applies !== false) return null;

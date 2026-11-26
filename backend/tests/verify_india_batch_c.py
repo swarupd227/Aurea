@@ -163,7 +163,7 @@ async def main() -> int:
 
             print("\n=== B-297: the group, trail and the flag ===")
             sep = await ds.overview(s, firm)
-            check("two group entities, one with an ARN as stated", ([e["holds_arn"] for e in sep["entities"]].count(True), len(sep["entities"])), (1, 2))
+            check("three group entities (batch E adds an associate), two with an ARN as stated", ([e["holds_arn"] for e in sep["entities"]].count(True), len(sep["entities"])), (2, 3))
             chk = sep["check"]
             check("one advised household is flagged for compliance, as a flag", (len(chk["flags"]), chk["flags"][0]["state"], "not a finding" in chk["flags"][0]["said"]), (1, "flag", True))
             check("the flag names the household and the entity and says the rule is counsel's", (chk["flags"][0]["household"] is not None, "counsel" in chk["flags"][0]["said"]), (True, True))

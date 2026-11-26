@@ -36,6 +36,7 @@ from app.core.db import utcnow
 from app.core.security import UserRole
 from app.models.graph import Household, Mandate
 from app.models.india_batch_c import GroupEntity, GroupTrail, SchemeTer
+from app.models.india_rem_e import FamilyDetermination
 from app.models.portfolio import Holding, Instrument
 from app.models.tenant import Firm
 from app.provenance import ledger
@@ -137,6 +138,58 @@ async def record_entity(session: AsyncSession, firm: Firm, role, *, by: str, **t
     return await overview(session, firm)
 
 
+# ── Counsel's determination of the family of entities (B-331) ───────────────────────────────────────────────────────
+
+DETERMINATIONS = {"within": "Within the family of entities", "outside": "Outside the family of entities"}
+AWAITING = "Awaiting counsel"
+
+
+async def determinations(session: AsyncSession, firm_id: uuid.UUID) -> dict[str, FamilyDetermination]:
+    out: dict[str, FamilyDetermination] = {}
+    for r in (await session.execute(select(FamilyDetermination).where(FamilyDetermination.firm_id == firm_id)
+                                    .order_by(FamilyDetermination.determined_on, FamilyDetermination.created_at, FamilyDetermination.id))).scalars().all():
+        out[r.entity_name.lower()] = r
+    return out
+
+
+async def prepare_determination(session: AsyncSession, firm: Firm, role, *, entity: str | None = None, determination: str | None = None,
+                                counsel_name: str | None = None, determined_on=None, document: str | None = None) -> dict:
+    if not applies(firm):
+        raise SeparationError("Counsel's determination is recorded for an Indian firm.")
+    if role not in ENTITY_RECORDERS:
+        raise SeparationError("Compliance or a branch leader records counsel's determination, from counsel's document.")
+    ent = (await entities(session, firm.id)).get(_name(entity, "group entity").lower())
+    if ent is None:
+        raise SeparationError(f"{' '.join((entity or '').split())} is not on file as a group entity: record the group first.")
+    d = (determination or "").strip().lower()
+    if d not in DETERMINATIONS:
+        raise SeparationError("The determination is within or outside, as counsel states it.")
+    counsel = " ".join((counsel_name or "").split())
+    if len(counsel) < 3:
+        raise SeparationError("Name the counsel who made the determination.")
+    if len(counsel) > 200 or len((document or "").strip()) > 300:
+        raise SeparationError("Name counsel in 200 characters or fewer, and where the determination is filed in 300 or fewer.")
+    day = _day(determined_on, "determination's date", firm_time.today(firm))
+    before = (await determinations(session, firm.id)).get(ent.name.lower())
+    if before is not None and day < before.determined_on:
+        raise SeparationError(f"A determination of {before.determined_on.isoformat()} is already on file: a later one stands over an earlier one.")
+    if before is not None and before.determination == d and before.counsel_name == counsel and before.determined_on == day:
+        raise SeparationError("Nothing changes: this determination is already on file.")
+    return {"entity": ent, "determination": d, "counsel": counsel, "determined_on": day, "document": _doc(document, "counsel's determination"), "before": before}
+
+
+async def record_determination(session: AsyncSession, firm: Firm, role, *, by: str, **terms) -> dict:
+    p = await prepare_determination(session, firm, role, **terms)
+    row = FamilyDetermination(created_at=utcnow(), firm_id=firm.id, entity_name=p["entity"].name, determination=p["determination"], counsel_name=p["counsel"],
+                              determined_on=p["determined_on"], source_document=p["document"], recorded_by=by)
+    session.add(row)
+    await session.flush()
+    await ledger.append_entry(session, firm_id=firm.id, event_type="family_determination_recorded", actor=by, content={
+        "entity": row.entity_name, "determination": row.determination, "counsel": row.counsel_name, "determined_on": row.determined_on.isoformat(),
+        "document": row.source_document})
+    return await overview(session, firm)
+
+
 # ── Trail from a household ───────────────────────────────────────────────────────────────────────────────────────────
 
 async def _trail_rows(session: AsyncSession, firm_id: uuid.UUID, household_id: uuid.UUID | None = None) -> list[GroupTrail]:
@@ -229,7 +282,8 @@ async def check(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID | 
     advised = await _advised_households(session, firm)
     standing = _standing_trail(await _trail_rows(session, firm.id, household_id))
     names = {h.id: h.name for h in (await session.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all()}
-    flags, facts_needed = [], []
+    decided = await determinations(session, firm.id)
+    flags, facts_needed, outside = [], [], []
     for (hid, ent_key), t in standing.items():
         if t.kind != "earns" or hid not in advised:
             continue
@@ -238,8 +292,16 @@ async def check(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID | 
                 "amount": float(t.amount_inr) if t.amount_inr is not None else None, "document": t.source_document, "recorded_by": t.recorded_by}
         if ent is None:
             facts_needed.append({**base, "needs": "the entity is no longer on file as a group entity: record whether it is still in the group"})
+        elif ent.holds_arn and (decided.get(ent_key) is not None and decided[ent_key].determination == "outside"):
+            d = decided[ent_key]
+            outside.append({**base, "arn": ent.arn, "determination": "outside", "counsel": d.counsel_name, "determined_on": d.determined_on.isoformat(),
+                            "said": "Counsel determined this entity is outside the family of entities, so it is not flagged. The determination is counsel's and is on file."})
         elif ent.holds_arn:
+            d = decided.get(ent_key)
             flags.append({**base, "arn": ent.arn, "relationship": RELATIONSHIPS.get(ent.relationship_to_firm), "state": "flag",
+                          "determination": d.determination if d else "awaiting_counsel",
+                          "determination_label": DETERMINATIONS[d.determination] if d else AWAITING,
+                          "counsel": d.counsel_name if d else None, "determined_on": d.determined_on.isoformat() if d else None,
                           "said": "An advised household, and a group entity that holds an ARN earns trail from it on a statement compliance recorded. A flag for compliance to "
                                   "look at, not a finding: the rule, who counts as the family and what follows are for compliance and counsel."})
         else:
@@ -248,11 +310,14 @@ async def check(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID | 
         flags = [f for f in flags if f["household_id"] == str(household_id)]
     state = "not_assessed" if not group else "assessed"
     return {"applies": True, "as_of": today.isoformat(), "state": state, "flags": sorted(flags, key=lambda f: (f["household"] or "", f["entity"])),
-            "facts_needed": facts_needed, "advised_households": len(advised), "group_entities": len(group),
+            "facts_needed": facts_needed, "determined_outside": sorted(outside, key=lambda f: (f["household"] or "", f["entity"])),
+            "advised_households": len(advised), "group_entities": len(group),
             "rule": law_figures.cited([RULE_KEY], today)[0],
             "said": ("No group entity is on file, so this is not assessed, which does not mean the firm has none." if not group else
                      "Read from what compliance recorded. No trail on file does not mean none is earned."),
-            "out_of_scope": OUT_OF_SCOPE}
+            "out_of_scope": OUT_OF_SCOPE,
+            "family_of_entities": "Who counts as the family of entities is counsel's. An entity counsel determined within is flagged; one not yet determined is flagged "
+                                  "and shown as awaiting counsel; one determined outside is not flagged."}
 
 
 # ── Expense ratios and the comparison ────────────────────────────────────────────────────────────────────────────────
@@ -359,6 +424,15 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
     group = await entities(session, firm.id)
     return {"applies": True, "as_of": today.isoformat(),
             "entities": [{"name": e.name, "relationship": e.relationship_to_firm, "relationship_label": RELATIONSHIPS.get(e.relationship_to_firm), "holds_arn": e.holds_arn,
-                          "arn": e.arn, "document": e.source_document, "recorded_by": e.recorded_by} for e in group.values()],
+                          "arn": e.arn, "document": e.source_document, "recorded_by": e.recorded_by,
+                          **(await _determination_view(session, firm.id, e.name))} for e in group.values()],
             "check": await check(session, firm, household_id=household_id), "comparison": await comparison(session, firm, household_id=household_id),
             "out_of_scope": OUT_OF_SCOPE}
+
+
+async def _determination_view(session: AsyncSession, firm_id: uuid.UUID, name: str) -> dict:
+    d = (await determinations(session, firm_id)).get(name.lower())
+    if d is None:
+        return {"determination": "awaiting_counsel", "determination_label": AWAITING, "counsel": None, "determined_on": None, "determination_document": None}
+    return {"determination": d.determination, "determination_label": DETERMINATIONS[d.determination], "counsel": d.counsel_name,
+            "determined_on": d.determined_on.isoformat(), "determination_document": d.source_document}

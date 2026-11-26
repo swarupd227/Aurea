@@ -12,7 +12,9 @@ A pull or an envelope never changes a record by itself. A provider delivers an *
     that proves nothing the KYC record holds still records the mode and the day. Nothing else is read out of it.
   - **An eSigned agreement** arrives as an envelope: the document, the signer and the state the provider reports (sent, signed,
     declined). Confirming a signed one records the `advisory_agreement` consent with the method `e_signature` and the envelope as its
-    evidence (`consents.record`), which is the evidence the pre-advice gate reads. A sent or declined envelope cannot be recorded.
+    evidence (`consents.record`), which is the evidence the pre-advice gate reads. An envelope may also declare what its template included
+    (`includes`: annexure_a, mitc); confirming it records those flags (`agreement_contents.from_envelope`, B-324) and, where it declared nothing,
+    records nothing, so the agreement's contents stay "not recorded". A sent or declined envelope cannot be recorded.
 
 A full Aadhaar number is never stored or shown: a provider's reference that carries one is cut to its last four, masked, and a person's
 text carrying one is refused (`kyc_india.AADHAAR_NUMBER`). The KRA and CKYC lookup is not connected here: it needs a vendor (B-272), and
@@ -158,6 +160,15 @@ async def pull_digilocker(session: AsyncSession, firm: Firm, role, *, person_id,
     return {"added": added, **await overview(session, firm, household_id=household.id)}
 
 
+def _declared(env: dict) -> dict | None:
+    """What the template declared it included (`includes`: annexure_a, mitc), kept only as the provider returned it. None where it declared nothing, so
+    nothing is assumed (B-324)."""
+    inc = env.get("includes")
+    if not isinstance(inc, (list, tuple)):
+        return None
+    return {"includes": sorted({str(x) for x in inc if str(x) in ("annexure_a", "mitc")})}
+
+
 def clean_document(document_name: str | None) -> str:
     name = " ".join((document_name or "Investment advisory agreement").split())
     if len(name) < 5 or kyc_india.AADHAAR_NUMBER.search(name):
@@ -178,7 +189,7 @@ async def send_for_esign(session: AsyncSession, firm: Firm, role, *, person_id, 
         raise StackError("The provider did not return an envelope with a state; nothing is recorded.")
     session.add(StackItem(firm_id=firm.id, household_id=household.id, person_id=person.id, kind="esign", state="offered", provider=provider.name,
                           reference=ref, document_name=name, signer=person.full_name, provider_state=state, fetched_on=env.get("signed_on"),
-                          recorded_by=by, source_system=provider.key if getattr(provider, "simulated", False) else None, created_at=utcnow()))
+                          detail=_declared(env), recorded_by=by, source_system=provider.key if getattr(provider, "simulated", False) else None, created_at=utcnow()))
     await session.flush()
     await ledger.append_entry(session, firm_id=firm.id, event_type="esign_sent", actor=by, content={
         "household_id": str(household.id), "person_id": str(person.id), "envelope": ref, "state": state})
@@ -263,6 +274,9 @@ async def record_agreement(session: AsyncSession, firm: Firm, role, *, by: str, 
                                      given_by=c["given_by"], method=c["method"], evidence=c["evidence"], given_on=c["given_on"])
     session.add(StackItem(firm_id=firm.id, household_id=item.household_id, person_id=item.person_id, kind="esign", state="recorded", of_item_id=item.id,
                           provider=item.provider, reference=item.reference, document_name=item.document_name, signer=item.signer, provider_state=item.provider_state,
-                          fetched_on=item.fetched_on, recorded_by=by, source_system=item.source_system, created_at=utcnow()))
+                          detail=item.detail, fetched_on=item.fetched_on, recorded_by=by, source_system=item.source_system, created_at=utcnow()))
     await session.flush()
-    return {"consents": registry, **await overview(session, firm, household_id=item.household_id)}
+    from app.aurea_core import agreement_contents
+
+    declared = await agreement_contents.from_envelope(session, firm, item, by=by)
+    return {"consents": registry, "contents": ("declared by the template" if declared else "not declared by the envelope: not recorded"), **await overview(session, firm, household_id=item.household_id)}

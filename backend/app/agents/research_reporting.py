@@ -124,6 +124,9 @@ class ResearchReportingAgent(BaseAgent):
         payload = recommendation.modified_payload or recommendation.payload or {}
         report = await reports.of_proposal(ctx.session, ctx.firm.id, payload)
         if report:
+            why = await reports.promotion_refusal(ctx.session, ctx.firm, report)     # an Indian firm's promotional report cites its approval (B-332)
+            if why:
+                return {"executed": False, "note": why, "report_id": str(report.id)}
             report.status = ReportStatus.CLIENT_READY
             report.published_at = utcnow()
             await ctx.session.flush()

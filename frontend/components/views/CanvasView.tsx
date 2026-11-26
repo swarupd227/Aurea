@@ -13,6 +13,7 @@ import { money, pct, titleCase, firmLocale } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
+import { ChannelRequests } from "@/app/workspace/components/artifacts/IndiaRemECard";
 
 const ROUTE = "/canvas";
 
@@ -87,6 +88,10 @@ function Page({ householdId }: { householdId: string | null }) {
   const sheet = useApi<any>(`/api/canvas/net-worth${qs}`, [qs]);
   const terms = useApi<any>(`/api/canvas/ips${qs}`, [qs]);
 
+  // India: a client asks for a language or WhatsApp. It becomes a task for their adviser and changes nothing until a person records it.
+  const channels = useApi<any>(householdId === null ? "/api/canvas/channels" : null, [householdId]);
+  const [channelBusy, setChannelBusy] = useState(false);
+  const [channelSent, setChannelSent] = useState<string | null>(null);
   const [requestBusy, setRequestBusy] = useState(false);
   const [requestDone, setRequestDone] = useState(false);
   const [correction, setCorrection] = useState("");
@@ -119,6 +124,16 @@ function Page({ householdId }: { householdId: string | null }) {
       setTimeout(() => setRequestDone(false), 3000);
     } catch {}
     finally { setRequestBusy(false); }
+  }
+
+  async function askChannel(kind: string, language?: string) {
+    setChannelBusy(true);
+    try {
+      await api("/api/canvas/channel-requests", { body: { kind, language } });
+      setChannelSent("sent to your adviser");
+      channels.refetch();
+    } catch {}
+    finally { setChannelBusy(false); }
   }
 
   async function loadDocs() {
@@ -356,6 +371,7 @@ function Page({ householdId }: { householdId: string | null }) {
               <button className="btn-outline text-sm" disabled={requestBusy} onClick={() => sendRequest("query")}><HelpCircle size={15} aria-hidden /> I have a question</button>
             </div>
           )}
+          {channels.data && <ChannelRequests channels={channels.data} onAsk={askChannel} busy={channelBusy} sent={channelSent} />}
         </Card>
       )}
 

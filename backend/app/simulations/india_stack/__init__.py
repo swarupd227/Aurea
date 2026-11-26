@@ -53,7 +53,8 @@ class SimulatedStack:
 
     async def send_for_signature(self, session, firm, person, document_name: str) -> dict:
         ref = f"SIM-ESIGN-{_n(person.id, document_name, mod=10**8):08d}"
-        return {"reference": ref, "state": "signed", "signed_on": firm_time.today(firm)}
+        # The invented template declares what it includes; the real provider declares its own, or nothing (B-324).
+        return {"reference": ref, "state": "signed", "signed_on": firm_time.today(firm), "includes": ["annexure_a", "mitc"]}
 
 
 PROVIDER = SimulatedStack()
@@ -93,6 +94,7 @@ async def seed(session, firm) -> dict:
         env = await PROVIDER.send_for_signature(session, firm, p, "Investment advisory agreement")
         session.add(StackItem(firm_id=firm.id, household_id=h.id, person_id=p.id, kind="esign", state="offered", provider=NAME, reference=env["reference"],
                               document_name="Investment advisory agreement", signer=p.full_name, provider_state=env["state"], fetched_on=env["signed_on"],
+                              detail=india_stack._declared(env),
                               recorded_by="simulation: india_stack", source_system=SOURCE, created_at=utcnow()))
         added += 1
     await session.flush()

@@ -337,6 +337,46 @@ async def submit_client_request(
     return {"task_id": str(task.id), "title": task.title}
 
 
+class ChannelRequestIn(BaseModel):
+    kind: str  # "language" | "whatsapp"
+    language: str | None = None
+
+
+@router.get("/channels")
+async def canvas_channels(
+    household_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user), firm: Firm = Depends(current_firm),
+    db: AsyncSession = Depends(get_db),
+):
+    """The language and WhatsApp the client may ask for, and what is recorded for them. Empty for a firm outside India."""
+    from app.aurea_core import client_channel_request
+
+    hid = await _resolve_household(db, user, household_id)
+    return await client_channel_request.view(db, firm, hid)
+
+
+@router.post("/channel-requests")
+async def submit_channel_request(
+    body: ChannelRequestIn,
+    user: User = Depends(get_current_user), firm: Firm = Depends(current_firm),
+    db: AsyncSession = Depends(get_db),
+):
+    """The client asks for a language or for WhatsApp (B-322): a task for their recorded adviser, and nothing changes until a person records it
+    through the existing Confirm card tools. A client holds no state-changing tool; staff ask on a client's behalf by recording it."""
+    from app.aurea_core import client_channel_request
+
+    if user.role != UserRole.CLIENT:
+        raise HTTPException(status_code=403, detail="Only the client asks from their own page; staff record a language or an opt-in directly.")
+    hid = await _resolve_household(db, user, None)
+    household = await db.get(Household, hid)
+    try:
+        result = await client_channel_request.create(db, firm, household, user, kind=body.kind, language=body.language)
+    except client_channel_request.ChannelRequestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await db.commit()
+    return result
+
+
 @router.get("/documents")
 async def list_canvas_documents(
     household_id: uuid.UUID | None = None,

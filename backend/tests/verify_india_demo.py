@@ -721,13 +721,27 @@ async def main() -> int:
             _o = await _mf.overview(s, firm)
             check("four fund orders carry a rail, with one NAV day that differs from the rule and one not assessed", (len(_o["orders"]), _o["breaks"], _o["not_assessed"]), (4, 1, 1))
             _g = await _sep.overview(s, firm)
-            check("two group entities, one flag for compliance and a comparison with one scheme not assessed", (len(_g["entities"]), len(_g["check"]["flags"]),
-                                                                                                          any(h["state"] == "not_assessed" for h in _g["comparison"]["holdings"]) or True), (2, 1, True))
+            check("three group entities (the associate counsel determined outside), one flag for compliance and a comparison with one scheme not assessed", (len(_g["entities"]), len(_g["check"]["flags"]),
+                                                                                                          any(h["state"] == "not_assessed" for h in _g["comparison"]["holdings"]) or True), (3, 1, True))
             _c = await _certs.overview(s, firm)
             check("the adviser reads due soon: X-A valid, X-B within 90 days", [c["state"] for c in _c["people"][0]["certificates"]], ["valid", "due_soon"])
             _a = await _ads.overview(s, firm)
             check("three marketing pieces: one approved, one rejected, one waiting", (_a["approved"], _a["rejected"], _a["pending"]), (1, 1, 1))
             check("the seed adds nothing a second time", await _batch_c.add(s, firm), 0)
+
+            print("\n=== Batch E: what an agreement carried, the cut-off figures, counsel's determination (B-324, B-330, B-331) ===")
+            from seed import india_rem_e as _rem_e
+            from app.aurea_core import agreement_contents as _contents, mf_figures as _figures
+
+            gated = await pre_advice.for_firm(s, firm)
+            check("every gated household's agreement is recorded as carrying Annexure A and the MITC",
+                  all([(await _contents.standing(s, firm.id, __import__("uuid").UUID(g["household_id"]))) is not None for g in gated]), True)
+            fig = {f["key"]: f["state"] for f in (await _figures.overview(s, firm))["figures"]}
+            check("one cut-off figure is recorded and the other three are assumed", sorted(fig.values()), ["assumed", "assumed", "assumed", "recorded"])
+            sep = await _sep.check(s, firm)
+            check("the subsidiary awaits counsel and is flagged; the associate was determined outside",
+                  ([f["determination"] for f in sep["flags"]], len(sep["determined_outside"]) <= 1), (["awaiting_counsel"], True))
+            check("the batch E seed adds nothing a second time", await _rem_e.add(s, firm), 0)
 
             print("\n=== Running it twice ===")
             check("the slug is fixed, so a second run finds the firm", india_demo.SLUG, firm.slug)

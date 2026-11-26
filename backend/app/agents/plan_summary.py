@@ -89,6 +89,9 @@ class PlanSummaryAgent(BaseAgent):
         why = await plan_summary.still_current(ctx.session, ctx.firm.id, report)
         if why:
             return {"executed": False, "note": f"Not published: {why}"}
+        why = await reports.promotion_refusal(ctx.session, ctx.firm, report)       # an Indian firm's promotional report cites its approval (B-332)
+        if why:
+            return {"executed": False, "note": f"Not published: {why}"}
         report.status = ReportStatus.CLIENT_READY
         report.published_at = utcnow()
         await ctx.session.flush()

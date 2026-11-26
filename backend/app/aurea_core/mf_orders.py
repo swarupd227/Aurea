@@ -8,7 +8,8 @@ date and the NAV date were not told apart. This module records the facts and wor
   recorded     the rail, the registrar, the folio, the rule the order was treated under, when the rail took it, when funds were realised (a
                purchase) and the NAV day the registrar reports, each from the rail's or the registrar's confirmation, never invented
   worked       the NAV day the cut-off rule gives from the order's time (`law_figures`: the cut-off times and the large-amount line, each
-               ASSUMED from SEBI's circulars as understood and unreviewed by counsel, because the L100 edition gives the rule and no figure)
+               ASSUMED from SEBI's circulars as understood and unreviewed by counsel, because the L100 edition gives the rule and no figure, until the
+               firm records the circular's own through `mf_figures`, which the check then reads and shows as "recorded: <source>", B-330)
   reported     an order whose recorded NAV day differs from the one the rule gives, as a break with its likely cause. Nothing is repaired: no
                holding, unit or cash is written, and a break is cleared by a corrected record from the registrar's confirmation or a person's note
 
@@ -27,7 +28,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, law_figures, licences, markets
+from app.aurea_core import firm_time, law_figures, licences, markets, mf_figures
 from app.core.db import utcnow
 from app.core.security import UserRole
 from app.models.graph import Account, Household, Mandate
@@ -45,7 +46,8 @@ FIGURES = ("in_mf_cutoff_standard", "in_mf_cutoff_liquid_purchase", "in_mf_cutof
 NOT_MODELLED = ["exchange and AMC holidays (a business day here is a weekday)", "a scheme's category (the person records the rule it was treated under)",
                 "the time funds were realised within the day (a day recorded is read as before the cut-off)", "switches and systematic transfers"]
 SAID = ("The NAV day the cut-off rule gives, from the order's time. The cut-off times and the large-amount line are assumed from SEBI's circulars and not "
-        "reviewed by counsel; a difference is reported for a person to look at and nothing is changed.")
+        "reviewed by counsel, until the firm records the circular's own (they read 'assumed' until then); a difference is reported for a person to look at "
+        "and nothing is changed.")
 
 
 class MfOrderError(ValueError):
@@ -90,25 +92,33 @@ def _minutes(value: str | None) -> int:
     return h * 60 + m
 
 
-def cutoff_for(rule: str, side: str, today: date) -> int:
+def _figure(key: str, today: date, figures: dict | None) -> float:
+    """The firm's recorded figure (`mf_figures`, B-330) when it has one, else the platform's assumed default."""
+    if figures and key in figures:
+        return float(figures[key])
+    return float(law_figures.value(key, today))
+
+
+def cutoff_for(rule: str, side: str, today: date, figures: dict | None = None) -> int:
     if rule == "liquid_overnight":
-        return int(law_figures.value("in_mf_cutoff_liquid_purchase" if side == "buy" else "in_mf_cutoff_liquid_redemption", today))
-    return int(law_figures.value("in_mf_cutoff_standard", today))
+        return int(_figure("in_mf_cutoff_liquid_purchase" if side == "buy" else "in_mf_cutoff_liquid_redemption", today, figures))
+    return int(_figure("in_mf_cutoff_standard", today, figures))
 
 
 def _clock(minutes: int) -> str:
     return f"{minutes // 60}:{minutes % 60:02d}"
 
 
-def nav_date_for(*, side: str, rule: str, order_on: date, order_time: str, amount: float | None, funds_realised_on: date | None, today: date) -> dict:
-    """The NAV day the rule gives, with how it got there, or why it cannot be said. Pure: it reads only `law_figures`."""
-    cutoff = cutoff_for(rule, side, today)
+def nav_date_for(*, side: str, rule: str, order_on: date, order_time: str, amount: float | None, funds_realised_on: date | None, today: date,
+                 figures: dict | None = None) -> dict:
+    """The NAV day the rule gives, with how it got there, or why it cannot be said. Pure: it reads `law_figures` and the firm's recorded `figures`."""
+    cutoff = cutoff_for(rule, side, today, figures)
     mins = _minutes(order_time)
     in_time = _business(order_on) and mins <= cutoff
     base = _next_business(order_on, inclusive=in_time)
     basis = [f"Taken at {_time_label(mins)} against a cut-off of {_time_label(cutoff)}: "
              + ("in time, so that day's NAV" if in_time else "after the cut-off, or not a business day, so the next business day's NAV")]
-    large = float(law_figures.value("in_mf_large_amount", today))
+    large = _figure("in_mf_large_amount", today, figures)
     needs_realisation = side == "buy" and (rule == "liquid_overnight" or (amount is not None and float(amount) >= large))
     if side == "buy" and rule != "liquid_overnight" and amount is None:
         return {"state": "not_assessed", "nav_date": None, "base": base, "basis": basis, "cutoff": cutoff,
@@ -129,13 +139,13 @@ def _time_label(minutes: int) -> str:
     return f"{h % 12 or 12}:{m:02d} {'am' if h < 12 else 'pm'}"
 
 
-def compare(rec: MfOrderRecord, order: Order | None, today: date) -> dict:
+def compare(rec: MfOrderRecord, order: Order | None, today: date, figures: dict | None = None) -> dict:
     """The record against the rule: the day the rule gives, the day reported, whether they differ and the likely cause."""
     amount = float(rec.amount_inr) if rec.amount_inr is not None else (
         round(float(order.filled_quantity or 0) * float(order.avg_fill_price or 0), 2) if order is not None and float(order.filled_quantity or 0) else None)
     side = str(order.side) if order is not None else "buy"
     rule = nav_date_for(side=side, rule=rec.cutoff_rule, order_on=rec.order_on, order_time=rec.order_time, amount=amount,
-                        funds_realised_on=rec.funds_realised_on, today=today)
+                        funds_realised_on=rec.funds_realised_on, today=today, figures=figures)
     out = {"side": side, "amount": amount, "expected": rule["nav_date"].isoformat() if rule["nav_date"] else None, "state": rule["state"],
            "basis": rule["basis"], "needs": rule.get("needs"), "reported": rec.nav_date_reported.isoformat(), "differs": False, "gap_days": None, "likely_cause": None}
     if rule["state"] != "assessed":
@@ -168,10 +178,11 @@ async def for_blotter(session: AsyncSession, firm: Firm, order_ids: list[uuid.UU
         return {}
     today = firm_time.today(firm)
     recs = await _latest(session, firm.id, order_ids)
+    figs = await mf_figures.values(session, firm)
     orders = {o.id: o for o in (await session.execute(select(Order).where(Order.id.in_(list(recs) or [uuid.uuid4()])))).scalars().all()}
     out = {}
     for oid, r in recs.items():
-        c = compare(r, orders.get(oid), today)
+        c = compare(r, orders.get(oid), today, figs)
         out[str(oid)] = {"order_on": r.order_on.isoformat(), "order_time": r.order_time, "nav_date": r.nav_date_reported.isoformat(), "expected_nav_date": c["expected"],
                          "nav_state": c["state"], "rail": r.rail, "rail_label": RAILS.get(r.rail, r.rail), "rta": r.rta, "rta_label": RTAS.get(r.rta, r.rta),
                          "folio": r.folio}
@@ -240,7 +251,7 @@ async def prepare(session: AsyncSession, firm: Firm, role, *, order_id, rail: st
     probe = MfOrderRecord(firm_id=firm.id, order_id=oid, rail=r, rta=t, folio=(folio or "").strip() or None, cutoff_rule=rule, order_on=day,
                           order_time=order_time.strip(), funds_realised_on=realised, nav_date_reported=nav, amount_inr=amount, source_document=document.strip(),
                           reason=(reason or "").strip() or None, recorded_by="")
-    return {"order": order, "instrument": inst, "record": probe, "before": before, "check": compare(probe, order, today), "today": today}
+    return {"order": order, "instrument": inst, "record": probe, "before": before, "check": compare(probe, order, today, await mf_figures.values(session, firm)), "today": today}
 
 
 async def record(session: AsyncSession, firm: Firm, role, *, by: str, **terms) -> dict:
@@ -262,6 +273,7 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
     if not applies(firm):
         return {"applies": False, "as_of": today.isoformat(), "orders": []}
     recs = await _latest(session, firm.id, order_ids)
+    figs = await mf_figures.values(session, firm)
     orders = {o.id: o for o in (await session.execute(select(Order).where(Order.firm_id == firm.id))).scalars().all()}
     accounts = {a.id: a for a in (await session.execute(select(Account).where(Account.firm_id == firm.id))).scalars().all()}
     insts = {i.id: i for i in (await session.execute(select(Instrument).where(Instrument.firm_id == firm.id))).scalars().all()}
@@ -278,7 +290,7 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
         if o is None or (keep is not None and o.account_id not in keep):
             continue
         inst, acc = insts.get(o.instrument_id), accounts.get(o.account_id)
-        c = compare(rec, o, today)
+        c = compare(rec, o, today, figs)
         rows.append({"order_id": str(oid), "symbol": inst.symbol if inst else None, "fund": inst.name if inst else None, "account": acc.name if acc else None,
                      "side": c["side"], "amount": c["amount"], "rail": rec.rail, "rail_label": RAILS.get(rec.rail, rec.rail), "rta": rec.rta,
                      "rta_label": RTAS.get(rec.rta, rec.rta), "folio": rec.folio, "rule": rec.cutoff_rule, "rule_label": RULES.get(rec.cutoff_rule),
@@ -300,5 +312,5 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
                 unrecorded += 1
     return {"applies": True, "as_of": today.isoformat(), "orders": rows, "breaks": sum(1 for r in rows if r["state"] == "differs"),
             "not_assessed": sum(1 for r in rows if r["state"] == "not_assessed"), "unrecorded": unrecorded, "folios": list(folios.values()),
-            "rails": RAILS, "figures": law_figures.cited(list(FIGURES), today), "not_modelled": NOT_MODELLED, "said": SAID,
+            "rails": RAILS, "figures": law_figures.cited(list(FIGURES), today), "figure_set": await mf_figures.overview(session, firm), "not_modelled": NOT_MODELLED, "said": SAID,
             "note": "A break is reported and nothing is repaired: no holding, unit or cash is written. An order with no record does not mean it was mishandled."}
