@@ -5002,7 +5002,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             tasks.complete(task)
         except tasks.TaskError as exc:
             raise ExecutorError(str(exc))
-        return await self._task_result(task, f"'{task.title}' is done.")
+        return await self._task_result(task, f"'{task.title}' is done. The task is closed and nothing else was recorded: no review, filing or approval.")
 
     async def assign_task(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import tasks
@@ -5615,7 +5615,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             raise ExecutorError(f"'{task.title}' is already {task.status}.")
         common = (("Task", task.title), ("Client", task.subject_label), ("Due", due(task)))
         if tool_key == "complete_task":
-            return rows(*common)
+            return rows(*common, ("Records", "Closure only: no review, filing or approval"))
         to = await self._task_assignee(inputs.get("assignee_name"))
         held = (await tasks.views(self.session, [task], await self._today()))[0]["assigned_to_name"]
         return rows(*common, ("Held by", held), ("Assign to", to.full_name if to else "Nobody"))

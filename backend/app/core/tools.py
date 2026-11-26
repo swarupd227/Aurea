@@ -4189,7 +4189,7 @@ TOOLS: dict[str, Tool] = {
         key="complete_task",
         name="Complete Task",
         speaking_agent="astra",
-        description="Mark an open task as done. Find it with read_tasks first.",
+        description="Mark an open task as done. Find it with read_tasks first. It closes the task and records nothing else: not a review held, a filing made, a policy approved, a complaint answered or advice given, even when the task asks for one. Each of those is recorded on its own, so never say that closing a task records it.",
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
         confirmation="Mark this task as done?",
         inputs=[ToolInput("task_id", "uuid", "The task, from read_tasks", required=True)],

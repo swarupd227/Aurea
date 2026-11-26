@@ -183,7 +183,10 @@ async def behaviour() -> None:
 
             t1, ev = await ask("complete_task", {"task_id": str(late.id)})
             check("it pauses", ev is not None, True)
-            check("the card names the task", rows(ev), {"Task": "Send the pack", "Client": "Chen Family", "Due": firm_time.spoken(today - timedelta(days=3))})
+            check("the card names the task, and says closing it records nothing else", rows(ev),
+                  {"Task": "Send the pack", "Client": "Chen Family", "Due": firm_time.spoken(today - timedelta(days=3)),
+                   "Records": "Closure only: no review, filing or approval"})
+            check("  and the tool tells the model the same", "records nothing else" in TOOLS["complete_task"].description, True)
             await s.refresh(late)
             check("nothing changed yet", str(late.status), "open")
             await Gateway(s, sophie.id, sophie.role, sophie.firm_id).confirm_pending_action((await pending_of(t1)).id, False)
