@@ -36,7 +36,6 @@ from app.models.client_file import DISCOVERY_KINDS, DOCUMENT_KINDS, LIFE_EVENTS,
 from app.models.engagement import Task
 from app.models.enums import TaskStatus
 from app.models.graph import Account, AccountBeneficiary, Household, LegalEntity, Mandate, Person
-from app.models.india_family import AssetNomination
 from app.models.tenant import Firm
 from app.provenance import ledger
 
@@ -64,7 +63,7 @@ TOUCHES = {
 MINOR_UNDER = 18
 # Registrations that hold an account in a person's own name, which a revocable trust could own instead. A retirement
 # account is never retitled to a trust: it passes by its beneficiaries.
-IN_OWN_NAME = ("individual", "joint_jtwros", "joint_tic", "joint_tbe", "community_property")
+IN_OWN_NAME = ("individual", "joint_jtwros", "joint_tic", "joint_tbe", "community_property", "joint_all", "joint_anyone")
 TRUST_DOCUMENTS = ("revocable_trust", "trust_deed")
 ESTATE_REVIEW_SOURCE = "estate_review"
 NOT_ON_FILE = "Not on file does not mean none exists: an attorney or the custodian may hold it."
@@ -141,17 +140,9 @@ async def _designation_issues(session: AsyncSession, firm_id: uuid.UUID, househo
             wills = {d.person_id: d for d in (await session.execute(select(EstateDocument).where(
                 EstateDocument.person_id.in_([p.id for p in people] or [uuid.uuid4()]), EstateDocument.kind == "will")
                 .order_by(EstateDocument.signed_on))).scalars().all()}
-            from app.aurea_core import india_estate
-
-            optouts = {(r.person_id, r.label.strip().lower()) for r in await india_estate._latest(
-                session, AssetNomination, firm_id, "person_id", "asset_kind", "label", where=[AssetNomination.household_id == household_id])
-                if r.status == "opted_out"}
             for a in accounts:
                 if not nominees.get(a.id):
-                    if (owners.get(a.mandate_id), a.name.strip().lower()) in optouts:
-                        continue        # a signed opt-out a person recorded (India row 13): not a gap
-                    issues.append({"account": a.name, "issue": "no nomination or signed opt-out on file", "name": None})
-                    continue
+                    continue        # which accounts have neither a nomination nor an opt-out is the audit's, above
                 will = wills.get(owners.get(a.mandate_id))
                 issues += nominations.will_issues(a.name, nominees[a.id], will.named if will else None)
     return issues

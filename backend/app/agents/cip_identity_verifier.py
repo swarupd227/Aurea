@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import india_onboarding
 from app.aurea_core.integrations import identity as id_integration
 from app.core.db import utcnow
 from app.models.enums import AgentKey, AutonomyTier, PartyRole
@@ -71,12 +72,14 @@ class CIPIdentityVerifierAgent(BaseAgent):
         worst = min(results, key=lambda r: r["score"])
         lines = [f"{r['name']} ({r['role'].replace('_', ' ')}, {r['method'].replace('_', '-')}): {r['status']}, {r['score']:.0%}"
                  + (f", flags {', '.join(r['flags'])}" if r["flags"] else "") for r in results]
-        fallback = f"CIP {overall.upper()} for {sensed['prospect_name']}: " + "; ".join(lines) + "."
+        # "CIP" is the US rule's name; an Indian case reads "Identity check" (B-385).
+        said = "Identity check" if india_onboarding.applies(ctx.firm) else "CIP"
+        fallback = f"{said} {overall.upper()} for {sensed['prospect_name']}: " + "; ".join(lines) + "."
         prompt = (f"Summarise the identity verification of each party on {sensed['prospect_name']} for the compliance officer: "
                   + "; ".join(lines) + ". Say which party needs what next. The provider is a mock.")
         rationale = await narrate(ctx, task="compliance", system=firm_voice(ctx), prompt=prompt, fallback=fallback)
         return [RecommendationDraft(
-            title=f"CIP {overall.upper()} — {sensed['prospect_name']}",
+            title=f"{said} {overall.upper()} — {sensed['prospect_name']}",
             summary=f"{len(results)} part(ies): " + ", ".join(f"{r['name']} {r['status']}" for r in results),
             rationale=rationale,
             confidence=worst["score"],

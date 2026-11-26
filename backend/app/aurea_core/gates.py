@@ -19,7 +19,7 @@ from __future__ import annotations
 
 PASS, FAIL, WARN, NA = "pass", "fail", "warn", "n/a"
 
-_ENTITY_TYPES = {"entity_llc", "entity_corp", "entity_partnership"}
+_ENTITY_TYPES = {"entity_llc", "entity_corp", "entity_partnership", "entity_llp"}
 
 
 def _gate(key, label, state, detail, *, blocks=True, track=None) -> dict:
@@ -168,12 +168,14 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
     ))
 
     ownership_issues = party_status.get("ownership_issues", [])
+    # An Indian trust's recorded owners are read against its own line too, so its gate applies when one falls short.
+    owned = reg in _ENTITY_TYPES or bool(ownership_issues)
     gates.append(_gate(
         "ownership_certified", "Beneficial ownership certified",
-        NA if reg not in _ENTITY_TYPES else (FAIL if ownership_issues else PASS),
+        NA if not owned else (FAIL if ownership_issues else PASS),
         "Not applicable to this registration type."
-        if reg not in _ENTITY_TYPES
-        else ("; ".join(o["detail"] for o in ownership_issues) or "25% owners and control person certified."),
+        if not owned
+        else ("; ".join(o["detail"] for o in ownership_issues) or party_status.get("ownership_ok", "25% owners and control person certified.")),
         track="account",
     ))
 
@@ -199,10 +201,11 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
         track="financial_crime",
     ))
 
+    india = party_status.get("market") == "IN"
     gates.append(_gate(
-        "cip_verified", "Identity verified (CIP)",
+        "cip_verified", "Identity verified" if india else "Identity verified (CIP)",
         PASS if case.cip_status == "verified" else FAIL,
-        f"CIP status: {case.cip_status or 'not run'}.",
+        f"{'Identity check' if india else 'CIP status'}: {case.cip_status or 'not run'}.",
         track="financial_crime",
     ))
 

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { FileText, ShieldCheck, ShieldAlert, Play, Check, X, Plus, ArrowRight, CheckCircle2, Users, AlertTriangle, Activity, ClipboardList, Fingerprint, Building2, ArrowDownUp, ChevronRight, Wallet } from "lucide-react";
 import { Card, Spinner, Segment, ConfidenceBar, SeverityBadge, ErrorState } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
-import { api } from "@/lib/api";
+import { api, getUser } from "@/lib/api";
 import { titleCase, money, firmLocale } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
@@ -17,7 +17,14 @@ const REGISTRATION_LABELS: Record<string, string> = {
   custodial_utma: "Custodial UTMA", custodial_ugma: "Custodial UGMA",
   estate_inherited: "Estate/Inherited", huf: "HUF",
   nri_nre: "NRI (NRE)", nri_nro: "NRI (NRO)", minor_guardian: "Minor",
+  joint_all: "Joint (all sign)", joint_anyone: "Joint (anyone or survivor)", entity_llp: "LLP",
 };
+
+/** The firm's market, for the words a case page uses (the same reading as the New prospect form). */
+const inIndia = () => (getUser()?.firm?.jurisdiction || "").toUpperCase() === "IN";
+const registrationLabel = (type: string) =>
+  (inIndia() ? ({ entity_corp: "Company", entity_partnership: "Partnership" } as Record<string, string>)[type] : undefined)
+  ?? REGISTRATION_LABELS[type] ?? titleCase(type);
 
 const NIGO_LABELS: Record<string, string> = {
   missing_signature: "Missing signature", title_mismatch: "Title mismatch",
@@ -73,7 +80,7 @@ export function OnboardingCaseView({ id }: { id: string }) {
    */
   async function runCaseAgent(slug: string) {
     if (nav.say && AGENT_KEY[slug]) {
-      const a = AGENT_KEY[slug];
+      const a = inIndia() && slug === "cip_identity_verifier" ? { ...AGENT_KEY[slug], name: "identity verification" } : AGENT_KEY[slug];
       nav.say(withRef(`Run the ${a.name} agent (${a.key}) on ${c.prospect_name}'s onboarding case.`, "onboarding_case", id));
       return;
     }
@@ -129,7 +136,8 @@ export function OnboardingCaseView({ id }: { id: string }) {
         meta={
           <>
             <span className={chip}>{titleCase(c.segment)}</span>
-            <span className={chip}>{c.registration_type ? (REGISTRATION_LABELS[c.registration_type] || titleCase(c.registration_type)) : (c.is_entity ? titleCase(c.entity_type || "entity") : "Individual")}</span>
+            <span className={chip}>{c.registration_type ? registrationLabel(c.registration_type) : (c.is_entity ? titleCase(c.entity_type || "entity") : "Individual")}</span>
+            {c.intake?.household_id && <span className={chip} data-testid="onboarding-case-household">Joins {c.intake.household}</span>}
             <span className={`chip ${c.status === "approved" ? "bg-ok-bg text-ok" : c.status === "rejected" ? "bg-crit-bg text-crit" : "bg-border-soft text-ink-soft"}`} data-testid="onboarding-case-status">{titleCase(c.status)}</span>
           </>
         }
@@ -1257,7 +1265,7 @@ function Parties({ caseId, status }: { caseId: string; status: string }) {
                   <div className="w-24">
                     <label className="label text-[10px]" htmlFor="p-pct">Ownership %</label>
                     <input id="p-pct" className="input text-xs" value={form.ownership_pct}
-                           onChange={(e) => setForm({ ...form, ownership_pct: e.target.value })} placeholder="25" />
+                           onChange={(e) => setForm({ ...form, ownership_pct: e.target.value })} placeholder={inIndia() ? "10" : "25"} />
                   </div>
                   <label className="flex items-center gap-1.5 pb-2 text-[10px] text-ink-muted">
                     <input type="checkbox" className="h-3 w-3" checked={form.is_control_person}
@@ -1531,7 +1539,7 @@ function CipCard({ cip, onRun, busy }: { cip: any; onRun: () => void; busy: bool
   return (
     <Card className={status ? `border ${CIP_STATUS_STYLE[status] || ""}` : ""}>
       <div className="font-semibold text-ink mb-2 flex items-center gap-2">
-        <Fingerprint size={16} /> CIP identity verification
+        <Fingerprint size={16} /> {inIndia() ? "Identity verification" : "CIP identity verification"}
         {/* The identity provider is simulated, and says so. */}
         <span className="text-[10px] text-ink-faint font-normal ml-auto">Simulated check</span>
       </div>
@@ -1557,15 +1565,15 @@ function CipCard({ cip, onRun, busy }: { cip: any; onRun: () => void; busy: bool
           )}
           {status !== "verified" && (
             <button className="btn-outline text-xs mt-2 w-full" disabled={busy} onClick={onRun}>
-              <Fingerprint size={12} /> {busy ? "Verifying…" : "Re-run CIP check"}
+              <Fingerprint size={12} /> {busy ? "Verifying…" : inIndia() ? "Re-run identity check" : "Re-run CIP check"}
             </button>
           )}
         </>
       ) : (
         <>
-          <div className="text-sm text-ink-muted mb-3">Identity not yet verified. Run the CIP check to validate name, DOB, and ID number against the provider.</div>
+          <div className="text-sm text-ink-muted mb-3">Not yet verified</div>
           <button className="btn-outline text-xs w-full" disabled={busy} onClick={onRun}>
-            <Fingerprint size={12} /> {busy ? "Verifying…" : "Run CIP check"}
+            <Fingerprint size={12} /> {busy ? "Verifying…" : inIndia() ? "Run identity check" : "Run CIP check"}
           </button>
         </>
       )}
@@ -1580,14 +1588,14 @@ function CustodianCard({ c, onPush, busy }: { c: any; onPush: () => void; busy: 
   return (
     <Card className={hasCustodian ? "border-ok-soft" : ""}>
       <div className="font-semibold text-ink mb-2 flex items-center gap-2">
-        <Building2 size={16} /> Custodian account
-        <span className="text-[10px] text-ink-faint font-normal ml-auto">Simulated custodian</span>
+        <Building2 size={16} /> {inIndia() ? "Depository account" : "Custodian account"}
+        <span className="text-[10px] text-ink-faint font-normal ml-auto">{inIndia() ? "Simulated depository" : "Simulated custodian"}</span>
       </div>
       {hasCustodian ? (
         <>
           <div className="flex items-center gap-2 mb-1">
             <span className="chip bg-ok-bg text-ok">{c.custodian_push_status || "active"}</span>
-            <span className="text-xs text-ink-muted capitalize">{c.custodian_name}</span>
+            <span className="text-xs text-ink-muted capitalize">{c.custodian_name?.replace(/_/g, " ")}</span>
           </div>
           <div className="font-mono text-sm text-ink font-semibold">{c.custodian_account_id}</div>
           {c.custodian_push_at && (
@@ -1597,13 +1605,13 @@ function CustodianCard({ c, onPush, busy }: { c: any; onPush: () => void; busy: 
       ) : (
         <>
           <div className="text-sm text-ink-muted mb-3">
-            Account approved — single-key to custodian to open the account and receive an account number.
+            {inIndia() ? "No depository participant connected" : "Account approved — single-key to custodian to open the account and receive an account number."}
             {c.cip_status !== "verified" && (
-              <span className="text-warn"> CIP must be verified first.</span>
+              <span className="text-warn"> {inIndia() ? "Identity must be verified first." : "CIP must be verified first."}</span>
             )}
           </div>
           <button className="btn-primary text-xs w-full" disabled={busy || c.cip_status !== "verified"} onClick={onPush}>
-            <Building2 size={12} /> {busy ? "Pushing…" : "Push to custodian"}
+            <Building2 size={12} /> {busy ? "Pushing…" : inIndia() ? "Get a simulated reference" : "Push to custodian"}
           </button>
         </>
       )}
@@ -1623,8 +1631,14 @@ const TRANSFER_STATUS_ORDER = ["initiated", "pending_review", "in_transit", "set
 function TransfersPanel({ caseId }: { caseId: string }) {
   const { data: transfers, refetch } = useApi<any[]>(`/api/onboarding/cases/${caseId}/transfers`, [caseId]);
   const [showForm, setShowForm] = useState(false);
+  const india = inIndia();
+  const { data: options } = useApi<any>("/api/onboarding/case-options");
+  const types: { value: string; label: string }[] = options?.transfer_types || [];
+  const first = india ? "demat" : "acat";
+  const inKind = (t: string) => t === "acat" || t === "demat";
+  const typeLabel = (t: string) => types.find((x) => x.value === t)?.label || t.toUpperCase();
   const [form, setForm] = useState({
-    transfer_type: "acat", direction: "in", amount: "", asset_description: "", custodian: "",
+    transfer_type: first, direction: "in", amount: "", asset_description: "", custodian: "",
     delivering_firm: "", delivering_account_title: "", is_third_party: false,
   });
   const [busy, setBusy] = useState<string | null>(null);
@@ -1636,7 +1650,7 @@ function TransfersPanel({ caseId }: { caseId: string }) {
         body: { ...form, amount: form.amount ? parseFloat(form.amount) : null },
       });
       setShowForm(false);
-      setForm({ transfer_type: "acat", direction: "in", amount: "", asset_description: "", custodian: "",
+      setForm({ transfer_type: first, direction: "in", amount: "", asset_description: "", custodian: "",
                 delivering_firm: "", delivering_account_title: "", is_third_party: false });
       refetch();
     } finally { setBusy(null); }
@@ -1652,7 +1666,7 @@ function TransfersPanel({ caseId }: { caseId: string }) {
     <Card>
       <div className="font-semibold text-ink mb-3 flex items-center gap-2">
         <ArrowDownUp size={16} className="text-ink-muted" /> Transfer tracking
-        <span className="text-[10px] text-ink-faint font-normal">(ACAT / wire / ACH)</span>
+        <span className="text-[10px] text-ink-faint font-normal">{india ? "(demat / RTGS, NEFT / UPI / cheque)" : "(ACAT / wire / ACH)"}</span>
         <button className="btn-outline text-xs ml-auto" onClick={() => setShowForm(!showForm)}>
           <Plus size={12} /> Add
         </button>
@@ -1664,9 +1678,7 @@ function TransfersPanel({ caseId }: { caseId: string }) {
             <div>
               <label className="label text-[10px]">Type</label>
               <select className="input text-xs" value={form.transfer_type} onChange={(e) => setForm({ ...form, transfer_type: e.target.value })}>
-                <option value="acat">ACAT (securities)</option>
-                <option value="wire">Wire transfer</option>
-                <option value="ach">ACH</option>
+                {types.filter((t) => !["rollover", "exchange_1035"].includes(t.value)).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div>
@@ -1679,27 +1691,27 @@ function TransfersPanel({ caseId }: { caseId: string }) {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="label text-[10px]">Amount ($)</label>
+              <label className="label text-[10px]">Amount</label>
               <input className="input text-xs" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="500000" />
             </div>
             <div>
-              <label className="label text-[10px]">Custodian</label>
-              <input className="input text-xs" value={form.custodian} onChange={(e) => setForm({ ...form, custodian: e.target.value })} placeholder="schwab" />
+              <label className="label text-[10px]">{india ? "Depository or bank" : "Custodian"}</label>
+              <input className="input text-xs" value={form.custodian} onChange={(e) => setForm({ ...form, custodian: e.target.value })} placeholder={india ? "CDSL" : "schwab"} />
             </div>
           </div>
           <div>
             <label className="label text-[10px]">Asset / description</label>
-            <input className="input text-xs" value={form.asset_description} onChange={(e) => setForm({ ...form, asset_description: e.target.value })} placeholder="e.g. AAPL shares, mixed mutual fund portfolio" />
+            <input className="input text-xs" value={form.asset_description} onChange={(e) => setForm({ ...form, asset_description: e.target.value })} placeholder={india ? "e.g. listed shares and ETF units" : "e.g. AAPL shares, mixed mutual fund portfolio"} />
           </div>
 
           {/* Pre-submission controls — captured here so the checks run before submitting. */}
-          {form.transfer_type === "acat" && form.direction === "in" && (
+          {inKind(form.transfer_type) && form.direction === "in" && (
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="label text-[10px]" htmlFor="t-firm">Delivering firm</label>
                 <input id="t-firm" className="input text-xs" value={form.delivering_firm}
                        onChange={(e) => setForm({ ...form, delivering_firm: e.target.value })}
-                       placeholder="e.g. Fidelity" />
+                       placeholder={india ? "current broker or participant" : "e.g. Fidelity"} />
               </div>
               <div>
                 <label className="label text-[10px]" htmlFor="t-title">Account title on statement</label>
@@ -1722,7 +1734,7 @@ function TransfersPanel({ caseId }: { caseId: string }) {
       )}
 
       {(transfers?.length ?? 0) === 0 && !showForm ? (
-        <div className="text-sm text-ink-muted">No transfers yet. Add an ACAT, wire, or ACH transfer to track status.</div>
+        <div className="text-sm text-ink-muted">No transfers yet</div>
       ) : (
         <div className="space-y-3">
           {(transfers || []).map((t: any) => {
@@ -1731,7 +1743,7 @@ function TransfersPanel({ caseId }: { caseId: string }) {
               <div key={t.id} className="rounded-xl border border-border-soft p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-ink uppercase tracking-wide">{t.transfer_type}</span>
+                    <span className="text-sm font-medium text-ink uppercase tracking-wide">{typeLabel(t.transfer_type)}</span>
                     <span className="text-xs text-ink-muted">{t.direction === "in" ? "↓ in" : "↑ out"}</span>
                     {t.amount != null && <span className="text-xs text-ink-soft">{money(t.amount)}</span>}
                   </div>
@@ -1739,8 +1751,8 @@ function TransfersPanel({ caseId }: { caseId: string }) {
                 </div>
                 {t.asset_description && <div className="text-xs text-ink-muted mb-2">{t.asset_description}</div>}
 
-                {/* L200 §5 pre-submission controls: ACAT title, third-party callback. */}
-                {(t.transfer_type === "acat" && t.direction === "in") && (
+                {/* L200 §5 pre-submission controls: the title on an in-kind transfer, third-party callback. */}
+                {(inKind(t.transfer_type) && t.direction === "in") && (
                   <div className={`text-[11px] rounded-lg px-2 py-1.5 mb-2 ${
                     t.title_match_status === "match" ? "bg-ok-bg text-ok"
                     : t.title_match_status === "mismatch" ? "bg-crit-bg text-crit"

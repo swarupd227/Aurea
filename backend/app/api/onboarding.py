@@ -43,6 +43,8 @@ class CaseCreate(BaseModel):
     intake: dict = {}
     # The pipeline opportunity this case comes from: opening it wins the deal (aurea_core/pipeline.py).
     opportunity_id: str | None = None
+    # A household already on the book that this case joins; none means a new one (aurea_core/onboarding_household.py).
+    household_id: str | None = None
 
 
 class BeneficialOwnerIn(BaseModel):
@@ -117,7 +119,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
     fee_status = await _fee_status(db, case)
     return gates_core.evaluate(
         case,
-        party_status=parties_core.completeness_for(case.registration_type, party_rows, decided),
+        party_status=parties_core.completeness_for(case.registration_type, party_rows, decided, market=firm.jurisdiction),
         disclosure_status=disclosure_status,
         consent_status=consents.gate_status(await consents.for_case_rows(db, case), disclosure_items=disclosure_status["items"],
                                             fee_assigned=bool(fee_status and fee_status.get("assigned"))),
@@ -156,10 +158,15 @@ async def _tracks_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dic
     xfer_rows = (await db.execute(
         select(TransferRequest).where(TransferRequest.case_id == case.id)
     )).scalars().all()
+    from app.aurea_core import india_onboarding
+
     return tracks_core.evaluate(
         case,
+        firm=firm,
+        held=await india_onboarding.registry_holds(db, firm, case, party_rows),
         party_status=parties_core.completeness_for(case.registration_type, party_rows,
-                                                   await aml_review.decisions_for(db, [p.id for p in party_rows])),
+                                                   await aml_review.decisions_for(db, [p.id for p in party_rows]),
+                                                   market=firm.jurisdiction),
         disclosure_status=disclosures.status_for(
             firm.jurisdiction, case.registration_type, list(disc_rows), case.engagement_type
         ),
@@ -341,7 +348,7 @@ async def create_case(
             db, firm, actor=user, prospect_name=body.prospect_name, registration_type=body.registration_type or "individual",
             segment=body.segment, risk_preference=intake.pop("risk_profile", None), mandate_preference=intake.pop("mandate_preference", None),
             source_of_wealth=intake.pop("source_of_wealth", None), email=intake.pop("email", None), extra_intake=intake,
-            opportunity_id=body.opportunity_id)
+            opportunity_id=body.opportunity_id, household_id=body.household_id)
     except onboarding_start.StartError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return _case_dict(case, [], [])
@@ -909,14 +916,15 @@ async def list_parties(
     rows = await _load_parties(db, case.id)
     return {
         "parties": [_party_dict(p) for p in rows],
-        "completeness": parties_core.completeness_for(case.registration_type, rows, await aml_review.decisions_for(db, [p.id for p in rows])),
+        "completeness": parties_core.completeness_for(case.registration_type, rows, await aml_review.decisions_for(db, [p.id for p in rows]),
+                                                      market=firm.jurisdiction),
         "roles": [
             {"value": r, "label": parties_core.ROLE_LABELS[r]}
             for r in parties_core.ROLE_LABELS
         ],
         "required_roles": [
             {"role": r, "label": parties_core.ROLE_LABELS.get(r, r), "min": n, "why": why}
-            for r, n, why in parties_core.required_roles(case.registration_type)
+            for r, n, why in parties_core.required_roles(case.registration_type, firm.jurisdiction)
         ],
     }
 
@@ -952,7 +960,8 @@ async def add_party(
     await db.commit()
     return {
         "parties": [_party_dict(p) for p in rows],
-        "completeness": parties_core.completeness_for(case.registration_type, rows, await aml_review.decisions_for(db, [p.id for p in rows])),
+        "completeness": parties_core.completeness_for(case.registration_type, rows, await aml_review.decisions_for(db, [p.id for p in rows]),
+                                                      market=firm.jurisdiction),
     }
 
 
@@ -1135,12 +1144,15 @@ async def create_transfer(
     user: User = Depends(require_roles(*STAFF_ROLES)),
     firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db)
 ):
-    """F4 — Submit a new transfer request (ACAT / wire / ACH) via the TransferAdapter."""
+    """F4 — Submit a new transfer request (the market's own types) via the TransferAdapter."""
     case = await db.get(OnboardingCase, case_id)
     if not case or case.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Case not found")
-    if body.transfer_type not in ("acat", "wire", "ach", "rollover", "exchange_1035"):
-        raise HTTPException(status_code=422, detail="transfer_type must be acat, wire, ach, rollover or exchange_1035")
+    from app.aurea_core import india_onboarding
+
+    refused = india_onboarding.transfer_refusal(firm, body.transfer_type)
+    if refused:
+        raise HTTPException(status_code=422, detail=refused)
     if body.direction not in ("in", "out"):
         raise HTTPException(status_code=422, detail="direction must be in or out")
     # The account must exist before anything is moved into it: a transfer to an account the custodian has not
@@ -1174,7 +1186,7 @@ async def create_transfer(
 
     # Run the title check immediately on an incoming ACAT — the whole value of the control
     # is that it happens before submission rather than after a reject comes back.
-    if body.transfer_type == "acat" and body.direction == "in":
+    if body.transfer_type in transfer_controls.IN_KIND and body.direction == "in":
         party_rows = await _load_parties(db, case_id)
         check = transfer_controls.check_title(
             body.delivering_account_title, [p.legal_name for p in party_rows]
@@ -1298,7 +1310,7 @@ async def add_document(
     case = await db.get(OnboardingCase, case_id)
     if not case or case.firm_id != firm.id:
         raise HTTPException(status_code=404, detail="Case not found")
-    raw = body.raw_text or sample_docs.generate(body.doc_type, case.prospect_name)
+    raw = body.raw_text or sample_docs.generate(body.doc_type, case.prospect_name, market=firm.jurisdiction)
     doc = OnboardingDocument(
         firm_id=firm.id, case_id=case.id, doc_type=body.doc_type,
         filename=f"{body.doc_type}_{case.prospect_name.split()[0].lower()}.pdf", raw_text=raw,
@@ -1309,8 +1321,16 @@ async def add_document(
 
 
 @router.get("/document-templates")
-async def document_templates():
-    return sample_docs.TEMPLATES
+async def document_templates(firm: Firm = Depends(current_firm)):
+    return sample_docs.templates_for(firm.jurisdiction)
+
+
+@router.get("/case-options")
+async def case_options(firm: Firm = Depends(current_firm)):
+    """What the case page offers in the firm's own market: how money and securities move (aurea_core/india_onboarding.py)."""
+    from app.aurea_core import india_onboarding
+
+    return {"transfer_types": india_onboarding.transfer_types(firm)}
 
 
 @router.post("/cases/{case_id}/run")

@@ -2356,13 +2356,19 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         try:
             if tool_key == "request_cash_movement":
                 r = await e.prepare_request(self.session, _parse_uuid(inputs.get("account_id") or "", "account_id"), firm_id=self.firm_id, **self._request_args(inputs))
-                return [("Account", r["account"].name), ("Kind", r["kind"].upper() if r["kind"] == "rmd" else r["kind"].capitalize()), ("Amount", say(r["amount"])), ("To", r["payee"]), ("Third party", "Yes, a callback is needed" if r["third_party"] else None),
+                from app.aurea_core import india_onboarding
+
+                signers = await india_onboarding.holder_note(self.session, await self._firm(), r["account"])
+                return [("Holders", signers), ("Account", r["account"].name), ("Kind", r["kind"].upper() if r["kind"] == "rmd" else r["kind"].capitalize()), ("Amount", say(r["amount"])), ("To", r["payee"]), ("Third party", "Yes, a callback is needed" if r["third_party"] else None),
                         ("For", r["reason"]), ("Cash there", say(r["cash"])), ("Already asked for", say(r["already_open"]) if r["already_open"] else None), ("Short by", say(r["short_by"]) if r["short_by"] else None), ("Then", "Held back from purchases, nothing paid")]
             if tool_key == "record_cash_paid":
                 who = await self._shelf_user()
                 r = await e.prepare_paid(self.session, _parse_uuid(inputs.get("request_id") or "", "request_id"), firm_id=self.firm_id, by=who, **self._paid_args(inputs))
                 q = r["request"]
-                return [("Account", r["account"].name), ("Amount", say(float(q.amount))), ("To", q.payee), ("Paid", firm_time.spoken(r["day"])), ("Callback", r["callback"]), ("Cash then", say(float(r["account"].cash_balance or 0) - float(q.amount))), ("Document", r["document"])]
+                from app.aurea_core import india_onboarding
+
+                signers = await india_onboarding.holder_note(self.session, await self._firm(), r["account"])
+                return [("Holders", signers), ("Account", r["account"].name), ("Amount", say(float(q.amount))), ("To", q.payee), ("Paid", firm_time.spoken(r["day"])), ("Callback", r["callback"]), ("Cash then", say(float(r["account"].cash_balance or 0) - float(q.amount))), ("Document", r["document"])]
             if tool_key == "cancel_cash_request":
                 r = await e.prepare_cancel(self.session, _parse_uuid(inputs.get("request_id") or "", "request_id"), firm_id=self.firm_id, reason=inputs.get("reason"))
                 return [("Account", r["account"].name), ("Amount", say(float(r["request"].amount))), ("To", r["request"].payee), ("Reason", r["reason"]), ("Then", "The cash is released")]
@@ -2551,7 +2557,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         after = types.SimpleNamespace(registration_type=case.registration_type, custodian_name=case.custodian_name, intake={**(case.intake or {}), "registration": reg})
         parties = (await self.session.execute(select(OnboardingParty).where(OnboardingParty.case_id == case.id))).scalars().all()
         docs = (await self.session.execute(select(OnboardingDocument).where(OnboardingDocument.case_id == case.id))).scalars().all()
-        check = document_matrix.check(after, list(parties), list(docs), firm=firm, today=firm_time.today(firm))
+        from app.aurea_core import india_onboarding
+
+        held = await india_onboarding.registry_holds(self.session, firm, case, list(parties))
+        check = document_matrix.check(after, list(parties), list(docs), firm=firm, today=firm_time.today(firm), held=held)
         def show(f, v):
             if isinstance(v, list):
                 return ", ".join(v)
@@ -4036,6 +4045,11 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         changes: dict[str, Any] = {}
         reg_type = inputs.get("registration_type")
         if reg_type is not None:
+            from app.aurea_core import india_onboarding
+
+            refused = india_onboarding.registration_refusal(await self._firm(), reg_type)
+            if refused:
+                raise ExecutorError(refused)
             if reg_type not in {t.value for t in RegistrationType}:
                 raise ExecutorError(f"Unknown registration_type: {reg_type}")
             changes["registration_type"] = reg_type
@@ -4144,12 +4158,20 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             self.session, self.firm_id,
             household_id=_parse_uuid(household_id, "household_id") if household_id else None,
         )
-        n = len(result["gaps"])
-        result["message"] = (
-            f"All {result['accounts_checked']} account(s) needing beneficiaries are covered."
-            if n == 0 else
-            f"{n} of {result['accounts_checked']} account(s) needing beneficiaries have a gap."
-        )
+        n, checked, left = len(result["gaps"]), result["accounts_checked"], len(result.get("not_checked") or [])
+        india = result.get("market") == "IN"
+        what = "account(s) held by a person" if india else "account(s) needing beneficiaries"
+        if result["state"] == "nothing_checked":
+            said = (f"No account was checked ({result.get('accounts_total', 0)} on file), so this says nothing about whether any "
+                    f"has a {'nomination' if india else 'beneficiary'}.")
+        elif india:
+            said = (f"{result['accounts_covered']} of {checked} {what} have a nomination or a signed opt-out; {n} do not or have a "
+                    "nomination that does not add up.")
+        else:
+            said = f"All {checked} {what} are covered." if n == 0 else f"{n} of {checked} {what} have a gap."
+        if left:
+            said += f" {left} account(s) were not checked, each with its reason."
+        result["message"] = said
         return result
 
     async def read_portfolio(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -4782,7 +4804,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
 
     def _start_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {k: inputs.get(k) for k in ("prospect_name", "registration_type", "segment", "risk_preference",
-                                           "mandate_preference", "source_of_wealth", "email", "opportunity_id")}
+                                           "mandate_preference", "source_of_wealth", "email", "opportunity_id", "household_id")}
 
     async def start_onboarding(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import onboarding_start
@@ -4813,6 +4835,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         return [("Prospect", p["name"]),
                 ("From the pipeline", f"{deal.title}: {deal.stage.capitalize()} becomes Won" if deal else None),
                 ("Email", p["email"] if deal else None),
+                ("Household", f"Joins {p['household'].name}" if p["household"] else "A new household"),
                 ("Account type", p["label"]), ("Segment", p["segment"].replace("_", " ").capitalize()),
                 ("Stated risk", p["risk"].capitalize() if p["risk"] else "Not stated: the questionnaire will indicate one"),
                 ("Mandate", p["mandate"].capitalize() if p["mandate"] else "Not stated"),
@@ -6498,6 +6521,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "settled": result["orders_settled"], "failed": result["orders_failed"], "venue": result["venue"], "role": str(self.role),
             **({"waiting": result["orders_waiting"]} if "orders_waiting" in result else {})})
 
+        from app.aurea_core import india_onboarding
+
+        signers = await india_onboarding.holder_note(self.session, firm, a["account"])
         note = result.get("note") or (
             f"{result['orders_settled']} of {result['orders_created']} order(s) filled and "
             f"settled via '{result['venue']}'"
@@ -6505,6 +6531,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                                                    "entries, but no market was reached)")
             + (f". {result['orders_failed']} could not be executed." if result["orders_failed"] else ".")
         )
+
+        if signers:
+            note = f"{note} {signers}"
 
         return {
             "mandate_id": str(mandate_id),

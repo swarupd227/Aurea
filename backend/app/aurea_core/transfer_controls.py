@@ -18,6 +18,8 @@ from __future__ import annotations
 import re
 
 NOT_CHECKED, MATCH, MISMATCH, REVIEW = "not_checked", "match", "mismatch", "review"
+# Securities moving in kind, each checked against the title they come from: a US ACAT, an Indian off-market demat transfer.
+IN_KIND = {"acat": "ACAT", "demat": "Demat transfer"}
 
 # Ownership and entity words that differ harmlessly between firms' title conventions:
 # "SMITH JOHN A" vs "John A Smith", "Acme LLC" vs "ACME L.L.C."
@@ -102,14 +104,15 @@ def transfer_readiness(transfer, *, party_names: list[str]) -> dict:
     """Whether a single transfer is safe to submit, and why not."""
     problems: list[str] = []
 
-    if transfer.transfer_type == "acat" and transfer.direction == "in":
+    if transfer.transfer_type in IN_KIND and transfer.direction == "in":
+        kind = IN_KIND[transfer.transfer_type]
         if transfer.title_match_status == MISMATCH:
             problems.append(
-                f"ACAT title mismatch — {transfer.title_match_note or 'titles do not match'}"
+                f"{kind} title mismatch — {transfer.title_match_note or 'titles do not match'}"
             )
         elif transfer.title_match_status in (NOT_CHECKED, REVIEW):
             problems.append(
-                "ACAT title not verified against the delivering-firm statement."
+                f"{kind} title not verified against the delivering-firm statement."
             )
 
     # Third-party movements are the imposter-fraud vector; first-party are not.
@@ -131,7 +134,7 @@ def status_for(transfers: list, *, party_names: list[str]) -> dict:
     checks = [transfer_readiness(t, party_names=party_names) for t in transfers]
     blocking = [c for c in checks if not c["ready"]]
 
-    acat_in = [t for t in transfers if t.transfer_type == "acat" and t.direction == "in"]
+    acat_in = [t for t in transfers if t.transfer_type in IN_KIND and t.direction == "in"]
     unverified_titles = [
         t for t in acat_in if t.title_match_status in (NOT_CHECKED, REVIEW, MISMATCH)
     ]

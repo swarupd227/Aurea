@@ -16,6 +16,7 @@ const REGISTRATION_LABELS: Record<string, string> = {
   custodial_utma: "Custodial UTMA", custodial_ugma: "Custodial UGMA",
   estate_inherited: "Estate/Inherited", huf: "HUF",
   nri_nre: "NRI (NRE)", nri_nro: "NRI (NRO)", minor_guardian: "Minor",
+  joint_all: "Joint (all sign)", joint_anyone: "Joint (anyone or survivor)", entity_llp: "LLP",
 };
 
 const AML_TIER_STYLE: Record<string, string> = {
@@ -259,15 +260,19 @@ function CaseCard({ c }: { c: any }) {
 // `not`: a market that does not use it (NOT_IN). `labelIn`: its name in a market where the US one would mislead.
 export const REGISTRATION_OPTIONS: { value: string; label: string; only?: string; not?: string; labelIn?: Record<string, string> }[] = [
   { value: "individual", label: "Individual" },
-  { value: "joint_jtwros", label: "Joint — JTWROS", labelIn: { IN: "Joint — holders with survivorship" } },
-  { value: "joint_tic", label: "Joint — Tenants in Common" },
+  { value: "joint_jtwros", label: "Joint — JTWROS", not: "IN" },
+  { value: "joint_tic", label: "Joint — Tenants in Common", not: "IN" },
+  // India: how the holders operate the account is chosen here; there is no "joint" without a mode.
+  { value: "joint_all", label: "Joint (all holders sign)", only: "IN" },
+  { value: "joint_anyone", label: "Joint (anyone or survivor)", only: "IN" },
   { value: "traditional_ira", label: "Traditional IRA", only: "US" },
   { value: "roth_ira", label: "Roth IRA", only: "US" },
   { value: "employer_rollover", label: "Employer Rollover (401k/403b)", only: "US" },
   { value: "trust", label: "Trust" },
   { value: "entity_llc", label: "Entity — LLC", not: "IN" },
-  { value: "entity_corp", label: "Entity — Corporation" },
-  { value: "entity_partnership", label: "Entity — Partnership" },
+  { value: "entity_corp", label: "Entity — Corporation", labelIn: { IN: "Company" } },
+  { value: "entity_partnership", label: "Entity — Partnership", labelIn: { IN: "Partnership" } },
+  { value: "entity_llp", label: "Limited liability partnership (LLP)", only: "IN" },
   { value: "custodial_utma", label: "Custodial — UTMA", only: "US" },
   { value: "custodial_ugma", label: "Custodial — UGMA", only: "US" },
   { value: "estate_inherited", label: "Estate / Inherited" },
@@ -278,7 +283,7 @@ export const REGISTRATION_OPTIONS: { value: string; label: string; only?: string
 ];
 
 // Indian account types come first, in the order an Indian family opens them, then the rest as listed.
-const IN_FIRST = ["individual", "joint_jtwros", "huf", "trust", "entity_corp", "entity_partnership", "estate_inherited", "nri_nre", "nri_nro", "minor_guardian"];
+const IN_FIRST = ["individual", "joint_all", "joint_anyone", "huf", "trust", "entity_corp", "entity_partnership", "entity_llp", "estate_inherited", "nri_nre", "nri_nro", "minor_guardian"];
 
 /** The account types a market offers, named and ordered for it. */
 export function registrationOptionsFor(market: string): { value: string; label: string }[] {
@@ -294,8 +299,11 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
   // Only what the person states is sent: a blank risk or mandate is left for the questionnaire and the adviser.
   const [form, setForm] = useState({
     prospect_name: "", registration_type: "individual", segment: "private_wealth",
-    risk_profile: "", mandate_preference: "", source_of_wealth: "",
+    risk_profile: "", mandate_preference: "", source_of_wealth: "", household_id: "",
   });
+  // The households already on the book, so a spouse joins theirs instead of making a second one.
+  const { data: book } = useApi<any>("/api/advisers");
+  const households: { id: string; name: string }[] = book?.households || [];
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const market = (getUser()?.firm?.jurisdiction || "").toUpperCase();
@@ -313,6 +321,7 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
           prospect_name: form.prospect_name,
           registration_type: form.registration_type,
           segment: form.segment,
+          household_id: form.household_id || null,
           intake: {
             risk_profile: form.risk_profile || null, mandate_preference: form.mandate_preference || null,
             source_of_wealth: form.source_of_wealth || null,
@@ -348,6 +357,12 @@ function NewProspect({ onClose, onCreated }: { onClose: () => void; onCreated: (
                 <option value="for_purpose">For-purpose</option>
               </select>
             </div>
+          </div>
+          <div><label className="label" htmlFor="np-household">Household</label>
+            <select id="np-household" className="input" data-testid="onboarding-new-household" value={form.household_id} onChange={(e) => setForm({ ...form, household_id: e.target.value })}>
+              <option value="">A new household</option>
+              {households.map((h) => <option key={h.id} value={h.id}>Joins {h.name}</option>)}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Risk profile</label>

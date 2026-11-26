@@ -15,6 +15,7 @@ Kept as data so the matrix is configurable rather than tribal knowledge.
 """
 from __future__ import annotations
 
+from app.aurea_core import law_figures, markets
 from app.aurea_core.aml_review import SETTLED, party_state
 from app.models.enums import PartyRole
 
@@ -119,6 +120,18 @@ _REQUIRED: dict[str, list[tuple[str, int, str]]] = {
     "huf": [
         (PartyRole.KARTA, 1, "The karta manages the HUF and acts and signs for it."),
     ],
+    "joint_all": [
+        (PartyRole.OWNER, 1, "The first holder."),
+        (PartyRole.JOINT_OWNER, 1, "A joint holding has at least two holders, and each one signs."),
+    ],
+    "joint_anyone": [
+        (PartyRole.OWNER, 1, "The first holder."),
+        (PartyRole.JOINT_OWNER, 1, "An anyone-or-survivor holding has at least two holders."),
+    ],
+    "entity_llp": [
+        (PartyRole.BENEFICIAL_OWNER, 1, "Each individual who owns or controls the LLP above the line must be recorded."),
+        (PartyRole.CONTROL_PERSON, 1, "The designated partner or person in control must be named."),
+    ],
     "nri_nre": [(PartyRole.OWNER, 1, "The non-resident account holder.")],
     "nri_nro": [(PartyRole.OWNER, 1, "The non-resident account holder.")],
     "minor_guardian": [
@@ -127,14 +140,41 @@ _REQUIRED: dict[str, list[tuple[str, int, str]]] = {
     ],
 }
 
-_ENTITY_TYPES = {"entity_llc", "entity_corp", "entity_partnership"}
+_ENTITY_TYPES = {"entity_llc", "entity_corp", "entity_partnership", "entity_llp"}
 
 
-def required_roles(registration_type: str | None) -> list[tuple[str, int, str]]:
-    return _REQUIRED.get(registration_type or "individual", _REQUIRED["individual"])
+def _india(market: str | None) -> bool:
+    found = markets.get(market) if market else None
+    return found is not None and found.code == "IN"
 
 
-def completeness_for(registration_type: str | None, parties: list, decisions: dict | None = None) -> dict:
+def ownership_line(registration_type: str | None, market: str | None) -> tuple[float, bool]:
+    """(percentage, whether it is "more than" rather than "or more") above which a person is a beneficial owner. The
+    Indian lines are the law figures `kyc_india` reads, unreviewed by counsel; an LLP is read at the partnership line,
+    which is assumed. Elsewhere the CDD Rule's 25% or more."""
+    if not _india(market):
+        return BENEFICIAL_OWNER_THRESHOLD_PCT, False
+    if registration_type == "trust":
+        return round(law_figures.value("in_kyc_bo_trust") * 100, 2), False
+    if registration_type in _ENTITY_TYPES:
+        return round(law_figures.value("in_kyc_bo_company") * 100, 2), True
+    return round(law_figures.value("in_kyc_bo_unincorporated") * 100, 2), True
+
+
+def required_roles(registration_type: str | None, market: str | None = None) -> list[tuple[str, int, str]]:
+    rows = _REQUIRED.get(registration_type or "individual", _REQUIRED["individual"])
+    if not (_india(market) and registration_type in _ENTITY_TYPES):
+        return rows
+    line, _ = ownership_line(registration_type, market)
+    llp = " An LLP is read at the partnership line (assumed)." if registration_type == "entity_llp" else ""
+    why = {PartyRole.BENEFICIAL_OWNER: f"PML Rules: each individual with more than {line:g}% of the capital or profits is recorded (line not reviewed by counsel).{llp}",
+           PartyRole.CONTROL_PERSON: f"PML Rules: name who controls it by other means, or its senior managing official, "
+                                     f"whether or not they hold more than {line:g}%."}
+    return [(role, n, why.get(role, said)) for role, n, said in rows]
+
+
+def completeness_for(registration_type: str | None, parties: list, decisions: dict | None = None, *,
+                     market: str | None = None) -> dict:
     """Evaluate role coverage, screening coverage and the CDD ownership rules.
 
     Returns the gate result: `blocks_activation` is true when any required role is
@@ -158,7 +198,7 @@ def completeness_for(registration_type: str | None, parties: list, decisions: di
 
     # 1. Required roles present?
     role_gaps = []
-    for role, minimum, why in required_roles(registration_type):
+    for role, minimum, why in required_roles(registration_type, market):
         have = len(control_people) if role == PartyRole.CONTROL_PERSON else len(by_role.get(role, []))
         if have < minimum:
             role_gaps.append({
@@ -180,11 +220,13 @@ def completeness_for(registration_type: str | None, parties: list, decisions: di
 
     # 3. Entity ownership rules under the CDD Rule.
     ownership_issues = []
-    if (registration_type or "") in _ENTITY_TYPES:
+    india = _india(market)
+    line, more_than = ownership_line(registration_type, market)
+    if (registration_type or "") in _ENTITY_TYPES or (india and registration_type == "trust"):
         bos = by_role.get(PartyRole.BENEFICIAL_OWNER, [])
         total = sum(float(p.ownership_pct or 0) for p in bos)
 
-        if len(control_people) > 1:
+        if len(control_people) > 1 and not india:      # "exactly one" is the CDD Rule's
             ownership_issues.append({
                 "code": "multiple_control_persons",
                 "detail": (
@@ -194,13 +236,13 @@ def completeness_for(registration_type: str | None, parties: list, decisions: di
                 ),
             })
         below = [p for p in bos if p.ownership_pct is not None
-                 and float(p.ownership_pct) < BENEFICIAL_OWNER_THRESHOLD_PCT]
+                 and (float(p.ownership_pct) <= line if more_than else float(p.ownership_pct) < line)]
         if below:
             ownership_issues.append({
                 "code": "below_threshold",
                 "detail": (
-                    f"{len(below)} party(ies) recorded as beneficial owners below the "
-                    f"{BENEFICIAL_OWNER_THRESHOLD_PCT:.0f}% threshold: "
+                    f"{len(below)} party(ies) recorded as beneficial owners {'at or below' if more_than else 'below'} the "
+                    f"{line:g}% threshold: "
                     + ", ".join(p.legal_name for p in below) + "."
                 ),
             })
@@ -221,6 +263,10 @@ def completeness_for(registration_type: str | None, parties: list, decisions: di
     blocks = bool(role_gaps or unscreened or ownership_issues)
     return {
         "registration_type": registration_type,
+        "market": "IN" if india else None,
+        # What the ownership gate says when nothing is wrong, in the market's own terms.
+        "ownership_ok": (f"Owners above the {line:g}% line and the person in control are recorded." if india
+                         else "25% owners and control person certified."),
         "n_parties": len(parties),
         "role_gaps": role_gaps,
         "unscreened": unscreened,

@@ -22,7 +22,7 @@ from datetime import date
 
 from app.aurea_core import law_figures
 
-OWN_ACCOUNTS = frozenset({"individual", "joint_jtwros", "joint_tic", "joint_tbe", "community_property", "trust"})
+OWN_ACCOUNTS = frozenset({"individual", "joint_jtwros", "joint_tic", "joint_tbe", "community_property", "trust", "joint_all", "joint_anyone"})
 LONG_HELD_DAYS = 365
 TOP_LOTS = 8
 BUNCH_YEARS = (1, 2, 3, 4, 5)

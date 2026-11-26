@@ -100,7 +100,7 @@ def exceptions_of(case, *, kyc: list[str], transfers: list, now: datetime) -> li
     for t in transfers:
         if t.status != "failed":
             continue
-        kind = "transfer_reject" if t.transfer_type == "acat" else "funding_fail"
+        kind = "transfer_reject" if t.transfer_type in ("acat", "demat") else "funding_fail"
         add(kind, f"{t.transfer_type.upper()} {t.direction}: {t.reject_reason or 'failed, with no reason recorded'}", t.initiated_at or t.created_at)
     return out
 
@@ -119,7 +119,8 @@ def account_row(case, *, data_complete: bool, gates_blocking: bool, kyc: list[st
 
 def household_of(case) -> str:
     """Which household an account belongs to: the one it was opened into, else the one its intake names."""
-    return (case.materialized or {}).get("household_id") or (case.intake or {}).get("household") or case.prospect_name
+    return ((case.materialized or {}).get("household_id") or (case.intake or {}).get("household_id")
+            or (case.intake or {}).get("household") or case.prospect_name)
 
 
 def households(rows: list[dict], cases: dict) -> list[dict]:

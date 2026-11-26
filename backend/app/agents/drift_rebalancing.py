@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import cash_movement, consent, firm_time, harvest_guard, ips, knowledge, licences, markets, shelf, tax_india, wash_sale
+from app.aurea_core import cash_movement, consent, firm_time, harvest_guard, india_onboarding, ips, knowledge, licences, markets, shelf, tax_india, wash_sale
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX as _CAPACITY_EQUITY_MAX, model_fit, on_file
 from app.aurea_core.rebalancing import Lot, Position, WashSaleGuard, optimise
 from app.aurea_core.valuation import latest_prices
@@ -386,6 +386,11 @@ class DriftRebalancingAgent(BaseAgent):
             + (f", harvesting {say(result.harvested_losses)} of losses" if result.harvested_losses else "")
             + "."
         )
+        if india_onboarding.applies(ctx.firm):    # an order on an all-sign joint account says who must sign (B-385)
+            for account in (await ctx.session.execute(select(Account).where(Account.mandate_id == ctx.subject.id))).scalars().all():
+                signers = await india_onboarding.holder_note(ctx.session, ctx.firm, account)
+                if signers:
+                    summary = f"{summary} {signers}"
 
         return [RecommendationDraft(
             title=title, summary=summary, rationale=rationale, confidence=confidence, priority=2,

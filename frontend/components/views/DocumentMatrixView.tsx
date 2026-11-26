@@ -17,8 +17,10 @@ export function DocumentMatrixView() {
       <ViewHeader title="Document matrix" />
       <Card className="mb-4"><div className="flex flex-wrap gap-1.5" data-testid="matrix-rules">
         <span className="chip">Signed within {data.stale_days} days</span>
-        <span className="chip">Tenancy by the entirety: {data.states.tenancy_by_the_entirety.join(" ")}</span>
-        <span className="chip">Community property: {data.states.community_property.join(" ")}</span>
+        {data.states && <>
+          <span className="chip">Tenancy by the entirety: {data.states.tenancy_by_the_entirety.join(" ")}</span>
+          <span className="chip">Community property: {data.states.community_property.join(" ")}</span>
+        </>}
         {custodians.length === 0
           ? <span className="chip text-ink-muted">No custodian forms recorded</span>
           : custodians.map(([c, forms]) => <span key={c} className="chip">{c}: {forms.join(", ") || "none"}</span>)}

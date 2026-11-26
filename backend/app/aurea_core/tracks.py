@@ -58,11 +58,11 @@ def _track_a(case, disclosure_status: dict) -> dict:
     }
 
 
-def _track_b(case, party_status: dict, documents: list) -> dict:
+def _track_b(case, party_status: dict, documents: list, firm=None, held: dict | None = None) -> dict:
     """Account establishment — parties, documents, custodian account."""
     from app.aurea_core import document_matrix
 
-    missing_docs = [m["label"] for m in document_matrix.missing_documents(case, documents)]
+    missing_docs = [m["label"] for m in document_matrix.missing_documents(case, documents, firm=firm, held=held)]
 
     role_gaps = party_status.get("role_gaps", [])
     ownership_issues = party_status.get("ownership_issues", [])
@@ -125,11 +125,12 @@ def _track_c(case, party_status: dict) -> dict:
             "detail": f"{len(unscreened)} of {n_parties} parties not screened.",
             "next_action": "Run the Adverse Media & PEP Screener.",
         }
+    check = "identity check" if party_status.get("market") == "IN" else "CIP"
     if case.cip_status == "review":
         return {
             "state": WAITING_EXTERNAL,
-            "detail": "CIP returned review — awaiting provider or manual verification.",
-            "next_action": "Resolve the CIP review outcome.",
+            "detail": f"{check[0].upper()}{check[1:]} returned review — awaiting provider or manual verification.",
+            "next_action": f"Resolve the {check} review outcome.",
         }
     if case.edd_status == "edd_declined":
         return {
@@ -147,7 +148,7 @@ def _track_c(case, party_status: dict) -> dict:
         return {
             "state": IN_PROGRESS,
             "detail": "All parties screened; identity not yet verified.",
-            "next_action": "Run the CIP identity check.",
+            "next_action": f"Run the {check if check != 'CIP' else 'CIP identity check'}.",
         }
     return {
         "state": COMPLETE,
@@ -186,11 +187,11 @@ _OWNER = {"agreements": "adviser", "account": "ops", "financial_crime": "complia
 
 
 def evaluate(case, *, party_status: dict, disclosure_status: dict,
-             documents: list, transfers: list) -> dict:
+             documents: list, transfers: list, firm=None, held: dict | None = None) -> dict:
     """Compute all four tracks plus the derived case-level position."""
     tracks = {
         "agreements": _track_a(case, disclosure_status),
-        "account": _track_b(case, party_status, documents),
+        "account": _track_b(case, party_status, documents, firm, held),
         "financial_crime": _track_c(case, party_status),
         "funding": _track_d(case, transfers),
     }

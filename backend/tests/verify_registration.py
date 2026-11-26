@@ -48,7 +48,8 @@ async def main() -> int:
     Session = async_sessionmaker(db, expire_on_commit=False)
 
     async with Session() as s:
-        firm = Firm(id=uuid.uuid4(), name="Test", slug="test")
+        # US account types, so a US firm: an Indian firm (the column default) is checked for nominations instead (B-385).
+        firm = Firm(id=uuid.uuid4(), name="Test", slug="test", jurisdiction="US", base_currency="USD")
         household = Household(id=uuid.uuid4(), firm_id=firm.id, name="Test Household")
         owner_75 = Person(id=uuid.uuid4(), firm_id=firm.id, household_id=household.id,
                            full_name="Retiree", date_of_birth=dob_for_age(75))

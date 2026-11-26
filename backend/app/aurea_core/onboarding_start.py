@@ -7,6 +7,9 @@ wealth; nothing is filled in. An account type is offered only in the market it b
 for a US firm, an HUF for an Indian one). The same name with a case still open is refused, so one prospect is not
 onboarded twice. The adviser who opens a case is recorded on it, and activation links that adviser.
 
+A case may be opened into a household already on the book (`onboarding_household.py`), so a couple is one household; none
+named means a new one. An Indian joint account says how it is operated and nothing is assumed (`india_onboarding.py`).
+
 A case opened from a pipeline opportunity takes the contact's name and email unless others are given, and opening it
 is what wins the deal (`aurea_core/pipeline.link_case`), so the funnel reads on from lead to invested (B-159).
 """
@@ -15,6 +18,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aurea_core import india_onboarding, onboarding_household
 from app.models.enums import ClientSegment, OnboardingStatus, RegistrationType, UserRole
 from app.models.identity import AuditEvent, User
 from app.models.onboarding import OnboardingCase
@@ -28,16 +32,22 @@ LABELS = {
     R.TRUST: "Trust", R.ENTITY_LLC: "Company (LLC)", R.ENTITY_CORP: "Company (corporation)", R.ENTITY_PARTNERSHIP: "Partnership",
     R.CUSTODIAL_UTMA: "Custodial (UTMA)", R.CUSTODIAL_UGMA: "Custodial (UGMA)", R.ESTATE_INHERITED: "Estate", R.INHERITED_IRA: "Inherited IRA",
     R.PLAN_529: "529 plan", R.DAF: "Donor-advised fund", R.HSA: "Health savings account", R.HUF: "Hindu Undivided Family (HUF)",
+    R.JOINT_ALL: "Joint (all holders sign)", R.JOINT_ANYONE: "Joint (anyone or survivor)", R.ENTITY_LLP: "Limited liability partnership (LLP)",
     R.NRI_NRE: "NRI account (NRE)", R.NRI_NRO: "NRI account (NRO)", R.MINOR_GUARDIAN: "Minor, run by a guardian",
 }
 # Account types that exist only in one market's law.
 ONLY_IN = {**{t: "US" for t in (R.JOINT_TBE, R.COMMUNITY_PROPERTY, R.TRADITIONAL_IRA, R.ROTH_IRA, R.SEP_IRA, R.SIMPLE_IRA,
                                  R.EMPLOYER_ROLLOVER, R.CUSTODIAL_UTMA, R.CUSTODIAL_UGMA, R.INHERITED_IRA, R.PLAN_529, R.DAF, R.HSA)},
-           R.HUF: "IN", R.NRI_NRE: "IN", R.NRI_NRO: "IN", R.MINOR_GUARDIAN: "IN"}
-# Account types a market does not use, though others do. An LLC is a US form; India's are the company and the LLP.
-NOT_IN = {"IN": frozenset({R.ENTITY_LLC})}
+           R.HUF: "IN", R.NRI_NRE: "IN", R.NRI_NRO: "IN", R.MINOR_GUARDIAN: "IN", R.JOINT_ALL: "IN", R.JOINT_ANYONE: "IN",
+           R.ENTITY_LLP: "IN"}
+# Account types a market does not use, though others do. An LLC is a US form; India's are the company and the LLP. India
+# holds jointly as "all holders sign" or "anyone or survivor" (india_onboarding.py), not by the US tenancies.
+NOT_IN = {"IN": frozenset({R.ENTITY_LLC, R.JOINT_JTWROS, R.JOINT_TIC})}
+# A name a market uses where the general one would mislead.
+LABELS_IN = {"IN": {R.ENTITY_CORP: "Company", R.ENTITY_PARTNERSHIP: "Partnership"}}
 # The legal entity an entity account becomes at activation (models.enums.EntityType).
-ENTITY_OF = {R.TRUST: "trust", R.ENTITY_LLC: "company", R.ENTITY_CORP: "company", R.ENTITY_PARTNERSHIP: "partnership", R.HUF: "huf"}
+ENTITY_OF = {R.TRUST: "trust", R.ENTITY_LLC: "company", R.ENTITY_CORP: "company", R.ENTITY_PARTNERSHIP: "partnership",
+             R.ENTITY_LLP: "partnership", R.HUF: "huf"}
 RISK_PREFERENCES = ("conservative", "balanced", "growth", "aggressive")
 MANDATES = ("advisory", "discretionary")
 OPENERS = frozenset({UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.BRANCH_LEADER})
@@ -55,8 +65,13 @@ def types_for(firm: Firm) -> list[str]:
 
 async def prepare(session: AsyncSession, firm: Firm, *, prospect_name: str | None, registration_type: str | None,
                   segment: str | None = None, risk_preference: str | None = None, mandate_preference: str | None = None,
-                  source_of_wealth: str | None = None, email: str | None = None, opportunity_id: str | None = None) -> dict:
+                  source_of_wealth: str | None = None, email: str | None = None, opportunity_id: str | None = None,
+                  household_id: str | None = None) -> dict:
     """What opening the case would record. Writes nothing."""
+    try:
+        household = await onboarding_household.resolve(session, firm, household_id)
+    except onboarding_household.HouseholdError as e:
+        raise StartError(str(e))
     deal = contact = None
     if opportunity_id:
         from app.aurea_core import pipeline
@@ -69,6 +84,9 @@ async def prepare(session: AsyncSession, firm: Firm, *, prospect_name: str | Non
     name = " ".join((prospect_name or "").split())
     if not name:
         raise StartError("Name the prospect: the person, couple, trust or company being onboarded.")
+    refused = india_onboarding.registration_refusal(firm, registration_type)
+    if refused:
+        raise StartError(refused)
     try:
         rtype = RegistrationType((registration_type or "").strip().lower())
     except ValueError:
@@ -93,14 +111,18 @@ async def prepare(session: AsyncSession, firm: Firm, *, prospect_name: str | Non
     if open_case:
         raise StartError(f"{open_case.prospect_name} already has an onboarding case open ({open_case.status}); "
                          "read_onboarding_cases finds it.")
-    return {"name": name, "type": rtype, "label": LABELS[rtype], "segment": seg, "risk": risk, "mandate": mandate,
+    label = LABELS_IN.get((firm.jurisdiction or "").upper(), {}).get(rtype, LABELS[rtype])
+    return {"name": name, "type": rtype, "label": label, "household": household, "segment": seg, "risk": risk, "mandate": mandate,
             "source_of_wealth": (source_of_wealth or "").strip() or None, "email": (email or "").strip() or None,
             "deal": deal, "contact": contact}
 
 
 async def start(session: AsyncSession, firm: Firm, *, actor: User, extra_intake: dict | None = None, **terms) -> OnboardingCase:
     p = await prepare(session, firm, **terms)
-    intake = {k: v for k, v in (extra_intake or {}).items() if v not in (None, "", [])}
+    # The household a case joins is only ever the one checked above, never one passed along with the rest of the intake.
+    intake = {k: v for k, v in (extra_intake or {}).items() if v not in (None, "", []) and k != "household_id"}
+    if p["household"] is not None:
+        intake["household_id"], intake["household"] = str(p["household"].id), p["household"].name
     for key, value in (("risk_profile", p["risk"]), ("mandate_preference", p["mandate"]),
                        ("source_of_wealth", p["source_of_wealth"]), ("email", p["email"])):
         if value:

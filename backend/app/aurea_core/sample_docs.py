@@ -5,6 +5,8 @@ These produce `Label: value` text that the document-intelligence extractor parse
 real file uploads; a firm would instead point the document-intelligence connector at real docs."""
 from __future__ import annotations
 
+from app.aurea_core import markets
+
 
 def passport(name: str, dob: str = "1979-03-14", number: str = "NZ "  "P1234567",
              nationality: str = "New Zealand", expiry: str = "2031-08-01") -> str:
@@ -83,8 +85,31 @@ TEMPLATES = [
 ]
 
 
-def generate(doc_type: str, name: str) -> str:
+# India's samples: invented, marked as samples, and no other country's papers.
+_IN_ADDRESS = "14 Sample Road, Indiranagar, Bengaluru 560038"
+_NOT_IN = ("overseas_pension",)
+
+
+def _is_india(market: str | None) -> bool:
+    found = markets.get(market) if market else None
+    return found is not None and found.code == "IN"
+
+
+def templates_for(market: str | None) -> list[dict]:
+    return [t for t in TEMPLATES if not (_is_india(market) and t["doc_type"] in _NOT_IN)]
+
+
+def generate(doc_type: str, name: str, market: str | None = None) -> str:
     """Generate a default sample document of a type for a named applicant."""
+    if _is_india(market):
+        if doc_type == "passport":
+            return passport(name, number="SAMPLE0000", nationality="Indian").replace("REPUBLIC PASSPORT", "REPUBLIC OF INDIA PASSPORT (SAMPLE)")
+        if doc_type == "drivers_licence":
+            return drivers_licence(name, number="SAMPLE-DL-0000", address=_IN_ADDRESS)
+        if doc_type == "proof_of_address":
+            return proof_of_address(name, address=_IN_ADDRESS)
+        if doc_type == "trust_deed":
+            return trust_deed(name, settlor=name, trustees=[name, "Sample Trustee Pvt Ltd"], beneficiaries=["Family members"])
     if doc_type == "passport":
         return passport(name)
     if doc_type == "drivers_licence":

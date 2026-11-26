@@ -20,7 +20,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time
+from app.aurea_core import firm_time, india_onboarding
 from app.models.enums import NIGORootCause, PartyRole
 from app.models.onboarding import OnboardingCase, OnboardingDocument, OnboardingParty
 from app.models.tenant import Firm
@@ -38,6 +38,7 @@ DOCUMENTS = {
     "overseas_address_proof": "Overseas address proof", "visa_or_oci": "Visa or OCI card", "fatca_crs_self_cert": "FATCA and CRS self-certification",
     "pis_permission": "PIS permission letter from the designated bank", "nre_nro_bank_proof": "NRE or NRO bank account proof",
     "birth_certificate": "Birth certificate", "guardian_proof": "Guardian's authority (birth certificate or court order)",
+    "llp_agreement": "LLP agreement",
 }
 _ID = ("id", "Government photo ID", ("passport", "drivers_licence"))
 _BENEFICIARY_FORM = ("beneficiaries", "Beneficiary designation", ("beneficiary_form",))
@@ -48,6 +49,9 @@ MATRIX: dict[str, dict] = {
     "individual": {"documents": [_ID], "fields": []},
     "joint_jtwros": {"documents": [_ID], "fields": []},
     "joint_tic": {"documents": [_ID], "fields": []},
+    # India: how the holders operate it is the account type itself (india_onboarding.py).
+    "joint_all": {"documents": [_ID], "fields": []},
+    "joint_anyone": {"documents": [_ID], "fields": []},
     "joint_tbe": {"documents": [_ID], "fields": ["married"]},
     "community_property": {"documents": [_ID], "fields": ["married"]},
     "traditional_ira": {"documents": [_ID, _BENEFICIARY_FORM], "fields": ["funding"]},
@@ -61,6 +65,9 @@ MATRIX: dict[str, dict] = {
     "entity_corp": {"documents": list(_ENTITY), "fields": ["tax_id"]},
     "entity_partnership": {"documents": [_ID, ("formation", "Partnership agreement", ("partnership_agreement", "entity_formation", "trust_deed")),
                                          ("authority", "Authority to act", ("entity_resolution",))], "fields": ["tax_id"]},
+    "entity_llp": {"documents": [_ID, ("formation", "LLP agreement or certificate of incorporation", ("llp_agreement", "entity_formation")),
+                                 ("authority", "Authority to act", ("entity_resolution",)), ("pan", "PAN card of the LLP", ("pan_card",))],
+                   "fields": []},
     "custodial_utma": {"documents": [_ID], "fields": ["termination_age"]},
     "custodial_ugma": {"documents": [_ID], "fields": ["termination_age"]},
     "estate_inherited": {"documents": [_ID, ("death", "Death certificate", ("death_certificate",)),
@@ -106,6 +113,12 @@ NEEDS_STATE = {"joint_tbe", "community_property", "custodial_utma", "custodial_u
 COMMUNITY_PROPERTY_STATES = {"AZ", "CA", "ID", "LA", "NV", "NM", "TX", "WA", "WI"}
 TBE_STATES = {"AR", "DE", "DC", "FL", "HI", "MD", "MA", "MS", "MO", "OK", "PA", "RI", "TN", "VT", "VA", "WY"}   # for securities, not only land
 STALE_DAYS = 90
+# India: an entity gives its PAN card, recorded against it from the card and shown masked (aurea_core/pan.py), never a
+# tax id typed into the case; and the papers that prove an executor's authority are India's.
+_IN_PAN = ("pan", "PAN card", ("pan_card",))
+_IN_NOT_ASKED = ("tax_id", "tax_id_type")
+_IN_LABELS = {"letters": "Probate, letters of administration or succession certificate"}
+_IN_PAN_TYPES = ("trust", "entity_corp", "entity_partnership", "estate_inherited")
 _EIN = re.compile(r"^\d{2}-\d{7}$")
 
 
@@ -125,19 +138,27 @@ def custodian_overlay(firm: Firm | None, custodian: str | None) -> list[tuple]:
 def requirements(registration_type: str | None, *, firm: Firm | None = None, custodian: str | None = None) -> dict:
     entry = MATRIX.get(registration_type or "individual", MATRIX["individual"])
     fields = list(entry["fields"])
+    documents = list(entry["documents"])
     if registration_type in NEEDS_STATE:
         fields.insert(0, "state")
-    return {"documents": list(entry["documents"]) + custodian_overlay(firm, custodian), "fields": fields}
+    if india_onboarding.applies(firm):
+        fields = [f for f in fields if f not in _IN_NOT_ASKED]
+        documents = [(key, _IN_LABELS.get(key, label), kinds) for key, label, kinds in documents]
+        if registration_type in _IN_PAN_TYPES:
+            documents.append(_IN_PAN)
+    return {"documents": documents + custodian_overlay(firm, custodian), "fields": fields}
 
 
 def _on_file(documents: list, detail: dict) -> set[str]:
     return {d.doc_type for d in documents} | set((detail.get("documents") or {}).keys())
 
 
-def missing_documents(case, documents: list, *, firm: Firm | None = None) -> list[dict]:
+def missing_documents(case, documents: list, *, firm: Firm | None = None, held: dict | None = None) -> list[dict]:
+    """`held` names the requirements something else already answers (india_onboarding.registry_holds)."""
     have = _on_file(documents, (case.intake or {}).get("registration") or {})
     return [{"key": key, "label": label, "any_of": list(kinds)} for key, label, kinds in
-            requirements(case.registration_type, firm=firm, custodian=case.custodian_name)["documents"] if not have & set(kinds)]
+            requirements(case.registration_type, firm=firm, custodian=case.custodian_name)["documents"]
+            if not have & set(kinds) and key not in (held or {})]
 
 
 def _day(value) -> date | None:
@@ -151,17 +172,18 @@ def _issue(cause: str, severity: str, field: str, description: str) -> dict:
     return {"root_cause": str(cause), "severity": severity, "field": field, "description": description}
 
 
-def check(case, parties: list, documents: list, *, firm: Firm | None, today: date) -> dict:
+def check(case, parties: list, documents: list, *, firm: Firm | None, today: date, held: dict | None = None) -> dict:
     """What a custodian would reject this package for, from what is on file."""
     reg = case.registration_type or "individual"
     detail = (case.intake or {}).get("registration") or {}
     settings = _settings(firm)
     issues: list[dict] = []
 
-    for m in missing_documents(case, documents, firm=firm):
+    held = held or {}
+    for m in missing_documents(case, documents, firm=firm, held=held):
         issues.append(_issue(NIGORootCause.MISSING_ID if m["key"] == "id" else NIGORootCause.STALE_FORM, "critical", m["key"], f"Missing: {m['label']}."))
 
-    for f in requirements(reg)["fields"]:
+    for f in requirements(reg, firm=firm)["fields"]:
         if detail.get(f) in (None, ""):
             issues.append(_issue(NIGORootCause.STALE_FORM, "high", f, f"Not recorded: {FIELD_LABELS[f]}."))
 
@@ -187,7 +209,7 @@ def check(case, parties: list, documents: list, *, firm: Firm | None, today: dat
     if plan_year not in (None, "") and int(plan_year) not in (today.year, today.year - 1):
         issues.append(_issue(NIGORootCause.STALE_FORM, "high", "plan_tax_year", f"Plan tax year {plan_year} is neither this year nor last."))
 
-    tax_id = detail.get("tax_id")
+    tax_id = None if india_onboarding.applies(firm) else detail.get("tax_id")
     if tax_id and (detail.get("tax_id_type") or "ein") == "ein" and not _EIN.match(str(tax_id)):
         issues.append(_issue(NIGORootCause.TITLE_MISMATCH, "critical", "tax_id", "An EIN is written NN-NNNNNNN."))
     for f in ("trust_date", "decedent_date_of_death"):
@@ -242,26 +264,36 @@ def check(case, parties: list, documents: list, *, firm: Firm | None, today: dat
     return {"registration_type": reg, "state": state or None, "custodian": case.custodian_name, "issues": issues,
             "in_good_order": not blocking, "readiness_score": max(0, 100 - sum(weight[i["severity"]] for i in issues)),
             "signers": signers, "detail": detail,
-            "requirements": {"documents": [{"key": k, "label": label, "any_of": list(kinds), "on_file": bool(_on_file(documents, detail) & set(kinds))}
+            "requirements": {"documents": [{"key": k, "label": held.get(k, label), "any_of": list(kinds),
+                                            "on_file": k in held or bool(_on_file(documents, detail) & set(kinds))}
                                            for k, label, kinds in requirements(reg, firm=firm, custodian=case.custodian_name)["documents"]],
-                             "fields": [{"field": f, "label": FIELD_LABELS[f], "value": detail.get(f)} for f in requirements(reg)["fields"]]}}
+                             "fields": [{"field": f, "label": FIELD_LABELS[f], "value": detail.get(f)} for f in requirements(reg, firm=firm)["fields"]]}}
 
 
 async def check_case(session: AsyncSession, case: OnboardingCase, firm: Firm) -> dict:
     parties = (await session.execute(select(OnboardingParty).where(OnboardingParty.case_id == case.id))).scalars().all()
     documents = (await session.execute(select(OnboardingDocument).where(OnboardingDocument.case_id == case.id))).scalars().all()
-    return check(case, list(parties), list(documents), firm=firm, today=firm_time.today(firm))
+    held = await india_onboarding.registry_holds(session, firm, case, list(parties))
+    return check(case, list(parties), list(documents), firm=firm, today=firm_time.today(firm), held=held)
 
 
 def matrix(firm: Firm) -> dict:
     """The firm's matrix, as the view shows it."""
+    from app.aurea_core import onboarding_start
+
     settings = _settings(firm)
-    rows = [{"registration_type": reg, "documents": [{"label": label, "any_of": [DOCUMENTS.get(k, k) for k in kinds]} for _, label, kinds in entry["documents"]],
-             "fields": [FIELD_LABELS[f] for f in requirements(reg)["fields"]]} for reg, entry in MATRIX.items()]
+    india = india_onboarding.applies(firm)
+    offered = set(onboarding_start.types_for(firm)) if india else set(MATRIX)
+    rows = [{"registration_type": reg,
+             "documents": [{"label": label, "any_of": [DOCUMENTS.get(k, k) for k in kinds]} for _, label, kinds in requirements(reg, firm=firm)["documents"]],
+             "fields": [FIELD_LABELS[f] for f in requirements(reg, firm=firm)["fields"]]} for reg in MATRIX if reg in offered]
     return {"registrations": rows, "custodians": {c: [DOCUMENTS.get(k, k) for k in forms] for c, forms in (settings.get("custodian_documents") or {}).items()},
-            "states": {"tenancy_by_the_entirety": sorted(settings.get("tbe_states") or TBE_STATES),
-                       "community_property": sorted(settings.get("community_property_states") or COMMUNITY_PROPERTY_STATES)},
-            "stale_days": int(settings.get("application_stale_days") or STALE_DAYS), "documents": DOCUMENTS}
+            # Which states allow a tenancy is US law, and an Indian firm has neither tenancy.
+            "states": None if india else {"tenancy_by_the_entirety": sorted(settings.get("tbe_states") or TBE_STATES),
+                                          "community_property": sorted(settings.get("community_property_states") or COMMUNITY_PROPERTY_STATES)},
+            "stale_days": int(settings.get("application_stale_days") or STALE_DAYS),
+            # A US tax form is not one an Indian firm records.
+            "documents": {k: v for k, v in DOCUMENTS.items() if not (india and k == "w9")}}
 
 
 # ── Recording, from the application or a document ────────────────────────────
@@ -320,6 +352,9 @@ async def prepare_detail(session: AsyncSession, firm_id: uuid.UUID, *, case_id: 
     if len(named) < 5:
         raise MatrixError("Say where it comes from: the application, the trust certification, the death certificate.")
     reg = case.registration_type or "individual"
+    if india_onboarding.applies(await session.get(Firm, firm_id)) and any((fields or {}).get(f) not in (None, "") for f in _IN_NOT_ASKED):
+        raise MatrixError("A PAN is not typed into registration detail: record the PAN card as a document received (pan_card). The PAN "
+                          "itself is recorded against the client from the card, and shown masked.")
     clean = {}
     for f, v in (fields or {}).items():
         if v in (None, ""):

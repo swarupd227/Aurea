@@ -3,6 +3,7 @@
 Pushes an approved onboarding case to the custodian's account-opening API via
 the pluggable CustodianAdapter.
 Default: mock Schwab.  Production: set AUREA_CUSTODIAN_PROVIDER=schwab.
+An Indian firm gets the simulated depository stand-in instead, and the proposal says it is simulated.
 
 Guards:
   - Only runs on cases in 'approved' status.
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
+from app.aurea_core import india_onboarding
 from app.aurea_core.integrations import custodian as custodian_integration
 from app.models.enums import AgentKey, AutonomyTier
 from app.models.onboarding import OnboardingCase
@@ -58,14 +60,33 @@ class CustodianAccountOpenerAgent(BaseAgent):
                 payload={"blocked": True, "reason": f"cip_status={cip}"},
             )]
 
-        adapter = custodian_integration.get_adapter(
-            ctx.config.get("custodian_provider") if ctx.config else None
-        )
+        provider = ctx.config.get("custodian_provider") if ctx.config else None
+        india = india_onboarding.applies(ctx.firm)
+        if india and provider in (None, "mock_schwab"):
+            provider = "mock_depository"      # never a US custodian or a US account code for an Indian case
+        adapter = custodian_integration.get_adapter(provider)
         result = adapter.open_account(
             prospect_name=sensed["prospect_name"],
             registration_type=sensed.get("registration_type"),
             segment=sensed.get("segment", "private_wealth"),
         )
+
+        if result.status == "active" and result.custodian == "simulated_depository":
+            fallback = (
+                f"Simulated: no depository participant is connected, so no account was opened anywhere. The stand-in reference "
+                f"{result.account_id} lets {sensed['prospect_name']}'s demonstration case move on."
+            )
+            return [RecommendationDraft(
+                title=f"Simulated depository account — {result.account_id}",
+                summary=f"{result.account_id} · simulated, no depository participant connected",
+                rationale=fallback,
+                confidence=0.99,
+                priority=4,
+                subject=Subject("onboarding_case", sensed["case_id"], sensed["prospect_name"]),
+                payload={"custodian_name": result.custodian, "custodian_account_id": result.account_id,
+                         "custodian_push_status": result.status, "simulated": True},
+                evidence={"account_id": result.account_id, "custodian": result.custodian, "simulated": True},
+            )]
 
         if result.status == "active":
             fallback = (

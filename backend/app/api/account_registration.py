@@ -80,6 +80,11 @@ async def update_registration(account_id: uuid.UUID, body: RegistrationUpdate, u
     if body.registration_type is not None:
         if body.registration_type not in _REGISTRATION_TYPES:
             raise HTTPException(status_code=422, detail=f"registration_type must be one of {sorted(_REGISTRATION_TYPES)}.")
+        from app.aurea_core import india_onboarding
+
+        refused = india_onboarding.registration_refusal(firm, body.registration_type)
+        if refused:
+            raise HTTPException(status_code=422, detail=refused)
         account.registration_type = body.registration_type
     if body.original_owner_death_date is not None:
         account.original_owner_death_date = body.original_owner_death_date

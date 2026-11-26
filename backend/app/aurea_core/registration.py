@@ -21,9 +21,10 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, rmd
+from app.aurea_core import firm_time, markets, nomination_audit, rmd
 from app.models.graph import Account, AccountBeneficiary, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding
+from app.models.tenant import Firm
 
 # Registration types whose owner takes an RMD from the start age their birth year sets (aurea_core/rmd.py); an
 # inherited IRA follows the election-dependent schedule handled separately below.
@@ -126,13 +127,18 @@ async def beneficiary_audit(
     """Every account whose registration type needs beneficiaries, and whether its
     designations are complete — present, and each class (primary/contingent) summing to
     100%. Firm-wide by default (the periodic confirmation campaign L200-1 §4 describes);
-    pass household_id to scope to one household."""
+    pass household_id to scope to one household. An Indian firm's check is of nominations
+    on the accounts a person holds (nomination_audit.py). With nothing checked the state
+    is "nothing_checked" and it is never clean."""
+    account_ids = await _household_account_ids(session, household_id) if household_id is not None else None
+    firm = await session.get(Firm, firm_id)
+    market = markets.for_firm(firm) if firm else None
+    if market is not None and market.code == "IN":
+        return _stated(await nomination_audit.audit(session, firm, account_ids))
+
     query = select(Account).where(Account.firm_id == firm_id)
-    if household_id is not None:
-        account_ids = await _household_account_ids(session, household_id)
-        if not account_ids:
-            return {"accounts_checked": 0, "gaps": []}
-        query = query.where(Account.id.in_(account_ids))
+    if account_ids is not None:
+        query = query.where(Account.id.in_(account_ids or [uuid.uuid4()]))
 
     accounts = (await session.execute(query)).scalars().all()
     needing = [a for a in accounts if a.registration_type in _BENEFICIARY_REQUIRED]
@@ -160,8 +166,17 @@ async def beneficiary_audit(
                 "beneficiary_count": len(beneficiaries),
             })
 
-    return {
+    return _stated({
+        "market": market.code if market else None,
+        "accounts_total": len(accounts),
         "accounts_checked": len(needing),
+        "accounts_covered": len(needing) - len(gaps),
         "gaps": gaps,
-        "clean": len(gaps) == 0,
-    }
+        "not_checked": [],
+    })
+
+
+def _stated(result: dict) -> dict:
+    """The one reading of a check: nothing checked is its own answer, and never "all covered"."""
+    state = "gaps" if result["gaps"] else "covered" if result["accounts_checked"] else "nothing_checked"
+    return {**result, "state": state, "clean": state == "covered"}

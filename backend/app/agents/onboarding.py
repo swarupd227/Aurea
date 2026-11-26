@@ -9,11 +9,13 @@ act:    on compliance approval, materialise the prospect into the client brain a
 """
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core import balance_sheet, billing, firm_time, ips, knowledge, markets
+from app.aurea_core import advisers, balance_sheet, billing, firm_time, india_onboarding, ips, knowledge, markets, onboarding_household
 from app.aurea_core.document_intel import DOC_LABELS, extract
 from app.aurea_core.screening import screen_parties
 from app.core.db import utcnow
@@ -54,7 +56,8 @@ async def _activation_gates(session, firm, case) -> dict:
     return gates_core.evaluate(
         case,
         party_status=parties_core.completeness_for(case.registration_type, party_rows,
-                                                   await aml_review.decisions_for(session, [p.id for p in party_rows])),
+                                                   await aml_review.decisions_for(session, [p.id for p in party_rows]),
+                                                   market=firm.jurisdiction),
         disclosure_status=(disclosure := disclosures.status_for(
             firm.jurisdiction, case.registration_type, disc_rows, case.engagement_type
         )),
@@ -181,6 +184,8 @@ class OnboardingAgent(BaseAgent):
         required = ({"passport", "drivers_licence"} if not case["is_entity"]
                     else {"huf_declaration"} if case.get("entity_type") == "huf" else {"trust_deed"})
         present = {d["doc_type"] for d in docs}
+        # India: either photo ID answers, and identity the KYC registry holds is not asked for again (B-385).
+        required = await india_onboarding.required_identity(s, ctx.firm, await s.get(OnboardingCase, ctx.subject.id), required, present)
         for missing_doc in required - present:
             exceptions.append(f"Missing required document: {DOC_LABELS.get(missing_doc, missing_doc)}.")
         for d in docs:
@@ -279,16 +284,35 @@ class OnboardingAgent(BaseAgent):
         proposal = payload.get("proposal", case.proposal or {})
         mandate_cfg = proposal.get("mandate", {})
 
-        household = Household(firm_id=ctx.firm.id, name=case.prospect_name,
-                              segment=case.segment, values={})
-        s.add(household)
-        await s.flush()
+        # A case opened into a household joins it; only one with none named makes a new household (B-385).
+        try:
+            household = await onboarding_household.resolve(s, ctx.firm, (case.intake or {}).get("household_id"))
+        except onboarding_household.HouseholdError as exc:
+            return {"executed": False, "note": str(exc)}
+        joined, holder = household is not None, None
+        if joined:
+            holder = await onboarding_household.member(s, household, case.prospect_name, entity=case.is_entity)
+        else:
+            household = Household(firm_id=ctx.firm.id, name=case.prospect_name,
+                                  segment=case.segment, values={})
+            s.add(household)
+            await s.flush()
 
         created = {"household_id": str(household.id)}
+        if joined:
+            created["joined_household"] = True
+        if holder is not None:
+            created["existing_holder"] = True
         owner_person_id = None
         owner_entity_id = None
 
-        if case.is_entity:
+        if holder is not None and case.is_entity:
+            owner_entity_id = holder.id
+            created["entity_id"] = str(holder.id)
+        elif holder is not None:
+            owner_person_id = holder.id
+            created["person_id"] = str(holder.id)
+        elif case.is_entity:
             parties = (case.intake or {}).get("associated_parties", [])
             entity = LegalEntity(
                 firm_id=ctx.firm.id, household_id=household.id, name=case.prospect_name,
@@ -356,6 +380,7 @@ class OnboardingAgent(BaseAgent):
         account = Account(firm_id=ctx.firm.id, mandate_id=mandate.id,
                           name=f"{case.prospect_name.split()[0]} Account", custodian=_custodian_for(ctx.firm, case),
                           currency=ctx.firm.base_currency, cash_balance=0,
+                          registration_type=india_onboarding.account_registration(ctx.firm, case),
                           lineage={"source": "onboarding", "as_of": utcnow().isoformat()})
         s.add(account)
         await s.flush()
@@ -366,6 +391,8 @@ class OnboardingAgent(BaseAgent):
         from app.aurea_core.onboarding_start import adviser_for
 
         adviser = await adviser_for(s, ctx.firm, case)
+        if joined and await advisers.adviser_of(s, ctx.firm.id, household.id):
+            adviser = None      # the household already has its recorded adviser; opening a case does not change who
         if adviser:
             s.add(RelationshipEdge(
                 firm_id=ctx.firm.id, kind="adviser", from_type="user", from_id=adviser.id,
@@ -394,11 +421,13 @@ class OnboardingAgent(BaseAgent):
         if case is None or not case.materialized:
             return {"reversed": False, "note": "Nothing to reverse."}
         refs = case.materialized
+        kept = onboarding_household.keep_on_reversal(refs)
+        await onboarding_household.undo_carried(s, case)
         # Delete in dependency order; cascades handle children.
         for model, key in ((Account, "account_id"), (Mandate, "mandate_id"),
                            (Person, "person_id"), (LegalEntity, "entity_id"), (Household, "household_id")):
-            if refs.get(key):
-                obj = await s.get(model, refs[key])
+            if refs.get(key) and key not in kept:
+                obj = await s.get(model, uuid.UUID(str(refs[key])))
                 if obj:
                     await s.delete(obj)
         case.materialized = {}

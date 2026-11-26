@@ -246,6 +246,8 @@ class RegistrationType(StrEnum):
     INDIVIDUAL = "individual"
     JOINT_JTWROS = "joint_jtwros"       # Joint Tenants with Right of Survivorship
     JOINT_TIC = "joint_tic"             # Tenants in Common
+    JOINT_ALL = "joint_all"             # India: joint holding, every holder signs
+    JOINT_ANYONE = "joint_anyone"       # India: joint holding, anyone or survivor
     JOINT_TBE = "joint_tbe"             # Tenancy by the entirety: spouses, in a state that allows it
     COMMUNITY_PROPERTY = "community_property"
     TRADITIONAL_IRA = "traditional_ira"
@@ -257,6 +259,7 @@ class RegistrationType(StrEnum):
     ENTITY_LLC = "entity_llc"
     ENTITY_CORP = "entity_corp"
     ENTITY_PARTNERSHIP = "entity_partnership"
+    ENTITY_LLP = "entity_llp"           # India: a limited liability partnership
     CUSTODIAL_UTMA = "custodial_utma"
     CUSTODIAL_UGMA = "custodial_ugma"
     ESTATE_INHERITED = "estate_inherited"

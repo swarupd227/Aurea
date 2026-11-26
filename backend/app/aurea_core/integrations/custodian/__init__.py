@@ -13,11 +13,13 @@ from __future__ import annotations
 import os
 
 from .base import AccountOpenResult, CustodianAdapter
+from .mock_depository import MockDepositoryAdapter
 from .mock_schwab import MockSchwabAdapter
 
 # ── Provider registry ─────────────────────────────────────────────────────────
 _REGISTRY: dict[str, type[CustodianAdapter]] = {
     "mock_schwab": MockSchwabAdapter,
+    "mock_depository": MockDepositoryAdapter,   # India: a stand-in that says it is simulated
     # "schwab":    SchwabAdapter,       # implement custodian/schwab.py
     # "fidelity":  FidelityAdapter,     # implement custodian/fidelity.py
     # "pershing":  PershingAdapter,     # implement custodian/pershing.py

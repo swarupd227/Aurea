@@ -54,5 +54,5 @@ class CustodianAdapter(ABC):
             "traditional_ira", "roth_ira", "employer_rollover",
             "trust", "entity_llc", "entity_corp", "entity_partnership",
             "custodial_utma", "custodial_ugma", "estate_inherited", "huf",
-            "nri_nre", "nri_nro", "minor_guardian",
+            "nri_nre", "nri_nro", "minor_guardian", "joint_all", "joint_anyone", "entity_llp",
         ]

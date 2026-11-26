@@ -44,7 +44,7 @@ SHOWN_CLOSED = 10
 # What passes as a retirement wrapper keeps its basis wherever it goes.
 _RETIREMENT = {"traditional_ira", "roth_ira", "sep_ira", "simple_ira", "employer_rollover", "inherited_ira",
                "estate_inherited", "hsa", "plan_529"}
-_JOINT = {"joint_jtwros", "joint_tic"}
+_JOINT = {"joint_jtwros", "joint_tic", "joint_all", "joint_anyone"}
 _DUST = Decimal("0.005")
 
 

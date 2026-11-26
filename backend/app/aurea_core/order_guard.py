@@ -20,7 +20,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import cash_movement, exits, firm_time, guardianship, harvest_guard, ips, kyc_india, lrs, pledges, product_fit, product_gates, shelf, wash_sale
+from app.aurea_core import cash_movement, exits, firm_time, guardianship, harvest_guard, india_onboarding, ips, kyc_india, lrs, pledges, product_fit, product_gates, shelf, wash_sale
 from app.aurea_core import orders as order_engine
 from app.aurea_core.equity_comp import CONCENTRATED
 from app.aurea_core.risk_profile import CAPACITY_EQUITY_MAX
@@ -129,6 +129,8 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
     refused += await pledges.order_refusals(session, firm, account, [o for o in filling if o["side"] == "sell"])
     lrs_refused, notes = await lrs.order_review(session, firm, mandate, filling, instruments)
     refused += lrs_refused
+    signers = await india_onboarding.holder_note(session, firm, account)      # an all-sign joint account says so (B-385)
+    notes = [*(notes or []), signers] if signers else notes
     refused += _cash_short(account, filling, (await cash_movement.held_back(session, firm, mandate))["total"])
 
     policy, breaches = await ips.orders_against(session, mandate, firm=firm, orders=[
