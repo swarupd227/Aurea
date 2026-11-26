@@ -43,7 +43,7 @@ def sanctions_open(case, party_status: dict) -> list[str]:
 def evaluate(case, *, party_status: dict, disclosure_status: dict,
              fee_status: dict | None = None, held_away_count: int | None = None,
              transfer_status: dict | None = None, consent_status: dict | None = None,
-             registration_status: dict | None = None, kyc_status: dict | None = None) -> dict:
+             registration_status: dict | None = None, kyc_status: dict | None = None, identity_status: dict | None = None) -> dict:
     """All activation gates for a case, and whether any of them blocks.
 
     Optional arguments degrade gracefully: a caller that has not loaded the fee schedule or
@@ -225,6 +225,11 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
     # due or not assessed, a party with none, or none on file at all, warns, because not on file does not mean not done.
     if kyc_status is not None:
         gates.append(_gate("kyc_current", "KYC on file and current", kyc_status["state"], kyc_status["detail"], track="financial_crime"))
+    # India: the PAN, bank and video checks run for this case (aurea_core/identity_checks.py). One that has not passed fails; with none
+    # run there is no gate, which is not a pass.
+    if identity_status is not None:
+        gates.append(_gate("identity_checks", "PAN, bank and video checks run have passed", identity_status["state"], identity_status["detail"],
+                           track="financial_crime"))
 
     # ── Track D — funding controls ───────────────────────────────────────────
     # These gate *submitting the transfer*, not activating the account: L200 is explicit

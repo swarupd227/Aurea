@@ -7,7 +7,7 @@ rather than raising more. It touches no other firm. Safe to run twice.
 
 Row 7 (a non-resident household and a minor), row 8 (a Portfolio Manager client's agreement and fee), row 9 (a consolidated
 statement) row 10 (a complaints register), row 13 (a family and its estate records) and row 14 (a governance register and counsel's review) and the L100 items (accredited investors, an adviser's fee terms, the deposit, a wait for the Budget) and batch A (remittances, a SIP mandate, the shelf's other classes, a pledge, gifts and dividends) and India money in (B-388: mandate states, first debits, credits by Indian rails, registered banks, a cooling-off, an inward remittance) and batch C (mutual fund order rails, the firm's group and its trail, expense ratios, an adviser's certificates, advertisement approvals) are added once. The simulated Account Aggregator, WhatsApp channel and DigiLocker and eSign provider are not written here: they are
-opt-in (`python -m app.simulations seed aa_feed whatsapp_channel india_stack kyc_registry`, with AUREA_SIMULATIONS on). Languages, WhatsApp opt-ins and templates (B-301) are added once.
+opt-in (`python -m app.simulations seed aa_feed whatsapp_channel india_stack kyc_registry identity_checks`, with AUREA_SIMULATIONS on). Languages, WhatsApp opt-ins and templates (B-301) are added once.
 The polish row (B-247 and others: Tara Menon as a minor now an adult, Kabir's case, a PMS fee line, segment minimums in rupees, the reminders as tasks) is added once.
 Row 11 (capital losses carried forward, a 2018 value, a regime comparison's inputs) and row 12 (KYC in every state) likewise.
 A tier on each seeded goal and each household's essential spending (B-393) are added where missing; a tier on file stays.
@@ -18,6 +18,7 @@ Three more goals and a step-up SIP (B-394, seed/india_goals.py) are added where 
 from the conversation is not reset.
 The KYC registry's answers, the on-hold client's steps and contact attempts, and a new prospect nobody has looked up (B-386,
 `seed/india_b386.py`) are added once.
+The identity and bank checks a person did by hand, one passed and one failed in the queue (B-387, `seed/india_b387.py`), are added once.
 
 Every run also moves the dated demonstration scenarios back to their distance from today (`seed/india_redate.py`) and rewrites the
 description of an open reminder task still in the older wording.
@@ -154,6 +155,9 @@ async def main() -> None:
         from seed import india_b386
 
         registry_rows = await india_b386.add(s, firm)
+        from seed import india_b387
+
+        check_rows = await india_b387.add(s, firm)
         # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
         # open reminder tasks raised in the older wording (B-372).
         from app.aurea_core import india_reminders
@@ -172,7 +176,7 @@ async def main() -> None:
           f"({len(priced['failed'])} failed), and refreshed the tax positions.\n"
           f"Re-dated for today: {', '.join(f'{n} {k}' for k, n in redated.items() if n) or 'nothing'}. "
           f"Rewrote {reworded} open reminder task description(s). Consolidation workbench: {consolidation_rows} holding(s) added or re-dated. Health cover and policy values: {protection_rows} added or re-dated. "
-          f"KYC registry: {registry_rows} answer(s), step(s) and contact attempt(s) added.\n")
+          f"KYC registry: {registry_rows} answer(s), step(s) and contact attempt(s) added. Identity and bank checks done by hand: {check_rows} added.\n")
 
 
 if __name__ == "__main__":

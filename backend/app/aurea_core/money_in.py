@@ -193,9 +193,13 @@ async def prepare_link(session: AsyncSession, firm_id: uuid.UUID, *, account_id:
     if day > today:
         raise MoneyInError("A verification cannot be dated ahead.")
     hid, people = await _household_names(session, firm_id, account)
-    third = not first_party(owner_name, people)
-    if third and india_money.applies(firm):     # a joint bank account is shown as both holders' names
-        third = not any(india_money.match(owner_name, p) == "full" for p in people)
+    if india_money.applies(firm):
+        # India reads the whole name, never a subset of its words (B-387): a bare surname, or an initial that is nobody's here, is a
+        # third party. A name in initials that fits a member is theirs to register, and pays nothing until the full name is
+        # confirmed from the bank's document (`india_money.check_payer`). A joint bank account is shown as both holders' names.
+        third = not any(india_money.match(owner_name, p) != "none" for p in people)
+    else:
+        third = not first_party(owner_name, people)
     if third and not failed and not (callback_by or "").strip():
         raise MoneyInError(f"{owner_name.strip()} is not in the household on file, so this is a third-party account: it needs a callback to the client "
                            "on the number of record first. Give who made it.")

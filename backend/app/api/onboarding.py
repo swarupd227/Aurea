@@ -114,7 +114,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
         select(TransferRequest).where(TransferRequest.case_id == case.id)
     )).scalars().all())
     decided = await aml_review.decisions_for(db, [p.id for p in party_rows])
-    from app.aurea_core import consents, document_matrix, kyc_india
+    from app.aurea_core import consents, document_matrix, identity_checks, kyc_india
     disclosure_status = disclosures.status_for(firm.jurisdiction, case.registration_type, list(disc_rows), case.engagement_type)
     fee_status = await _fee_status(db, case)
     return gates_core.evaluate(
@@ -126,6 +126,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
         fee_status=fee_status,
         registration_status=await document_matrix.check_case(db, case, firm),
         kyc_status=kyc_india.gate(await kyc_india.case_status(db, firm, case)),
+        identity_status=identity_checks.gate(await identity_checks.case_status(db, firm, case)),
         held_away_count=held_away_n,
         transfer_status=transfer_controls.status_for(
             xfer_rows, party_names=[p.legal_name for p in party_rows]
@@ -297,7 +298,7 @@ async def states_overview(db: AsyncSession, firm: Firm) -> dict:
     fills = await _first_fills(db, cases)
     now = utcnow()
     from app.agents.cip_identity_verifier import CIP_DAYS
-    from app.aurea_core import aml_risk, firm_time, kyc_india, kyc_registry
+    from app.aurea_core import aml_risk, firm_time, identity_checks, kyc_india, kyc_registry
 
     standings = await kyc_registry.standing(db, firm.id) if kyc_registry.applies(firm) else {}
     follow = await kyc_registry.follow_ups(db, firm.id) if kyc_registry.applies(firm) else {}
@@ -317,6 +318,8 @@ async def states_overview(db: AsyncSession, firm: Firm) -> dict:
             kyc.append(f"Periodic risk review due {due_reviews[str(c.id)]}")
         # India: a recorded KYC that is overdue, blocked at the KRA or falling due is a KYC exception beside the gates.
         kyc += kyc_india.queue_lines(await kyc_india.case_status(db, firm, c))
+        if str(c.status) == "approved":      # before approval the failing gate above already says it (B-387)
+            kyc += identity_checks.queue_lines(await identity_checks.case_status(db, firm, c))
         row = account_states.account_row(
             c, data_complete=bool(account and account["state"] == "complete"), gates_blocking=bool(gates["blocking"]),
             kyc=kyc, transfers=transfers.get(c.id, []), first_fill=fills.get(c.id), now=now)
@@ -395,6 +398,9 @@ async def get_case(case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: A
     from app.aurea_core import kyc_registry
 
     out["registry"] = await kyc_registry.case_registry(db, firm, case)
+    from app.aurea_core import identity_checks
+
+    out["identity_checks"] = await identity_checks.overview(db, firm, case_id=case.id)
     return out
 
 

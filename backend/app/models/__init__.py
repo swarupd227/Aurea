@@ -88,6 +88,8 @@ from app.models import india_tax  # noqa: F401,E402
 from app.models import kyc  # noqa: F401,E402
 # What the KYC registry answered and what was done about it (B-386).
 from app.models import kyc_registry  # noqa: F401,E402
+# Identity and bank check attempts and their outcomes (B-387).
+from app.models import identity_checks  # noqa: F401,E402
 # SEBI family of client, nominations, a will's state, an HUF and gratuity (India row 13), and the governance register and counsel review (India row 14).
 from app.models import india_family  # noqa: F401,E402
 from app.models import india_governance  # noqa: F401,E402

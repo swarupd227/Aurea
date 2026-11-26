@@ -8,6 +8,7 @@ import { titleCase, money, firmLocale } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
+import { CaseIdentityChecks } from "./IdentityChecksSection";
 import { RegistryChip, RegistryParty, TimelineChips } from "@/app/workspace/components/artifacts/IndiaKycRegistryCard";
 
 const REGISTRATION_LABELS: Record<string, string> = {
@@ -214,6 +215,9 @@ export function OnboardingCaseView({ id }: { id: string }) {
           </div>
         </div>
       )}
+
+      {/* India: PAN, bank and video checks, each with what happens when it fails. */}
+      {c.identity_checks?.applies && c.status !== "approved" && <CaseIdentityChecks data={c.identity_checks} caseId={id} name={c.prospect_name} />}
 
       {/* The four tracks — what is actually happening, in parallel. */}
       {c.tracks?.tracks && <TrackStrip t={c.tracks} />}

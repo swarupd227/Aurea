@@ -995,6 +995,68 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE},
     ),
 
+    # ─── India: identity and bank checks with a path for failure (B-387, aurea_core/identity_checks.py).
+    "read_identity_checks": Tool(
+        key="read_identity_checks",
+        name="Read Identity and Bank Checks",
+        speaking_agent="astra",
+        description="India: PAN verification, penny-drop bank check (the account exists and the bank's name for it matches, scored 0 to 100) and video in-person verification, per party: the human queue operations works (a partial name, used-up retries or a failure recorded by hand), what failed with retries left, what passed, and for each check what happens on failure (attempts, the alternative method, the queue). A check passed only where its latest attempt passed; one not listed was not run, which is not a pass. No real verification provider is connected (only a simulated one, marked simulated). Give case_id for one onboarding case or household_id for one family. To show it beside the conversation call open_view with view kyc_registry.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household", required=False),
+                ToolInput("case_id", "uuid", "One onboarding case, from read_onboarding_cases", required=False)],
+        output=ToolOutput("object", "The checks, the queue and the failure paths"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "run_identity_check": Tool(
+        key="run_identity_check",
+        name="Run Identity or Bank Check",
+        speaking_agent="astra",
+        description="India: makes one attempt at a check through the firm's connected verification service and records the outcome: kind pan, bank or vipv; whose (person_id, entity_id, or case_id with party_name); for bank the registered bank_link_id from read_money_in, or the bank and the account's last4 only (never a full account number); for pan, the PAN as the card shows it only if none is on file for them. Only a SIMULATED service exists, for a demonstration firm that opted in: its answers are invented and are not a real verification. At most 3 attempts; a partial name or a third failure goes to the human queue and the service is not asked again. With none connected it says so and checks nothing. An adviser, paraplanner, operations or compliance.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Run this check?",
+        inputs=[
+            ToolInput("kind", "string", "pan, bank or vipv", required=True),
+            ToolInput("person_id", "uuid", "The client, if a person", required=False),
+            ToolInput("entity_id", "uuid", "The client, if an entity", required=False),
+            ToolInput("case_id", "uuid", "The onboarding case", required=False),
+            ToolInput("party_name", "string", "The party's name, with a case (the applicant if left out)", required=False),
+            ToolInput("bank_link_id", "uuid", "For bank: a registered bank account, from read_money_in", required=False),
+            ToolInput("bank", "string", "For bank: the bank's name, without a bank_link_id", required=False),
+            ToolInput("last4", "string", "For bank: the account's last four digits only", required=False),
+            ToolInput("pan", "string", "For pan: only when none is on file", required=False),
+        ],
+        output=ToolOutput("object", "The checks after the attempt"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE},
+    ),
+
+    "record_verification_result": Tool(
+        key="record_verification_result",
+        name="Record a Check Done by Hand",
+        speaking_agent="astra",
+        description="India: records the alternative method, a check a person did from the document (PAN card against the income-tax portal, cancelled cheque or bank statement, in-person verification): kind pan, bank or vipv; whose; for bank the bank_link_id or the bank and last4; outcome passed or failed; document (what was checked and where it is filed); for a pan or bank pass, name_on_document exactly as shown (a name that does not match cannot pass; a partial match needs a note saying what shows it is the same holder). Operations or compliance only.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this result?",
+        inputs=[
+            ToolInput("kind", "string", "pan, bank or vipv", required=True),
+            ToolInput("person_id", "uuid", "The client, if a person", required=False),
+            ToolInput("entity_id", "uuid", "The client, if an entity", required=False),
+            ToolInput("case_id", "uuid", "The onboarding case", required=False),
+            ToolInput("party_name", "string", "The party's name, with a case", required=False),
+            ToolInput("bank_link_id", "uuid", "For bank: a registered bank account", required=False),
+            ToolInput("bank", "string", "For bank: the bank's name", required=False),
+            ToolInput("last4", "string", "For bank: the last four digits only", required=False),
+            ToolInput("outcome", "string", "passed or failed", required=True),
+            ToolInput("document", "string", "What was checked and where it is filed", required=True),
+            ToolInput("name_on_document", "string", "The name exactly as the document shows it", required=False),
+            ToolInput("note", "string", "Why a partial name is the same holder", required=False),
+        ],
+        output=ToolOutput("object", "The checks after recording"),
+        roles_required={UserRole.OPERATIONS, UserRole.COMPLIANCE},
+    ),
+
     "read_sebi_family": Tool(
         key="read_sebi_family",
         name="Read SEBI Family of Client",
@@ -4573,7 +4635,7 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) advice_file (the recommendations advisers made, what became of each, and the implementation rate) plans (the firm's plans of record: coverage, freshness, QC pass rate, scenario depth and each household's state) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consolidation (India: holdings held elsewhere being brought together), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), kyc_registry (India: the KYC registry status mix, the re-KYC backlog and on-hold remediation), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), rulebook (the regime's rules as the firm runs them, and the agent controls), book_integration (acquired books), book_batch (one acquired book; give batch_id), canvas (a client's home page as they see it), canvas_retirement (their retirement page), canvas_goals (their goals page), canvas_next_gen (a next-gen member's journey), canvas_questionnaire (their risk questionnaire, to record answers), admin (the firm's settings, users and agents; give tab to open one tab: firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage) or connectors (the firm's connectors and feeds). ips, reviews, protection, risk_profiles, net_worth and "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) advice_file (the recommendations advisers made, what became of each, and the implementation rate) plans (the firm's plans of record: coverage, freshness, QC pass rate, scenario depth and each household's state) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consolidation (India: holdings held elsewhere being brought together), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), kyc_registry (India: the KYC registry status mix, the re-KYC backlog, on-hold remediation and the identity and bank check queue), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), rulebook (the regime's rules as the firm runs them, and the agent controls), book_integration (acquired books), book_batch (one acquired book; give batch_id), canvas (a client's home page as they see it), canvas_retirement (their retirement page), canvas_goals (their goals page), canvas_next_gen (a next-gen member's journey), canvas_questionnaire (their risk questionnaire, to record answers), admin (the firm's settings, users and agents; give tab to open one tab: firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage) or connectors (the firm's connectors and feeds). ips, reviews, protection, risk_profiles, net_worth and "
             "exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, consolidation, kyc_registry, tax, estate, family, behavioural, regulatory_countdown and the canvas views show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "

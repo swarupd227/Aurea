@@ -6,6 +6,7 @@ import { withRef } from "@/lib/refs";
 import {
   RegistryBands, RegistryChip, RegistryMix, RegistryParty, TimelineChips,
 } from "@/app/workspace/components/artifacts/IndiaKycRegistryCard";
+import { IdentityChecksSection } from "./IdentityChecksSection";
 import { AllClients, ViewHeader } from "./ViewHeader";
 import { ViewLink, useViewNav } from "./ViewNav";
 
@@ -77,6 +78,8 @@ export function KycRegistryView({ household = null }: { household?: string | nul
           </>
         )}
       </Card>
+
+      <IdentityChecksSection household={household} />
 
       {[["Re-KYC backlog", data.backlog, "kyc-registry-backlog-list"],
         ["Everyone else", data.parties.filter((p: any) => !p.backlog), "kyc-registry-others"]].map(([title, rows, testId]: any) => (

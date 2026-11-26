@@ -341,6 +341,9 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "lookup_kyc_registry":
     case "record_kyc_step":
     case "record_kyc_contact":
+    case "read_identity_checks":
+    case "run_identity_check":
+    case "record_verification_result":
       return r.case_id ? `/studio/onboarding/${r.case_id}` : onClient("/studio/kyc-registry");
     // The consolidation workbench, India (B-389): a client's opens on that client, the list on everyone.
     case "read_consolidation":

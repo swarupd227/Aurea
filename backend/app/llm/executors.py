@@ -32,6 +32,7 @@ from app.llm.india_gates_executors import IndiaGatesExecutors
 from app.llm.india_batch_b_executors import IndiaBatchBExecutors
 from app.llm.india_batch_a_executors import IndiaBatchAExecutors
 from app.llm.india_money_executors import IndiaMoneyExecutors
+from app.llm.identity_check_executors import IdentityCheckExecutors
 from app.llm.kyc_registry_executors import KycRegistryExecutors
 from app.llm.india_batch_c_executors import IndiaBatchCExecutors
 from app.llm.india_rem_e_executors import IndiaRemEExecutors
@@ -93,7 +94,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
-                    IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors):
+                    IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors, IdentityCheckExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -395,6 +396,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_money_map(),
             # India, the KYC registry status (B-386): app/llm/kyc_registry_executors.py.
             **self._kyc_registry_map(),
+            # India, identity and bank checks (B-387): app/llm/identity_check_executors.py.
+            **self._identity_check_map(),
             # India, batch C (B-294, B-297, B-298): app/llm/india_batch_c_executors.py.
             **self._india_batch_c_map(),
             # India, batch E (B-324, B-330, B-331, B-332): app/llm/india_rem_e_executors.py.
@@ -5628,6 +5631,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._india_money_preview(tool_key, inputs))
         if tool_key in ("record_kyc_lookup", "lookup_kyc_registry", "record_kyc_step", "record_kyc_contact"):
             return rows(*await self._kyc_registry_preview(tool_key, inputs))
+        if tool_key in ("run_identity_check", "record_verification_result"):
+            return rows(*await self._identity_check_preview(tool_key, inputs))
         if tool_key in ("record_mf_order", "record_group_entity", "record_group_trail", "record_scheme_ter", "record_adviser_certification", "submit_ad_copy",
                         "decide_ad_copy"):
             return rows(*await self._india_batch_c_preview(tool_key, inputs))
