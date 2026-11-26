@@ -92,6 +92,18 @@ async def canvas_ips(
         for m in view["mandates"] if (t := m["ips"])], "without": [m["mandate"] for m in view["mandates"] if not m["ips"]]}
 
 
+@router.get("/kyc")
+async def canvas_kyc(
+    household_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user), firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """India: this household's own KYC registry status, reasons and steps in plain words (B-386)."""
+    from app.aurea_core import kyc_registry
+
+    hid = await _resolve_household(db, user, household_id)
+    return await kyc_registry.for_client(db, firm, hid)
+
+
 # The client's questions go to the conversation (POST /api/threads), with the client's own tools in
 # app.core.tools (CLIENT_TOOLS): the one-shot assistant that answered from a snapshot in its prompt is retired.
 

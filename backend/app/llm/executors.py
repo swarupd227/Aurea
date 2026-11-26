@@ -32,6 +32,7 @@ from app.llm.india_gates_executors import IndiaGatesExecutors
 from app.llm.india_batch_b_executors import IndiaBatchBExecutors
 from app.llm.india_batch_a_executors import IndiaBatchAExecutors
 from app.llm.india_money_executors import IndiaMoneyExecutors
+from app.llm.kyc_registry_executors import KycRegistryExecutors
 from app.llm.india_batch_c_executors import IndiaBatchCExecutors
 from app.llm.india_rem_e_executors import IndiaRemEExecutors
 from app.llm.india_rem_d_executors import IndiaRemDExecutors
@@ -46,6 +47,22 @@ from app.models.portfolio import Holding, Instrument, Price
 class ExecutorError(Exception):
     """Error during tool execution."""
     pass
+
+
+def _registry_said(rows: list) -> str:
+    """What the board says about the KYC registry before any timeline (India, B-386)."""
+    known = [r for r in rows if r.get("registry")]
+    if not known:
+        return ""
+    missing = [r["prospect_name"] for r in known if r["registry"]["status"] == "not_looked_up"]
+    held = [r["prospect_name"] for r in known if r["registry"]["status"] in ("on_hold", "rejected")]
+    out = ""
+    if missing:
+        out += (f" KYC registry status not looked up for {', '.join(missing[:6])}{' and more' if len(missing) > 6 else ''}: "
+                "promise no timeline for them until it is.")
+    if held:
+        out += f" On hold or rejected at the registry: {', '.join(held[:6])}."
+    return out
 
 
 def residency_recorders():
@@ -76,7 +93,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
-                    IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors):
+                    IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -376,6 +393,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_batch_a_map(),
             # India money in and bank rules (B-388): app/llm/india_money_executors.py.
             **self._india_money_map(),
+            # India, the KYC registry status (B-386): app/llm/kyc_registry_executors.py.
+            **self._kyc_registry_map(),
             # India, batch C (B-294, B-297, B-298): app/llm/india_batch_c_executors.py.
             **self._india_batch_c_map(),
             # India, batch E (B-324, B-330, B-331, B-332): app/llm/india_rem_e_executors.py.
@@ -905,10 +924,18 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         except residency.ResidencyError as exc:
             raise ExecutorError(str(exc))
         status = p["status"]
+        from app.aurea_core import kyc_registry
+
+        firm = await self._firm()
+        moved = kyc_registry.residency_change(p["previous"], p["facts"], await self._today())
+        rekyc = await kyc_registry.residency_effect(self.session, firm, p["person"], moved)
         return [("Client", p["person"].full_name), ("Tax year", p["tax_year"]),
                 *((c["label"], f"{c['before'] if c['before'] is not None else 'not on file'} -> {c['after']}") for c in p["changes"]),
                 ("Residence test then", status["label"] + (f"; still needed: {', '.join(status['needs'])}" if status["needs"] else "")),
-                ("Evidence", p["document"]), ("Note", "Worked from what is recorded; a qualified person checks it")]
+                ("Evidence", p["document"]),
+                ("Re-KYC", (("Marks the KYC on file for refresh" if rekyc["kyc_on_file"] else "No KYC on file to mark") + "; a task for "
+                            + (rekyc["owner"].full_name if rekyc["owner"] else "nobody: the household has no adviser on record")) if rekyc else None),
+                ("Note", "Worked from what is recorded; a qualified person checks it")]
 
     async def record_residency(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import residency
@@ -919,7 +946,12 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             result = await residency.record(self.session, await self._firm(), by=await self._shelf_user(), **await self._residency_args(inputs))
         except residency.ResidencyError as exc:
             raise ExecutorError(str(exc))
-        return {"households": [{"household_id": result["household_id"], "people": [result]}], "applies": True, "message": "Recorded."}
+        raised = result.get("re_kyc")
+        return {"households": [{"household_id": result["household_id"], "people": [result]}], "applies": True,
+                "message": "Recorded." + (f" The change of residential status raises a re-KYC: a task is open for "
+                                          f"{raised['owner'] or 'nobody (no adviser on record)'}"
+                                          + (", and the KYC on file is marked for refresh." if raised["kyc_marked"] else
+                                             ". No KYC record is on file to mark.") if raised else "")}
 
     def _guardian_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {"minor_person_id": inputs.get("minor_person_id"), "guardian_name": inputs.get("guardian_name"),
@@ -2491,6 +2523,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         stuck = ", ".join(f"{q['label'].lower()} {len(q['items'])}" for q in result["queues"].values() if q["items"]) or "none"
         result["message"] = (f"{s['accounts']} account(s) in onboarding, {s['overdue']} past their SLA. Exceptions: {stuck}. "
                              f"Median clocks: paperwork {c['paperwork']['p50']}, money {c['money']['p50']}, invested {c['invested']['p50']} day(s)."
+                             + (f" {s['registry_not_looked_up']} account(s) not yet activated have no KYC registry status looked up: promise no "
+                                "timeline for them until it is." if s.get("registry_not_looked_up") else "")
                              + (f" {len(c['out_of_order'])} account(s) have dates out of order (one step recorded before the step it follows),"
                                 " left out of the clocks for a person to correct." if c.get("out_of_order") else ""))
         return result
@@ -4880,6 +4914,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         board["shown"] = len(board["cases"])
         board["message"] = f"Opened {case.prospect_name}'s case as a draft; nothing is screened, signed or invested yet." + (
             " The pipeline opportunity it came from is now won." if inputs.get("opportunity_id") else "")
+        registry = (board["cases"][0].get("registry") if board["cases"] else None)
+        if registry and not registry["timeline_ok"]:
+            board["message"] += (f" KYC registry status: {registry['label'].lower()}. {registry['timeline']}: look it up or record the answer "
+                                 "before promising any timeline (read_kyc_registry).")
         return board
 
     async def _start_preview(self, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -4924,6 +4962,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 "position": t["position"], "owner": t["owner"], "ready_to_activate": t["ready_to_activate"],
                 "blocked_tracks": t["blocked_tracks"],
                 "tracks": [{"code": x["code"], "label": x["label"], "state": x["state"]} for x in t["tracks"]],
+                # India: the registry's status beside the account's own (B-386).
+                "registry": ({k: c["registry"][k] for k in ("status", "label", "timeline", "timeline_ok", "simulated")}
+                             if c.get("registry") else None),
             })
         total = len(rows)
         is_open = lambda r: r["status"] not in ("approved", "rejected")  # noqa: E731
@@ -4940,7 +4981,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "cases": shown[:limit], "shown": min(len(shown), limit), "scope": "all" if want == "all" else "open",
             "summary": summary,
             "message": (f"{summary['open']} open onboarding case(s) of {total}; {summary['blocked']} blocked, "
-                        f"{summary['sla_breached']} past their SLA, {summary['ready_to_activate']} ready to activate."),
+                        f"{summary['sla_breached']} past their SLA, {summary['ready_to_activate']} ready to activate."
+                        + _registry_said([r for r in rows if is_open(r)])),
         }
 
     async def read_meetings(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -5584,6 +5626,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._india_batch_a_preview(tool_key, inputs))
         if tool_key in ("record_payer_exception", "record_india_credit", "record_inward_remittance", "record_first_debit", "set_bank_cooling_off"):
             return rows(*await self._india_money_preview(tool_key, inputs))
+        if tool_key in ("record_kyc_lookup", "lookup_kyc_registry", "record_kyc_step", "record_kyc_contact"):
+            return rows(*await self._kyc_registry_preview(tool_key, inputs))
         if tool_key in ("record_mf_order", "record_group_entity", "record_group_trail", "record_scheme_ter", "record_adviser_certification", "submit_ad_copy",
                         "decide_ad_copy"):
             return rows(*await self._india_batch_c_preview(tool_key, inputs))

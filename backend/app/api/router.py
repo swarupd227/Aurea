@@ -91,3 +91,7 @@ api_router.include_router(consolidation_api.router)
 from app.api import health_cover as health_cover_api  # noqa: E402
 
 api_router.include_router(health_cover_api.router)
+# India: the KYC registry status (B-386).
+from app.api import kyc_registry as kyc_registry_api  # noqa: E402
+
+api_router.include_router(kyc_registry_api.router)

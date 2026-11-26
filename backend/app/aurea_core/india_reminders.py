@@ -165,6 +165,8 @@ async def plan(session: AsyncSession, firm: Firm) -> dict:
             if i["kind"] in HOUSEHOLD_KINDS and _near(i):
                 out.append({"item": i, "household": h, "owner": adviser, "scope": "household", "note": note})
         for p in (await kyc_india.overview(session, firm, household_id=h.id))["parties"]:
+            if p["state"] == "blocked" and await _registry_task_open(session, firm.id, p["name"]):
+                continue          # the registry answer raised its own task, with the reasons and steps (B-386)
             if p["state"] in KYC_STOPS:
                 # A blocked record has no date of its own (the KRA holds it today); an overdue one is due on the day it ran out.
                 due = min(date.fromisoformat(p["due_on"]), today) if p.get("due_on") and p["state"] == "overdue" else today
@@ -178,6 +180,15 @@ async def plan(session: AsyncSession, firm: Firm) -> dict:
     for row in out:
         row["exists"] = (_title(row["item"]), row["household"].id if row["household"] else None) in raised
     return {"applies": True, "as_of": today.isoformat(), "items": out}
+
+
+async def _registry_task_open(session: AsyncSession, firm_id, name: str) -> bool:
+    from app.aurea_core import kyc_registry
+    from app.models.engagement import Task
+    from app.models.enums import TaskStatus
+
+    return (await session.execute(select(Task.id).where(Task.firm_id == firm_id, Task.status == TaskStatus.OPEN,
+                                                        Task.title.in_(kyc_registry.blocked_task_titles(name))).limit(1))).first() is not None
 
 
 async def view(session: AsyncSession, firm: Firm) -> dict:

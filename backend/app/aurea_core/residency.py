@@ -463,7 +463,7 @@ async def prepare(session: AsyncSession, firm: Firm, *, person_id, document: str
         raise ResidencyError("Nothing changes: those facts are already on file.")
     after["tax_year"] = year
     return {"person": person, "tax_year": year, "facts": after, "changes": changes, "document": document.strip(),
-            "status": tax_status(after, today)}
+            "status": tax_status(after, today), "previous": standing(rows)[0]}
 
 
 async def record(session: AsyncSession, firm: Firm, *, by: str, note: str | None = None, **terms) -> dict:
@@ -477,7 +477,13 @@ async def record(session: AsyncSession, firm: Firm, *, by: str, note: str | None
     await ledger.append_entry(session, firm_id=firm.id, event_type="residency_recorded", actor=by, content={
         "person_id": str(p["person"].id), "tax_year": p["tax_year"], "document": p["document"],
         "changes": [{"field": c["field"], "after": str(c["after"])} for c in p["changes"]], "status": p["status"]["status"]})
-    return await person_view(session, firm, p["person"], tax_year=p["tax_year"])
+    # A change of residential status raises a re-KYC (B-386).
+    from app.aurea_core import kyc_registry
+
+    moved = kyc_registry.residency_change(p["previous"], p["facts"], firm_time.today(firm))
+    raised = await kyc_registry.raise_residency_rekyc(session, firm, p["person"], moved, document=p["document"], by=by)
+    view = await person_view(session, firm, p["person"], tax_year=p["tax_year"])
+    return {**view, "re_kyc": raised}
 
 
 async def gate_check(session: AsyncSession, firm: Firm, household_id: uuid.UUID) -> dict | None:

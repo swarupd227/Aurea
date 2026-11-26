@@ -38,7 +38,7 @@ class _Targets(dict):
         return ["demo"]
 
 
-TARGETS = _Targets({"aa_feed": ["india-demo"], "whatsapp_channel": ["india-demo"], "india_stack": ["india-demo"], "held_away_feed": ["demo", "india-demo"], "news_source": ["demo", "india-demo"],
+TARGETS = _Targets({"aa_feed": ["india-demo"], "whatsapp_channel": ["india-demo"], "india_stack": ["india-demo"], "kyc_registry": ["india-demo"], "held_away_feed": ["demo", "india-demo"], "news_source": ["demo", "india-demo"],
                     "linkedin_export": ["demo", "india-demo"]})
 
 

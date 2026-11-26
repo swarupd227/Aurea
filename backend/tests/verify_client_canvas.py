@@ -49,7 +49,7 @@ from app.models.thread import Thread
 PASS, FAIL = [], []
 R = UserRole
 ROOT = Path(__file__).resolve().parents[2]
-CLIENT_READS = ("read_my_wealth", "read_my_net_worth", "read_my_ips", "read_my_retirement", "read_my_goals", "read_my_fees", "read_my_report")
+CLIENT_READS = ("read_my_wealth", "read_my_net_worth", "read_my_ips", "read_my_retirement", "read_my_goals", "read_my_fees", "read_my_report", "read_my_kyc_status")
 ANSWERS = [{"question": "investment_horizon", "answer": "long"}, {"question": "loss_tolerance", "answer": "medium"},
            {"question": "income_stability", "answer": "stable"}, {"question": "liquidity_needs", "answer": "5+ years"},
            {"question": "esg_priority", "answer": "somewhat"}, {"question": "experience", "answer": "Intermediate"}]
@@ -85,7 +85,7 @@ async def refused(label: str, coro, contains: str = "") -> None:
 
 def catalogue() -> None:
     print("\n=== A client's tools read their own household and change nothing ===")
-    check("the client holds the seven reads", sorted(CLIENT_TOOLS), sorted(CLIENT_READS))
+    check("the client holds the eight reads", sorted(CLIENT_TOOLS), sorted(CLIENT_READS))
     check("and nothing else", sorted(tools_for_role(R.CLIENT)), sorted(CLIENT_READS))
     for key in CLIENT_TOOLS:
         tool = TOOLS[key]

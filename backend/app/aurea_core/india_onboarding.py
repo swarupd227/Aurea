@@ -10,6 +10,10 @@ licence again. The record is what a person recorded (`kyc_india`): validated by 
 number. A KRA status of registered (the next intermediary repeats the KYC), on hold or rejected, or an identity proof that has
 run out, does not count, and neither does a record under another name or another case. Where nothing is on file the requirement
 stays. A joint account needs it for every holder. Real KRA and CKYC lookups are not connected.
+
+**What a registry answer says it holds is not asked again** (B-386). The registry status that stands (`kyc_registry`) is read first:
+one that is not validated holds nothing. Where a validated answer lists the documents the registry holds, identity answers an NRI
+account's photo ID too, and the PAN card of the person or entity the account needs it from is not asked.
 """
 from __future__ import annotations
 
@@ -33,6 +37,8 @@ _US_JOINT = frozenset({"joint", "joint_jtwros", "joint_tic", "jtwros", "tic"})
 PHOTO_ID = frozenset({"passport", "drivers_licence"})
 _HOLDERS_OWN_ID = frozenset({"individual", JOINT_ALL, JOINT_ANYONE, "joint_jtwros", "joint_tic"})
 HELD_LABEL = "Identity held on the KYC registry record"
+HELD_PAN_LABEL = "PAN held by the KYC registry"
+_NRI = frozenset({"nri_nre", "nri_nro"})
 
 # How money and securities reach an account. An Indian account has no ACAT: securities move off-market between demats.
 TRANSFER_TYPES = {
@@ -72,39 +78,72 @@ def _norm(name: str | None) -> str:
     return " ".join((name or "").split()).casefold()
 
 
-def _holds_identity(record: KycRecord, today) -> bool:
+def _holds_identity(record: KycRecord, today, status: str | None) -> bool:
     if record.id_proof_valid_to and record.id_proof_valid_to < today:
         return False
-    if record.kra_status:
-        return record.kra_status == "validated"
+    if status:
+        return status == "validated"
     return bool(record.ckyc_number)
 
 
 async def registry_holds(session: AsyncSession, firm: Firm | None, case: OnboardingCase, parties: list) -> dict:
     """The document requirements this case need not collect, each with what stands in for it. Empty outside India."""
-    if not applies(firm) or case.is_entity or (case.registration_type or "individual") not in _HOLDERS_OWN_ID:
+    if not applies(firm):
         return {}
-    holders = {_norm(p.legal_name) for p in parties if p.role in (PartyRole.OWNER, PartyRole.JOINT_OWNER)}
-    if (case.registration_type or "individual") == "individual":
-        holders = holders or {_norm(case.prospect_name)}
-    elif len(holders) < 2:
-        return {}      # a joint account whose holders are not all recorded
-    people: list[uuid.UUID] = []
+    from app.aurea_core import kyc_registry
+
+    registration = case.registration_type or "individual"
+    people: dict[uuid.UUID, str] = {}
     if (case.materialized or {}).get("person_id"):
-        people.append(uuid.UUID(str(case.materialized["person_id"])))
+        people[uuid.UUID(str(case.materialized["person_id"]))] = _norm(case.prospect_name)
     if (case.intake or {}).get("household_id"):       # a member of the household it joins, already a client
         home = uuid.UUID(str(case.intake["household_id"]))
-        people += (await session.execute(select(Person.id).where(Person.firm_id == firm.id, Person.household_id == home))).scalars().all()
+        for pid, name in (await session.execute(select(Person.id, Person.full_name).where(Person.firm_id == firm.id, Person.household_id == home))).all():
+            people[pid] = _norm(name)
     where = KycRecord.case_id == case.id
     if people:
-        where = or_(where, KycRecord.person_id.in_(people))
+        where = or_(where, KycRecord.person_id.in_(list(people)))
     latest: dict[str, KycRecord] = {}
     for r in (await session.execute(select(KycRecord).where(KycRecord.firm_id == firm.id, where).order_by(KycRecord.created_at))).scalars().all():
         latest[_norm(r.party_name)] = r
+    # The registry status that stands for each name on this case: a lookup or a record, the latest said.
+    stands: dict[str, dict] = {}
+    entity = (case.materialized or {}).get("entity_id")
+    for key, said in (await kyc_registry.standing(session, firm.id)).items():
+        name = (people.get(key[1]) if key[0] == "person" else _norm(said["party_name"]) if said["case_id"] == case.id
+                or (key[0] == "case" and key[1] == case.id) or (entity and key == ("entity", uuid.UUID(str(entity)))) else None)
+        if name and (name not in stands or said["recorded_at"] > stands[name]["recorded_at"]):
+            stands[name] = said
     today = firm_time.today(firm)
-    if all(h in latest and _holds_identity(latest[h], today) for h in holders):
-        return {"id": HELD_LABEL}
-    return {}
+    held: dict = {}
+
+    def lists(name: str, kind: str) -> bool:
+        said = stands.get(name)
+        return bool(said and said["status"] == "validated" and kind in said["holds"])
+
+    def identity(name: str) -> bool:
+        if registration in _NRI:
+            return lists(name, "identity_proof")
+        record, said = latest.get(name), stands.get(name)
+        if said is not None:
+            if said["status"] != "validated":
+                return False
+            return lists(name, "identity_proof") or record is None or _holds_identity(record, today, said["status"])
+        return record is not None and _holds_identity(record, today, record.kra_status)
+
+    if not case.is_entity and registration in (_HOLDERS_OWN_ID | _NRI):
+        holders = {_norm(p.legal_name) for p in parties if p.role in (PartyRole.OWNER, PartyRole.JOINT_OWNER)}
+        if registration == "individual" or registration in _NRI:
+            holders = holders or {_norm(case.prospect_name)}
+        elif len(holders) < 2:
+            holders = set()      # a joint account whose holders are not all recorded
+        if holders and all(identity(h) for h in holders):
+            held["id"] = HELD_LABEL
+    minors = {_norm(p.legal_name) for p in parties if p.role == PartyRole.MINOR}
+    pan_of = minors if registration == "minor_guardian" else {_norm(case.prospect_name)}
+    if pan_of and all(lists(n, "pan_card") for n in pan_of):
+        held["pan"] = HELD_PAN_LABEL
+    return held
 
 
 async def required_identity(session: AsyncSession, firm: Firm, case: OnboardingCase, required: set, present: set) -> set:

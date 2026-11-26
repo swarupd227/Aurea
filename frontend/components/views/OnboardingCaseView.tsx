@@ -8,6 +8,7 @@ import { titleCase, money, firmLocale } from "@/lib/format";
 import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
+import { RegistryChip, RegistryParty, TimelineChips } from "@/app/workspace/components/artifacts/IndiaKycRegistryCard";
 
 const REGISTRATION_LABELS: Record<string, string> = {
   individual: "Individual", joint_jtwros: "Joint JTWROS", joint_tic: "Joint TIC",
@@ -191,6 +192,26 @@ export function OnboardingCaseView({ id }: { id: string }) {
           {["Person / entity", "Mandate", "Account", "KYC verified"].map((x) => (
             <span key={x} className="chip bg-ok-bg text-ok">{x}</span>
           ))}
+        </div>
+      )}
+
+      {/* India: the registry's status, a second axis beside the firm's own, before any timeline. */}
+      {c.registry && c.status !== "approved" && (
+        <div className="card mb-4 overflow-hidden p-0" data-testid="onboarding-case-registry">
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border-soft px-3 py-2">
+            <span className="mr-auto text-sm font-semibold text-ink">KYC registry</span>
+            <RegistryChip registry={c.registry} prefix="Status:" />
+            <TimelineChips registry={c.registry} />
+            {nav.say ? (
+              <button type="button" className="btn-outline text-xs" data-testid="onboarding-case-registry-record"
+                onClick={() => nav.say?.(withRef(`Check the KYC registry status for ${c.prospect_name}'s onboarding case: look it up if a lookup is connected, else ask me what the registry answered and where it is filed.`, "onboarding_case", id))}>
+                Check registry
+              </button>
+            ) : <ViewLink href="/studio/kyc-registry" className="btn-outline text-xs" data-testid="onboarding-case-registry-open">KYC registry</ViewLink>}
+          </div>
+          <div className="divide-y divide-border-soft">
+            {c.registry.parties.map((p: any) => <RegistryParty key={p.name} p={p.name} registry={p} steps={p.steps ?? []} contacts={p.contacts} />)}
+          </div>
         </div>
       )}
 

@@ -1,5 +1,8 @@
 """A client's KYC in India, as a person recorded it from the document, and where it stands today (India row 12).
 
+The registry status that stands for a party may also come from a registry lookup (`kyc_registry`, B-386): the latest statement of it,
+there or here, is what the state is worked out from.
+
 KYC here is a record, never a lookup: a person reads the KRA's acknowledgement, the CKYC registry's letter or the client's own
 document, and records what it says. Real KRA and CKYC lookups are not connected, so nothing is fetched, nothing is verified
 against a source, and nothing is estimated. The latest record for a party stands, added and never edited.
@@ -81,7 +84,7 @@ STRUCTURES = {"company": "Company", "partnership": "Partnership", "unincorporate
 OWNER_ROLES = {"shareholder": "Shareholder", "partner": "Partner", "member": "Member", "beneficiary": "Beneficiary",
                "author": "Author of the trust", "trustee": "Trustee", "protector": "Protector", "karta": "Karta", "other": "Other"}
 TRUST_ALWAYS = ("author", "trustee", "protector")
-TRIGGERS = {"address_change": "Change of address", "name_change": "Change of name", "ownership_change": "Change in ownership or control",
+TRIGGERS = {"residency_change": "Change of residential status", "address_change": "Change of address", "name_change": "Change of name", "ownership_change": "Change in ownership or control",
             "adverse_media": "Adverse media", "pep_change": "Change in political exposure", "unusual_activity": "Unusual activity",
             "risk_band_change": "Change in risk band", "kra_notice": "Notice from the KRA"}
 ID_KINDS = {"passport": "Passport", "driving_licence": "Driving licence", "voter_id": "Voter ID", "aadhaar_proof": "Proof of possession of Aadhaar",
@@ -168,9 +171,14 @@ def beneficial_owners(structure: str | None, owners: list[dict]) -> dict:
     return {"beneficial": bo, "controlling": crs, "threshold": t, "rule": rule, "needs": [] if owners else ["the owners, from the shareholding or the deed"]}
 
 
-def assess(r: KycRecord | None, *, today: date, firm: Firm | None, aml_band: str | None = None, is_entity: bool = False) -> dict:
-    """The state of one party from its latest record. Pure."""
+def assess(r: KycRecord | None, *, today: date, firm: Firm | None, aml_band: str | None = None, is_entity: bool = False,
+           registry: dict | None = None) -> dict:
+    """The state of one party from its latest record and the registry status that stands for it (`kyc_registry.standing`; with none
+    given, the record's own). Pure."""
+    status = registry["status"] if registry else (r.kra_status if r is not None else None)
     if r is None:
+        if status in ("on_hold", "rejected"):
+            return {"state": "blocked", "message": KRA_MEANING[status], "issues": [], "needs": [], "due_on": None, "band": None}
         return {"state": "not_on_file", "message": "No KYC record on file. That does not mean none was done.", "issues": [], "needs": [],
                 "due_on": None, "band": None}
     issues: list[str] = []
@@ -186,7 +194,7 @@ def assess(r: KycRecord | None, *, today: date, firm: Firm | None, aml_band: str
     due_on = add_months(done, months[band]["months"]) if done and band else None
     triggers = [t for t in (r.triggers or []) if done and _day(t.get("on")) and _day(t["on"]) > done]
 
-    if not r.kra_status:
+    if not status:
         needs.append("KRA status")
     if not r.ckyc_number:
         needs.append("CKYC number")
@@ -212,8 +220,10 @@ def assess(r: KycRecord | None, *, today: date, firm: Firm | None, aml_band: str
     deemed_months = int(law_figures.value("in_kyc_address_proof_months"))
     if r.address_proof_kind in DEEMED and addr and done and add_months(addr, deemed_months) < done:
         issues.append(f"A deemed address proof was older than {deemed_months} months at KYC; an updated official document is needed")
-    if r.kra_status == "registered":
+    if status == "registered":
         issues.append("Registered with the KRA: the documents were not verified at source")
+    if status == "not_found":
+        issues.append("The registry holds no record: a fresh KYC is needed")
     for t in triggers:
         issues.append(f"{TRIGGERS.get(t['kind'], t['kind'])} on {t['on']}, after the KYC: refresh it")
 
@@ -232,8 +242,8 @@ def assess(r: KycRecord | None, *, today: date, firm: Firm | None, aml_band: str
             if o["name"] in ubo["beneficial"] and o.get("kyc_on_file") is False:
                 issues.append(f"Beneficial owner {o['name']} has no KYC on file")
 
-    if r.kra_status in ("on_hold", "rejected"):
-        state, message = "blocked", KRA_MEANING[r.kra_status]
+    if status in ("on_hold", "rejected"):
+        state, message = "blocked", KRA_MEANING[status]
     elif expired or (due_on and due_on < today):
         state = "overdue"
         message = "; ".join(expired + ([f"Re-KYC was due {due_on.isoformat()}"] if due_on and due_on < today else []))
@@ -254,13 +264,19 @@ def assess(r: KycRecord | None, *, today: date, firm: Firm | None, aml_band: str
 
 
 def view(r: KycRecord | None, name: str, *, today: date, firm: Firm | None, aml_band: str | None = None, is_entity: bool = False,
-         key: dict | None = None) -> dict:
-    a = assess(r, today=today, firm=firm, aml_band=aml_band, is_entity=is_entity)
-    base = {"name": name, **(key or {}), **a, "recorded": r is not None}
+         key: dict | None = None, registry: dict | None = None) -> dict:
+    from app.aurea_core import kyc_registry
+
+    a = assess(r, today=today, firm=firm, aml_band=aml_band, is_entity=is_entity, registry=registry)
+    status = registry["status"] if registry else (r.kra_status if r is not None else None)
+    label = KRA_STATUSES.get(status or "") or kyc_registry.STATUSES.get(status or "")
+    base = {"name": name, **(key or {}), **a, "recorded": r is not None, "registry": kyc_registry.summary(registry)}
+    if status:
+        base.update(kra_status=status, kra_label=label)
     if r is None:
         return base
-    return {**base, "ckyc_number": r.ckyc_number, "kra_name": r.kra_name, "kra_status": r.kra_status,
-            "kra_label": KRA_STATUSES.get(r.kra_status or ""), "kyc_completed_on": r.kyc_completed_on.isoformat() if r.kyc_completed_on else None,
+    return {**base, "ckyc_number": r.ckyc_number, "kra_name": (registry or {}).get("agency") or r.kra_name, "kra_status": status,
+            "kra_label": label, "kyc_completed_on": r.kyc_completed_on.isoformat() if r.kyc_completed_on else None,
             "verification_mode": r.verification_mode, "ipv_on": r.ipv_on.isoformat() if r.ipv_on else None,
             "aadhaar": mask_aadhaar(r.aadhaar_last4), "pan_aadhaar_linked": r.pan_aadhaar_linked,
             "id_proof": {"kind": ID_KINDS.get(r.id_proof_kind or "", r.id_proof_kind), "valid_to": r.id_proof_valid_to.isoformat() if r.id_proof_valid_to else None},
@@ -337,8 +353,11 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
     """Every client and entity with its KYC state, worst first, and who has none on file."""
     if not applies(firm):
         return {"applies": False, "parties": []}
+    from app.aurea_core import kyc_registry
+
     today = firm_time.today(firm)
     records = await latest(session, firm.id)
+    standings = await kyc_registry.standing(session, firm.id)
     bands, case_of = await _case_bands(session, firm.id), await _case_of_holder(session, firm.id)
     pq = select(Person).where(Person.firm_id == firm.id, Person.deceased_on.is_(None))
     eq = select(LegalEntity).join(Household, Household.id == LegalEntity.household_id).where(Household.firm_id == firm.id)
@@ -347,19 +366,21 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
     parties = []
     for p in (await session.execute(pq.order_by(Person.full_name))).scalars().all():
         parties.append(view(records.get(("person", p.id)), p.full_name, today=today, firm=firm, aml_band=bands.get(case_of.get(p.id)),
-                            key={"person_id": str(p.id), "kind": "individual"}))
+                            key={"person_id": str(p.id), "kind": "individual"}, registry=standings.get(("person", p.id))))
     for e in (await session.execute(eq.order_by(LegalEntity.name))).scalars().all():
         parties.append(view(records.get(("entity", e.id)), e.name, today=today, firm=firm, aml_band=bands.get(case_of.get(e.id)), is_entity=True,
-                            key={"entity_id": str(e.id), "kind": str(e.entity_type)}))
+                            key={"entity_id": str(e.id), "kind": str(e.entity_type)}, registry=standings.get(("entity", e.id))))
     # Parties recorded on a case who are not the client it created. A household reads those of the cases its accounts came from.
-    on_cases = {k: r for k, r in records.items() if k[0] == "case"}
+    on_cases = {k: records.get(k) for k in [*records, *(x for x in standings if x not in records)] if k[0] == "case"}
     followed = await _followed(session, firm.id, {k[1] for k in on_cases}) if household_id else {}
     for k, r in on_cases.items():
         if household_id and (followed.get(k[1]) or {}).get("household_id") != household_id:
             continue
         case = await session.get(OnboardingCase, k[1]) if k[1] else None
-        parties.append(view(r, r.party_name, today=today, firm=firm, aml_band=bands.get(k[1]),
-                            is_entity=bool(r.structure) or _is_the_entity(case, r.party_name), key={"case_id": str(r.case_id), "kind": "case"}))
+        name = r.party_name if r is not None else standings[k]["party_name"]
+        parties.append(view(r, name, today=today, firm=firm, aml_band=bands.get(k[1]), registry=standings.get(k),
+                            is_entity=bool(r is not None and r.structure) or _is_the_entity(case, name),
+                            key={"case_id": str(r.case_id if r is not None else k[1]), "kind": "case"}))
     order = {"overdue": 0, "blocked": 1, "due": 2, "not_assessed": 3, "not_on_file": 4, "verified": 5}
     parties.sort(key=lambda x: (order[x["state"]], x["name"]))
     counts = {s: sum(1 for p in parties if p["state"] == s) for s in order}
@@ -512,10 +533,13 @@ async def prepare(session: AsyncSession, firm: Firm, *, person_id=None, entity_i
             raise KycError(f"A refresh trigger is one of {', '.join(TRIGGERS)}.")
         on = _clean("kyc_completed_on", trigger_on or today, today)
         trig = {"kind": kind, "on": on.isoformat()}
+    from app.aurea_core import kyc_registry
+
     records = await latest(session, firm.id)
     key = ("person", holder.id) if isinstance(holder, Person) else ("entity", holder.id) if isinstance(holder, LegalEntity) \
         else _case_key(case.id, name, await _followed(session, firm.id, {case.id}))
     before = records.get(key)
+    stands = (await kyc_registry.standing(session, firm.id)).get(key)
     merged = {f: given.get(f, getattr(before, f, None) if before else None) for f in SCALAR}
     merged_owners = owners if owners is not None else list(before.beneficial_owners or []) if before else []
     merged_triggers = list(before.triggers or []) if before else []
@@ -528,6 +552,8 @@ async def prepare(session: AsyncSession, firm: Firm, *, person_id=None, entity_i
     changes = []
     for f in (*SCALAR, "beneficial_owners"):
         old = getattr(before, f, None) if before else None
+        if f == "kra_status" and f in given and stands:
+            old = stands["status"]       # a newer registry lookup may stand over what the last record carried
         new = merged_owners if f == "beneficial_owners" else merged[f]
         if f == "beneficial_owners":
             old = list(old or [])
@@ -539,11 +565,12 @@ async def prepare(session: AsyncSession, firm: Firm, *, person_id=None, entity_i
         raise KycError("Nothing changes: the record already says that.")
     row = KycRecord(firm_id=firm.id, person_id=holder.id if isinstance(holder, Person) else None,
                     entity_id=holder.id if isinstance(holder, LegalEntity) else None, case_id=case.id if case else (before.case_id if before else None),
-                    party_name=name, beneficial_owners=merged_owners, triggers=merged_triggers, document=document.strip(), **merged)
+                    party_name=name, beneficial_owners=merged_owners, triggers=merged_triggers, document=document.strip(),
+                    kra_status_stated="kra_status" in given, **merged)
     of_case = key[1] if key[0] == "case" else (await _case_of_holder(session, firm.id)).get(key[1])
     band = (await _case_bands(session, firm.id)).get(of_case)
     entity = key[0] == "entity" or bool(merged["structure"]) or _is_the_entity(case, name)
-    state = assess(row, today=today, firm=firm, aml_band=band, is_entity=entity)
+    state = assess(row, today=today, firm=firm, aml_band=band, is_entity=entity, registry=None if "kra_status" in given else stands)
     return {"row": row, "name": name, "changes": changes, "state": state, "before": before, "holder": holder}
 
 
@@ -607,13 +634,20 @@ async def case_status(session: AsyncSession, firm: Firm, case: OnboardingCase) -
     """The KYC of a case's parties: what the activation gate and the board's KYC queue read. None outside India."""
     if not applies(firm):
         return None
+    from app.aurea_core import kyc_registry
+
     today = firm_time.today(firm)
     records = await _records_for_case(session, firm.id, case)
+    standings = await kyc_registry.standing(session, firm.id)
     band = (await _case_bands(session, firm.id)).get(case.id)
-    views = [view(r, r.party_name, today=today, firm=firm, aml_band=band,
+    views = [view(r, r.party_name, today=today, firm=firm, aml_band=band, registry=standings.get(k),
                   is_entity=k[0] == "entity" or bool(r.structure) or _is_the_entity(case, r.party_name)) for k, r in records.items()]
+    # A party with a registry answer and no KYC record yet: an on-hold or rejected one still stops the case.
+    wanted = _created_by(case)
+    views += [view(None, s["party_name"], today=today, firm=firm, registry=s) for k, s in standings.items()
+              if k not in records and (k in wanted or (k[0] == "case" and k[1] == case.id) or s["case_id"] == case.id)]
     by = lambda s: [v for v in views if v["state"] == s]  # noqa: E731
-    return {"applies": True, "records": len(views), "overdue": by("overdue"), "blocked": by("blocked"), "due": by("due"),
+    return {"applies": True, "records": len(records), "overdue": by("overdue"), "blocked": by("blocked"), "due": by("due"),
             "not_assessed": by("not_assessed"), "missing": await _without_a_record(session, case, records), "parties": views}
 
 

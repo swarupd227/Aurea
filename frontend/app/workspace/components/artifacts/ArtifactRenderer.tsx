@@ -38,6 +38,7 @@ import { AggregatorCard, EcasCard } from "./AggregatorCard";
 import { ConsolidationCard } from "./ConsolidationCard";
 import { AdvertisingCard, ComplaintsCard } from "./ComplaintsCard";
 import { KycCard, TaxRecordsCard } from "./IndiaKycCard";
+import { KycRegistryCard, MyKycCard } from "./IndiaKycRegistryCard";
 import { FamilyEstateCard } from "./FamilyEstateCard";
 import { PolishCard } from "./PolishCard";
 import { GovernanceCard } from "./GovernanceCard";
@@ -608,6 +609,16 @@ export function artifactCard(artifact: Artifact) {
       case "check_advertising":
         if (!Array.isArray(artifact.result?.findings) && artifact.result?.applies !== false) return null;
         return <AdvertisingCard result={artifact.result as any} />;
+      case "read_kyc_registry":
+      case "record_kyc_lookup":
+      case "lookup_kyc_registry":
+      case "record_kyc_step":
+      case "record_kyc_contact":
+        if (!Array.isArray(artifact.result?.cases) && artifact.result?.applies !== false) return null;
+        return <KycRegistryCard result={artifact.result as any} />;
+      case "read_my_kyc_status":
+        if (!Array.isArray(artifact.result?.people)) return null;
+        return <MyKycCard result={artifact.result as any} />;
       case "read_kyc":
       case "record_kyc":
         if (!Array.isArray(artifact.result?.parties) && artifact.result?.applies !== false) return null;

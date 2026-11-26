@@ -26,6 +26,7 @@ class KycRecord(Base):
     ckyc_number: Mapped[str | None] = mapped_column(String(14), nullable=True)          # the 14-digit KIN, as the registry sent it
     kra_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
     kra_status: Mapped[str | None] = mapped_column(String(12), nullable=True)           # validated | registered | on_hold | rejected
+    kra_status_stated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)     # said on this record, not carried over (B-386)
     kyc_completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)          # the KYC or re-KYC this record rests on
     verification_mode: Mapped[str | None] = mapped_column(String(14), nullable=True)    # ipv | video_kyc | aadhaar_ekyc | digilocker
     ipv_on: Mapped[date | None] = mapped_column(Date, nullable=True)

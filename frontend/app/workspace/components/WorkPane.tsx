@@ -46,6 +46,7 @@ import { RepaperingView } from "@/components/views/RepaperingView";
 import { OnboardingQueuesView } from "@/components/views/OnboardingQueuesView";
 import { NetWorthView } from "@/components/views/NetWorthView";
 import { ConsolidationView } from "@/components/views/ConsolidationView";
+import { KycRegistryView } from "@/components/views/KycRegistryView";
 import { AnalyticsView } from "@/components/views/AnalyticsView";
 import { CapacityView } from "@/components/views/CapacityView";
 import { AgentHistoryView } from "@/components/views/AgentHistoryView";
@@ -144,6 +145,8 @@ function ViewBody({ pane }: { pane: PaneMatch }) {
       return <NetWorthView household={pane.query.household ?? null} />;
     case "consolidation":
       return <ConsolidationView household={pane.query.household ?? null} />;
+    case "kyc_registry":
+      return <KycRegistryView household={pane.query.household ?? null} />;
     case "equity_comp":
       return <EquityCompView household={pane.query.household ?? null} />;
     case "plan":

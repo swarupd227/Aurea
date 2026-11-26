@@ -6,6 +6,7 @@ import { ViewLink } from "./ViewNav";
 import { ViewHeader, chip } from "./ViewHeader";
 import { useApi } from "@/lib/hooks";
 import { api, getUser } from "@/lib/api";
+import { RegistryChip } from "@/app/workspace/components/artifacts/IndiaKycRegistryCard";
 import { titleCase } from "@/lib/format";
 
 const REGISTRATION_LABELS: Record<string, string> = {
@@ -240,9 +241,18 @@ function CaseCard({ c }: { c: any }) {
         {c.nigo_flag && <span className="chip bg-warn-bg text-warn flex items-center gap-1"><AlertTriangle size={10} /> NIGO</span>}
       </div>
 
+      {/* India: the registry's own status, said before any timeline. */}
+      {c.registry && c.status !== "approved" && (
+        <div className="flex flex-wrap items-center gap-1.5 mt-2" data-testid="onboarding-card-registry">
+          <RegistryChip registry={c.registry} />
+          {c.registry.simulated && <span className="chip text-warn">simulated</span>}
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2 mt-2 text-[10px]">
         <span className={SLA_STYLE[c.sla_status] || "text-ink-muted"}>
-          {c.sla_status === "breached" ? "SLA breached" : c.sla_status === "at_risk" ? "SLA at risk" : `SLA ${c.sla_days}d`}
+          {c.sla_status === "breached" ? "SLA breached" : c.sla_status === "at_risk" ? "SLA at risk"
+            : c.registry && !c.registry.timeline_ok && c.status !== "approved" ? "No timeline yet" : `SLA ${c.sla_days}d`}
         </span>
         {t?.ready_to_activate && <span className="chip bg-ok-bg text-ok">Ready to activate</span>}
       </div>

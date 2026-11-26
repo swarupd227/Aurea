@@ -5,6 +5,7 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { ViewLink } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
+import { RegistryChip, TimelineChips } from "@/app/workspace/components/artifacts/IndiaKycRegistryCard";
 
 const th = "px-4 py-2 font-medium";
 const days = (v: number | null | undefined) => (v == null ? "—" : `${v}d`);
@@ -77,13 +78,17 @@ export function OnboardingQueuesView() {
 
       {data.accounts.length === 0 ? <Empty>No accounts in onboarding.</Empty> : (
         <Card className="overflow-hidden p-0"><div className="overflow-x-auto"><table className="w-full text-sm" data-testid="onboarding-states">
-          <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Account</th><th className={th}>State</th><th className={th}>Whose move</th><th className={`${th} text-right`}>In state</th></tr></thead>
+          <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Account</th><th className={th}>State</th>{data.accounts.some((a: any) => a.registry) && <th className={th}>KYC registry</th>}<th className={th}>Whose move</th><th className={`${th} text-right`}>In state</th></tr></thead>
           <tbody className="divide-y divide-border-soft">
             {data.accounts.map((a: any) => (
               <tr key={a.case_id}>
                 <td className="px-4 py-2"><ViewLink href={`/studio/onboarding/${a.case_id}`} className="text-ink hover:underline">{a.account}</ViewLink>
                   <div className="text-xs text-ink-muted">{(a.registration_type ?? "").replace(/_/g, " ")}</div></td>
                 <td className="px-4 py-2"><span className="chip text-ink">{a.state.replace(/_/g, " ")}</span> <span className="font-mono text-xs text-ink-muted">{a.step}/{a.steps}</span></td>
+                {data.accounts.some((x: any) => x.registry) && (
+                  <td className="px-4 py-2"><div className="flex flex-wrap gap-1.5"><RegistryChip registry={a.registry} prefix="" />
+                    {a.state !== "invested" && <TimelineChips registry={a.registry} />}</div></td>
+                )}
                 <td className="px-4 py-2 text-xs text-ink-muted">{a.owner}</td>
                 <td className="px-4 py-2 text-right"><span className={`chip ${a.overdue ? "text-crit" : "text-ink-muted"}`}>{days(a.age_days)}{a.sla_days != null ? ` of ${a.sla_days}d` : ""}</span></td>
               </tr>

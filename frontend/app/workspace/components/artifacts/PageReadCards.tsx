@@ -1,4 +1,5 @@
 import { money, pct, timeAgo, titleCase } from "@/lib/format";
+import { RegistryChip, TimelineChips } from "./IndiaKycRegistryCard";
 
 // Cards for the reads that stand in for pages: Agent history, Capacity, Analytics, Onboarding and
 // Provenance. Figures, tables and chips only - the agent's message carries the sentences. Each is
@@ -299,6 +300,9 @@ export function OnboardingCasesCard({ result }: { result: OnboardingPayload }) {
               <td className="px-3 py-1.5">
                 <div className="text-ink">{c.prospect_name}</div>
                 <div className="text-xs text-ink-muted">{c.position}{c.owner ? ` · ${titleCase(c.owner)}` : ""}</div>
+                {(c as any).registry && c.status !== "approved" && (
+                  <div className="mt-1 flex flex-wrap gap-1.5"><RegistryChip registry={(c as any).registry} /><TimelineChips registry={(c as any).registry} /></div>
+                )}
               </td>
               <td className="px-3 py-1.5">
                 <div className="flex gap-1">

@@ -9,6 +9,7 @@ export function OnboardingQueuesCard({ result }: { result: any }) {
         <div className="flex flex-wrap gap-1.5">
           <span className="chip text-ink-muted">{s.accounts} accounts</span>
           {s.overdue > 0 && <span className="chip text-crit">{s.overdue} past SLA</span>}
+          {s.registry_not_looked_up > 0 && <span className="chip text-warn" data-testid="onboarding-card-not-looked-up">{s.registry_not_looked_up} KYC not looked up</span>}
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5 border-b border-border-soft px-3 py-2">

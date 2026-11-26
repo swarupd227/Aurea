@@ -247,12 +247,19 @@ async def cases_overview(db: AsyncSession, firm: Firm) -> list[dict]:
         await db.execute(select(OnboardingCase).where(OnboardingCase.firm_id == firm.id)
                          .order_by(OnboardingCase.created_at.desc()))
     ).scalars().all()
+    from app.aurea_core import kyc_registry
+
+    india = kyc_registry.applies(firm)
+    standings = await kyc_registry.standing(db, firm.id) if india else {}
+    follow = await kyc_registry.follow_ups(db, firm.id) if india else {}
     out = []
     for c in rows:
         d = _case_dict(c)
         # The board needs the tracks to show what is actually blocking each case, and
         # who owns it — a single status cannot express four parallel tracks.
         d["tracks"] = await _tracks_for(db, firm, c)
+        # India: the registry's status, a second axis beside the firm's own states (B-386). None elsewhere.
+        d["registry"] = await kyc_registry.case_registry(db, firm, c, standings=standings, rows=follow) if india else None
         out.append(d)
     return out
 
@@ -290,8 +297,10 @@ async def states_overview(db: AsyncSession, firm: Firm) -> dict:
     fills = await _first_fills(db, cases)
     now = utcnow()
     from app.agents.cip_identity_verifier import CIP_DAYS
-    from app.aurea_core import aml_risk, firm_time, kyc_india
+    from app.aurea_core import aml_risk, firm_time, kyc_india, kyc_registry
 
+    standings = await kyc_registry.standing(db, firm.id) if kyc_registry.applies(firm) else {}
+    follow = await kyc_registry.follow_ups(db, firm.id) if kyc_registry.applies(firm) else {}
     due_reviews = {d["case_id"]: d["due"] for d in await aml_risk.reviews_due(db, firm.id, today=firm_time.today(firm))}
     _aware = lambda t: t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t  # noqa: E731
     rows = []
@@ -308,9 +317,13 @@ async def states_overview(db: AsyncSession, firm: Firm) -> dict:
             kyc.append(f"Periodic risk review due {due_reviews[str(c.id)]}")
         # India: a recorded KYC that is overdue, blocked at the KRA or falling due is a KYC exception beside the gates.
         kyc += kyc_india.queue_lines(await kyc_india.case_status(db, firm, c))
-        rows.append(account_states.account_row(
+        row = account_states.account_row(
             c, data_complete=bool(account and account["state"] == "complete"), gates_blocking=bool(gates["blocking"]),
-            kyc=kyc, transfers=transfers.get(c.id, []), first_fill=fills.get(c.id), now=now))
+            kyc=kyc, transfers=transfers.get(c.id, []), first_fill=fills.get(c.id), now=now)
+        registry = await kyc_registry.case_registry(db, firm, c, standings=standings, rows=follow)
+        if registry is not None:
+            row["registry"] = {k: registry[k] for k in ("status", "label", "timeline", "timeline_ok", "simulated")}
+        rows.append(row)
     live = [r for r in rows if not r["rejected"]]
     queues = {k: {"label": label, "owner": owner, "items": [{**e, "case_id": r["case_id"], "account": r["account"]}
                                                            for r in live for e in r["exceptions"] if e["queue"] == k]}
@@ -319,6 +332,9 @@ async def states_overview(db: AsyncSession, firm: Firm) -> dict:
             "clocks": account_states.clocks(cases, transfers_by_case=transfers, fills=fills), "states": list(account_states.STATES),
             "summary": {"accounts": len(live), "overdue": sum(1 for r in live if r["overdue"]),
                         "exceptions": sum(len(q["items"]) for q in queues.values()),
+                        # Open accounts with no registry answer: no timeline is promised for them (India, B-386).
+                        "registry_not_looked_up": sum(1 for r in live if (r.get("registry") or {}).get("status") == "not_looked_up"
+                                                      and r["state"] in ("draft", "data_complete", "documents_generated", "signed", "in_review")),
                         "by_state": {s: sum(1 for r in live if r["state"] == s) for s in account_states.STATES}}}
 
 
@@ -376,6 +392,9 @@ async def get_case(case_id: uuid.UUID, firm: Firm = Depends(current_firm), db: A
     out = _case_dict(case, docs, bos)
     out["recommendation_id"] = str(rec.id) if rec else None
     out["tracks"] = await _tracks_for(db, firm, case)
+    from app.aurea_core import kyc_registry
+
+    out["registry"] = await kyc_registry.case_registry(db, firm, case)
     return out
 
 

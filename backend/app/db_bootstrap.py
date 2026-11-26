@@ -277,6 +277,8 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE sip ADD COLUMN IF NOT EXISTS step_up_cap NUMERIC(20,2)"))
         await conn.execute(text("ALTER TABLE sip ADD COLUMN IF NOT EXISTS goal_id UUID REFERENCES goal(id) ON DELETE SET NULL"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sip_goal_id ON sip (goal_id)"))
+        # B-386: whether a KYC record's KRA status was said on that record or carried over. Empty on every record before: read from the chain.
+        await conn.execute(text("ALTER TABLE kyc_record ADD COLUMN IF NOT EXISTS kra_status_stated BOOLEAN"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

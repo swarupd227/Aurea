@@ -14,6 +14,7 @@ import { useApi } from "@/lib/hooks";
 import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 import { ChannelRequests } from "@/app/workspace/components/artifacts/IndiaRemECard";
+import { MyKycPeople } from "@/app/workspace/components/artifacts/IndiaKycRegistryCard";
 
 const ROUTE = "/canvas";
 
@@ -90,6 +91,8 @@ function Page({ householdId }: { householdId: string | null }) {
 
   // India: a client asks for a language or WhatsApp. It becomes a task for their adviser and changes nothing until a person records it.
   const channels = useApi<any>(householdId === null ? "/api/canvas/channels" : null, [householdId]);
+  // India: the household's own KYC registry status, reasons and steps. Absent elsewhere.
+  const kyc = useApi<any>(`/api/canvas/kyc${qs}`, [qs]);
   const [channelBusy, setChannelBusy] = useState(false);
   const [channelSent, setChannelSent] = useState<string | null>(null);
   const [requestBusy, setRequestBusy] = useState(false);
@@ -255,6 +258,13 @@ function Page({ householdId }: { householdId: string | null }) {
           )}
         </Card>
       </div>
+
+      {kyc.data?.applies && (!householdId || kyc.data.household_id === householdId) && (
+        <Card className="mb-4 overflow-hidden p-0" data-testid="canvas-kyc">
+          <div className="border-b border-border-soft px-3 py-2 text-sm font-medium text-ink">{client ? "Your KYC" : "KYC"}</div>
+          <MyKycPeople people={kyc.data.people ?? []} />
+        </Card>
+      )}
 
       {(worth || policy) && (
         <div className="mb-4 grid grid-cols-1 gap-4 cq-md:grid-cols-2">

@@ -898,6 +898,103 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE},
     ),
 
+    # ─── India: the KYC registry's status, looked up first (B-386, aurea_core/kyc_registry.py).
+    "read_kyc_registry": Tool(
+        key="read_kyc_registry",
+        name="Read KYC Registry Status",
+        speaking_agent="astra",
+        description="India: the KYC registry's status, a second axis beside the firm's own account states, and the first thing to check before promising any onboarding or transaction timeline: validated, registered, on hold, rejected, no record, or not looked up. The book's status mix, the re-KYC backlog by age with the attempts made to reach each client, each on-hold or rejected client's reasons and remediation steps with their state, and each open onboarding case with its parties' status (a case not looked up says so: promise no timeline for it). Statuses are what a person recorded from the registry's answer, or what a connected lookup returned (only a simulated one exists, marked simulated). Give case_id for one case or household_id for one family. To show it beside the conversation call open_view with view kyc_registry.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "One household", required=False),
+                ToolInput("case_id", "uuid", "One onboarding case, from read_onboarding_cases", required=False)],
+        output=ToolOutput("object", "The status mix, backlog, remediation and cases"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                       UserRole.OPERATIONS, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+
+    "record_kyc_lookup": Tool(
+        key="record_kyc_lookup",
+        name="Record KYC Registry Answer",
+        speaking_agent="astra",
+        description="India: records the KYC registry's answer as a person read it from the acknowledgement or registry response: whose (person_id, entity_id, or case_id with party_name), registry (kra or ckyc), status (validated, registered, on_hold, rejected, not_found), answered_on, document (where the answer is filed), and for on_hold or rejected the deficiencies the answer gives (comma separated: pan_aadhaar_not_linked, mobile_not_verified, email_not_verified, identity_proof, address_proof, details_mismatch, other with deficiency_note in the registry's words, or not_stated), optionally agency, reference and, for validated or registered, holds (identity_proof, address_proof, pan_card, photograph: documents the registry holds, which are then not asked again). On hold, rejected or no record raises one task for the household's adviser; on hold or rejected holds activation and the household's orders. Nothing is looked up, nothing is sent to the client, and only a newer answer clears a hold. An adviser, paraplanner, operations or compliance.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this registry answer?",
+        inputs=[
+            ToolInput("person_id", "uuid", "The client, if a person", required=False),
+            ToolInput("entity_id", "uuid", "The client, if an entity", required=False),
+            ToolInput("case_id", "uuid", "The onboarding case, for a party not yet a client", required=False),
+            ToolInput("party_name", "string", "The party's name, with a case (the applicant if left out)", required=False),
+            ToolInput("registry", "string", "kra or ckyc; kra if left out", required=False),
+            ToolInput("status", "string", "validated, registered, on_hold, rejected or not_found", required=True),
+            ToolInput("answered_on", "string", "The day of the answer, YYYY-MM-DD; today if left out", required=False),
+            ToolInput("deficiencies", "string", "On hold or rejected: the reasons, comma separated", required=False),
+            ToolInput("deficiency_note", "string", "The registry's own words (staff only)", required=False),
+            ToolInput("holds", "string", "Documents the registry holds, comma separated", required=False),
+            ToolInput("agency", "string", "The KRA or registry that answered", required=False),
+            ToolInput("reference", "string", "The answer's reference", required=False),
+            ToolInput("document", "string", "Where the answer is filed", required=True),
+        ],
+        output=ToolOutput("object", "The case or household's registry status after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE},
+    ),
+
+    "lookup_kyc_registry": Tool(
+        key="lookup_kyc_registry",
+        name="Look Up KYC Registry",
+        speaking_agent="astra",
+        description="India: asks the firm's connected KYC registry lookup about one party (person_id, entity_id, or case_id with party_name) and records its answer, which then gates activation and orders and raises a task if on hold, rejected or no record. Only a SIMULATED lookup exists, for a demonstration firm that opted in: its answers are invented, marked simulated, and are not a KRA or CKYC check. With none connected it says so and looks nothing up: record the answer with record_kyc_lookup instead. An adviser, paraplanner, operations or compliance.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Look this up and record the answer?",
+        inputs=[
+            ToolInput("person_id", "uuid", "The client, if a person", required=False),
+            ToolInput("entity_id", "uuid", "The client, if an entity", required=False),
+            ToolInput("case_id", "uuid", "The onboarding case, for a party not yet a client", required=False),
+            ToolInput("party_name", "string", "The party's name, with a case (the applicant if left out)", required=False),
+        ],
+        output=ToolOutput("object", "The case or household's registry status after the lookup"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE},
+    ),
+
+    "record_kyc_step": Tool(
+        key="record_kyc_step",
+        name="Record KYC Remediation Step",
+        speaking_agent="astra",
+        description="India: records where one remediation step of an on-hold or rejected registry answer stands: lookup_id and step (the deficiency code) from read_kyc_registry, state (open, asked, received, done, not_needed with a note), optionally happened_on and a note. Marking every step done clears nothing: only a newer registry answer does. Nothing is sent to the client. An adviser, paraplanner, operations or compliance.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this step?",
+        inputs=[
+            ToolInput("lookup_id", "uuid", "The standing registry answer, from read_kyc_registry", required=True),
+            ToolInput("step", "string", "The step's code, from read_kyc_registry", required=True),
+            ToolInput("state", "string", "open, asked, received, done or not_needed", required=True),
+            ToolInput("happened_on", "string", "YYYY-MM-DD; today if left out", required=False),
+            ToolInput("note", "string", "A note (staff only)", required=False),
+        ],
+        output=ToolOutput("object", "The registry status after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE},
+    ),
+
+    "record_kyc_contact": Tool(
+        key="record_kyc_contact",
+        name="Record KYC Contact Attempt",
+        speaking_agent="astra",
+        description="India: records one attempt a person made to reach a client about their KYC: whose (person_id, entity_id, or case_id with party_name), channel (phone, email, meeting, letter, portal), outcome (reached, replied, left_message, no_answer), optionally happened_on and a note. It records an attempt that was made; it sends nothing. An adviser, paraplanner, operations or compliance.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this contact attempt?",
+        inputs=[
+            ToolInput("person_id", "uuid", "The client, if a person", required=False),
+            ToolInput("entity_id", "uuid", "The client, if an entity", required=False),
+            ToolInput("case_id", "uuid", "The onboarding case", required=False),
+            ToolInput("party_name", "string", "The party's name, with a case", required=False),
+            ToolInput("channel", "string", "phone, email, meeting, letter or portal", required=True),
+            ToolInput("outcome", "string", "reached, replied, left_message or no_answer", required=True),
+            ToolInput("happened_on", "string", "YYYY-MM-DD; today if left out", required=False),
+            ToolInput("note", "string", "A note (staff only)", required=False),
+        ],
+        output=ToolOutput("object", "The registry status after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE},
+    ),
+
     "read_sebi_family": Tool(
         key="read_sebi_family",
         name="Read SEBI Family of Client",
@@ -4476,8 +4573,8 @@ TOOLS: dict[str, Tool] = {
             "reviewed and is next due), protection (each household's protection gaps and policies), risk_profiles "
             "(questionnaire results beside what is on file), reconciliation (the book against custodian statements, and "
             "its breaks), net_worth (what each household owns, owes and spends) exits (clients leaving and estates being "
-            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) advice_file (the recommendations advisers made, what became of each, and the implementation rate) plans (the firm's plans of record: coverage, freshness, QC pass rate, scenario depth and each household's state) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consolidation (India: holdings held elsewhere being brought together), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), rulebook (the regime's rules as the firm runs them, and the agent controls), book_integration (acquired books), book_batch (one acquired book; give batch_id), canvas (a client's home page as they see it), canvas_retirement (their retirement page), canvas_goals (their goals page), canvas_next_gen (a next-gen member's journey), canvas_questionnaire (their risk questionnaire, to record answers), admin (the firm's settings, users and agents; give tab to open one tab: firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage) or connectors (the firm's connectors and feeds). ips, reviews, protection, risk_profiles, net_worth and "
-            "exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, consolidation, tax, estate, family, behavioural, regulatory_countdown and the canvas views show every client unless given household_id: when the conversation is about one client, look them up "
+            "settled), products (the approved product list) equity_comp (grants and concentrated stock) plan (one client's financial plan) client_file (trusted contacts, estate documents, life events) advice_file (the recommendations advisers made, what became of each, and the implementation rate) plans (the firm's plans of record: coverage, freshness, QC pass rate, scenario depth and each household's state) cash (payments out, RMDs, phasing), trades (the blotter), tax_documents (what a tax year should produce), aml (screening hits and EDD files waiting on a person), consolidation (India: holdings held elsewhere being brought together), consents (the consent registry and disclosures due again), document_matrix (documents and detail each registration needs, by state and custodian), transfers (transfers into the firm and their files), monitoring (transaction monitoring alerts and investigations), money_in (bank links, deposits, holds, returns and standing instructions), account_features (margin, options, checkwriting and senior holds), onboarding_scoreboard (onboarding measured: days to invest, stalls, NPS, rejects, capacity), repapering (bulk repapering campaigns and consent), onboarding_queues (the state of each account, the exception queues and the three clocks), kyc_registry (India: the KYC registry status mix, the re-KYC backlog and on-hold remediation), analytics (the firm's headline figures), capacity (runs, decisions and hours reclaimed), agent_history (past agent runs), provenance (the ledger, surveillance flags and agent quality), composites (performance composites), prices (how fresh each price is), beneficiary_audit (accounts missing beneficiaries), licences (the firm's SEBI licences and consents awaited), corporate_actions (splits, dividends and entitlements), pipeline (prospects and opportunities), tax (the book's tax position, or one client's tax intelligence and wash-sale calendar), estate (one client's estate and succession), family (a family across households), behavioural (one client's behavioural profile), regulatory_countdown (deadlines in law that change what a client should do), workforce (the firm's agents), skills (the firm's own skills), rulebook (the regime's rules as the firm runs them, and the agent controls), book_integration (acquired books), book_batch (one acquired book; give batch_id), canvas (a client's home page as they see it), canvas_retirement (their retirement page), canvas_goals (their goals page), canvas_next_gen (a next-gen member's journey), canvas_questionnaire (their risk questionnaire, to record answers), admin (the firm's settings, users and agents; give tab to open one tab: firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage) or connectors (the firm's connectors and feeds). ips, reviews, protection, risk_profiles, net_worth and "
+            "exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, consolidation, kyc_registry, tax, estate, family, behavioural, regulatory_countdown and the canvas views show every client unless given household_id: when the conversation is about one client, look them up "
             "this turn and give it, so the view opens on that client alone. It returns no data and states nothing - answer "
             "first, then open the view when seeing it would help. Reading a view's figures does not open it: only this tool "
             "does, so never say a view is open unless this tool returned it. An id must come from a tool you called earlier in "
@@ -4488,9 +4585,9 @@ TOOLS: dict[str, Tool] = {
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
-            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, advice_file, plans, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, account_features, onboarding_scoreboard, repapering, onboarding_queues, consolidation, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, rulebook, book_integration, book_batch, canvas, canvas_retirement, canvas_goals, canvas_next_gen, canvas_questionnaire, admin or connectors", required=True),
+            ToolInput("view", "string", "cockpit, recommendations, clients, client, billing, valuations, onboarding, onboarding_case, meetings, meeting, tasks, reports, report, messages, message_thread, ips, reviews, protection, risk_profiles, reconciliation, net_worth, exits, products, equity_comp, plan, client_file, advice_file, plans, cash, trades, tax_documents, aml, consents, document_matrix, transfers, monitoring, money_in, account_features, onboarding_scoreboard, repapering, onboarding_queues, kyc_registry, consolidation, analytics, capacity, agent_history, provenance, composites, prices, beneficiary_audit, licences, corporate_actions, pipeline, tax, estate, family, behavioural, regulatory_countdown, workforce, skills, rulebook, book_integration, book_batch, canvas, canvas_retirement, canvas_goals, canvas_next_gen, canvas_questionnaire, admin or connectors", required=True),
             ToolInput("tab", "string", "For admin: the tab to open on - firm, branding, users, clients, assignments, segments, mandates, model-portfolios, connectors, schedules, notifications, data-quality, rule-impact, audit, agents, research, models or usage", required=False),
-            ToolInput("household_id", "uuid", "For client or message_thread, and for ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, consolidation, tax, estate, family, behavioural, regulatory_countdown, canvas, canvas_retirement, canvas_goals, canvas_next_gen or canvas_questionnaire to open on one client: the household, as a tool returned it this turn", required=False),
+            ToolInput("household_id", "uuid", "For client or message_thread, and for kyc_registry, ips, reviews, protection, risk_profiles, net_worth, exits, equity_comp, plan, client_file, advice_file, cash, trades, tax_documents, consents, consolidation, tax, estate, family, behavioural, regulatory_countdown, canvas, canvas_retirement, canvas_goals, canvas_next_gen or canvas_questionnaire to open on one client: the household, as a tool returned it this turn", required=False),
             ToolInput("recommendation_id", "uuid", "For recommendations: the proposal to bring to the top, as read_recommendations returned it this turn", required=False),
             ToolInput("invoice_id", "uuid", "For billing: the bill to open, as read_billing or explain_invoice returned it this turn", required=False),
             ToolInput("case_id", "uuid", "For onboarding_case: the case, as read_onboarding_cases returned it this turn", required=False),
@@ -6172,6 +6269,18 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.CLIENT},
     ),
 
+    "read_my_kyc_status": Tool(
+        key="read_my_kyc_status",
+        name="Read My KYC Status",
+        speaking_agent="astra",
+        description="India: the client's own household's KYC registry status: for each person or entity, validated, registered, on hold, rejected, no record or not checked yet, what the registry said is wrong in plain words, the steps to put it right and where each stands, and whether it needs refreshing. It changes nothing and sends nothing; their adviser records what they send. Nothing about screening or monitoring is in it, and none is to be guessed at.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The household's KYC status and steps"),
+        roles_required={UserRole.CLIENT},
+    ),
+
     "read_my_report": Tool(
         key="read_my_report",
         name="Read My Report",
@@ -6238,6 +6347,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
     "onboarding_scoreboard": ("/studio/onboarding-scoreboard", "Onboarding scoreboard", {_A, _P, _C, _O, _B}),
     "repapering": ("/studio/repapering", "Repapering", {_A, _P, _C, _O, _B}),
     "onboarding_queues": ("/studio/onboarding-queues", "Onboarding queues", {_A, _P, _C, _O, _B}),
+    "kyc_registry": ("/studio/kyc-registry", "KYC registry", {_A, _P, _C, _O, _B}),
     "consolidation": ("/studio/consolidation", "Consolidation", {_A, _P, _PT, _C, _O, _B}),
     "analytics": ("/studio/analytics", "Analytics", {_A, _PT, _R, _B}),
     "capacity": ("/studio/capacity", "Capacity & outcomes", {_B, _A}),
@@ -6273,7 +6383,7 @@ OPEN_VIEWS: dict[str, tuple[str, str, set[UserRole]]] = {
 ADMIN_TABS = ("firm", "branding", "users", "clients", "assignments", "segments", "mandates", "model-portfolios", "connectors",
               "schedules", "notifications", "data-quality", "rule-impact", "audit", "agents", "research", "models", "usage")
 # The views of every client that can open on one, through `?household=`.
-ONE_CLIENT_VIEWS = {"ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "advice_file", "cash", "trades", "tax_documents",
+ONE_CLIENT_VIEWS = {"kyc_registry", "ips", "reviews", "protection", "risk_profiles", "net_worth", "exits", "equity_comp", "plan", "client_file", "advice_file", "cash", "trades", "tax_documents",
                     "tax", "estate", "family", "behavioural", "regulatory_countdown", "consents", "consolidation",
                     "canvas", "canvas_retirement", "canvas_goals", "canvas_next_gen", "canvas_questionnaire"}
 
