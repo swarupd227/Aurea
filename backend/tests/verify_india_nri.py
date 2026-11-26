@@ -77,18 +77,21 @@ async def main() -> int:
           (status(days_in_india=100, indian_citizen_or_pio=False), needs(days_in_india=100, indian_citizen_or_pio=False)),
           ("not_assessed", ["Days in India in the four years before"]))
     check("under 60 days a foreign national is non-resident", status(days_in_india=59, indian_citizen_or_pio=False), "non_resident")
-    check("a citizen abroad with modest Indian income needs 182, not 60",
-          status(days_in_india=150, indian_citizen_or_pio=True, india_income=800000, days_prior_four_years=900), "non_resident")
-    check("a citizen with Indian income over Rs 15 lakh needs 120",
+    check("a citizen visiting from abroad with modest Indian income needs 182, not 60",
+          status(days_in_india=150, indian_citizen_or_pio=True, india_income=800000, days_prior_four_years=900, visiting_india=True), "non_resident")
+    check("without the recorded fact that they visit or left for work, 182 is not assumed: not assessed (B-393)",
+          status(days_in_india=150, indian_citizen_or_pio=True, india_income=800000, days_prior_four_years=900), "not_assessed")
+    check("a visitor with Indian income over Rs 15 lakh needs 120, and is not ordinarily resident below 182 (B-393)",
           status(days_in_india=130, indian_citizen_or_pio=True, india_income=2000000, left_for_employment_abroad=False,
-                 days_prior_four_years=400, taxed_elsewhere=True), "resident")
+                 days_prior_four_years=400, taxed_elsewhere=True, visiting_india=True), "resident_rnor")
     check("a citizen who left for employment abroad needs 182 whatever the income",
           status(days_in_india=130, indian_citizen_or_pio=True, india_income=2000000, left_for_employment_abroad=True,
                  days_prior_four_years=400, taxed_elsewhere=True), "non_resident")
     check("a citizen with high Indian income, 130 days, and whether they left unrecorded, is not assessed",
           (status(days_in_india=130, indian_citizen_or_pio=True, india_income=2000000),
            needs(days_in_india=130, indian_citizen_or_pio=True, india_income=2000000)),
-          ("not_assessed", ["Left India for employment abroad this year", "Liable to tax in another country"]))
+          ("not_assessed", ["Left India for employment abroad this year", "Lives outside India and came on a visit this year",
+                            "Liable to tax in another country"]))
     deemed = residency.tax_status({"tax_year": "2026-27", "days_in_india": 50, "indian_citizen_or_pio": True, "india_income": 2000000,
                                    "taxed_elsewhere": False}, TODAY)
     check("a citizen over Rs 15 lakh liable to tax nowhere else is deemed resident, not ordinarily",

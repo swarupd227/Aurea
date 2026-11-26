@@ -3,6 +3,10 @@
 'Glide path: a pre-set schedule of decreasing equity exposure as the goal date approaches'
 — L100 §8.2. Sequence-of-returns risk is highest in the 3–5 years before and after retirement.
 Flags households that are over-risked for their timeline and proposes a de-risking allocation.
+
+Money a dated goal spends within three years is held to no equity at all (B-393): the household's equity may be no more
+than what is left of the managed book after that money. Retirement is spent over years and a legacy is not a spend, so
+neither is read that way; they keep the step-down. Where both apply the lower equity figure stands.
 """
 from __future__ import annotations
 
@@ -12,11 +16,14 @@ from app.agents._common import firm_voice, narrate
 from app.agents._follow_up import FollowUpOnApproval
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import firm_time, markets
+from app.aurea_core.goal_tradeoff import grown_target
 from app.aurea_core.graph import household_brain, list_households
 from app.models.enums import AgentKey, AutonomyTier
 
 _WINDOW_YEARS = 7     # flag households within this many years of a major goal
-_MIN_EQUITY_PCT = 0.20  # floor: never recommend below 20% equity
+_MIN_EQUITY_PCT = 0.20  # the step-down's floor, for money not needed within _NO_EQUITY_YEARS
+_NO_EQUITY_YEARS = 3    # money a dated goal spends inside this many years carries no equity
+_NOT_A_SPEND = ("retire", "legacy")   # spent over years, or not spent at a date
 
 
 def _target_equity(years_to_goal: float) -> float:
@@ -53,6 +60,21 @@ def _years_to_goal(goal: dict, today: date) -> float | None:
         return None
 
 
+def _short_horizon(brain: dict, today: date) -> list[tuple[dict, float, float]]:
+    """Dated spending goals under three years away: (goal, years to go, the amount in the money of its date)."""
+    found = []
+    for g in brain.get("goals", []):
+        if any(word in str(g.get("kind", "")).lower() for word in _NOT_A_SPEND):
+            continue
+        yrs = _years_to_goal(g, today)
+        if yrs is None or not 0 < yrs < _NO_EQUITY_YEARS:
+            continue
+        amount = grown_target(g, float(g.get("target_amount") or 0), yrs, today, brain.get("planning"))["target"]
+        if amount > 0:
+            found.append((g, yrs, amount))
+    return sorted(found, key=lambda f: f[1])
+
+
 class GlidePathAgent(FollowUpOnApproval, BaseAgent):
     follow_up_verb = "Review the glide path"
     follow_up_what = "review the allocation against the horizon with the client"
@@ -82,10 +104,15 @@ class GlidePathAgent(FollowUpOnApproval, BaseAgent):
             totals = brain.get("totals", {})
             total_value = totals.get("total_value", 0) or 0
 
+            short = _short_horizon(brain, today) if total_value else []
+            held_apart = [g for g, _y, _amount in short]
+
             # Find the most urgent retirement/major goal within the window
             target_goal = None
             years_remaining = None
             for g in goals:
+                if g in held_apart:
+                    continue        # its money is held to no equity below, so no step-down is read for it
                 kind = g.get("kind", "")
                 if kind not in ("retirement", "education", "major_purchase", "legacy"):
                     kind_lower = kind.lower()
@@ -99,11 +126,18 @@ class GlidePathAgent(FollowUpOnApproval, BaseAgent):
                         target_goal = g
                         years_remaining = yrs
 
-            if target_goal is None or years_remaining is None:
+            if (target_goal is None or years_remaining is None) and not short:
                 continue
 
             current_equity = _current_equity_pct(brain)
-            target_equity = _target_equity(years_remaining)
+            step_down = _target_equity(years_remaining) if target_goal is not None else None
+            # What is left for equity once the money needed within three years is set apart.
+            short_money = sum(amount for _g, _y, amount in short)
+            left = max(0.0, 1 - short_money / total_value) if short else None
+            by_short = left is not None and (step_down is None or left < step_down)
+            if by_short:
+                target_goal, years_remaining, _amount = short[0]
+            target_equity = left if by_short else step_down
             equity_gap = current_equity - target_equity  # positive = over-risked
 
             if equity_gap < 0.05:  # within 5pp — no action needed
@@ -116,9 +150,13 @@ class GlidePathAgent(FollowUpOnApproval, BaseAgent):
 
             # Compute year-by-year glide schedule
             schedule = []
-            for yr in range(1, min(int(years_remaining) + 2, 8)):
-                eq = _target_equity(years_remaining - yr)
-                schedule.append(f"Year {yr}: {eq:.0%} equity")
+            if by_short:
+                schedule.append(f"Now: no equity for the {markets.money(short_money, currency)} needed within {_NO_EQUITY_YEARS} years, "
+                                f"so at most {target_equity:.0%} of the managed book in equity")
+            else:
+                for yr in range(1, min(int(years_remaining) + 2, 8)):
+                    eq = _target_equity(years_remaining - yr)
+                    schedule.append(f"Year {yr}: {eq:.0%} equity")
 
             prompt = (
                 f"Write a glide-path advisory memo for the adviser. "
@@ -169,6 +207,8 @@ class GlidePathAgent(FollowUpOnApproval, BaseAgent):
                     "years_remaining": round(years_remaining, 1),
                     "goal": target_goal.get("kind"),
                     "glide_schedule": schedule,
+                    # The money held to no equity, where that is what sets the figure.
+                    "short_horizon_money": round(short_money, 2) if by_short else None,
                     "jurisdiction": jurisdiction,
                 },
                 evidence={

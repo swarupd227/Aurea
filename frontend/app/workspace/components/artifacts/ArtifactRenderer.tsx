@@ -435,6 +435,7 @@ export function artifactCard(artifact: Artifact) {
         if (!Array.isArray(artifact.result?.exits) && typeof artifact.result?.status !== "string") return null;
         return <ExitsCard result={artifact.result as any} />;
       case "read_tax_position":
+      case "record_tax_inputs":
         if (!Array.isArray(artifact.result?.taxpayers)) return null;
         return <TaxPositionCard result={artifact.result as any} />;
       case "read_licences":

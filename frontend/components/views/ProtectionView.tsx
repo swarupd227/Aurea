@@ -15,6 +15,10 @@ const NEW_INCOME = { person_id: "", annual_income: "", source_document: "" };
 const NEW_FUNDING = { choice: "", earmark_amount: "", reason: "" };
 const EARMARKED = ["self_fund", "hybrid"];
 
+// Whose figure the retirement age or the discount rate is (B-393).
+const WHOSE: Record<string, string> = { firm: "firm's", protection_setting: "protection setting", market: "market's suggestion", platform: "platform default", cash_return: "cash return" };
+const whose = (key?: string) => (key && WHOSE[key] ? ` · ${WHOSE[key]}` : "");
+
 /** What happens to a household if an earner dies or cannot work, or someone needs care: every client,
  * or one when opened on it. In the work pane, a change is the conversation's tool behind its Confirm
  * card; on a page the forms act directly. */
@@ -166,8 +170,9 @@ export function ProtectionView({ household = null }: { household?: string | null
           <div className="flex flex-wrap gap-1.5" data-testid="protection-basis">
             <span className="chip text-ink-muted">{Math.round(data.assumptions.death_replacement * 100)}% household income</span>
             <span className="chip text-ink-muted">{Math.round(data.assumptions.disability_replacement * 100)}% own income</span>
-            <span className="chip text-ink-muted">to retirement goal, else {data.assumptions.retirement_age}</span>
-            <span className="chip text-ink-muted">{(data.assumptions.discount_rate * 100).toFixed(0)}% discount</span>
+            <span className="chip text-ink-muted">to retirement goal, else {data.assumptions.retirement_age}{whose(data.assumptions.sources?.retirement_age)}</span>
+            <span className="chip text-ink-muted">{(data.assumptions.discount_rate * 100).toFixed(1)}% discount{whose(data.assumptions.sources?.discount_rate)}</span>
+            <span className="chip text-ink-muted">employer cover not counted</span>
             <span className="chip text-ink-muted">debts on file add to the death need</span>
             <span className="chip text-ink-muted">home and business not counted</span>
             {care

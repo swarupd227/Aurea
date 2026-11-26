@@ -28,6 +28,7 @@ class ResidencyRecord(Base):
     nonresident_years_of_prior_ten: Mapped[int | None] = mapped_column(Integer, nullable=True)
     indian_citizen_or_pio: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     left_for_employment_abroad: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    visiting_india: Mapped[bool | None] = mapped_column(Boolean, nullable=True)         # lives abroad and came on a visit that year
     india_income: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)   # other than from foreign sources, INR
     taxed_elsewhere: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # FEMA and immigration status: nri | oci | resident | foreign_national. A different question from tax residence.

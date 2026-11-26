@@ -162,6 +162,8 @@ def _cash_flow(persons: list[Person], items: list[BalanceItem]) -> dict:
         "income_partial": bool(known) and len(known) < len(adults), "expenses": round(expenses, 2) if spending else None,
         "debt_payments": round(payments, 2), "payments_missing": sum(1 for i in debts if i.annual_payment is None),
         "surplus": None if missing else round(income - expenses - payments, 2),
+        # Incomes are recorded before tax and tax is not worked out here, so the surplus is before tax and says so (B-393).
+        "surplus_basis": "before_tax",
     }
 
 

@@ -26,7 +26,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, law_figures, markets, tax_india
+from app.aurea_core import firm_time, law_figures, markets, salary_tax, tax_india
 from app.core.db import utcnow
 from app.core.security import UserRole
 from app.models.graph import Household, LegalEntity, Person
@@ -503,6 +503,8 @@ async def engine(session: AsyncSession, firm: Firm, person: Person | None, entit
         if float(tax["amount"]) > 0:
             total = None
     return {"asset_classes": [c["key"] for c in asset_classes(today)], "loss_ledger": losses,
+            # What a person recorded for the comparison, shown beside it (B-393). None for an HUF or a trust.
+            "on_file": salary_tax.on_file(tax_inputs) if person is not None else None,
             "loss_available": {k: round(sum(r["available"] for r in losses if r["kind"] == k), 2) for k in LOSS_KINDS},
             "ledger_in_use": bool((inputs.get("brought") or {}).get("from_ledger")),
             "grandfathering": gf, "regime": comparison, "advance_tax": advance_tax(total, today, needs=needs),

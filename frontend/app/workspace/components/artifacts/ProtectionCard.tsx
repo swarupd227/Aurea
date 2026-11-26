@@ -8,6 +8,8 @@ export interface ProtectionScenario {
   assets?: number;
   gap?: number;
   gap_before_assets?: number;
+  group_cover?: number;
+  gap_with_group_cover?: number;
 }
 
 export interface ProtectionPerson {
@@ -106,13 +108,25 @@ export function payeeText(p: ProtectionPolicy): string | null {
 
 export const SCENARIO_TEXT: Record<string, string> = { death: "if they die", disability: "if they cannot work", care: "if they need care" };
 
+/** An employer's cover, apart from the gap because it ends with the job, with what the gap would be with it. */
+function EmployerCover({ s }: { s: ProtectionScenario }) {
+  if (!s.group_cover) return null;
+  return (
+    <div className="mt-0.5" data-testid="protection-employer-cover">
+      <span className="chip tabular-nums text-ink-muted" title="Employer group cover ends with the job, so it is not counted">
+        employer {money(s.group_cover)} not counted · with it {money(s.gap_with_group_cover)}
+      </span>
+    </div>
+  );
+}
+
 export function Scenario({ s }: { s: ProtectionScenario }) {
-  if (s.status === "gap") return <span className="font-mono tabular-nums text-crit">{money(s.gap)}</span>;
+  if (s.status === "gap") return <><span className="font-mono tabular-nums text-crit">{money(s.gap)}</span><EmployerCover s={s} /></>;
   if (s.status === "no_gap") {
     return (
-      <span className="chip text-ok" title={s.gap_before_assets ? `${money(s.gap_before_assets)} before counting assets` : undefined}>
+      <><span className="chip text-ok" title={s.gap_before_assets ? `${money(s.gap_before_assets)} before counting assets` : undefined}>
         {s.gap_before_assets ? "self-insured" : s.need ? "covered" : "no need"}
-      </span>
+      </span><EmployerCover s={s} /></>
     );
   }
   if (s.status === "past_retirement") return <span className="chip text-ink-muted">past retirement</span>;

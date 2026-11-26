@@ -55,7 +55,7 @@ export function CashFlowChip({ flow }: { flow: BalanceSheet["cash_flow"] }) {
     return <span className="chip text-ink-muted" title={`missing ${flow.missing.join(", ")}`} data-testid="balance-cashflow-missing">cash flow not assessed</span>;
   }
   const short = (flow.surplus ?? 0) < 0;
-  return <span className={`chip ${short ? "text-crit" : "text-ok"}`} data-testid="balance-cashflow">{short ? "short" : "surplus"} {money(Math.abs(flow.surplus ?? 0))}/yr</span>;
+  return <span className={`chip ${short ? "text-crit" : "text-ok"}`} data-testid="balance-cashflow">{short ? "short" : "surplus"} {money(Math.abs(flow.surplus ?? 0))}/yr before tax</span>;
 }
 
 function Rows({ rows }: { rows: BalanceSheet[] }) {

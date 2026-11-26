@@ -56,14 +56,15 @@ ACCOUNTS_SOURCE = "RBI FEMA (Deposit) Regulations 2016, as read in the research 
 TDS_SOURCE = ("Income-tax Act 2025 (tax deducted on a non-resident's capital gains) and the research report, section 3.2: "
               "deducted at the gain's own rate, with surcharge and cess")
 YEAR_FIELDS = ("days_in_india", "days_prior_four_years", "days_prior_seven_years", "nonresident_years_of_prior_ten",
-               "left_for_employment_abroad", "india_income", "taxed_elsewhere")
+               "left_for_employment_abroad", "visiting_india", "india_income", "taxed_elsewhere")
 PERSON_FIELDS = ("indian_citizen_or_pio", "fema_status", "country_of_residence", "accounts", "pis_permission",
                  "tax_residencies", "us_person", "us_indicia", "self_certified_on")
 FIELD_LABELS = {
     "days_in_india": "Days in India in the year", "days_prior_four_years": "Days in India in the four years before",
     "days_prior_seven_years": "Days in India in the seven years before",
     "nonresident_years_of_prior_ten": "Years non-resident of the ten before",
-    "left_for_employment_abroad": "Left India for employment abroad this year", "india_income": "Indian income, other than foreign sources",
+    "left_for_employment_abroad": "Left India for employment abroad this year",
+    "visiting_india": "Lives outside India and came on a visit this year", "india_income": "Indian income, other than foreign sources",
     "taxed_elsewhere": "Liable to tax in another country", "indian_citizen_or_pio": "Indian citizen or person of Indian origin",
     "fema_status": "FEMA status", "country_of_residence": "Country of residence", "accounts": "NRE, NRO and FCNR accounts held",
     "pis_permission": "Portfolio Investment Scheme permission", "tax_residencies": "Countries of tax residence",
@@ -170,53 +171,65 @@ def tax_status(f: dict, today: date) -> dict:
         return done("not_assessed")
     full, short, prior_need = _num("in_res_days_year", today), _num("in_res_days_short", today), _num("in_res_days_prior_four", today)
     line = _num("in_res_income_line", today)
-    resident, deemed = False, False
+    resident, deemed, visitor_rnor = False, False, False
+
+    def need(key: str) -> None:
+        if FIELD_LABELS[key] not in needs:
+            needs.append(FIELD_LABELS[key])
+
     if days >= full:
         resident = True
         steps.append(f"{days} days in India in the year is {full:g} or more: resident")
     else:
-        citizen = f.get("indian_citizen_or_pio")
-        income, left = f.get("india_income"), f.get("left_for_employment_abroad")
-
-        def need(key: str) -> None:
-            if FIELD_LABELS[key] not in needs:
-                needs.append(FIELD_LABELS[key])
-
+        citizen, income = f.get("indian_citizen_or_pio"), f.get("india_income")
         if citizen is None:
             need("indian_citizen_or_pio")
-        # The short test: 60 days, or more for a citizen or person of Indian origin who is abroad.
-        threshold: float | None = short
-        if days < short:
-            pass            # under 60 days no short test can apply, whoever they are
-        elif citizen:
-            if left:
-                threshold = _num("in_res_days_citizen_away", today)
-            elif income is None:
-                threshold = None
-                need("india_income")
-            elif income > line:
-                threshold = _num("in_res_days_high_income", today)
-                if left is None:
-                    threshold = None
-                    need("left_for_employment_abroad")
-            else:
-                threshold = _num("in_res_days_citizen_away", today)
-        elif citizen is None:
-            threshold = None
+        prior = f.get("days_prior_four_years")
+        # The short test: 60 days. A citizen or person of Indian origin gets 182 only on a recorded fact (left India for
+        # employment, or lives abroad and came on a visit); a visitor over the income line gets 120.
         if days < short:
             steps.append(f"{days} days in the year is under {short:g}: the short test does not apply")
-        elif threshold is not None and days < threshold:
-            steps.append(f"{days} days in the year is under {threshold:g}: the short test does not apply")
-        elif threshold is not None:
-            prior = f.get("days_prior_four_years")
-            if prior is None:
-                need("days_prior_four_years")
-            elif prior >= prior_need:
-                resident = True
-                steps.append(f"{days} days in the year is {threshold:g} or more, and {prior} days in the four years before is "
-                             f"{prior_need:g} or more: resident")
+        elif citizen is not None and prior is not None and prior < prior_need:
+            steps.append(f"{prior} days in the four years before is under {prior_need:g}: the short test does not make the client resident")
+        elif citizen is not None:
+            facts = ("left_for_employment_abroad", "visiting_india", "india_income")
+
+            def outcome(left: bool, visiting: bool, high: bool) -> tuple[float, bool]:
+                """The short test's days on one reading of the facts, and whether a visitor's residence is then not ordinary."""
+                if not citizen:
+                    return short, False
+                if left:
+                    return _num("in_res_days_citizen_away", today), False
+                if visiting:
+                    days_needed = _num("in_res_days_high_income" if high else "in_res_days_citizen_away", today)
+                    return days_needed, high and days >= days_needed
+                return short, False
+
+            def readings(known) -> list:
+                return [known] if known is not None else [True, False]
+
+            high_known = None if income is None else income > line
+            seen = {}
+            for left in readings(f.get("left_for_employment_abroad")):
+                for visiting in readings(f.get("visiting_india")):
+                    for high in readings(high_known):
+                        days_needed, rnor = outcome(left, visiting, high)
+                        seen[(days >= days_needed, rnor)] = days_needed
+            if len(seen) > 1:
+                # The answer turns on a fact nobody recorded: name each one that is missing.
+                for key in facts:
+                    if f.get(key) is None:
+                        need(key)
             else:
-                steps.append(f"{prior} days in the four years before is under {prior_need:g}: the short test does not make the client resident")
+                (applies_short, rnor), threshold = next(iter(seen.items()))
+                if not applies_short:
+                    steps.append(f"{days} days in the year is under {threshold:g}: the short test does not apply")
+                elif prior is None:
+                    need("days_prior_four_years")
+                else:
+                    resident, visitor_rnor = True, rnor
+                    steps.append(f"{days} days in the year is {threshold:g} or more, and {prior} days in the four years before is "
+                                 f"{prior_need:g} or more: resident")
         # Deemed residence: a citizen with high Indian income who is liable to tax in no other country.
         if not resident and citizen:
             if income is None:
@@ -234,6 +247,11 @@ def tax_status(f: dict, today: date) -> dict:
         steps.append("No test makes the client resident: non-resident")
         return done("non_resident")
     if deemed:
+        return done("resident_rnor", False)
+    if visitor_rnor and days < _num("in_res_days_citizen_away", today):
+        steps.append(f"A citizen or person of Indian origin visiting, with Indian income over {markets.money(line, 'INR')} and "
+                     f"{_num('in_res_days_high_income', today):g} to {_num('in_res_days_citizen_away', today) - 1:g} days in the year, is not "
+                     "ordinarily resident")
         return done("resident_rnor", False)
     years, seven = f.get("nonresident_years_of_prior_ten"), f.get("days_prior_seven_years")
     need_years, need_seven = _num("in_res_rnor_years_nonresident", today), _num("in_res_rnor_days_prior_seven", today)
@@ -412,7 +430,7 @@ async def prepare(session: AsyncSession, firm: Firm, *, person_id, document: str
                 raise ResidencyError(f"{label} is an amount in rupees.")
             if new[key] < 0:
                 raise ResidencyError(f"{label} cannot be negative.")
-        elif key in ("left_for_employment_abroad", "taxed_elsewhere", "indian_citizen_or_pio", "us_person"):
+        elif key in ("left_for_employment_abroad", "visiting_india", "taxed_elsewhere", "indian_citizen_or_pio", "us_person"):
             new[key] = _bool(value, label)
         elif key == "fema_status":
             if str(value).strip().lower() not in FEMA_STATUSES:

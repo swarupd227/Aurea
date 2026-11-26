@@ -262,6 +262,8 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE firm_segment ADD COLUMN IF NOT EXISTS currency VARCHAR(8)"))
         # B-290: the ticket-size category a product sits in (SIF, PMS, AIF). Empty on every decision recorded before: not gated.
         await conn.execute(text("ALTER TABLE product_decision ADD COLUMN IF NOT EXISTS category VARCHAR(12)"))
+        # B-393: whether a client who lives abroad came on a visit that year. Empty on every record before: not recorded.
+        await conn.execute(text("ALTER TABLE residency_record ADD COLUMN IF NOT EXISTS visiting_india BOOLEAN"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

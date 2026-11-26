@@ -1,7 +1,9 @@
 """Prove protection planning: the gaps are worked from what is on file and nothing else, a missing
 income is reported rather than estimated, and cover only counts while it is in force.
 
-Figures are checked by hand: 20 years at 4% is an annuity factor of 13.590326.
+Figures are checked by hand: 20 years at 4% is an annuity factor of 13.590326 (the pure sums). Read from the database,
+the discount rate is the assumption set's (B-393), here the suggested cash return of 5.5% in the firm's default market,
+India: 11.950382.
 
 Runs against a throwaway SQLite database.
 
@@ -34,6 +36,7 @@ from seed import person_tax_backfill
 
 PASS, FAIL = [], []
 A20 = 13.590326  # (1 - 1.04^-20) / 0.04
+A20_SET = 11.950382  # (1 - 1.055^-20) / 0.055
 
 
 def check(label: str, got, want) -> None:
@@ -178,7 +181,7 @@ async def main() -> int:
             w = next(p for p in v["people"] if p["name"] == "Wei")
             check("each earner's survivor income is the other's", w["death"]["annual_need"], 110_000.0)
             near("only a goal due before retirement, in today's money, is a need",
-                 w["death"]["goals_need"], 100_000 / (1.04 ** 5), tol=5.0)
+                 w["death"]["goals_need"], 100_000 / (1.055 ** 5), tol=5.0)
             check("retirement and legacy goals are not", w["death"]["goals_need"] < 100_000, True)
             check("cover not yet on file", w["death"]["cover"], 0.0)
             check("what is left out is stated", "funeral_and_final_costs" in v["not_modelled"], True)
@@ -217,7 +220,7 @@ async def main() -> int:
             check("life cover closes the gap by its sum", round(before - w["death"]["gap"], 2), 500_000.0)
             check("another person's policy is not this person's cover", w["death"]["cover"], 500_000.0)
             check("TPD and income both count against disability", w["disability"]["lump_sum"], 100_000.0)
-            near("the income benefit at its annuity", w["disability"]["income_benefit_value"], 60_000 * A20)
+            near("the income benefit at its annuity", w["disability"]["income_benefit_value"], 60_000 * A20_SET)
             check("four policies counted", v["summary"]["policies_counted"], 4)
 
             term = await rec(wei, sum_insured=1_000_000, expires_on=today + timedelta(days=30))

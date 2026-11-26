@@ -243,11 +243,16 @@ ALL: tuple[LawFigure, ...] = (
     LawFigure("in_res_days_prior_four", "Resident in India: days in the four years before the year, with the short test", 365, "days",
               "Income-tax Act 1961 s.6(1)(c), carried into the Income-tax Act 2025 (renumbered section not read)", date(2026, 10, 31)),
     LawFigure("in_res_days_citizen_away", "Indian citizen or person of Indian origin who is abroad: the short test's days become", 182, "days",
-              "Income-tax Act 1961 s.6(1) Explanation 1, as amended by the Finance Act 2020", date(2026, 10, 31)),
+              "ASSUMED: Income-tax Act 1961 s.6(1) Explanation 1, as amended by the Finance Act 2020, as understood: it applies to a citizen who "
+              "left India for employment, or a citizen or person of Indian origin who lives abroad and comes on a visit; the section was not "
+              "re-read and counsel has not reviewed it", date(2026, 10, 31)),
     LawFigure("in_res_days_high_income", "Citizen or person of Indian origin visiting with high Indian income: the short test's days become", 120, "days",
-              "Income-tax Act 1961 s.6(1) Explanation 1(b), as amended by the Finance Act 2020", date(2026, 10, 31)),
+              "ASSUMED: Income-tax Act 1961 s.6(1) Explanation 1(b) and s.6(6)(c), as amended by the Finance Act 2020, as understood: a visitor over "
+              "the income line is resident from these days and, under 182, not ordinarily resident; the sections were not re-read and counsel has "
+              "not reviewed them", date(2026, 10, 31)),
     LawFigure("in_res_income_line", "Indian income, other than foreign sources, above which the 120-day test and deemed residence apply", 1_500_000, "INR",
-              "Income-tax Act 1961 s.6(1) Explanation 1(b) and s.6(1A), as amended by the Finance Act 2020", date(2026, 10, 31)),
+              "ASSUMED: Income-tax Act 1961 s.6(1) Explanation 1(b), s.6(1A) and s.6(6)(c) and (d), as amended by the Finance Act 2020, as "
+              "understood; not re-read and not reviewed by counsel", date(2026, 10, 31)),
     LawFigure("in_res_rnor_days_prior_seven", "Not ordinarily resident: at most this many days in the seven years before the year", 729, "days",
               "Income-tax Act 1961 s.6(6)(b), carried into the Income-tax Act 2025 (renumbered section not read)", date(2026, 10, 31)),
     LawFigure("in_res_rnor_years_nonresident", "Not ordinarily resident: non-resident in at least this many of the ten years before the year", 9, "count",

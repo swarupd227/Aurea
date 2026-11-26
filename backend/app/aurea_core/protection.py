@@ -21,6 +21,14 @@ Debts on file add to what survivors would need, the earner's own and the househo
 not add to the disability need, because the income benefit is what keeps paying them. With no debts on file
 the need is what it is and the result says none are on file, which does not mean there are none.
 
+Employer group cover ends with the job, so it is not counted as permanent cover: the gap is the gap without it, the
+cover is shown apart, and what the gap would be with it stands beside it (B-393).
+
+The retirement age and the discount rate come from the firm's assumption set (`planning.assumption_set`): the firm's
+own figure, else a firm's older protection setting, else the market's suggestion or the platform's default (for the
+discount rate, the cash return in the same set), and each says which. A goal's target is read on its own price basis:
+one recorded in today's money grows with its index to its date before it is discounted (`goal_tradeoff.grown_target`).
+
 Long-term care is a third question, asked of anyone over the firm's care age, retired or not: a year's care
 for so many years, against care cover and the same assets. The cost is the firm's figure, set by a person
 from a source, because it depends on the place and the kind of care and nothing on file says what it is. With
@@ -40,9 +48,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.aurea_core import balance_sheet, firm_time
+from app.aurea_core import balance_sheet, firm_time, planning
 from app.aurea_core.balance_sheet import income_of, retirement_accounts_of  # noqa: F401  - read from here elsewhere
-from app.aurea_core.goal_tradeoff import human_capital_pv
+from app.aurea_core.goal_tradeoff import grown_target, human_capital_pv
 from app.aurea_core.graph import household_brain, list_households
 from app.core.db import utcnow
 from app.models.graph import Household, Person
@@ -70,9 +78,24 @@ class ProtectionError(Exception):
     """The record was refused. Carries a reason fit to show the user."""
 
 
+# The two figures the assumption set holds; the rest are protection's own and stay in settings["protection"].
+FROM_THE_SET = ("retirement_age", "discount_rate")
+
+
 def assumptions(firm: Firm | None) -> dict:
+    """What the gaps are worked on. `sources` says whose the retirement age and the discount rate are: "firm" (the
+    assumption set), "protection_setting" (a firm's older setting, used only where the set has no figure of the
+    firm's), "market", "platform", or "cash_return" (the cash return in the set)."""
     cfg = ((firm.settings or {}).get("protection") or {}) if firm else {}
-    return {k: type(v)(cfg.get(k, v)) for k, v in DEFAULTS.items()}
+    aset = planning.assumption_set(firm.settings if firm else None, firm.jurisdiction if firm else None)
+    out = {k: type(v)(cfg.get(k, v)) for k, v in DEFAULTS.items()}
+    sources = {}
+    for key in FROM_THE_SET:
+        whose, value = aset["sources"][key], aset[key]
+        if whose != "firm" and cfg.get(key) not in (None, ""):
+            whose, value = "protection_setting", cfg[key]
+        out[key], sources[key] = type(DEFAULTS[key])(value), whose
+    return {**out, "sources": sources}
 
 
 def care_basis(firm: Firm | None) -> dict | None:
@@ -99,10 +122,12 @@ def assess(
     *, age: int | None, income: float | None, other_income: float, has_dependants: bool, retirement_age: int,
     goals_due: float, assets: float, life: float = 0.0, tpd: float = 0.0, income_benefits: list[tuple[float, int | None]] = (),
     rules: dict | None = None, retirement_stated: bool = True, debts: float = 0.0,
+    group_life: float = 0.0, group_tpd: float = 0.0, group_income_benefits: list[tuple[float, int | None]] = (),
 ) -> dict:
     """The two gaps for one earner. Pure. `income_benefits` is [(annual benefit, paid to age)].
     `retirement_stated` says the retirement age came from the client's own goal, not the default.
-    `debts` are what survivors would have to repay; with nobody left behind they are not a need."""
+    `debts` are what survivors would have to repay; with nobody left behind they are not a need.
+    The `group_` figures are an employer's cover: shown apart, never in `cover` or `gap`."""
     rules = {**DEFAULTS, **(rules or {})}
     missing = [name for name, v in (("income", income), ("date_of_birth", age)) if v is None]
     if missing:
@@ -131,6 +156,7 @@ def assess(
     own_need = pv(rules["disability_replacement"] * income)
     benefits = sum(pv(b, to if to is not None else retirement_age) for b, to in income_benefits)
     disability_gap = max(0.0, own_need - benefits - tpd - assets)
+    employer = sum(pv(b, to if to is not None else retirement_age) for b, to in group_income_benefits) + group_tpd
 
     return {
         "years": years,
@@ -140,6 +166,7 @@ def assess(
             "cover": round(life, 2),
             "assets": round(assets, 2), "gap": round(death_gap, 2),
             "gap_before_assets": round(max(0.0, need - life), 2),
+            "group_cover": round(group_life, 2), "gap_with_group_cover": round(max(0.0, need - life - group_life - assets), 2),
         },
         "disability": {
             "status": _status(disability_gap), "need": round(own_need, 2),
@@ -147,6 +174,8 @@ def assess(
             "cover": round(benefits + tpd, 2), "income_benefit_value": round(benefits, 2), "lump_sum": round(tpd, 2),
             "assets": round(assets, 2), "gap": round(disability_gap, 2),
             "gap_before_assets": round(max(0.0, own_need - benefits - tpd), 2),
+            "group_cover": round(employer, 2),
+            "gap_with_group_cover": round(max(0.0, own_need - benefits - tpd - employer - assets), 2),
         },
     }
 
@@ -187,15 +216,18 @@ def _retirement_for(age: int | None, goals: list[dict], *, today: date, default:
     return default, "assumed"
 
 
-def _goals_due(goals: list[dict], *, today: date, years: int, rate: float) -> float:
-    """Goals other than retirement that fall due before the earner would have retired, in today's money."""
+def _goals_due(goals: list[dict], *, today: date, years: int, rate: float, planning_set: dict | None = None) -> float:
+    """Goals other than retirement that fall due before the earner would have retired, in today's money: each target in
+    the money of its date (one recorded in today's money, or an education goal with a yearly cost, grows with its
+    index), then discounted back."""
     total = 0.0
     for g in goals:
         if g.get("kind") in _NOT_A_NEED or not g.get("target_date"):
             continue
         due = (date.fromisoformat(g["target_date"]) - today).days / 365.25
         if 0 < due <= years:
-            total += float(g.get("target_amount") or 0) / ((1 + rate) ** due)
+            target = grown_target(g, float(g.get("target_amount") or 0), due, today, planning_set)["target"]
+            total += target / ((1 + rate) ** due)
     return total
 
 
@@ -231,8 +263,11 @@ def not_counted_for(kind: str, cover_basis: str | None) -> str | None:
     return None
 
 
+GROUP_NOT_COUNTED = "employer group cover: it ends with the job, so it is shown apart and not counted as permanent cover"
+
+
 def not_counted(p: ProtectionPolicy) -> str | None:
-    return not_counted_for(p.kind, p.cover_basis)
+    return not_counted_for(p.kind, p.cover_basis) or (GROUP_NOT_COUNTED if p.group_cover else None)
 
 
 def _policy_row(p: ProtectionPolicy, names: dict, today: date, market: str | None = None) -> dict:
@@ -283,6 +318,9 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
             by_id[r["rider_of"]]["riders"].append({"id": r["id"], "kind": r["kind"], "sum_insured": r["sum_insured"], "annual_benefit": r["annual_benefit"],
                                                    "status": r["status"], "counted": r["counted"]})
     in_force = [p for p, r in zip(policies, rows) if r["counted"]]
+    # An employer's cover that would count if it were the person's own: shown apart (B-393).
+    employer = [p for p, r in zip(policies, rows)
+                if p.group_cover and r["status"] == "in_force" and not not_counted_for(p.kind, p.cover_basis)]
 
     managed = float(brain["totals"]["total_value"])
     usable, _ = balance_sheet.in_currency(await balance_sheet.current_items(session, household_id, firm_id=firm_id), firm)
@@ -300,17 +338,22 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         other_income = sum(income_of(o) or 0.0 for o in others)
         age = age_on(p.date_of_birth, today)
         mine = [x for x in in_force if x.person_id == p.id]
+        theirs = [x for x in employer if x.person_id == p.id]
         retirement_age, basis = _retirement_for(age, brain["goals"], today=today, default=rules["retirement_age"])
         years = max(0, retirement_age - age) if age is not None else 0
         result = assess(
             age=age, income=income, other_income=other_income, has_dependants=has_people,
             retirement_age=retirement_age, retirement_stated=basis != "assumed", assets=assets, rules=rules,
-            goals_due=_goals_due(brain["goals"], today=today, years=years, rate=rules["discount_rate"]),
+            goals_due=_goals_due(brain["goals"], today=today, years=years, rate=rules["discount_rate"],
+                                 planning_set=brain.get("planning")),
             debts=balance_sheet.debts_of(usable, p.id),
-            life=sum(float(x.sum_insured or 0) for x in mine if x.kind == "life" and not not_counted(x)),
-            tpd=sum(float(x.sum_insured or 0) for x in mine if x.kind == "tpd" and not not_counted(x)),
-            income_benefits=[(float(x.annual_benefit or 0), x.benefit_to_age) for x in mine
-                             if x.kind == "income_protection" and not not_counted(x)],
+            life=sum(float(x.sum_insured or 0) for x in mine if x.kind == "life"),
+            tpd=sum(float(x.sum_insured or 0) for x in mine if x.kind == "tpd"),
+            income_benefits=[(float(x.annual_benefit or 0), x.benefit_to_age) for x in mine if x.kind == "income_protection"],
+            group_life=sum(float(x.sum_insured or 0) for x in theirs if x.kind == "life"),
+            group_tpd=sum(float(x.sum_insured or 0) for x in theirs if x.kind == "tpd"),
+            group_income_benefits=[(float(x.annual_benefit or 0), x.benefit_to_age) for x in theirs
+                                   if x.kind == "income_protection"],
         )
         people.append({
             "person_id": str(p.id), "name": p.full_name, "age": age, "income": income,
@@ -334,11 +377,12 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
                    "total": round(assets, 2)},
         # No debt on file is not no debt, so the count travels with the figures.
         "debts_on_file": sum(1 for i in usable if i.side == "liability"),
-        "assumptions": rules, "care_basis": care, "not_modelled": not_modelled(care), "care_funding": funding,
+        "assumptions": rules, "assumptions_version": planning.version_of(brain), "care_basis": care,
+        "not_modelled": not_modelled(care), "care_funding": funding,
         "summary": {"people": len(people), "gaps": statuses.count("gap"), "largest_gap": max(gaps, default=0.0),
                     "not_assessed": sum(1 for r in people if r["death"]["status"] == "not_assessed"),
                     "assessed": sum(1 for r in people if r["death"]["status"] in ("gap", "no_gap")),
-                    "policies_counted": len(in_force)},
+                    "policies_counted": len(in_force), "employer_policies": len(employer)},
     }
 
 
@@ -374,6 +418,8 @@ def gaps_of(view: dict) -> list[dict]:
     """Each measured gap in a household's result, largest first."""
     found = [{"person_id": p["person_id"], "person": p["name"], "scenario": scenario, "gap": p[scenario]["gap"],
               "need": p[scenario]["need"], "cover": p[scenario]["cover"], "assets": p[scenario]["assets"],
+              "group_cover": p[scenario].get("group_cover", 0.0),
+              "gap_with_group_cover": p[scenario].get("gap_with_group_cover", p[scenario]["gap"]),
               "partner_income_unknown": scenario == "death" and p["other_income_missing"],
               "retirement_assumed": scenario != "care" and p["retirement_basis"] == "assumed"}
              for p in view["people"] for scenario in SCENARIOS if p[scenario]["status"] == "gap"]

@@ -12,9 +12,10 @@ are one-time and largely irreversible. Nothing here advises: it lays the numbers
 needs are named with them. A reserve target and education inflation are firm settings with stated defaults.
 
 Returns are the firm's capital market assumptions when it has set them, and the plan says whose (B-167). The withdrawal
-rates, the sustainable income and the 4% rule are all in today's money (B-168). A level pension falls in real terms and
+rates, the sustainable income and, for a US household, the 4% rule of thumb are all in today's money (B-168). A level pension falls in real terms and
 one that starts after retirement is bridged by the portfolio (B-169). An education goal's likelihood is the goals
-page's (`goal_tradeoff.likelihoods`), its cost grown with education inflation, with the 529s beside it (B-172).
+page's (`goal_tradeoff.likelihoods`), its cost grown with education inflation, with a US household's 529s beside it
+(B-172).
 
 A stream's kind sets whether it rises with inflation when nobody says (B-212), and the plan carries how old its
 inputs are and which facts it reads are not on file (B-182).
@@ -223,10 +224,10 @@ async def _book_cash(session: AsyncSession, household_id: uuid.UUID) -> tuple[fl
     return sum(float(a.cash_balance or 0) for a in accounts), {"accounts": len(plans), "value": sum(float(h.market_value or 0) for h in held) + sum(float(a.cash_balance or 0) for a in accounts if a.id in plans)}
 
 
-def _education(goals: list[dict], planned: dict, saved: dict) -> list[dict]:
+def _education(goals: list[dict], planned: dict, saved: dict, us: bool) -> list[dict]:
     """Each education goal as the goals page reads it (`goal_tradeoff.likelihoods`, one goal, one likelihood): its
-    cost grown with education inflation, and what the 529 accounts hold beside it. A goal with no cost, start or
-    length on file still has the page's likelihood, on its target; its cost reads as not assessed."""
+    cost grown with education inflation and, for a US household, what the 529 accounts hold beside it. A goal with no
+    cost, start or length on file still has the page's likelihood, on its target; its cost reads as not assessed."""
     by_id = {g["id"]: g for g in planned["goals"]}
     share = saved["value"] / max(len([g for g in goals if g.get("kind") == "education"]), 1)
     rows = []
@@ -235,7 +236,7 @@ def _education(goals: list[dict], planned: dict, saved: dict) -> list[dict]:
             continue
         a = g.get("assumptions") or {}
         got = by_id.get(str(g.get("id") or g["name"])) or {}
-        row = {"goal": g["name"], "goal_id": str(g.get("id") or g["name"]), "student": a.get("student"), "in_529": round(share),
+        row = {"goal": g["name"], "goal_id": str(g.get("id") or g["name"]), "student": a.get("student"), "in_529": round(share) if us else None,
                "likelihood": got.get("success_probability"), "on_track": got.get("on_track"), "shortfall": got.get("shortfall"),
                "years_to_go": got.get("years"), "assumed": got.get("assumed", [])}
         cost, start, years = a.get("annual_cost"), a.get("start_year"), a.get("years")
@@ -301,6 +302,9 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     guaranteed = plan.get("guaranteed_income", 0.0) if plan else 0.0
     people = (await session.execute(select(Person).where(Person.household_id == household_id, Person.deceased_on.is_(None)).order_by(Person.full_name))).scalars().all()
     likely = goal_tradeoff.likelihoods(brain, today)
+    # The 4% rule of thumb and the 529 are the United States': shown to a household taxed there and to nobody else (B-393).
+    own = markets.of_household(firm, household.values)
+    us = own is not None and own.code == "US"
     return {
         "household_id": str(household.id), "household": household.name, "as_of": today.isoformat(), "currency": firm.base_currency,
         # Gratuity is a lump sum on leaving work, and the retirement pot here starts from the book alone (India row 5).
@@ -324,9 +328,9 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
             "money_basis": "today",
             "income_need": plan.get("income_need"), "income_basis": plan.get("income_basis"), "guaranteed_income": guaranteed, "starts_later": plan.get("starts_later", 0.0),
             "withdrawal_rate": round(rate, 4) if rate is not None else None, "sustainable_rate": round(plan["sustainable_income"] / projected, 4) if projected else None,
-            "rule_of_thumb_rate": RULE_OF_THUMB, "rule_of_thumb_income": round(projected * RULE_OF_THUMB),
+            "rule_of_thumb_rate": RULE_OF_THUMB if us else None, "rule_of_thumb_income": round(projected * RULE_OF_THUMB) if us else None,
             "essential_spending": essential or None, "essentials_covered": round(guaranteed / essential, 3) if essential and guaranteed else None},
-        "cash": _cash_flow(sheet, firm, mu, today, book_cash), "education": _education(brain.get("goals", []), likely, saved),
+        "cash": _cash_flow(sheet, firm, mu, today, book_cash), "education": _education(brain.get("goals", []), likely, saved, us),
         # How well funded the needs are, beside the likelihood (B-177).
         "funded": funded.ratio(brain, likely, plan),
         # How old its inputs are, and what it reads that is not on file (B-182).

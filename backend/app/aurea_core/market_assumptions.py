@@ -20,10 +20,14 @@ class Assumption:
     value: float
     source: str
     as_of: str
+    # A stand-in nobody has read against a measure of the thing itself, and nobody has reviewed. Its source says so too.
+    assumed: bool = False
 
     def view(self) -> dict:
         return {"key": self.key, "label": self.label, "value": self.value, "source": self.source, "as_of": self.as_of,
-                "basis": "suggested, not a regulatory value"}
+                "assumed": self.assumed,
+                "basis": "suggested and assumed, not reviewed, not a regulatory value" if self.assumed
+                else "suggested, not a regulatory value"}
 
 
 _REPORT = "Research report, India market alignment (3.6), 31 Oct 2026"
@@ -42,11 +46,16 @@ SUGGESTED: dict[str, dict[str, Assumption]] = {
                    f"Within NISM's 10-15% range. {_REPORT}", "2026-10"),
         Assumption("fixed_income_return", "Fixed income return, pre-tax", 0.07,
                    f"Within NISM's 6-9% range. {_REPORT}", "2026-10"),
+        # Without one the funded ratio discounted Indian needs at the platform's 2.5% against 5.5% inflation (B-393).
+        Assumption("cash_return", "Cash return, pre-tax", 0.055,
+                   "ASSUMED: the RBI policy repo rate of 5.50% set in October 2026, as reported by Drishti IAS (9 Oct 2026), standing "
+                   "in for what cash earns; a policy rate, not a measured liquid fund or deposit return, not read from the RBI and not reviewed",
+                   "2026-10", assumed=True),
     )},
 }
 
 # Which return assumption overlays which asset class's expected return. Volatility stays the platform's.
-RETURN_KEYS = {"equity": "equity_return", "fixed_income": "fixed_income_return"}
+RETURN_KEYS = {"equity": "equity_return", "fixed_income": "fixed_income_return", "cash": "cash_return"}
 
 
 def for_market(jurisdiction: str | None) -> dict[str, Assumption]:

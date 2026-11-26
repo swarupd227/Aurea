@@ -3,7 +3,9 @@
 Turns a meeting transcript into structured notes, action items and proposed goals — 'the
 transcript becomes the control plane for downstream work'. Extraction is deterministic
 (auditable); the LLM adds a narrative summary. On approval, action items become Tasks and
-proposed objectives become Goals, and the meeting is marked completed."""
+proposed objectives become Goals, and the meeting is marked completed. A goal is created with what was said and nothing
+else (B-393): no horizon, funding share or date is made up (the goals engine names what it assumes), and one with no
+amount is not created, because a goal of nothing would read as met."""
 from __future__ import annotations
 
 import json
@@ -95,11 +97,8 @@ class MeetingCompanionAgent(BaseAgent):
             if amount:
                 kind = next((v for k, v in GOAL_WORDS.items() if k in low), None)
                 if kind:
-                    proposed_goals.append({
-                        "name": f"{kind.title()} goal", "kind": kind,
-                        "target_amount": amount,
-                        "target_date": (firm_time.today(ctx.firm) + timedelta(days=365)).isoformat(),
-                    })
+                    # No date: the words matched here do not date the goal.
+                    proposed_goals.append({"name": f"{kind.title()} goal", "kind": kind, "target_amount": amount, "target_date": None})
 
         notes = {"summary": summary[:5], "sentiment": sentiment,
                  "action_items": action_items, "proposed_goals": proposed_goals,
@@ -149,7 +148,8 @@ class MeetingCompanionAgent(BaseAgent):
             '  "summary": array of up to 5 short factual bullet strings,\n'
             '  "sentiment": one of "positive", "neutral", "cautious",\n'
             '  "action_items": array of short imperative follow-up strings (adviser commitments),\n'
-            '  "proposed_goals": array of objects {"name","kind","target_amount" (number), "target_date" (YYYY-MM-DD or null)}.\n'
+            '  "proposed_goals": array of objects {"name","kind","target_amount" (number, or 0 if none was said), '
+            '"target_date" (YYYY-MM-DD only if the transcript states a date, else null)}. Never estimate an amount or a date.\n'
             "Use kind from: retirement, education, property, legacy, other.\n\n"
             f"Transcript:\n{transcript}"
         )
@@ -184,6 +184,7 @@ class MeetingCompanionAgent(BaseAgent):
         created_tasks = created_goals = 0
 
         task_ids, goal_ids = [], []
+        no_amount = 0
         for item in payload.get("action_items", []):
             t = Task(firm_id=ctx.firm.id, household_id=household_id,
                      meeting_id=payload.get("meeting_id"), title=item, source="meeting_companion",
@@ -195,11 +196,14 @@ class MeetingCompanionAgent(BaseAgent):
             created_tasks += 1
 
         for g in payload.get("proposed_goals", []):
+            if float(g.get("target_amount") or 0) <= 0:
+                no_amount += 1
+                continue
             td = g.get("target_date")
             goal = Goal(firm_id=ctx.firm.id, household_id=household_id, name=g["name"], kind=g["kind"],
                         target_amount=g["target_amount"],
                         target_date=date.fromisoformat(td) if td else None,
-                        assumptions={"years": 1, "funding_share": 0.1})
+                        assumptions={})
             s.add(goal)
             await s.flush()
             goal_ids.append(str(goal.id))
@@ -212,7 +216,8 @@ class MeetingCompanionAgent(BaseAgent):
         await s.flush()
         return {"executed": True, "tasks_created": created_tasks, "goals_created": created_goals,
                 "task_ids": task_ids, "goal_ids": goal_ids,
-                "note": f"{created_tasks} task(s) and {created_goals} goal(s) added to the plan."}
+                "note": f"{created_tasks} task(s) and {created_goals} goal(s) added to the plan."
+                        + (f" {no_amount} goal(s) not added: no target amount was stated." if no_amount else "")}
 
     async def rollback(self, ctx: AgentContext, recommendation) -> dict:
         """Delete created tasks/goals and reopen the meeting."""

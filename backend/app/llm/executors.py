@@ -33,6 +33,7 @@ from app.llm.india_rem_e_executors import IndiaRemEExecutors
 from app.llm.india_rem_d_executors import IndiaRemDExecutors
 from app.llm.india_governance_executors import IndiaGovernanceExecutors
 from app.llm.plan_record_executors import PlanRecordExecutors
+from app.llm.planning_fix_executors import PlanningFixExecutors
 from app.models.enums import UserRole
 from app.models.graph import Account, Goal, Household, LegalEntity, Mandate, Person
 from app.models.portfolio import Holding, Instrument, Price
@@ -70,7 +71,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
-                    IndiaRemEExecutors, IndiaRemDExecutors):
+                    IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -374,6 +375,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_rem_e_map(),
             # India, the remainders (B-303, B-283, B-274): app/llm/india_rem_d_executors.py, and the KYC review period (admin_executors.py).
             **self._india_rem_d_map(),
+            # B-393: what the Indian regime comparison reads about a person: app/llm/planning_fix_executors.py.
+            "record_tax_inputs": self.record_tax_inputs,
             "read_kyc_review_period": self.read_kyc_review_period,
             "set_kyc_review": self.set_kyc_review,
         }
@@ -1104,7 +1107,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 raise ExecutorError(f"Household {household_id} not found or access denied")
             s = result["summary"]
             result["message"] = (f"{result['household']}: {s['people']} earner(s), {s['gaps']} gap(s), "
-                                 f"{s['not_assessed']} not assessed, {s['policies_counted']} polic(ies) counted.")
+                                 f"{s['not_assessed']} not assessed, {s['policies_counted']} polic(ies) counted."
+                                 + (f" {s['employer_policies']} employer group polic(ies) are shown apart and not counted, because that "
+                                    "cover ends with the job: each gap is without it, and gap_with_group_cover is what it would be with it."
+                                    if s["employer_policies"] else ""))
             return result
         result = await protection.for_firm(self.session, self.firm_id)
         s = result["summary"]
@@ -1183,8 +1189,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                         ("Group cover", "Employer group cover" if r["group_cover"] else None),
                         ("Nominee", f"{r['nominee']} ({r['nominee_relationship']})" if r["nominee"] and r["nominee_relationship"] else r["nominee"]),
                         ("Written under", "Married Women's Property Act: outside the estate" if r["mwp"] else None),
-                        ("Counted", "No, " + protection.not_counted_for(r["kind"], r["cover_basis"])
-                         if protection.not_counted_for(r["kind"], r["cover_basis"]) else None),
+                        ("Counted", "No, " + why if (why := protection.not_counted_for(r["kind"], r["cover_basis"])
+                                                     or (protection.GROUP_NOT_COUNTED if r["group_cover"] else None)) else None),
                         ("Document", r["source"])]
             if tool_key == "end_protection_policy":
                 r = await protection.prepare_end(self.session, self.firm_id, _parse_uuid(inputs.get("policy_id"), "policy_id"),
@@ -1408,9 +1414,12 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             result = await balance_sheet.for_household(self.session, household_id, firm_id=self.firm_id)
             if result is None:
                 raise ExecutorError(f"Household {household_id} not found or access denied")
+            flow = result["cash_flow"]
             result["message"] = (f"{result['household']}: net worth {say(result['net_worth'])}"
                                  + (" before any debts, because none are recorded here. It is neither a floor nor a ceiling: a debt "
-                                    "or an asset held elsewhere and not recorded would move it either way." if result["basis"] == "assets_only" else "."))
+                                    "or an asset held elsewhere and not recorded would move it either way." if result["basis"] == "assets_only" else ".")
+                                 + (f" Income before tax less spending and debt payments leaves {say(flow['surplus'])} a year before tax."
+                                    if flow["surplus"] is not None else ""))
             return result
         result = await balance_sheet.for_firm(self.session, self.firm_id)
         s = result["summary"]
@@ -1965,8 +1974,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             raise ExecutorError(f"Household {household_id} not found or access denied")
         say = markets.money_for(await self._firm())
         r = result["retirement"]
+        as_are = "the withdrawal rates and the 4% rule" if r and r.get("rule_of_thumb_rate") is not None else "the withdrawal rates"
         result["message"] = (f"{result['household']}: {r['success_probability']:.0%} probability of success, sustainable income {say(r['sustainable_income'])} a year "
-                             f"in today's money, as are the withdrawal rates and the 4% rule. {self._plan_to_words(r)} {self._returns_words(result['assumptions_source'])} "
+                             f"in today's money, as are {as_are}. {self._plan_to_words(r)} {self._returns_words(result['assumptions_source'])} "
                              "These are estimates from what is on file." if r else f"{result['household']}: no retirement projection.")
         result["message"] += " " + self._inputs_words(result.get("inputs")) + " " + self._funded_words(result, say)
         return result
@@ -5490,6 +5500,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._estate_care_preview(tool_key, inputs))
         if tool_key in ("record_recommendation", "record_advice_outcome"):
             return rows(*await self._advice_preview(tool_key, inputs))
+        if tool_key == "record_tax_inputs":
+            return rows(*await self._tax_inputs_preview(inputs))
         if tool_key == "record_tax_loss":
             return rows(*await self._tax_loss_preview(inputs))
         if tool_key == "record_grandfather_value":
@@ -6049,6 +6061,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
     @staticmethod
     def _returns_words(source: str | None) -> str:
         return ("Returns are the firm's capital market assumptions." if source == "firm"
+                else "Returns are the market's suggested figures where it has them, else the platform's: the firm has set none." if source == "market"
                 else "Returns are the platform's capital market assumptions: the firm has set none.")
 
     @staticmethod

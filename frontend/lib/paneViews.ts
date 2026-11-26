@@ -199,6 +199,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_tax_position":
     case "read_india_tax_records":
     case "record_tax_loss":
+    case "record_tax_inputs":
     case "record_grandfather_value":
     case "check_household_wash_sale":
       return onClient("/studio/tax");

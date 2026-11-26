@@ -320,7 +320,9 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           </div>
           <div className="grid grid-cols-2 gap-3 px-4 py-3 cq-md:grid-cols-4">
             {[["Income needed", money(r.income_need ?? r.income_target)], ["Counted on", money(r.guaranteed_income)], ["From the portfolio", money(r.income_target)], ["Projected pot", money(r.projected_at_retirement_today ?? r.projected_at_retirement)],
-              ["At the 4% rule", money(r.rule_of_thumb_income)], ["Early crash", `${Math.round(r.sequence_risk.early_crash * 100)}%`],
+              // The 4% rule of thumb is a US figure: the plan carries it for a US household and for nobody else (B-393).
+              ...(r.rule_of_thumb_income != null ? [["At the 4% rule", money(r.rule_of_thumb_income)]] : []),
+              ["Early crash", `${Math.round(r.sequence_risk.early_crash * 100)}%`],
               ["Essentials covered", r.essentials_covered != null ? pct1(r.essentials_covered) : "—"], ["Depletes at", r.median_depletion_age ?? "—"]].map(([label, v]) => (
               <div key={label as string}><div className="tile-label">{label}</div><div className="font-mono text-sm tabular-nums text-ink">{v}</div></div>
             ))}
@@ -369,7 +371,7 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           <div className="flex flex-wrap gap-1.5">
             <span className="chip text-ink-muted">{money(reserve.cash)} cash</span>
             {reserve.status === "assessed" && reserve.short_by > 0 && <span className="chip text-warn">short {money(reserve.short_by)} of {reserve.target_months} months</span>}
-            {c.cash_flow.status === "assessed" && <span className={`chip ${c.cash_flow.surplus < 0 ? "text-crit" : "text-ok"}`}>{money(c.cash_flow.surplus)}/yr surplus</span>}
+            {c.cash_flow.status === "assessed" && <span className={`chip ${c.cash_flow.surplus < 0 ? "text-crit" : "text-ok"}`}>{money(c.cash_flow.surplus)}/yr surplus before tax</span>}
           </div>
         </div>
         {c.debts.length === 0 ? <div className="px-4 py-3"><span className="chip text-ink-muted">no debt on file</span></div> : (
@@ -394,7 +396,10 @@ export function FinancialPlanView({ household = null }: { household?: string | n
       </Card>
 
       <Card className="mb-4 overflow-hidden p-0">
-        <div className="border-b border-border-soft px-4 py-2.5 text-sm font-medium text-ink">Net worth, projected at {pct1(c.expected_return)}</div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-4 py-2.5">
+          <div className="text-sm font-medium text-ink">Net worth, projected at {pct1(c.expected_return)}</div>
+          {c.cash_flow.status === "assessed" && <span className="chip text-ink-muted">adds the surplus before tax</span>}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="plan-projection">
             <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Year</th><th className={`${th} text-right`}>Invested</th><th className={`${th} text-right`}>Owed</th><th className={`${th} text-right`}>Net worth</th></tr></thead>
@@ -427,7 +432,7 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           <div className="border-b border-border-soft px-4 py-2.5 text-sm font-medium text-ink">Education</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="plan-education">
-              <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>For</th><th className={`${th} text-right`}>From</th><th className={`${th} text-right`}>Total cost</th><th className={`${th} text-right`}>Likelihood</th><th className={`${th} text-right`}>In 529s</th><th className={th}>Basis</th></tr></thead>
+              <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>For</th><th className={`${th} text-right`}>From</th><th className={`${th} text-right`}>Total cost</th><th className={`${th} text-right`}>Likelihood</th>{data.education.some((e: any) => e.in_529 != null) && <th className={`${th} text-right`}>In 529s</th>}<th className={th}>Basis</th></tr></thead>
               <tbody className="divide-y divide-border-soft">
                 {data.education.map((e: any) => (
                   <tr key={e.goal} title={e.cost_source}>
@@ -435,7 +440,7 @@ export function FinancialPlanView({ household = null }: { household?: string | n
                     <td className={num}>{e.start_year ?? "—"}</td>
                     <td className={num}>{e.total_cost != null ? money(e.total_cost) : "not assessed"}</td>
                     <td className={e.likelihood == null ? num : num.replace("text-ink-muted", e.on_track ? "text-ok" : "text-warn")}>{e.likelihood != null ? `${Math.round(e.likelihood * 100)}%` : "—"}</td>
-                    <td className={num}>{money(e.in_529 ?? 0)}</td>
+                    {data.education.some((x: any) => x.in_529 != null) && <td className={num}>{money(e.in_529 ?? 0)}</td>}
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-1.5">
                         {e.inflation != null && <span className="chip text-ink-muted">{money(e.total_cost_today)} today · +{pct1(e.inflation)}/yr</span>}

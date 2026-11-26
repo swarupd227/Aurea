@@ -7,8 +7,9 @@ export const returnsLabel = (source?: string | null) =>
   source === "firm" ? "firm's return assumptions" : source === "market" ? "the market's suggested returns" : "platform's return assumptions";
 
 /** A market's suggested planning figure (India row 5), as chip text: its label and value. The source is the chip's title. */
-export function basisLabel(b: { key: string; label: string; value: number }): string {
-  return /return|inflation/.test(b.key) ? `${b.label} ${(b.value * 100).toFixed(1)}%` : `${b.label} ${b.value}`;
+export function basisLabel(b: { key: string; label: string; value: number; assumed?: boolean }): string {
+  const text = /return|inflation/.test(b.key) ? `${b.label} ${(b.value * 100).toFixed(1)}%` : `${b.label} ${b.value}`;
+  return b.assumed ? `${text} · assumed` : text;
 }
 
 /** Where a retirement plan ends: the younger adult's plan-to age for a couple, and whose ages it counts (B-173). */

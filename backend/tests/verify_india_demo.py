@@ -447,8 +447,8 @@ async def main() -> int:
             check("an accident-only rider is listed, not counted", (rider["counted"], rider["rider_of"] == term["id"]), (False, True))
             check("nor is critical illness", (ci["counted"], "no need is modelled" in ci["not_counted"]), (False, True))
             rajesh_cover = next(p for p in cover["people"] if p["name"] == "Rajesh Sharma")
-            check("the death gap counts the term and the group cover, nothing else",
-                  rajesh_cover["death"].get("cover", rajesh_cover["death"].get("covered")), 18000000.0)
+            check("the death gap counts the term, and the employer's cover is shown apart (B-393)",
+                  (rajesh_cover["death"]["cover"], rajesh_cover["death"]["group_cover"]), (15000000.0, 3000000.0))
             iyer = (await s.execute(select(Household).where(Household.firm_id == firm.id, Household.name == "The Iyer Family"))).scalar_one()
             mwp = next(r for r in (await protection_core.for_household(s, iyer.id, firm_id=firm.id))["policies"] if r["kind"] == "life")
             check("a Married Women's Property Act policy is outside the estate", mwp["payee"]["to"], "Married Women's Property Act trust")

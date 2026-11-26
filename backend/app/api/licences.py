@@ -134,6 +134,7 @@ class ResidencyIn(BaseModel):
     nonresident_years_of_prior_ten: int | None = None
     indian_citizen_or_pio: bool | None = None
     left_for_employment_abroad: bool | None = None
+    visiting_india: bool | None = None
     india_income: float | None = None
     taxed_elsewhere: bool | None = None
     fema_status: str | None = None

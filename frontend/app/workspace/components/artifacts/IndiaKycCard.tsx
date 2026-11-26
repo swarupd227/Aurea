@@ -122,6 +122,14 @@ export function TaxEngine({ engine }: { engine: any }) {
           ))}
         </div>
       )}
+      {engine.on_file && (
+        <div className="flex flex-wrap gap-1.5" data-testid="tax-inputs-on-file" title={engine.on_file.document ?? undefined}>
+          {([["Salary", engine.on_file.salary_income], ["Old-regime deductions", engine.on_file.old_regime_deductions]] as [string, number | null][]).map(([label, v]) => (
+            <span key={label} className={`chip tabular-nums ${v == null ? "text-warn" : "text-ink-muted"}`}>{label} {v == null ? "not on file" : rupees(v)}</span>
+          ))}
+          <span className={`chip ${engine.on_file.regime ? "text-ink-muted" : "text-warn"}`}>{engine.on_file.regime ? `${engine.on_file.regime} regime recorded` : "regime not on file, new assumed"}</span>
+        </div>
+      )}
       {regime?.assessed ? (
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4" data-testid="tax-regime">
           <Figure label="New regime" value={rupees(regime.new.tax)} />

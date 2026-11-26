@@ -91,8 +91,13 @@ class ProtectionPlanningAgent(BaseAgent):
                 caveats.append("A partner's income is not on file, so the need on death is overstated.")
             if any(g["retirement_assumed"] for g in gaps):
                 caveats.append("A retirement age is assumed, not stated by the client.")
-            if not row["policies"]:
+            if not row["policies"] and not any(g.get("group_cover") for g in gaps):
                 caveats.append("No cover is on file, which does not mean the client has none.")
+            held = [g for g in gaps if g.get("group_cover")]
+            if held:
+                caveats.append("Employer group cover is not counted, because it ends with the job. Counting it, "
+                               + "; ".join(f"{g['person']}'s gap {_SCENARIO_WORDS[g['scenario']]} would be {say(g['gap_with_group_cover'])}"
+                                           for g in held) + ".")
             if not row["debts_on_file"]:
                 caveats.append("No debts are on file, which does not mean there are none.")
             said = "; ".join(f"{g['person']}: {say(g['gap'])} {_SCENARIO_WORDS[g['scenario']]}" for g in gaps)

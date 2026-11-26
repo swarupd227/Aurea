@@ -263,7 +263,8 @@ CATALOGUE: dict[str, dict] = {
                   "current equity allocation, and behavioural risk profile.",
         "acts": "For households within 7 years of a major goal, models the recommended "
                 "equity step-down schedule per year. Flags households that are over-risked for "
-                "their timeline and generates a de-risking rebalancing proposal.",
+                "their timeline and generates a de-risking rebalancing proposal. Money a dated goal "
+                "spends within three years is held to no equity; retirement and legacy keep the step-down.",
         "checkpoint": "Adviser reviews and approves the proposed allocation shift before acting.",
     },
     AgentKey.REVERSE_CHURNING: {

@@ -294,7 +294,7 @@ TOOLS: dict[str, Tool] = {
         key="read_protection",
         name="Read Protection",
         speaking_agent="astra",
-        description="What happens to a household if an earner dies or cannot work, or someone needs long-term care: for each person, what would be needed, the life, TPD, income and care cover on file, the household's assets, and the gap. care_funding is how the household means to pay for care as its adviser recorded it; 'no_decision' means none is on file, never that it self-funds. Give a household_id for one household, or none for the whole book with the largest gaps first. 'not_assessed' means something is not on file, named in `missing`, and it is a finding, not a zero; a missing care_cost means the firm has set no cost of care, which only a branch leader or administrator can do. 'not_yet' means too young for care to be the question. No cover on file does not mean the client has none. Care is one person at a time against the same assets, so two people's care gaps do not add up to the household's. `not_modelled` says what is left out; say so when it matters.",
+        description="What happens to a household if an earner dies or cannot work, or someone needs long-term care: for each person, what would be needed, the life, TPD, income and care cover on file, the household's assets, and the gap. Employer group cover ends with the job, so it is never in `cover` or `gap`: it is `group_cover`, shown apart, with `gap_with_group_cover` beside it; say the need without it. The retirement age and discount rate come from the firm's assumption set, and `assumptions.sources` says whose. care_funding is how the household means to pay for care as its adviser recorded it; 'no_decision' means none is on file, never that it self-funds. Give a household_id for one household, or none for the whole book with the largest gaps first. 'not_assessed' means something is not on file, named in `missing`, and it is a finding, not a zero; a missing care_cost means the firm has set no cost of care, which only a branch leader or administrator can do. 'not_yet' means too young for care to be the question. No cover on file does not mean the client has none. Care is one person at a time against the same assets, so two people's care gaps do not add up to the household's. `not_modelled` says what is left out; say so when it matters.",
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
@@ -309,7 +309,7 @@ TOOLS: dict[str, Tool] = {
         key="read_tax_position",
         name="Read Tax Position",
         speaking_agent="astra",
-        description="One household's tax position on the firm's tax rules. For India it is taxpayer by taxpayer, because a husband, a wife and their HUF are separate taxpayers and a loss never crosses between them: gains realised this tax year by bucket, what set-off and the Rs 1.25 lakh exemption leave, the estimated tax, and what could be done before 31 March, walking lots first-in first-out because lots cannot be chosen. Figures are estimates for a qualified person to check, and not_modelled says what they leave out. For India each taxpayer also carries an engine block: the capital losses carried forward from filed returns (eight tax years), grandfathering for equity bought before 1 Feb 2018 where its 2018 value is recorded, the new regime against the old where income is recorded (it does not pick where the old regime's deductions are missing), the advance tax instalments and what a harvest flags. India has no wash-sale rule; never say a rebuy is safe.",
+        description="One household's tax position on the firm's tax rules. For India it is taxpayer by taxpayer, because a husband, a wife and their HUF are separate taxpayers and a loss never crosses between them: gains realised this tax year by bucket, what set-off and the Rs 1.25 lakh exemption leave, the estimated tax, and what could be done before 31 March, walking lots first-in first-out because lots cannot be chosen. Figures are estimates for a qualified person to check, and not_modelled says what they leave out. For India each taxpayer also carries an engine block: the capital losses carried forward from filed returns (eight tax years), grandfathering for equity bought before 1 Feb 2018 where its 2018 value is recorded, the new regime against the old where income is recorded (it does not pick where the old regime's deductions are missing; record_tax_inputs records salary, deductions, regime and slab rate from a document), the advance tax instalments and what a harvest flags. India has no wash-sale rule; never say a rebuy is safe.",
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
@@ -437,7 +437,7 @@ TOOLS: dict[str, Tool] = {
         key="record_residency",
         name="Record Residence",
         speaking_agent="astra",
-        description="Records a client's residence facts from the document: person_id (from read_residency or the client's page), document (where it is filed: passport and visa or OCI card, travel record, return or signed FATCA and CRS form), tax_year (2026-27; defaults to this one), and only the facts the document gives: days_in_india, days_prior_four_years, days_prior_seven_years, nonresident_years_of_prior_ten, indian_citizen_or_pio, left_for_employment_abroad, india_income (rupees, other than foreign sources), taxed_elsewhere, fema_status (nri, oci, resident, foreign_national), country_of_residence, accounts (NRE, NRO, FCNR), pis_permission (the designated bank's letter), tax_residencies (countries), us_person, us_indicia, self_certified_on. A new record carries over what the last said. Never estimate a day count or a status; a fact not in the document is left out and reads not assessed. An adviser, paraplanner or operations.",
+        description="Records a client's residence facts from the document: person_id (from read_residency or the client's page), document (where it is filed: passport and visa or OCI card, travel record, return or signed FATCA and CRS form), tax_year (2026-27; defaults to this one), and only the facts the document gives: days_in_india, days_prior_four_years, days_prior_seven_years, nonresident_years_of_prior_ten, indian_citizen_or_pio, left_for_employment_abroad, visiting_india (lives outside India and came on a visit that year: the 182-day relaxation needs this or the leaving for employment on record), india_income (rupees, other than foreign sources), taxed_elsewhere, fema_status (nri, oci, resident, foreign_national), country_of_residence, accounts (NRE, NRO, FCNR), pis_permission (the designated bank's letter), tax_residencies (countries), us_person, us_indicia, self_certified_on. A new record carries over what the last said. Never estimate a day count or a status; a fact not in the document is left out and reads not assessed. An adviser, paraplanner or operations.",
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
         confirmation="Record this residence?",
         inputs=[
@@ -450,6 +450,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("nonresident_years_of_prior_ten", "integer", "Years non-resident of the ten before", required=False),
             ToolInput("indian_citizen_or_pio", "boolean", "An Indian citizen or a person of Indian origin", required=False),
             ToolInput("left_for_employment_abroad", "boolean", "Left India this year for employment abroad", required=False),
+            ToolInput("visiting_india", "boolean", "Lives outside India and came on a visit this year", required=False),
             ToolInput("india_income", "number", "Indian income in rupees, other than from foreign sources", required=False),
             ToolInput("taxed_elsewhere", "boolean", "Liable to tax in another country", required=False),
             ToolInput("fema_status", "string", "nri, oci, resident or foreign_national", required=False),
@@ -810,6 +811,25 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.PORTFOLIO_TEAM},
     ),
 
+    "record_tax_inputs": Tool(
+        key="record_tax_inputs",
+        name="Record Salary and Regime",
+        speaking_agent="astra",
+        description="India: records what the new-against-old regime comparison reads about one person, from a document: salary_income (rupees a year), old_regime_deductions (rupees a year the old regime would allow: 80C, 80D, home loan interest and the rest, as the proofs show), regime (new or old, as the return or the declaration to the employer states it) and marginal_rate (the slab rate, 30 or 0.30, before surcharge and cess). Give only the figures the document states and leave the rest out; never estimate or work one out. Total annual income is recorded separately with record_income, and the comparison needs it. It changes no investment and files nothing; the comparison is an estimate and does not choose a regime for the client. An adviser or a paraplanner. Show it with open_view view tax.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record these tax figures? The regime comparison and the tax estimate read them.",
+        inputs=[
+            ToolInput("person_id", "uuid", "The person, from read_tax_position (a taxpayer's id) or read_household", required=True),
+            ToolInput("document", "string", "The document the figures come from: Form 16, salary slip, return or investment proofs, with its date", required=True),
+            ToolInput("salary_income", "number", "Salary a year in rupees", required=False),
+            ToolInput("old_regime_deductions", "number", "Deductions a year the old regime would allow, in rupees", required=False),
+            ToolInput("regime", "string", "new or old", required=False),
+            ToolInput("marginal_rate", "number", "Slab rate: 30 or 0.30 for 30%", required=False),
+        ],
+        output=ToolOutput("object", "The household's tax position with the comparison, after recording"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
     "record_grandfather_value": Tool(
         key="record_grandfather_value",
         name="Record 2018 Value",
@@ -1022,7 +1042,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("source_document", "string", "The document it comes from - name, date and provider", required=True),
             ToolInput("cover_basis", "string", "any_cause (the default) or accident_only, as the schedule says", required=False),
             ToolInput("rider_of", "uuid", "The base policy, for a rider (TPD, income, critical illness, accident)", required=False),
-            ToolInput("group_cover", "boolean", "True for employer group cover", required=False),
+            ToolInput("group_cover", "boolean", "True for employer group cover: it ends with the job, so it is shown apart and not counted against a gap", required=False),
             ToolInput("nominee", "string", "Who the policy names to be paid", required=False),
             ToolInput("nominee_relationship", "string", "The nominee's relationship to the insured", required=False),
             ToolInput("mwp", "boolean", "True if written under the Married Women's Property Act", required=False),
@@ -1460,7 +1480,7 @@ TOOLS: dict[str, Tool] = {
         key="read_financial_plan",
         name="Read Financial Plan",
         speaking_agent="astra",
-        description="One household's plan: will the money last (probability of success, sustainable income and withdrawal rate, sequence risk, the levers), the income it can count on and how far that covers essentials, Social Security claiming at 62, full age and 70 for a US household, what a pension's choices imply, the cash reserve, each debt's rate and years to clear, a ten-year net worth projection, and each education goal's likelihood (the goals page's, its cost grown with education inflation) with what the 529s hold beside it. Income, rates and the 4% rule are in today's money; a couple's plan runs until the younger adult reaches the plan-to age; `assumptions_source` says whether returns are the firm's or the platform's. All of it is an estimate from what is on file. Say so, name what is not assessed, and do not advise on an irreversible election: lay the numbers out.",
+        description="One household's plan: will the money last (probability of success, sustainable income and withdrawal rate, sequence risk, the levers), the income it can count on and how far that covers essentials, Social Security claiming at 62, full age and 70 for a US household, what a pension's choices imply, the cash reserve, each debt's rate and years to clear, a ten-year net worth projection, and each education goal's likelihood (the goals page's, its cost grown with education inflation), with what the 529s hold beside it for a US household only. Income and rates are in today's money, as is the 4% rule of thumb, which is a US figure given for a US household only and never to be quoted for anyone else. Surplus is income before tax less spending and debt payments: say before tax; a couple's plan runs until the younger adult reaches the plan-to age; `assumptions_source` says whether returns are the firm's or the platform's. All of it is an estimate from what is on file. Say so, name what is not assessed, and do not advise on an irreversible election: lay the numbers out.",
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[ToolInput("household_id", "uuid", "The household (from search_households)", required=True)],
@@ -2746,7 +2766,7 @@ TOOLS: dict[str, Tool] = {
         key="read_balance_sheet",
         name="Read Balance Sheet",
         speaking_agent="astra",
-        description="What a household owns, owes and spends: the managed book, what is held away, retirement accounts, cash, property and business, each debt, net worth, and cash flow. Give a household_id for one household with its items, or none for the whole book. 'basis' of 'assets_only' means no debt is recorded here, which does not mean the client has none, so call it a figure before any debts and never say they are debt free. Cash flow with status 'not_assessed' lists what is missing; never work out a figure in its place. Items under 'not_converted' are in another currency and are left out of every total. 'liquid' leaves out property and business, which cannot be drawn on.",
+        description="What a household owns, owes and spends: the managed book, what is held away, retirement accounts, cash, property and business, each debt, net worth, and cash flow. Cash flow's surplus is income before tax less spending and debt payments: tax is not taken off, so always say before tax. Give a household_id for one household with its items, or none for the whole book. 'basis' of 'assets_only' means no debt is recorded here, which does not mean the client has none, so call it a figure before any debts and never say they are debt free. Cash flow with status 'not_assessed' lists what is missing; never work out a figure in its place. Items under 'not_converted' are in another currency and are left out of every total. 'liquid' leaves out property and business, which cannot be drawn on.",
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[
