@@ -45,7 +45,12 @@ class IndiaGatesExecutors:
         firm = await self._firm()
         if not product_gates.applies(firm):
             return {"applies": False, "categories": [], "message": "Ticket-size gates are kept for an Indian firm."}
-        result = await product_gates.open_to(self.session, firm, _parse_uuid(inputs.get("household_id") or "", "household_id"))
+        if not inputs.get("household_id"):
+            result = await product_gates.for_firm(self.session, firm, limit=None)
+            opened = [f"{r['household']}: {', '.join(product_gates.CATEGORIES[k]['label'] for k in r['open']) or 'none'}" for r in result["households"]]
+            result["message"] = f"{len(result['households'])} household(s). Open: {'; '.join(opened)}. {product_gates.NOT_ADVICE}"
+            return {**result, "fleet": True}
+        result = await product_gates.open_to(self.session, firm, _parse_uuid(inputs["household_id"], "household_id"))
         c = result["counts"]
         result["message"] = (f"{c['open']} categor(ies) open, {c['below']} below the minimum, {c['needs_fact']} needing a fact first. "
                              + (f"Open: {', '.join(result['open_labels'])}. " if result["open_labels"] else "") + product_gates.NOT_ADVICE)

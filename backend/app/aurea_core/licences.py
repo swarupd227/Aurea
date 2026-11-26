@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.read_once import read_once
 from app.models.enums import AutonomyTier
 from app.models.graph import Household, LegalEntity, Mandate, Person
 
@@ -111,7 +112,14 @@ def refusal(firm, tier: AutonomyTier) -> str | None:
 
 
 async def overview(session: AsyncSession, firm) -> dict:
-    """The firm's licences, what each lets an agent do, and which mandate sits where."""
+    """The firm's licences, what each lets an agent do, and which mandate sits where.
+
+    India's page gathers some thirty sections that ask the same things, so each question is asked once (`core/read_once.py`)."""
+    async with read_once(session):
+        return await _overview(session, firm)
+
+
+async def _overview(session: AsyncSession, firm) -> dict:
     from app.aurea_core import consent
 
     licences = held(firm)

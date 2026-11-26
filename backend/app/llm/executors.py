@@ -6142,12 +6142,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         sheet = await balance_sheet.for_household(self.session, hid, firm_id=self.firm_id)
         if sheet is None:
             raise ExecutorError("Your household could not be read.")
-        keep = ("id", "side", "kind", "name", "amount", "currency", "person", "as_of")
         basis = " Assets only: no debt is on file, which does not mean there is none." if sheet["basis"] == "assets_only" else ""
-        return {"household_id": str(hid), "currency": sheet["currency"], "net_worth": sheet["net_worth"], "basis": sheet["basis"],
-                "assets": sheet["assets"], "liabilities": sheet["liabilities"],
-                "items": [{k: i[k] for k in keep} for i in sheet["items"]],
-                "not_converted": [{k: i[k] for k in keep} for i in sheet["not_converted"]],
+        return {**balance_sheet.for_client(sheet), "household_id": str(hid),
                 "message": f"Net worth on file.{basis} A figure that is wrong is corrected by a person, from a document."}
 
     async def read_my_ips(self, inputs: dict[str, Any]) -> dict[str, Any]:

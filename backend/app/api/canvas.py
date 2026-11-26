@@ -63,11 +63,6 @@ async def canvas_view(
     return view
 
 
-def _client_item(i: dict) -> dict:
-    """A line of the balance sheet as its client reads it: what it is, how much, and as of when."""
-    return {k: i[k] for k in ("id", "side", "kind", "name", "amount", "currency", "person", "as_of")}
-
-
 @router.get("/net-worth")
 async def canvas_net_worth(
     household_id: uuid.UUID | None = None,
@@ -78,8 +73,7 @@ async def canvas_net_worth(
     sheet = await balance_sheet.for_household(db, hid, firm_id=firm.id)
     if sheet is None:
         raise HTTPException(status_code=404, detail="Household not found")
-    return {"household_id": str(hid), "currency": sheet["currency"], "net_worth": sheet["net_worth"], "basis": sheet["basis"], "assets": sheet["assets"],
-            "liabilities": sheet["liabilities"], "items": [_client_item(i) for i in sheet["items"]], "not_converted": [_client_item(i) for i in sheet["not_converted"]]}
+    return balance_sheet.for_client(sheet)
 
 
 @router.get("/ips")

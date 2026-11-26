@@ -277,15 +277,19 @@ async def order_review(session: AsyncSession, firm: Firm, mandate: Mandate, orde
     return refused, named
 
 
-async def for_firm(session: AsyncSession, firm: Firm, *, limit: int = 30) -> dict:
+async def for_firm(session: AsyncSession, firm: Firm, *, limit: int | None = 30) -> dict:
     """Every household with the categories open to it, for the Licences page: the self-test run across the book."""
     today = firm_time.today(firm)
     if not applies(firm):
         return {"applies": False, "as_of": today.isoformat(), "households": []}
     rows = []
     for h in (await list_households(session, firm.id))[:limit]:
-        view = await open_to(session, firm, uuid.UUID(h["id"]))
-        rows.append({"household_id": h["id"], "household": h["name"], "assets": view["assets"]["amount"], "open": view["open"],
-                     "categories": [{k: c[k] for k in ("category", "label", "state", "minimum", "waived")} for c in view["categories"]]})
+        # The row's own figures alone: `open_to` also reads each holder per PAN and a manager's posts, which a row does not show.
+        hid = uuid.UUID(h["id"])
+        money = await investable(session, firm, hid)
+        is_accredited, _ = await _household_accredited(session, firm, hid, today)
+        cats = [read(firm, key, money["amount"], accredited_investor=is_accredited, today=today) for key in CATEGORIES]
+        rows.append({"household_id": h["id"], "household": h["name"], "assets": money["amount"], "open": [c["category"] for c in cats if c["state"] == OPEN],
+                     "categories": [{k: c[k] for k in ("category", "label", "state", "minimum", "waived")} for c in cats]})
     rows.sort(key=lambda r: (-(r["assets"] or -1), r["household"]))
     return {"applies": True, "as_of": today.isoformat(), "households": rows, "figures": law_figures.cited(LAW_KEYS, today), "note": NOT_ADVICE}

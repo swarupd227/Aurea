@@ -159,6 +159,24 @@ async def _mandate_households(session: AsyncSession, firm_id: uuid.UUID, mandate
     return {m.id: (people.get(m.person_id) if m.person_id else entities.get(m.entity_id)) for m in mandates}
 
 
+async def account_owners(session: AsyncSession, firm_id: uuid.UUID) -> dict[uuid.UUID, dict]:
+    """Whose each account is, for a list that shows holdings or orders across the firm: the account's name, the person or entity
+    whose mandate it sits under, and the household. An account under no mandate has its name and nobody."""
+    accounts = (await session.execute(select(Account).where(Account.firm_id == firm_id))).scalars().all()
+    mandates = {m.id: m for m in (await session.execute(select(Mandate).where(Mandate.firm_id == firm_id))).scalars().all()}
+    people = {p.id: p for p in (await session.execute(select(Person).where(Person.firm_id == firm_id))).scalars().all()}
+    entities = {e.id: e for e in (await session.execute(select(LegalEntity).where(LegalEntity.firm_id == firm_id))).scalars().all()}
+    homes = {h.id: h.name for h in (await session.execute(select(Household).where(Household.firm_id == firm_id))).scalars().all()}
+    out = {}
+    for a in accounts:
+        m = mandates.get(a.mandate_id)
+        holder = (people.get(m.person_id) if m and m.person_id else entities.get(m.entity_id) if m else None)
+        home = holder.household_id if holder is not None else None
+        out[a.id] = {"account": a.name, "holder": (getattr(holder, "full_name", None) or getattr(holder, "name", None)) if holder else None,
+                     "household_id": str(home) if home in homes else None, "household": homes.get(home)}
+    return out
+
+
 def _check(code: str, severity: str, detail: str) -> dict:
     return {"code": code, "severity": severity, "detail": detail}
 

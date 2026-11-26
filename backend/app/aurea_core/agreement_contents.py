@@ -120,6 +120,21 @@ async def from_envelope(session: AsyncSession, firm: Firm, item, *, by: str) -> 
     return row
 
 
+async def for_firm(session: AsyncSession, firm: Firm) -> dict:
+    """What each agreement carried, for every household with a mandate on the adviser's track, by name."""
+    from app.aurea_core import pre_advice
+
+    if not applies(firm):
+        return {"applies": False, "households": []}
+    rows = []
+    for h in (await session.execute(select(Household).where(Household.firm_id == firm.id).order_by(Household.name))).scalars().all():
+        if await pre_advice.adviser_mandates(session, firm, h.id):
+            rows.append({**await view(session, firm, h.id), "household": h.name})
+    return {"applies": True, "scope": "firm", "households": rows, "complete": sum(1 for r in rows if not r["missing"]),
+            "incomplete": sum(1 for r in rows if r["missing"]), "citation": CITATION,
+            "said": "A signature does not say which document was signed. Not recorded does not mean the agreement lacks the part: a person reads the signed document and records it."}
+
+
 async def view(session: AsyncSession, firm: Firm, household_id: uuid.UUID) -> dict:
     row = await standing(session, firm.id, household_id)
     return {"applies": applies(firm), "household_id": str(household_id), "recorded": row is not None,

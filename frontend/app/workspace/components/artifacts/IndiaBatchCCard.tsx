@@ -12,13 +12,19 @@ const CERT_TONE: Record<string, string> = { valid: "text-ok", due_soon: "text-wa
 const AD_TONE: Record<string, string> = { approved: "text-ok", rejected: "text-crit", pending: "text-warn" };
 const DETERMINATION_TONE: Record<string, string> = { within: "text-crit", outside: "text-ink-muted", awaiting_counsel: "text-warn" };
 
+/** Whose holding or order a row is: the household and the account. */
+function Whose({ row }: { row: any }) {
+  const text = [row.household, row.account].filter(Boolean).join(" · ");
+  return text ? <span className="ml-1.5 text-xs text-ink-muted" data-testid="row-whose">{text}</span> : null;
+}
+
 /** Each recorded mutual fund order: the order date and the NAV date apart, the rail and the registrar, and what the cut-off rule gives. */
 export function MfOrderRows({ data }: { data: any }) {
   return (
     <div className="divide-y divide-border-soft" data-testid="mf-orders">
       {(data.orders ?? []).map((o: any) => (
         <div key={o.order_id} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5" data-testid="mf-order" title={o.likely_cause ?? (o.needs ? `Needs ${o.needs}` : (o.basis ?? []).join(" ")) }>
-          <span className="mr-auto text-sm text-ink">{o.symbol} · {o.side}</span>
+          <span className="mr-auto text-sm text-ink">{o.symbol} · {o.side}<Whose row={o} /></span>
           <span className="chip text-ink-muted" title="The rail the order travelled by">{o.rail_label}</span>
           <span className="chip text-ink-muted" title={o.folio ? `Folio ${o.folio}` : "Folio not recorded"}>{o.rta_label}</span>
           <span className="chip tabular-nums text-ink-muted" title={`Taken at ${o.order_time}`}>Order {o.order_on}</span>
@@ -30,12 +36,19 @@ export function MfOrderRows({ data }: { data: any }) {
       ))}
       {(data.folios ?? []).map((f: any) => (
         <div key={`${f.account}-${f.folio}`} className="flex flex-wrap items-center gap-1.5 px-3 py-1" data-testid="mf-folio">
-          <span className="mr-auto min-w-0 flex-1 text-xs text-ink-soft">{f.account} · {f.amc ?? "Fund house"}</span>
+          <span className="mr-auto min-w-0 flex-1 text-xs text-ink-soft">{f.household ? `${f.household} · ` : ""}{f.account} · {f.amc ?? "Fund house"}</span>
           <span className="chip text-ink-muted">Folio {f.folio}</span>
           <span className="chip text-ink-muted" title="The registrar that keeps the folio">{f.rta}</span>
         </div>
       ))}
       {data.unrecorded > 0 && <div className="px-3 py-1.5"><span className="chip text-warn" title="Mutual fund orders on the blotter with no rail on file">{data.unrecorded} without a rail recorded</span></div>}
+      {(data.without_rail ?? []).map((o: any) => (
+        <div key={o.order_id} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5" data-testid="mf-order-without-rail">
+          <span className="mr-auto text-sm text-ink-soft">{o.symbol} · {o.side}<Whose row={o} /></span>
+          <span className="chip tabular-nums text-ink-muted">{o.units.toLocaleString("en-IN")} units</span>
+          <span className="chip text-warn">No rail recorded</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -81,8 +94,9 @@ export function SeparationRows({ data }: { data: any }) {
         </div>
       ))}
       {(comparison?.holdings ?? []).map((h: any) => (
-        <div key={`${h.account}-${h.symbol}`} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5" data-testid="plan-comparison" title={h.needs ?? comparison.said}>
-          <span className="mr-auto text-sm text-ink">{h.scheme} · {h.plan}</span>
+        <div key={h.holding_id ?? `${h.account}-${h.symbol}`} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5" data-testid="plan-comparison" title={h.needs ?? comparison.said}>
+          <span className="mr-auto text-sm text-ink">{h.scheme} · {h.plan}<Whose row={h} /></span>
+          {h.value != null && <span className="chip tabular-nums text-ink-muted" title="The holding's value at its latest real price">{money(h.value, h.currency)}</span>}
           {h.direct && <span className="chip tabular-nums text-ink-muted" title={`Direct, ${h.direct.as_of}`}>Direct {h.direct.ter}%</span>}
           {h.regular && <span className="chip tabular-nums text-ink-muted" title={`Regular, ${h.regular.as_of}`}>Regular {h.regular.ter}%</span>}
           {h.state === "assessed" ? (

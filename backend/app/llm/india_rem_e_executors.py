@@ -59,7 +59,15 @@ class IndiaRemEExecutors:
         from app.llm.executors import _parse_uuid
 
         firm = await self._firm()
-        household = await self._own_household(inputs.get("household_id") or "")
+        if not inputs.get("household_id"):
+            result = await agreement_contents.for_firm(self.session, firm)
+            if not result["applies"]:
+                return {**result, "message": "What an agreement carried is read for a firm that holds an Indian licence."}
+            short = [f"{r['household']} ({' and '.join(r['missing'])})" for r in result["households"] if r["missing"]]
+            result["message"] = (f"{result['complete']} of {len(result['households'])} agreement(s) recorded as carrying both. "
+                                 + (f"Not recorded: {'; '.join(short)}. " if short else "") + result["said"])
+            return result
+        household = await self._own_household(inputs["household_id"])
         result = await agreement_contents.view(self.session, firm, _parse_uuid(str(household.id), "household_id"))
         result["household"] = household.name
         result["message"] = ("Not recorded: " + " and ".join(result["missing"]) + ". " + result["said"] if result["missing"] else

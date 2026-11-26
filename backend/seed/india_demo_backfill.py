@@ -11,6 +11,9 @@ opt-in (`python -m app.simulations seed aa_feed whatsapp_channel india_stack`, w
 The polish row (B-247 and others: Tara Menon as a minor now an adult, Kabir's case, a PMS fee line, segment minimums in rupees, the reminders as tasks) is added once.
 Row 11 (capital losses carried forward, a 2018 value, a regime comparison's inputs) and row 12 (KYC in every state) likewise.
 
+Every run also moves the dated demonstration scenarios back to their distance from today (`seed/india_redate.py`) and rewrites the
+description of an open reminder task still in the older wording.
+
 Run: python -m seed.india_demo_backfill
 """
 from __future__ import annotations
@@ -117,6 +120,13 @@ async def main() -> None:
         from seed import india_rem_d
 
         rem_d = await india_rem_d.add(s, firm)
+        # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
+        # open reminder tasks raised in the older wording (B-372).
+        from app.aurea_core import india_reminders
+        from seed import india_redate
+
+        redated = await india_redate.refresh(s, firm)
+        reworded = await india_reminders.correct_open_details(s, firm.id)
         await s.commit()
         from app.conduit.service import sync_market_data
         priced = await sync_market_data(s, firm.id)
@@ -125,7 +135,9 @@ async def main() -> None:
                         subject=Subject("firm", firm.id, firm.name), require_human=True)
         await s.commit()
     print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11, {row12} row 12, {row13} row 13, {row14} row 14, {polish} polish, {l100a} L100, {batch_a} batch A, {batch_c} batch C, {rem_e} batch E, {rem_d} remainder(s) and {batch_b} language and WhatsApp record(s), priced {priced['resolved']} instrument(s) "
-          f"({len(priced['failed'])} failed), and refreshed the tax positions.\n")
+          f"({len(priced['failed'])} failed), and refreshed the tax positions.\n"
+          f"Re-dated for today: {', '.join(f'{n} {k}' for k, n in redated.items() if n) or 'nothing'}. "
+          f"Rewrote {reworded} open reminder task description(s).\n")
 
 
 if __name__ == "__main__":

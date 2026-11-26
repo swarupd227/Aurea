@@ -218,14 +218,15 @@ function CalendarSection({ calendar, onDone }: { calendar: any; onDone: () => vo
  * record_client_consent tool; on a page ConsentPanel records it directly. */
 export function LicencesView() {
   const nav = useViewNav();
-  const { data, loading, refetch } = useApi<any>("/api/licences");
+  // A reload keeps the page on screen: blanking it would redraw every card from nothing after each confirmed change.
+  const { data, refetch } = useApi<any>("/api/licences");
   // The complaints register is read by compliance, a branch leader and operations; an adviser may record one and reads none.
   const canReadComplaints = ["compliance", "branch_leader", "operations"].includes(getUser()?.role);
   const complaints = useApi<any>(canReadComplaints ? "/api/licences/complaints" : null);
   // India's dates for the firm sit in the same countdown the client pages read.
   const dates = useApi<any>("/api/licences/dates");
   const canRecordPolicy = getUser()?.role === "compliance";
-  if (loading || !data) return <div className="view-container"><Spinner /></div>;
+  if (!data) return <div className="view-container"><Spinner /></div>;
   if (!data.applies) {
     return (
       <div className="view-container">

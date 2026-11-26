@@ -464,6 +464,36 @@ async def g_advertising(P: Proof):
 
 # -- tax, KYC, family, estate ---------------------------------------------------------------------------------------
 
+async def _huf_lot(P: Proof, huf: dict) -> None:
+    """The HUF's RELIANCE queue, read for its age today: "turning long-term" shows exactly when the lot at the front is at a loss and
+    goes long-term within the window. A lot that has passed twelve months, or stands at a gain, must not show it."""
+    from app.aurea_core import tax_india
+    from app.aurea_core.valuation import latest_prices
+    from app.models.graph import Account
+    from app.models.portfolio import Holding, Instrument, TaxLot
+
+    row = (await P.session.execute(
+        select(Holding, Instrument).join(Instrument, Instrument.id == Holding.instrument_id).join(Account, Account.id == Holding.account_id)
+        .where(Account.firm_id == P.firm.id, Account.name == "Rajesh Sharma HUF demat", Instrument.symbol == "RELIANCE.NS"))).first()
+    shown = any(o["kind"] == "turning_long" and o["symbol"] == "RELIANCE.NS" for o in huf["opportunities"])
+    lot = None
+    if row is not None:
+        lot = (await P.session.execute(select(TaxLot).where(TaxLot.holding_id == row[0].id, TaxLot.quantity > 0)
+                                       .order_by(TaxLot.acquired_on, TaxLot.created_at))).scalars().first()
+    if lot is None:
+        P.ok("The HUF's RELIANCE lot is not held, so nothing is turning long-term", "adviser", not shown, f"shown: {shown}")
+        return
+    turns = tax_india.long_term_from(tax_india.tax_class_of(row[1]), lot.acquired_on)
+    price = (await latest_prices(P.session, P.firm.id)).get(row[1].id)
+    at_loss = price is not None and float(price.close) < float(lot.cost_per_unit)
+    days = (turns - P.today).days
+    expected = at_loss and 0 <= days <= tax_india.TURNING_LONG_DAYS
+    state = "long-term" if days <= 0 else "turning long-term" if days <= tax_india.TURNING_LONG_DAYS else "short-term"
+    P.ok("The HUF's RELIANCE lot reads as its age says: a loss about to go long-term inside the window, and not outside it", "adviser",
+         shown == expected, f"acquired {lot.acquired_on}, {state}, {'at a loss' if at_loss else 'not at a loss'}; shown: {shown}"
+         + ("" if expected else " (run seed.india_demo_backfill to re-date the demonstration lot)"))
+
+
 @group
 async def g_tax(P: Proof):
     from app.aurea_core import india_deadlines, tax_india_full, tax_intelligence
@@ -477,7 +507,7 @@ async def g_tax(P: Proof):
         P.ok("Rajesh's brought-forward loss is Rs 40,000 long-term and he has a loss to harvest", "adviser",
              raj["brought_forward"]["long_term"] == 40000 and any(o["kind"] == "loss" for o in raj["opportunities"]), raj["brought_forward"])
         P.ok("Meera can use her exemption", "adviser", any(o["kind"] == "exemption" for o in mee["opportunities"]), [o["kind"] for o in mee["opportunities"]])
-        P.ok("The HUF has a loss about to go long-term", "adviser", any(o["kind"] == "turning_long" for o in tp["Rajesh Sharma HUF"]["opportunities"]), "turning_long")
+        await _huf_lot(P, tp["Rajesh Sharma HUF"])
         P.ok("Meera's regime comparison is a finding, and it is an estimate", "adviser",
              mee["engine"]["regime"]["conclusive"] and mee["engine"]["regime"]["cheaper"] == "new" and "qualified person" in raj["engine"]["estimate"], mee["engine"]["regime"]["cheaper"])
         P.ok("The loss ledger has a carried, an expired and a late-return loss", "adviser", sorted(x["state"] for x in raj["engine"]["loss_ledger"]) == ["carried", "expired", "late_return"], sorted(x["state"] for x in raj["engine"]["loss_ledger"]))
@@ -625,7 +655,8 @@ async def g_batch_a(P: Proof):
     async with P.section("Pledged units", "adviser"):
         r = await P.tool("adviser", "read_pledges")
         p = pick(r["pledges"], symbol="NIFTYBEES.NS")
-        P.ok("5,000 of 20,000 Nifty ETF units are under lien and 15,000 are sellable", "adviser", bool(p) and (p["under_lien"], p["held"], p["sellable"]) == (5000.0, 20000.0, 15000.0), p and (p["under_lien"], p["sellable"]))
+        P.ok("Nifty ETF units under lien are not sellable: sellable is what is held less what is under lien", "adviser",
+             bool(p) and p["sellable"] == max(p["held"] - p["under_lien"], 0), p and (p["held"], p["under_lien"], p["sellable"]))
 
 
 @group

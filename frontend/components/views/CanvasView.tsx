@@ -266,6 +266,12 @@ function Page({ householdId }: { householdId: string | null }) {
               </div>
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between gap-2"><span className="text-ink-soft">Managed here</span><span className="font-mono tabular-nums text-ink">{money(worth.assets?.managed, worth.currency)}</span></div>
+                {(worth.unitemised ?? []).map((u: any) => (
+                  <div key={u.bucket} className="flex justify-between gap-2" data-testid="canvas-net-worth-unitemised">
+                    <span className="min-w-0 truncate text-ink-soft">{u.label}</span>
+                    <span className="font-mono tabular-nums text-ink">{money(u.amount, worth.currency)}</span>
+                  </div>
+                ))}
                 {(worth.items ?? []).filter((i: any) => i.side !== "expense").map((i: any) => (
                   <div key={i.id} className="flex justify-between gap-2">
                     <span className="min-w-0 truncate text-ink-soft">{i.name}</span>

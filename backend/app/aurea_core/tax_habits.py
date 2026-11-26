@@ -347,6 +347,24 @@ async def for_firm(session: AsyncSession, firm: Firm, *, limit: int = 40) -> dic
             "note": "Laid out for a qualified person to check. Nothing here advises a sale or a rebuy."}
 
 
+async def firm_view(session: AsyncSession, firm: Firm) -> dict:
+    """Every household's tax habits in one reading, each row naming its household. Still taxpayer by taxpayer: nothing is netted or
+    added up across a family or the firm."""
+    from app.aurea_core.graph import list_households
+
+    today = firm_time.today(firm)
+    if not applies(firm):
+        return {"applies": False, "as_of": today.isoformat()}
+    rows: dict[str, list] = {"gain_harvest": [], "dividends": [], "gifts": []}
+    for h in await list_households(session, firm.id):
+        view = await household_view(session, firm, uuid.UUID(h["id"]))
+        for key, found in rows.items():
+            found.extend({**r, "household_id": h["id"], "household": h["name"]} for r in view[key])
+    return {"applies": True, "as_of": today.isoformat(), "scope": "firm", "year": _year(today)["label"], **rows,
+            "figures": law_figures.cited([*DIVIDEND_FIGURES, *GIFT_FIGURES], today), "not_modelled": NOT_MODELLED, "estimate": full.ESTIMATE,
+            "note": "Laid out for a qualified person to check. Nothing here advises a sale, a gift or a rebuy."}
+
+
 async def household_view(session: AsyncSession, firm: Firm, household_id: uuid.UUID) -> dict:
     today = firm_time.today(firm)
     if not applies(firm):

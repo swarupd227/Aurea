@@ -59,7 +59,8 @@ class IndiaBatchCExecutors:
         if not result["applies"]:
             result["message"] = "A mutual fund order's rail and NAV day are recorded for an Indian firm."
         else:
-            result["message"] = (f"{len(result['orders'])} order(s) recorded, {result['breaks']} whose NAV date differs from the cut-off rule's (reported, nothing repaired), "
+            whose = "Across the firm, each row naming its household: " if result["scope"] == "firm" else ""
+            result["message"] = (f"{whose}{len(result['orders'])} order(s) recorded, {result['breaks']} whose NAV date differs from the cut-off rule's (reported, nothing repaired), "
                                  f"{result['not_assessed']} not assessed, {result['unrecorded']} mutual fund order(s) with no rail on file. {mf_orders.SAID} "
                                  f"Not modelled: {'; '.join(result['not_modelled'])}.")
         return result

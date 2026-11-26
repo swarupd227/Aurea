@@ -25,6 +25,8 @@ export interface MyNetWorthPayload {
   assets: { managed: number; held_away?: number; total: number } & Record<string, number>;
   liabilities: { total: number; by_kind?: Record<string, number> };
   items: MyNetWorthItem[];
+  /** What each kind holds beyond the lines above, one figure a kind: with it the lines add up to the total. */
+  unitemised?: { bucket: string; label: string; amount: number }[];
   not_converted: MyNetWorthItem[];
   message?: string;
 }
@@ -60,9 +62,16 @@ export function MyNetWorthCard({ result }: { result: MyNetWorthPayload }) {
         <Tile label="Assets" value={money(r.assets.total, ccy)} sub={`managed ${money(r.assets.managed, ccy)} · elsewhere ${money(elsewhere, ccy)}`} />
         <Tile label="Owed" value={r.basis === "assets_only" ? "—" : money(r.liabilities.total, ccy)} tone={r.basis === "assets_only" ? "text-ink-muted" : "text-ink"} />
       </div>
-      {shown.length > 0 && (
+      {(shown.length > 0 || (r.unitemised ?? []).length > 0) && (
         <table className="w-full table-fixed text-sm">
           <tbody className="divide-y divide-border-soft">
+            {(r.unitemised ?? []).map((u) => (
+              <tr key={u.bucket} data-testid="my-net-worth-unitemised">
+                <td className="truncate px-3 py-1.5 text-ink">{u.label}</td>
+                <td className="w-28 px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink">{money(u.amount, ccy)}</td>
+                <td className="w-24 px-3 py-1.5" />
+              </tr>
+            ))}
             {shown.map((i) => (
               <tr key={i.id}>
                 <td className="truncate px-3 py-1.5 text-ink">{i.name}<span className="ml-1.5 text-xs text-ink-muted">{kindText(i.kind)}{i.person ? ` · ${i.person}` : ""}</span></td>

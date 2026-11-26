@@ -159,8 +159,8 @@ export function IndiaGatesCard({ result }: { result: any }) {
   if (result.applies === false) {
     return <div className="rounded-lg border border-border bg-surface px-3 py-2"><span className="chip text-ink-muted">Not an Indian firm</span></div>;
   }
-  const kind = Array.isArray(result.categories) ? "gates" : Array.isArray(result.people) ? "accredited" : result.counts?.budget != null ? "rate" : "fees";
-  const title = { gates: "Product categories open", accredited: "Accredited investors", rate: "Rate card", fees: "Adviser fee terms" }[kind];
+  const kind = Array.isArray(result.categories) ? "gates" : result.fleet ? "fleet" : Array.isArray(result.people) ? "accredited" : result.counts?.budget != null ? "rate" : "fees";
+  const title = { gates: "Product categories open", fleet: "Product categories open, by household", accredited: "Accredited investors", rate: "Rate card", fees: "Adviser fee terms" }[kind];
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface" data-testid="india-gates-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3 py-2">
@@ -168,6 +168,7 @@ export function IndiaGatesCard({ result }: { result: any }) {
         {kind === "rate" && <div className="flex flex-wrap gap-1.5"><RateCardChips card={result} /></div>}
       </div>
       {kind === "gates" && <TicketGateRows gates={result} />}
+      {kind === "fleet" && <TicketGateFleet fleet={result} />}
       {kind === "accredited" && <AccreditedRows people={result.people} criteria={result.criteria} />}
       {kind === "rate" && <RateCardRows card={result} />}
       {kind === "fees" && <FeeTermRows data={result} />}

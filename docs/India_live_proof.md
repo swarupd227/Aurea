@@ -111,7 +111,7 @@ consents; Waiting on clients. Cards, in order, each with what must be on screen:
 | Mutual fund order rails and NAV days | Four orders with rail, RTA and folio; **one NAV day differs (3 days), one not assessed**. |
 | Advice kept apart from distribution | Three group entities (one determined outside the family of entities, one awaiting counsel), one flag for compliance, and the direct-against-regular expense ratio comparison (empty until a scheme ratio is recorded; a scheme with none reads not assessed). |
 | Advertisement approvals | One approved, one rejected, one waiting for compliance. |
-| Pledged units | 5,000 Nifty ETF units under lien of 20,000; 15,000 sellable. |
+| Pledged units | 5,000 Nifty ETF units under lien of 20,000 as seeded; sellable is what is held less what is under lien. |
 | February rate card | One figure "awaiting the Budget"; the rest not reviewed. |
 | The firm's India dates (`licence-india-dates`) | Dated items with their sources. |
 

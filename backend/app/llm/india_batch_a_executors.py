@@ -103,7 +103,8 @@ class IndiaBatchAExecutors:
         if not tax_habits.applies(firm):
             return {"applies": False, "message": "These tax habits are read for an Indian firm."}
         try:
-            result = await tax_habits.household_view(self.session, firm, _parse_uuid(inputs.get("household_id") or "", "household_id"))
+            result = await tax_habits.household_view(self.session, firm, _parse_uuid(inputs["household_id"], "household_id")) \
+                if inputs.get("household_id") else await tax_habits.firm_view(self.session, firm)
         except tax_habits.HabitError as exc:
             raise _error(exc)
         result["message"] = ("Laid out for a qualified person to check, from what is on file; not assessed where a fact is not. Nothing here advises a sale, a gift or a rebuy, "

@@ -119,7 +119,7 @@ export function TaxHabitRows({ data }: { data: any }) {
     <div className="divide-y divide-border-soft" data-testid="tax-habits">
       {(data.gain_harvest ?? []).map((g: any) => (
         <div key={g.person_id} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5" data-testid="gain-harvest" title={g.basis ?? g.said}>
-          <span className="mr-auto text-sm text-ink">{g.person} · gain harvesting</span>
+          <span className="mr-auto text-sm text-ink">{g.person} · gain harvesting{g.household ? <span className="ml-1.5 text-xs text-ink-muted">{g.household}</span> : null}</span>
           {g.state === "assessed" ? (
             <>
               <span className="chip tabular-nums text-ink-muted" title={`The exemption for ${g.year}`}>{money(g.used, "INR")} of {money(g.exemption, "INR")} used</span>
@@ -131,7 +131,7 @@ export function TaxHabitRows({ data }: { data: any }) {
       ))}
       {(data.dividends ?? []).map((d: any) => (
         <div key={d.person_id} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5" data-testid="dividends" title={d.said}>
-          <span className="mr-auto text-sm text-ink">{d.person} · dividends</span>
+          <span className="mr-auto text-sm text-ink">{d.person} · dividends{d.household ? <span className="ml-1.5 text-xs text-ink-muted">{d.household}</span> : null}</span>
           {d.state === "assessed" ? (
             <>
               <span className="chip tabular-nums text-ink-muted">{money(d.total, "INR")} from {d.payers.length}</span>
@@ -143,7 +143,7 @@ export function TaxHabitRows({ data }: { data: any }) {
       ))}
       {(data.gifts ?? []).map((g: any) => (
         <div key={g.id} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5" data-testid="tax-gift" title={g.document}>
-          <span className="mr-auto text-sm text-ink">{g.giver} to {g.receiver}</span>
+          <span className="mr-auto text-sm text-ink">{g.giver} to {g.receiver}{g.household ? <span className="ml-1.5 text-xs text-ink-muted">{g.household}</span> : null}</span>
           <span className="chip text-ink-muted" title="As the document states it">{g.relationship_label}</span>
           <span className="chip tabular-nums text-ink-muted">{money(g.value, "INR")}</span>
           <span className={`chip ${g.receiver_tax.state === "taxable" ? "text-warn" : "text-ok"}`} title={g.receiver_tax.said}>{g.receiver_tax.state === "exempt" ? "Exempt" : g.receiver_tax.state === "taxable" ? "Income to receiver" : "Under threshold"}</span>

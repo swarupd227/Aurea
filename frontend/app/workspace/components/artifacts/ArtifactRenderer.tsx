@@ -546,7 +546,8 @@ export function artifactCard(artifact: Artifact) {
       case "record_mf_figure":
       case "read_agreement_contents":
       case "record_agreement_contents":
-        if (!Array.isArray(artifact.result?.figures) && typeof artifact.result?.recorded !== "boolean" && artifact.result?.applies !== false) return null;
+        if (!Array.isArray(artifact.result?.figures) && !Array.isArray(artifact.result?.households) && typeof artifact.result?.recorded !== "boolean"
+            && artifact.result?.applies !== false) return null;
         return <IndiaRemECard result={artifact.result as any} />;
       case "record_family_determination":
         if (!Array.isArray(artifact.result?.entities) && artifact.result?.applies !== false) return null;

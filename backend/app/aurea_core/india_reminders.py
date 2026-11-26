@@ -17,6 +17,7 @@ It changes no filing, KYC or guardianship record, tells no client, and does not 
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date
 
@@ -53,22 +54,52 @@ def _near(item: dict) -> bool:
         and item["days"] <= item.get("remind_within", WITHIN_DAYS)
 
 
-async def _exists(session: AsyncSession, firm_id: uuid.UUID, title: str, household_id: uuid.UUID | None) -> bool:
-    q = select(Task.id).where(Task.firm_id == firm_id, Task.source == SOURCE, Task.title == title)
-    q = q.where(Task.household_id == household_id) if household_id else q.where(Task.household_id.is_(None))
-    return (await session.execute(q.limit(1))).first() is not None
+async def _raised(session: AsyncSession, firm_id: uuid.UUID) -> set[tuple[str, uuid.UUID | None]]:
+    """The title and household of every task this job has raised, whatever its state, in one question."""
+    return {(t, h) for t, h in (await session.execute(select(Task.title, Task.household_id).where(Task.firm_id == firm_id, Task.source == SOURCE))).all()}
 
 
 def _title(item: dict) -> str:
     return f"India: {item['label']}"[:tasks.TITLE_MAX]
 
 
+def _sentence(text) -> str:
+    """The text ended with one full stop, whether or not it came with one."""
+    return f"{str(text).rstrip(' .')}."
+
+
 def _detail(item: dict) -> str:
-    when = f"overdue by {-item['days']} day(s)" if item["days"] < 0 else "due today" if item["days"] == 0 else f"due in {item['days']} day(s)"
-    out = f"Due {item['due_on']} ({when}). Source: {item['source']}."
+    """The due day and the source, with no "due today" or "overdue by": a stored sentence is read on later days, and the task's own
+    due date says where it stands."""
+    out = f"Due {item['due_on']}. Source: {_sentence(item['source'])}"
     if item.get("assumed"):
-        out += f" Assumed: {item['assumed']}."
+        out += f" Assumed: {_sentence(item['assumed'])}"
     return out
+
+
+# What a task raised before B-372 carried: the day's relative wording, and a source that ended in a full stop given another.
+_RELATIVE = re.compile(r"^(Due \d{4}-\d{2}-\d{2}) \((?:overdue by \d+ day\(s\)|due today|due in \d+ day\(s\))\)\.")
+_TWO_STOPS = re.compile(r"(?<!\.)\.\.(?!\.)")
+
+
+def corrected_detail(detail: str | None) -> str | None:
+    """A stored description in the present form. Pure, and the same however often it runs; text not in this job's form is left."""
+    if not detail or not detail.startswith("Due "):
+        return detail
+    return _TWO_STOPS.sub(".", _RELATIVE.sub(r"\1.", detail))
+
+
+async def correct_open_details(session: AsyncSession, firm_id: uuid.UUID) -> int:
+    """Rewrite the description of each OPEN task this job raised into the present form. It raises, reopens, closes and deletes nothing."""
+    rows = (await session.execute(select(Task).where(Task.firm_id == firm_id, Task.source == SOURCE, Task.status == TaskStatus.OPEN))).scalars().all()
+    changed = 0
+    for t in rows:
+        new = corrected_detail(t.detail)
+        if new != t.detail:
+            t.detail = new
+            changed += 1
+    await session.flush()
+    return changed
 
 
 def _task(firm_id: uuid.UUID, item: dict, *, household: Household | None, owner: User | None, unassigned_note: str | None = None) -> Task:
@@ -128,7 +159,7 @@ async def plan(session: AsyncSession, firm: Firm) -> dict:
         adviser = await advisers.adviser_of(session, firm.id, h.id)
         adviser = adviser if adviser is not None and adviser.is_active else None
         note = "The household has no adviser on record: assign one."
-        for i in (await india_deadlines.household_items(session, firm, h.id))["items"]:
+        for i in (await india_deadlines.household_items(session, firm, h.id, nominations=False))["items"]:
             if i["kind"] in HOUSEHOLD_KINDS and _near(i):
                 out.append({"item": i, "household": h, "owner": adviser, "scope": "household", "note": note})
         for p in (await kyc_india.overview(session, firm, household_id=h.id))["parties"]:
@@ -141,8 +172,9 @@ async def plan(session: AsyncSession, firm: Firm) -> dict:
                 out.append({"item": item, "household": h, "owner": adviser, "scope": "household", "note": note})
         for item in await _batch_items(session, firm, h.id, today):
             out.append({"item": item, "household": h, "owner": adviser, "scope": "household", "note": note})
+    raised = await _raised(session, firm.id)
     for row in out:
-        row["exists"] = await _exists(session, firm.id, _title(row["item"]), row["household"].id if row["household"] else None)
+        row["exists"] = (_title(row["item"]), row["household"].id if row["household"] else None) in raised
     return {"applies": True, "as_of": today.isoformat(), "items": out}
 
 

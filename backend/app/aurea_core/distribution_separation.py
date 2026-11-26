@@ -31,7 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import firm_time, law_figures, licences, markets
-from app.aurea_core.billing import _mandate_households
+from app.aurea_core.billing import _mandate_households, account_owners
 from app.core.db import utcnow
 from app.core.security import UserRole
 from app.models.graph import Household, Mandate
@@ -384,7 +384,7 @@ async def comparison(session: AsyncSession, firm: Firm, *, household_id: uuid.UU
     if household_id is not None:
         stmt = stmt.where(Holding.account_id.in_(await household_account_ids(session, household_id, firm_id=firm.id) or [uuid.uuid4()]))
     holdings = (await session.execute(stmt)).scalars().all()
-    accounts = {a.id: a for a in (await session.execute(select(Account).where(Account.firm_id == firm.id))).scalars().all()}
+    owners = await account_owners(session, firm.id)
     prices = await latest_prices(session, firm.id)
     rows = []
     for h in holdings:
@@ -395,8 +395,8 @@ async def comparison(session: AsyncSession, firm: Firm, *, household_id: uuid.UU
         price = prices.get(h.instrument_id)
         value = round(float(h.quantity) * float(price.close), 2) if price is not None and price.is_real else None
         d, r = ters.get((tags["scheme"].lower(), "direct")), ters.get((tags["scheme"].lower(), "regular"))
-        row = {"symbol": inst.symbol, "fund": inst.name, "scheme": tags["scheme"], "plan": tags["fund_plan"], "account": accounts[h.account_id].name if h.account_id in accounts else None,
-               "value": value, "currency": firm.base_currency,
+        row = {"holding_id": str(h.id), "symbol": inst.symbol, "fund": inst.name, "scheme": tags["scheme"], "plan": tags["fund_plan"],
+               **(owners.get(h.account_id) or {"account": None, "holder": None, "household_id": None, "household": None}), "value": value, "currency": firm.base_currency,
                "direct": {"ter": float(d.ter_pct), "as_of": d.as_of.isoformat(), "document": d.source_document} if d else None,
                "regular": {"ter": float(r.ter_pct), "as_of": r.as_of.isoformat(), "document": r.source_document} if r else None}
         if d is None or r is None:

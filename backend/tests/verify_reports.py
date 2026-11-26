@@ -29,7 +29,7 @@ import app.models  # noqa: F401  — registers every table on Base.metadata
 from app.agents import research_reporting as rr
 from app.api import canvas, engage
 from app.atlas.base import AgentContext, Subject
-from app.aurea_core import firm_time, reports
+from app.aurea_core import firm_time, markets, reports
 from app.core import agent_runs
 from app.core.db import Base, utcnow
 from app.core.tools import OPEN_VIEWS, TOOLS, ToolChangeState, tools_for_role
@@ -201,7 +201,8 @@ async def behaviour() -> None:
             check("a rerun rewrites the waiting draft, not a second one", await count_reports(), 1)
             check("  under the same report", second.payload["report_id"], str(draft_id))
             await s.refresh(drafted)
-            check("  with the newer figures", "$200,000" in drafted.sections[0]["body"], True)
+            # Written in the firm's own currency, which is rupees for a firm that names none: not a dollar sign.
+            check("  with the newer figures", markets.money_for(mine)(200_000) in drafted.sections[0]["body"], True)
 
             print("\n=== the read ===")
             r = await ex().execute("read_reports", {})

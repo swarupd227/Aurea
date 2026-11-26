@@ -29,9 +29,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import firm_time, law_figures, licences, markets, mf_figures
+from app.aurea_core.billing import account_owners
 from app.core.db import utcnow
 from app.core.security import UserRole
-from app.models.graph import Account, Household, Mandate
 from app.models.india_batch_c import MfOrderRecord
 from app.models.portfolio import Instrument
 from app.models.tenant import Firm
@@ -275,9 +275,9 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
     recs = await _latest(session, firm.id, order_ids)
     figs = await mf_figures.values(session, firm)
     orders = {o.id: o for o in (await session.execute(select(Order).where(Order.firm_id == firm.id))).scalars().all()}
-    accounts = {a.id: a for a in (await session.execute(select(Account).where(Account.firm_id == firm.id))).scalars().all()}
+    owners = await account_owners(session, firm.id)
+    nobody = {"account": None, "holder": None, "household_id": None, "household": None}
     insts = {i.id: i for i in (await session.execute(select(Instrument).where(Instrument.firm_id == firm.id))).scalars().all()}
-    homes: dict = {}
     if household_id is not None:
         from app.aurea_core.performance import household_account_ids
 
@@ -289,9 +289,9 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
         o = orders.get(oid)
         if o is None or (keep is not None and o.account_id not in keep):
             continue
-        inst, acc = insts.get(o.instrument_id), accounts.get(o.account_id)
+        inst = insts.get(o.instrument_id)
         c = compare(rec, o, today, figs)
-        rows.append({"order_id": str(oid), "symbol": inst.symbol if inst else None, "fund": inst.name if inst else None, "account": acc.name if acc else None,
+        rows.append({"order_id": str(oid), "symbol": inst.symbol if inst else None, "fund": inst.name if inst else None, **(owners.get(o.account_id) or nobody),
                      "side": c["side"], "amount": c["amount"], "rail": rec.rail, "rail_label": RAILS.get(rec.rail, rec.rail), "rta": rec.rta,
                      "rta_label": RTAS.get(rec.rta, rec.rta), "folio": rec.folio, "rule": rec.cutoff_rule, "rule_label": RULES.get(rec.cutoff_rule),
                      "order_on": rec.order_on.isoformat(), "order_time": rec.order_time, "funds_realised_on": rec.funds_realised_on.isoformat() if rec.funds_realised_on else None,
@@ -302,15 +302,18 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
     folios: dict[tuple, dict] = {}
     for r in rows:
         if r["folio"]:
-            folios[(r["account"], r["amc"], r["folio"])] = {"account": r["account"], "amc": r["amc"], "folio": r["folio"], "rta": r["rta_label"]}
-    # Mutual fund orders the blotter holds that no one has recorded a rail for: counted, never guessed at.
-    unrecorded = 0
+            folios[(r["account"], r["amc"], r["folio"])] = {"account": r["account"], "household": r["household"], "amc": r["amc"], "folio": r["folio"], "rta": r["rta_label"]}
+    # Mutual fund orders the blotter holds that no one has recorded a rail for: listed with whose they are, never guessed at.
+    without_rail = []
     if order_ids is None:
         for oid, o in orders.items():
             inst = insts.get(o.instrument_id)
             if oid not in recs and is_fund(inst) and float(o.filled_quantity or 0) > 0 and (keep is None or o.account_id in keep):
-                unrecorded += 1
-    return {"applies": True, "as_of": today.isoformat(), "orders": rows, "breaks": sum(1 for r in rows if r["state"] == "differs"),
-            "not_assessed": sum(1 for r in rows if r["state"] == "not_assessed"), "unrecorded": unrecorded, "folios": list(folios.values()),
+                without_rail.append({"order_id": str(oid), "symbol": inst.symbol, "fund": inst.name, "side": str(o.side),
+                                     "units": float(o.filled_quantity), **(owners.get(o.account_id) or nobody)})
+    without_rail.sort(key=lambda r: (r["household"] or "", r["account"] or "", r["symbol"], r["order_id"]))
+    return {"applies": True, "as_of": today.isoformat(), "scope": "household" if household_id else "firm", "orders": rows,
+            "breaks": sum(1 for r in rows if r["state"] == "differs"), "not_assessed": sum(1 for r in rows if r["state"] == "not_assessed"),
+            "unrecorded": len(without_rail), "without_rail": without_rail, "folios": list(folios.values()),
             "rails": RAILS, "figures": law_figures.cited(list(FIGURES), today), "figure_set": await mf_figures.overview(session, firm), "not_modelled": NOT_MODELLED, "said": SAID,
             "note": "A break is reported and nothing is repaired: no holding, unit or cash is written. An order with no record does not mean it was mishandled."}

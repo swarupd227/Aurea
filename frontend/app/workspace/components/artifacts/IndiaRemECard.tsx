@@ -43,13 +43,16 @@ export function IndiaRemECard({ result }: { result: any }) {
     return <div className="rounded-lg border border-border bg-surface px-3 py-2"><span className="chip text-ink-muted">Not an Indian firm</span></div>;
   }
   const figures = Array.isArray(result.figures);
+  const households: any[] | null = !figures && Array.isArray(result.households) ? result.households : null;
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface" data-testid="india-rem-e-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3 py-2">
         <div className="text-sm font-medium text-ink">{figures ? "Mutual fund cut-off figures" : "Advisory agreement contents"}</div>
         {figures && <span className="chip text-ink-muted">{result.recorded} recorded, {result.assumed} assumed</span>}
       </div>
-      {figures ? <MfFigureRows data={result} /> : <AgreementContentRows data={result} />}
+      {figures ? <MfFigureRows data={result} />
+        : households ? <div className="divide-y divide-border-soft">{households.map((h) => <AgreementContentRows key={h.household_id} data={h} />)}</div>
+        : <AgreementContentRows data={result} />}
     </div>
   );
 }

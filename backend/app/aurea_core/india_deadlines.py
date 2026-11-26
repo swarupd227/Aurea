@@ -133,8 +133,9 @@ async def kyc_reviews(session: AsyncSession, firm: Firm, today: date, household_
     return sorted(out, key=lambda x: x["due_on"])
 
 
-async def household_items(session: AsyncSession, firm: Firm, household_id: uuid.UUID) -> dict:
-    """One household's India dates: tax, KYC review, majority, open nominations."""
+async def household_items(session: AsyncSession, firm: Firm, household_id: uuid.UUID, *, nominations: bool = True) -> dict:
+    """One household's India dates: tax, KYC review, majority, open nominations. A caller with no use for the nominations passes
+    `nominations=False`, because finding them reads the whole client file."""
     today = firm_time.today(firm)
     items: list[dict] = []
     adv = law_figures.get("in_advance_tax_dates", today)
@@ -165,7 +166,7 @@ async def household_items(session: AsyncSession, firm: Firm, household_id: uuid.
                                detail="The guardian's authority has ended and orders on the account are refused until a person records the conversion"))
     from app.aurea_core import client_file
 
-    file = await client_file.for_household(session, household_id, firm_id=firm.id)
+    file = await client_file.for_household(session, household_id, firm_id=firm.id) if nominations else None
     open_noms = [i for i in (file or {}).get("designation_issues", []) if i["issue"].startswith("no nomination")]
     if open_noms:
         fig = law_figures.get("in_nomination_opt_out", today)

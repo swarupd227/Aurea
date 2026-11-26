@@ -36,6 +36,12 @@ from app.provenance import ledger
 # not also in the managed total. A firm that books one as well as recording it would count it twice.
 RETIREMENT_ACCOUNTS = ("pension_pot", "isa_value", "ira_value", "roth_value")
 SHOWN_ENDED = 10
+# The bucket of `assets` each recorded asset counts in, and what a bucket's money with no line of its own is called.
+BUCKET_OF = {"held_away_investment": "held_away", "pension": "retirement_accounts", "cash": "cash", "property": "property",
+             "business": "business", "other_asset": "other"}
+BUCKET_LABELS = {"held_away": "Held elsewhere", "retirement_accounts": "Retirement accounts", "cash": "Cash", "property": "Property",
+                 "business": "Business", "other": "Other assets"}
+CLIENT_KEYS = ("id", "side", "kind", "name", "amount", "currency", "person", "as_of")
 
 
 class BalanceSheetError(ValueError):
@@ -63,6 +69,34 @@ def assets_on_file(persons: list[Person], items: list[BalanceItem], lines=()) ->
     pots = _sum(items, "pension") + sum(retirement_accounts_of(p) for p in persons if not replaced_by(items, "pension", p))
     return {"held_away": held_away_of(persons, items, lines), "retirement_accounts": pots, "cash": _sum(items, "cash"),
             "property": _sum(items, "property"), "business": _sum(items, "business"), "other": _sum(items, "other_asset")}
+
+
+def counted_items(usable: list[BalanceItem], lines=()) -> list[BalanceItem]:
+    """The recorded assets and debts that are in the sums: everything in the firm's currency but spending, and a held-away total that
+    holdings listed line by line stand in for."""
+    return [i for i in usable if i.side != "expense"
+            and not (i.kind == "held_away_investment" and lines and itemised_by(lines, i.person_id, i.name))]
+
+
+def unitemised(outside: dict[str, float], counted: list[BalanceItem]) -> list[dict]:
+    """What each bucket holds beyond its recorded lines, one figure a bucket: holdings listed line by line elsewhere, and what a
+    person's profile states. With it the lines shown add up to the total, and no holding is named."""
+    out = []
+    for bucket, amount in outside.items():
+        rest = round(amount - sum(float(i.amount) for i in counted if BUCKET_OF.get(i.kind) == bucket), 2)
+        if abs(rest) >= 0.01:
+            out.append({"bucket": bucket, "label": BUCKET_LABELS[bucket], "amount": rest})
+    return out
+
+
+def for_client(sheet: dict) -> dict:
+    """A balance sheet as its client reads it. `managed`, the `items` and `unitemised` add up to the net worth: an item in another
+    currency is listed apart, a total that more detailed figures stand in for is not listed twice, and held-away money with no line
+    of its own is one figure. Not who recorded anything, not from what, and no held-away holding."""
+    return {"household_id": sheet["household_id"], "currency": sheet["currency"], "net_worth": sheet["net_worth"], "basis": sheet["basis"],
+            "assets": sheet["assets"], "liabilities": sheet["liabilities"], "unitemised": sheet["unitemised"],
+            "items": [{k: i[k] for k in CLIENT_KEYS} for i in sheet["items"] if i["counted"] or i["side"] == "expense"],
+            "not_converted": [{k: i[k] for k in CLIENT_KEYS} for i in sheet["not_converted"]]}
 
 
 def liquid_of(assets: dict[str, float]) -> float:
@@ -150,6 +184,8 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     ended = (await session.execute(select(BalanceItem).where(
         BalanceItem.firm_id == firm_id, BalanceItem.household_id == household_id, BalanceItem.status == "ended"
     ).order_by(BalanceItem.ended_on.desc()).limit(SHOWN_ENDED))).scalars().all()
+    counted = counted_items(usable, lines)
+    in_sums = {i.id for i in counted}
     return {
         "household_id": str(household_id), "household": brain["household"]["name"],
         "currency": firm.base_currency if firm else None,
@@ -161,7 +197,8 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
         # No debt on file is not no debt: the figure says which it is.
         "basis": "assets_and_liabilities" if liabilities else "assets_only",
         "cash_flow": _cash_flow(persons, usable),
-        "items": [_item_view(i, names) for i in items],
+        "items": [{**_item_view(i, names), "counted": i.id in in_sums} for i in items],
+        "unitemised": unitemised(outside, counted),
         "not_converted": [_item_view(i, names) for i in foreign],
         "ended": [_item_view(i, names) for i in ended],
         # Held away line by line (B-198): how many, what they state, and which recorded totals they stand in for.
