@@ -36,7 +36,7 @@ async def _activation_gates(session, firm, case) -> dict:
     UI and the enforcement can never disagree about what is blocking.
     """
     from app.aurea_core import (
-        consents, disclosures, document_matrix, fees as fees_core, gates as gates_core, parties as parties_core,
+        consents, disclosures, document_matrix, fees as fees_core, gates as gates_core, kyc_india, parties as parties_core,
     )
     from app.models.onboarding import FeeSchedule
 
@@ -62,6 +62,8 @@ async def _activation_gates(session, firm, case) -> dict:
         consent_status=consents.gate_status(await consents.for_case_rows(session, case), disclosure_items=disclosure["items"],
                                             fee_assigned=bool(fee and fee.get("assigned"))),
         registration_status=await document_matrix.check_case(session, case, firm),
+        # India: an overdue or blocked KYC refuses activation here as it does on the page (B-384).
+        kyc_status=kyc_india.gate(await kyc_india.case_status(session, firm, case)),
     )
 
 RISK_TO_MODEL = {"conservative": "Balanced", "balanced": "Balanced", "growth": "Growth", "aggressive": "Growth"}

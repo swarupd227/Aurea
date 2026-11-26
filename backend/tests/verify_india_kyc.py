@@ -22,19 +22,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  - registers every table on Base.metadata
+from app.agents.onboarding import OnboardingAgent
 from app.api import onboarding as api
-from app.aurea_core import aml_risk, firm_time, kyc_india as k, law_figures
+from app.atlas import runtime
+from app.atlas.base import AgentContext, Subject
+from app.aurea_core import aml_risk, disclosures, firm_time, kyc_india as k, law_figures
 from app.aurea_core.reviews import add_months
-from app.core.db import Base
+from app.core.db import Base, utcnow
 from app.core.tools import TOOLS
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.models.aml_risk import AmlRiskRating
-from app.models.enums import UserRole
-from app.models.governance import LedgerEntry
-from app.models.graph import Household, LegalEntity, Person
+from app.models.consent_registry import ConsentRecord
+from app.models.enums import AgentKey, AgentRunStatus, HumanAction, RecommendationStatus, UserRole
+from app.models.governance import AgentRun, LedgerEntry, Recommendation
+from app.models.graph import Household, LegalEntity, Mandate, Person
 from app.models.identity import User
 from app.models.kyc import KycRecord
-from app.models.onboarding import OnboardingCase
+from app.models.onboarding import DisclosureDelivery, FeeSchedule, OnboardingCase, OnboardingDocument, OnboardingParty
 from app.models.tenant import Firm
 
 PASS, FAIL = [], []
@@ -95,6 +99,185 @@ def pure() -> None:
     check("the thresholds are law_figures', each with a source",
           all(law_figures.get(key).source for key in ("in_kyc_bo_company", "in_kyc_bo_unincorporated", "in_kyc_bo_trust", "in_kyc_crs_company")), True)
     check("an Aadhaar is masked to its last four", k.mask_aadhaar("1234"), "••••••••1234")
+
+
+async def ready_case(s, firm, name: str) -> OnboardingCase:
+    """A case with every activation gate satisfied but KYC, so what KYC does at activation is seen alone."""
+    today, now = firm_time.today(firm), utcnow()
+    fee = FeeSchedule(id=uuid.uuid4(), firm_id=firm.id, code=f"F-{uuid.uuid4().hex[:6]}", name="Flat", fee_type="flat_bps", flat_bps=50, tiers=[])
+    s.add(fee)
+    case = OnboardingCase(id=uuid.uuid4(), firm_id=firm.id, prospect_name=name, registration_type="individual", engagement_type="advisory",
+                          intake={"registration": {"signed_by": [name], "signed_on": today.isoformat()}}, agreement_status="signed",
+                          agreement_signed_at=now, ips_accepted_at=now, ips_accepted_by="adv@t", held_away_none_declared=True,
+                          cip_status="verified", fee_schedule_id=fee.id, billing_method="arrears", billing_frequency="quarterly",
+                          billable_aum=10_000_000, fee_set_by="adv@t", fee_set_at=now, fee_confirmed_by="comp@t", fee_confirmed_at=now)
+    s.add(case)
+    await s.flush()
+    s.add(OnboardingParty(firm_id=firm.id, case_id=case.id, role="owner", legal_name=name, screening_status="clear", screening_hits=[]))
+    s.add(OnboardingDocument(firm_id=firm.id, case_id=case.id, doc_type="passport", filename="passport.pdf", raw_text="Passport"))
+    for doc in disclosures.required_for(firm.jurisdiction, "individual", "advisory"):
+        s.add(DisclosureDelivery(firm_id=firm.id, case_id=case.id, doc_type=doc, delivered_at=now, method="in_person", delivered_by="adv@t"))
+    s.add(ConsentRecord(firm_id=firm.id, case_id=case.id, kind="fee_debit", status="granted", given_by=name, given_on=today,
+                        method="signed_form", evidence="Signed mandate form", recorded_by="adv@t"))
+    await s.flush()
+    return case
+
+
+async def activate(s, firm, case) -> dict:
+    ctx = AgentContext(session=s, firm=firm, run=None, tier=None, guardrails={}, config={},
+                       subject=Subject("onboarding_case", case.id, case.prospect_name))
+    return await OnboardingAgent().act(ctx, type("R", (), {"payload": {}, "modified_payload": None})())
+
+
+async def activation_and_the_case_link() -> None:
+    """B-384: what activation refuses, what follows the client out of the case, and what the gate says of a partial set."""
+    db = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with db.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        Session = async_sessionmaker(db, expire_on_commit=False)
+        async with Session() as s:
+            firm = Firm(id=uuid.uuid4(), name="Astra India", slug="india", jurisdiction="IN", regulator="SEBI", base_currency="INR",
+                        settings={"timezone": "Asia/Kolkata"})
+            s.add(firm)
+            await s.flush()
+            today = firm_time.today(firm)
+            good = dict(ckyc_number="12345678901234", kra_name="CVL KRA", kra_status="validated", kyc_completed_on=today - timedelta(days=100),
+                        verification_mode="aadhaar_ekyc", pan_aadhaar_linked=True, risk_band="medium")
+
+            async def on_case(case, name, **facts):
+                return await k.record(s, firm, by="adv@t", document="KRA acknowledgement", case_id=case.id, party_name=name, **facts)
+
+            async def kyc_gate(case) -> dict:
+                return next(g for g in (await api._gates_for(s, firm, case))["gates"] if g["key"] == "kyc_current")
+
+            async def households() -> int:
+                return len((await s.execute(select(Household))).scalars().all())
+
+            print("\n=== Every path that activates a case refuses the same KYC ===")
+            case = await ready_case(s, firm, "Nila Fresh")
+            await on_case(case, "Nila Fresh", **{**good, "kra_status": "on_hold"})
+            check("KYC is the only gate the page shows blocking", (await api._gates_for(s, firm, case))["blocking"], ["kyc_current"])
+            run = AgentRun(firm_id=firm.id, agent_key=AgentKey.ONBOARDING_KYC_AML, status=AgentRunStatus.AWAITING_APPROVAL, tier="tier_2",
+                           trigger="manual", started_at=utcnow())
+            s.add(run)
+            await s.flush()
+            rec = Recommendation(firm_id=firm.id, run_id=run.id, agent_key=AgentKey.ONBOARDING_KYC_AML, tier="tier_2",
+                                 status=RecommendationStatus.PROPOSED, title="Onboard Nila Fresh", summary="x", rationale="x", confidence=0.9,
+                                 subject_type="onboarding_case", subject_id=case.id, subject_label="Nila Fresh", payload={})
+            s.add(rec)
+            await s.flush()
+            done = await runtime.decide(s, firm=firm, recommendation=rec, action=HumanAction.APPROVE, actor_id=None, actor_label="comp@t")
+            result = (done.payload or {}).get("execution_result") or {}
+            check("approving the proposal activates nothing", (str(done.status) != "executed", str(case.status) != "approved", await households()), (True, True, 0))
+            check("and says KYC is what blocks it", (result.get("blocked_by"), "may not transact" in result.get("note", "")), (["kyc_current"], True))
+            direct = await activate(s, firm, case)
+            check("the agent's act refuses it too", (direct.get("blocked_by"), await households()), (["kyc_current"], 0))
+
+            overdue = await ready_case(s, firm, "Omar Late")
+            await on_case(overdue, "Omar Late", **{**good, "risk_band": "high", "kyc_completed_on": add_months(today, -30)})
+            out = await activate(s, firm, overdue)
+            check("an overdue KYC refuses activation as well", (out.get("executed"), out.get("blocked_by")), (False, ["kyc_current"]))
+
+            await on_case(case, "Nila Fresh", kra_status="validated")
+            if str(case.status) != "approved":
+                out = await activate(s, firm, case)
+                check("with the refreshed record on file it activates", (out.get("executed"), str(case.status)), (True, "approved"))
+
+            print("\n=== KYC recorded on a case follows the client ===")
+            household = uuid.UUID(case.materialized["household_id"])
+            person = await s.get(Person, uuid.UUID(case.materialized["person_id"]))
+            mandate = await s.get(Mandate, uuid.UUID(case.materialized["mandate_id"]))
+
+            async def on_client(**facts):
+                return await k.record(s, firm, by="adv@t", document="KRA acknowledgement", person_id=person.id, **facts)
+
+            rows = (await k.overview(s, firm, household_id=household))["parties"]
+            check("the client shows what the case recorded, once", [(p["name"], p["state"], p.get("person_id")) for p in rows],
+                  [("Nila Fresh", "verified", str(person.id))])
+            check("and is listed once across the firm, not as a client with none beside a case",
+                  [p["state"] for p in (await k.overview(s, firm))["parties"] if p["name"] == "Nila Fresh"], ["verified"])
+            await on_case(case, "Nila Fresh", kra_status="on_hold")
+            held = await k.household_refusal(s, firm, household)
+            check("a blocked KYC recorded on the case holds the client's book", "Nila Fresh's KYC is blocked" in (held or ""), True)
+            check("and an order on the mandate", "blocked" in (await k.order_refusal(s, firm, mandate) or ""), True)
+            await on_client(kra_status="validated")
+            check("a later record on the client releases it", await k.household_refusal(s, firm, household), None)
+            now_on = (await k.overview(s, firm, household_id=household))["parties"][0]
+            check("carrying what the case record said", (now_on["state"], now_on.get("ckyc_number")), ("verified", "12345678901234"))
+            check("and the board no longer queues the old one", k.queue_lines(await k.case_status(s, firm, case)), [])
+            await on_case(case, "nila  fresh", kra_status="rejected")
+            check("the latest stands whichever way it was keyed", "blocked" in (await k.household_refusal(s, firm, household) or ""), True)
+            await on_case(case, "Nila Fresh", kra_status="validated")
+            check("and releases", await k.household_refusal(s, firm, household), None)
+            kept = (await s.execute(select(KycRecord).where(KycRecord.case_id == case.id).order_by(KycRecord.created_at))).scalars().all()
+            check("every record is kept as it was written", (len(kept), kept[0].kra_status, kept[0].person_id), (6, "on_hold", None))
+
+            await on_case(case, "Tara Trustee", **{**good, "kra_status": "on_hold"})
+            held = await k.household_refusal(s, firm, household)
+            check("another party's blocked KYC on the account's case holds it too", "Tara Trustee's KYC is blocked" in (held or ""), True)
+            await on_case(case, "Tara Trustee", kra_status="validated")
+            check("until the new one is recorded", await k.household_refusal(s, firm, household), None)
+            await on_case(case, "Aml Banded", **{**{f: v for f, v in good.items() if f != "risk_band"}, "kyc_completed_on": add_months(today, -30)})
+            s.add(AmlRiskRating(firm_id=firm.id, case_id=case.id, model_version="1.0", facts={}, factors=[], score=60, model_band="high", band="high",
+                                review_months=12, next_review_on=today + timedelta(days=300), rated_by="comp@t", rated_by_role="compliance"))
+            await s.flush()
+            check("with the account's AML band as its clock, as the gate reads it",
+                  "Aml Banded's KYC is overdue" in (await k.household_refusal(s, firm, household) or ""), True)
+            elsewhere = Household(id=uuid.uuid4(), firm_id=firm.id, name="Elsewhere", values={})
+            s.add(elsewhere)
+            await s.flush()
+            waiting = await ready_case(s, firm, "Pia Waiting")
+            await on_case(waiting, "Pia Waiting", **{**good, "kra_status": "on_hold"})
+            check("a case not yet activated holds nobody's book",
+                  (await k.household_refusal(s, firm, elsewhere.id), (await k.overview(s, firm, household_id=elsewhere.id))["parties"]), (None, []))
+
+            print("\n=== Not on file never reads as current ===")
+
+            async def opened(name, registration, *parties, **extra) -> OnboardingCase:
+                c = OnboardingCase(id=uuid.uuid4(), firm_id=firm.id, prospect_name=name, registration_type=registration, intake={}, **extra)
+                s.add(c)
+                await s.flush()
+                for role, who in parties:
+                    s.add(OnboardingParty(firm_id=firm.id, case_id=c.id, role=role, legal_name=who))
+                await s.flush()
+                return c
+
+            c = await opened("Sen Joint", "joint_jtwros", ("owner", "Ira Sen"), ("joint_owner", "Om Sen"), ("beneficiary", "Kid Sen"))
+            await on_case(c, "Ira Sen", **good)
+            g = await kyc_gate(c)
+            check("one owner of two on file warns and names the other, and blocks nothing",
+                  (g["state"], g["blocks"], "Om Sen" in g["detail"], "does not mean not done" in g["detail"]), ("warn", False, True, True))
+            check("a beneficiary is not asked for", "Kid Sen" in g["detail"], False)
+            await on_case(c, "Om Sen", **good)
+            check("with both on file it passes", (await kyc_gate(c))["state"], "pass")
+            u = await opened("Das Account", "individual", ("owner", "Uma Das"))
+            await on_case(u, "Uma Das", **{f: v for f, v in good.items() if f != "risk_band"})
+            g = await kyc_gate(u)
+            check("a record that cannot be assessed warns, says why, and blocks nothing",
+                  (g["state"], g["blocks"], "not assessed" in g["detail"].lower(), "risk band" in g["detail"]), ("warn", False, True, True))
+            trust = await opened("Bose Trust", "trust", ("trustee", "Ana Bose"), is_entity=True, entity_type="trust")
+            await on_case(trust, "Ana Bose", **good)
+            g = await kyc_gate(trust)
+            check("an entity with only its trustee on file names the entity", (g["state"], "Bose Trust" in g["detail"]), ("warn", True))
+            await on_case(trust, "Bose Trust", **good)
+            g = await kyc_gate(trust)
+            check("an entity recorded on its case with no structure or owners is not assessed, not current",
+                  (g["state"], g["blocks"], "not assessed" in g["detail"].lower()), ("warn", False, True))
+            check("and the firm-wide KYC read says the same",
+                  [p["state"] for p in (await k.overview(s, firm))["parties"] if p["name"] == "Bose Trust"], ["not_assessed"])
+            await on_case(trust, "Bose Trust", structure="trust", beneficial_owners_text="Ana Bose, 0, trustee, yes")
+            check("and passes with the entity's own", (await kyc_gate(trust))["state"], "pass")
+            partial = await ready_case(s, firm, "Ravi Partial")
+            s.add(OnboardingParty(firm_id=firm.id, case_id=partial.id, role="authorised_signer", legal_name="Sia Signer",
+                                  screening_status="clear", screening_hits=[]))
+            partial.intake = {"registration": {"signed_by": ["Ravi Partial", "Sia Signer"], "signed_on": today.isoformat()}}
+            await s.flush()
+            await on_case(partial, "Ravi Partial", **good)
+            out = await activate(s, firm, partial)
+            check("a partial set blocks no activation, as none on file blocks none", (out.get("executed"), out.get("blocked_by")), (True, None))
+    finally:
+        await db.dispose()
 
 
 async def main() -> int:
@@ -315,6 +498,7 @@ async def main() -> int:
             check("the portfolio team reads the records and the table", (len(read["taxpayers"]), len(read["asset_classes"])), (1, 12))
     finally:
         await db.dispose()
+    await activation_and_the_case_link()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     for f in FAIL:
         print("  FAILED:", f)

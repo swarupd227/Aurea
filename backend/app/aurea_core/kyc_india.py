@@ -33,7 +33,12 @@ trustee and protector. CRS controlling persons (more than 25% of a company) are 
 
 An overdue or blocked KYC appears in the onboarding board's KYC queue, fails the activation gate and holds the household's book: a
 book-moving approval (`runtime.decide`) and a direct order (`order_guard`) are refused, naming the KYC and who records the new one
-(B-273). A due one or none on file warns and stops nothing. Nothing here files with a regulator or tells the client. This is not a statement that the firm's KYC is compliant.
+(B-273). A due one, one not assessed, none on file, or a party of the account with none warns and stops nothing; none of them reads
+as current. Nothing here files with a regulator or tells the client. This is not a statement that the firm's KYC is compliant.
+
+A record kept on an onboarding case follows the case (B-384). It is never rewritten: once the case is activated, a record under the
+applicant's name is read as the client's own, the latest standing whichever way it was keyed, and any other party's stays listed
+with the household the account is in, so a blocked one holds it too.
 """
 from __future__ import annotations
 
@@ -48,9 +53,10 @@ from app.aurea_core import firm_time, law_figures, markets
 from app.aurea_core.reviews import add_months
 from app.core.db import utcnow
 from app.core.security import UserRole
+from app.models.enums import PartyRole
 from app.models.graph import Household, LegalEntity, Person
 from app.models.kyc import KycRecord
-from app.models.onboarding import OnboardingCase
+from app.models.onboarding import OnboardingCase, OnboardingParty
 from app.models.tenant import Firm
 from app.provenance import ledger
 
@@ -267,15 +273,44 @@ def view(r: KycRecord | None, name: str, *, today: date, firm: Firm | None, aml_
 
 
 # ── Reading the book ────────────────────────────────────────────────────────────────────────────────────────────
-def _key(r: KycRecord) -> tuple:
-    return ("person", r.person_id) if r.person_id else ("entity", r.entity_id) if r.entity_id else ("case", r.case_id, r.party_name.lower())
+def _norm(name: str | None) -> str:
+    return " ".join((name or "").split()).casefold()
+
+
+def _case_key(case_id: uuid.UUID | None, name: str, followed: dict) -> tuple:
+    """Whose record a case and a party's name point to: the client the case created, where the name is theirs, else the case's party."""
+    f = followed.get(case_id)
+    return f["key"] if f and _norm(name) in f["names"] else ("case", case_id, _norm(name))
+
+
+async def _followed(session: AsyncSession, firm_id: uuid.UUID, case_ids: set) -> dict:
+    """For each of these cases that has been activated: the client or entity it created, the names a record on the case may
+    call them by, and the household the account is in now. Read from the case's own link; a rolled-back case has none."""
+    ids = [i for i in case_ids if i]
+    if not ids:
+        return {}
+    out: dict = {}
+    for c in (await session.execute(select(OnboardingCase).where(OnboardingCase.firm_id == firm_id, OnboardingCase.id.in_(ids)))).scalars().all():
+        made = c.materialized or {}
+        for field, kind, model in (("person_id", "person", Person), ("entity_id", "entity", LegalEntity)):
+            holder = await session.get(model, uuid.UUID(str(made[field]))) if made.get(field) else None
+            if holder is None:
+                continue
+            household = holder.household_id or (uuid.UUID(str(made["household_id"])) if made.get("household_id") else None)
+            name = holder.full_name if kind == "person" else holder.name
+            out[c.id] = {"key": (kind, holder.id), "names": {_norm(c.prospect_name), _norm(name)}, "household_id": household}
+    return out
 
 
 async def latest(session: AsyncSession, firm_id: uuid.UUID) -> dict:
+    """The record that stands for each party, by `("person", id)`, `("entity", id)` or `("case", id, name)`."""
     rows = (await session.execute(select(KycRecord).where(KycRecord.firm_id == firm_id).order_by(KycRecord.created_at))).scalars().all()
+    followed = await _followed(session, firm_id, {r.case_id for r in rows if not (r.person_id or r.entity_id)})
     out: dict = {}
     for r in rows:
-        out[_key(r)] = r
+        key = (("person", r.person_id) if r.person_id else ("entity", r.entity_id) if r.entity_id
+               else _case_key(r.case_id, r.party_name, followed))
+        out[key] = r
     return out
 
 
@@ -316,10 +351,15 @@ async def overview(session: AsyncSession, firm: Firm, *, household_id: uuid.UUID
     for e in (await session.execute(eq.order_by(LegalEntity.name))).scalars().all():
         parties.append(view(records.get(("entity", e.id)), e.name, today=today, firm=firm, aml_band=bands.get(case_of.get(e.id)), is_entity=True,
                             key={"entity_id": str(e.id), "kind": str(e.entity_type)}))
-    if not household_id:
-        for k, r in records.items():
-            if k[0] == "case":
-                parties.append(view(r, r.party_name, today=today, firm=firm, is_entity=bool(r.structure), key={"case_id": str(r.case_id), "kind": "case"}))
+    # Parties recorded on a case who are not the client it created. A household reads those of the cases its accounts came from.
+    on_cases = {k: r for k, r in records.items() if k[0] == "case"}
+    followed = await _followed(session, firm.id, {k[1] for k in on_cases}) if household_id else {}
+    for k, r in on_cases.items():
+        if household_id and (followed.get(k[1]) or {}).get("household_id") != household_id:
+            continue
+        case = await session.get(OnboardingCase, k[1]) if k[1] else None
+        parties.append(view(r, r.party_name, today=today, firm=firm, aml_band=bands.get(k[1]),
+                            is_entity=bool(r.structure) or _is_the_entity(case, r.party_name), key={"case_id": str(r.case_id), "kind": "case"}))
     order = {"overdue": 0, "blocked": 1, "due": 2, "not_assessed": 3, "not_on_file": 4, "verified": 5}
     parties.sort(key=lambda x: (order[x["state"]], x["name"]))
     counts = {s: sum(1 for p in parties if p["state"] == s) for s in order}
@@ -474,7 +514,7 @@ async def prepare(session: AsyncSession, firm: Firm, *, person_id=None, entity_i
         trig = {"kind": kind, "on": on.isoformat()}
     records = await latest(session, firm.id)
     key = ("person", holder.id) if isinstance(holder, Person) else ("entity", holder.id) if isinstance(holder, LegalEntity) \
-        else ("case", case.id if case else None, name.lower())
+        else _case_key(case.id, name, await _followed(session, firm.id, {case.id}))
     before = records.get(key)
     merged = {f: given.get(f, getattr(before, f, None) if before else None) for f in SCALAR}
     merged_owners = owners if owners is not None else list(before.beneficial_owners or []) if before else []
@@ -500,8 +540,10 @@ async def prepare(session: AsyncSession, firm: Firm, *, person_id=None, entity_i
     row = KycRecord(firm_id=firm.id, person_id=holder.id if isinstance(holder, Person) else None,
                     entity_id=holder.id if isinstance(holder, LegalEntity) else None, case_id=case.id if case else (before.case_id if before else None),
                     party_name=name, beneficial_owners=merged_owners, triggers=merged_triggers, document=document.strip(), **merged)
-    band = (await _case_bands(session, firm.id)).get((await _case_of_holder(session, firm.id)).get(holder.id)) if holder is not None else None
-    state = assess(row, today=today, firm=firm, aml_band=band, is_entity=isinstance(holder, LegalEntity) or bool(merged["structure"]))
+    of_case = key[1] if key[0] == "case" else (await _case_of_holder(session, firm.id)).get(key[1])
+    band = (await _case_bands(session, firm.id)).get(of_case)
+    entity = key[0] == "entity" or bool(merged["structure"]) or _is_the_entity(case, name)
+    state = assess(row, today=today, firm=firm, aml_band=band, is_entity=entity)
     return {"row": row, "name": name, "changes": changes, "state": state, "before": before, "holder": holder}
 
 
@@ -525,14 +567,40 @@ async def record(session: AsyncSession, firm: Firm, *, by: str, note: str | None
 
 
 # ── The onboarding board and the activation gate ────────────────────────────────────────────────────────────────
-async def _records_for_case(session: AsyncSession, firm_id: uuid.UUID, case: OnboardingCase) -> list[KycRecord]:
-    records = await latest(session, firm_id)
-    mat = case.materialized or {}
-    wanted = set()
-    for k, kind in (("person_id", "person"), ("entity_id", "entity")):
-        if mat.get(k):
-            wanted.add((kind, uuid.UUID(str(mat[k]))))
-    return [r for k, r in records.items() if k in wanted or (k[0] == "case" and k[1] == case.id) or (r.case_id == case.id)]
+# Whose KYC an account asks for: those whose identity the CIP rule reaches, and India's karta, guardian and the minor whose
+# account it is. A beneficiary, a settlor and a coparcener are not asked for.
+ALSO_ASKED = frozenset({PartyRole.KARTA, PartyRole.GUARDIAN, PartyRole.MINOR})
+
+
+def _is_the_entity(case: OnboardingCase | None, name: str) -> bool:
+    return bool(case is not None and case.is_entity and _norm(name) == _norm(case.prospect_name))
+
+
+def _created_by(case: OnboardingCase) -> set:
+    made = case.materialized or {}
+    return {(kind, uuid.UUID(str(made[f]))) for f, kind in (("person_id", "person"), ("entity_id", "entity")) if made.get(f)}
+
+
+async def _records_for_case(session: AsyncSession, firm_id: uuid.UUID, case: OnboardingCase) -> dict:
+    wanted = _created_by(case)
+    return {k: r for k, r in (await latest(session, firm_id)).items()
+            if k in wanted or (k[0] == "case" and k[1] == case.id) or (r.case_id == case.id)}
+
+
+async def _without_a_record(session: AsyncSession, case: OnboardingCase, records: dict) -> list[str]:
+    """Who on the account has no KYC record against this case: its asked-for parties, an applying entity itself, and the
+    applicant where no such party is recorded."""
+    from app.agents.cip_identity_verifier import CIP_ROLES
+
+    rows = (await session.execute(select(OnboardingParty).where(OnboardingParty.case_id == case.id)
+                                  .order_by(OnboardingParty.created_at, OnboardingParty.legal_name))).scalars().all()
+    asked = {_norm(p.legal_name): p.legal_name for p in rows if p.role in CIP_ROLES | ALSO_ASKED}
+    if case.is_entity or not asked:
+        asked.setdefault(_norm(case.prospect_name), case.prospect_name)
+    covered = {_norm(r.party_name) for r in records.values()}
+    if _created_by(case) & records.keys():
+        covered.add(_norm(case.prospect_name))
+    return [name for n, name in asked.items() if n not in covered]
 
 
 async def case_status(session: AsyncSession, firm: Firm, case: OnboardingCase) -> dict | None:
@@ -540,11 +608,13 @@ async def case_status(session: AsyncSession, firm: Firm, case: OnboardingCase) -
     if not applies(firm):
         return None
     today = firm_time.today(firm)
-    rows = await _records_for_case(session, firm.id, case)
+    records = await _records_for_case(session, firm.id, case)
     band = (await _case_bands(session, firm.id)).get(case.id)
-    views = [view(r, r.party_name, today=today, firm=firm, aml_band=band, is_entity=bool(r.structure)) for r in rows]
+    views = [view(r, r.party_name, today=today, firm=firm, aml_band=band,
+                  is_entity=k[0] == "entity" or bool(r.structure) or _is_the_entity(case, r.party_name)) for k, r in records.items()]
     by = lambda s: [v for v in views if v["state"] == s]  # noqa: E731
-    return {"applies": True, "records": len(views), "overdue": by("overdue"), "blocked": by("blocked"), "due": by("due"), "parties": views}
+    return {"applies": True, "records": len(views), "overdue": by("overdue"), "blocked": by("blocked"), "due": by("due"),
+            "not_assessed": by("not_assessed"), "missing": await _without_a_record(session, case, records), "parties": views}
 
 
 def queue_lines(status: dict | None) -> list[str]:
@@ -565,8 +635,13 @@ def gate(status: dict | None) -> dict | None:
         return {"state": "fail", "detail": "; ".join(f"{v['name']}: {v['message']}" for v in bad)}
     if not status["records"]:
         return {"state": "warn", "detail": "No KYC record on file for this account's parties. Not on file does not mean not done: record it from the KRA's acknowledgement."}
-    if status["due"]:
-        return {"state": "warn", "detail": "; ".join(f"{v['name']}: {v['message']}" for v in status["due"])}
+    short = ([f"{v['name']}: {v['message']}" for v in status["due"]]
+             + [f"{v['name']}: not assessed. {v['message']}" for v in status["not_assessed"]])
+    if status["missing"]:
+        short.append(f"No KYC record on this case for {', '.join(status['missing'])}. Not on file does not mean not done: "
+                     "record it from the KRA's acknowledgement.")
+    if short:
+        return {"state": "warn", "detail": "; ".join(short)}
     return {"state": "pass", "detail": f"{status['records']} party(ies) with KYC on file and current."}
 
 

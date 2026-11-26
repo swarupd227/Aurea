@@ -218,8 +218,8 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
         track="financial_crime",
     ))
 
-    # India: the parties' KYC as a person recorded it (aurea_core/kyc_india.py). An overdue or blocked KYC fails; one on file
-    # that is falling due, or none on file, warns, because not on file does not mean not done.
+    # India: the parties' KYC as a person recorded it (aurea_core/kyc_india.py). An overdue or blocked KYC fails; one falling
+    # due or not assessed, a party with none, or none on file at all, warns, because not on file does not mean not done.
     if kyc_status is not None:
         gates.append(_gate("kyc_current", "KYC on file and current", kyc_status["state"], kyc_status["detail"], track="financial_crime"))
 
