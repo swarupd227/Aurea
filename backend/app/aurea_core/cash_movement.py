@@ -6,6 +6,9 @@ so it needs a callback on the number on file before it can be recorded, the same
 an open request is held back, so neither the rebalancer nor a direct order spends it. If there is not enough, the
 request stands and the shortfall is shown: raising it is a decision about what to sell, and that is a person's.
 
+For an Indian firm the payee is not free text: a payment goes to a registered bank account of that investor (`india_money`, B-388),
+never a third party's, and not to a changed bank until the firm's cooling-off has passed.
+
 A required minimum distribution is worked out by `registration` from the account's value, and what has been taken
 this year is read from the ledger, so the gap to 31 December can be seen. Phasing new money in holds the tranches
 that have not reached their date out of every purchase.
@@ -19,10 +22,11 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, registration
+from app.aurea_core import firm_time, india_money, registration
 from app.aurea_core.billing import _mandate_households
 from app.models.cash_movement import CASH_KINDS, FREQUENCIES, CashRequest, PhaseInPlan, StandingInstruction
 from app.models.graph import Account, Household, Mandate, Person
+from app.models.money_in import BankLink
 from app.models.portfolio import Transaction
 from app.models.tenant import Firm
 from app.provenance import ledger
@@ -84,8 +88,20 @@ async def held_back(session: AsyncSession, firm: Firm, mandate: Mandate) -> dict
     return {"requests": round(reserved, 2), "phasing": round(phasing, 2), "deposits": deposits, "total": round(reserved + phasing + deposits, 2)}
 
 
+async def _registered_payee(session: AsyncSession, firm: Firm, account: Account, bank_link_id, third_party: bool) -> dict | None:
+    """India: the registered bank of the investor this payment goes to, or why there is none. None for a firm elsewhere."""
+    if not india_money.applies(firm):
+        return None
+    if third_party:
+        raise CashMovementError("An Indian client's money goes to a registered bank account of the investor, never to a third party.")
+    try:
+        return await india_money.payout_bank(session, firm, account, bank_link_id)
+    except india_money.IndiaMoneyError as exc:
+        raise CashMovementError(str(exc))
+
+
 async def prepare_request(session: AsyncSession, account_id: uuid.UUID, *, firm_id: uuid.UUID, kind: str | None, amount, payee: str | None, reason: str | None,
-                          third_party: bool = False, standing_id: uuid.UUID | None = None) -> dict:
+                          third_party: bool = False, standing_id: uuid.UUID | None = None, bank_link_id: uuid.UUID | None = None) -> dict:
     account = await _account(session, account_id, firm_id)
     if kind not in CASH_KINDS:
         raise CashMovementError(f"The kind must be one of {', '.join(CASH_KINDS)}.")
@@ -97,6 +113,12 @@ async def prepare_request(session: AsyncSession, account_id: uuid.UUID, *, firm_
         raise CashMovementError("A temporary hold is in force on this account, so nothing may be paid out until it ends or is released.")
     money = _money(amount, "The amount")
     to, why = (payee or "").strip(), (reason or "").strip()
+    if standing_id and bank_link_id is None:
+        order = await session.get(StandingInstruction, standing_id)
+        bank_link_id = order.bank_link_id if order is not None and order.firm_id == firm_id and order.account_id == account.id else None
+    bank = await _registered_payee(session, await session.get(Firm, firm_id), account, bank_link_id, third_party)
+    if bank:
+        to = bank["payee"]
     if len(to) < 2:
         raise CashMovementError("Say who it is being paid to.")
     if len(why) < 3:
@@ -106,13 +128,14 @@ async def prepare_request(session: AsyncSession, account_id: uuid.UUID, *, firm_
     open_now = sum(float(r.amount) for r in await _open_requests(session, [account.id]))
     cash = float(account.cash_balance or 0)
     return {"account": account, "kind": kind, "amount": money, "payee": to, "reason": why, "third_party": bool(third_party), "standing_id": standing_id,
-            "cash": cash, "already_open": open_now, "short_by": round(max(money + open_now - cash, 0.0), 2)}
+            "cash": cash, "already_open": open_now, "short_by": round(max(money + open_now - cash, 0.0), 2), "bank": bank}
 
 
 async def request(session: AsyncSession, account_id: uuid.UUID, *, firm_id: uuid.UUID, by: str, **terms) -> CashRequest:
     ready = await prepare_request(session, account_id, firm_id=firm_id, **terms)
     row = CashRequest(firm_id=firm_id, account_id=account_id, kind=ready["kind"], amount=ready["amount"], payee=ready["payee"], third_party=ready["third_party"],
-                      reason=ready["reason"], requested_by=by, standing_id=ready["standing_id"])
+                      reason=ready["reason"], requested_by=by, standing_id=ready["standing_id"],
+                      bank_link_id=ready["bank"]["link"].id if ready["bank"] else None)
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="cash_request_raised", actor=by, content={
@@ -143,7 +166,13 @@ async def prepare_paid(session: AsyncSession, request_id: uuid.UUID, *, firm_id:
     account = await session.get(Account, row.account_id)
     if float(row.amount) > float(account.cash_balance or 0) + 0.005:
         raise CashMovementError(f"{account.name} holds {float(account.cash_balance or 0):,.2f}, so it cannot have paid {float(row.amount):,.2f}. Raise the cash first.")
-    return {"request": row, "account": account, "day": paid_on, "document": named, "callback": number}
+    bank = None
+    if india_money.applies(firm):
+        # The custodian's confirmation is what happened, so it is recorded; a bank revoked since the request, or none, is said on the card.
+        link = await session.get(BankLink, row.bank_link_id) if row.bank_link_id else None
+        bank = ("No registered bank on this request" if link is None else f"{link.bank} ending {link.last4}"
+                + ("" if link.status == "verified" else f": {link.status} since the request"))
+    return {"request": row, "account": account, "day": paid_on, "document": named, "callback": number, "bank": bank}
 
 
 async def record_paid(session: AsyncSession, request_id: uuid.UUID, *, firm_id: uuid.UUID, by: str, paid_on: date | None, source_document: str | None,
@@ -183,24 +212,29 @@ async def cancel(session: AsyncSession, request_id: uuid.UUID, *, firm_id: uuid.
 
 
 async def prepare_standing(session: AsyncSession, account_id: uuid.UUID, *, firm_id: uuid.UUID, payee: str | None, amount, frequency: str | None, first_due: date | None,
-                           source_document: str | None, third_party: bool = False) -> dict:
+                           source_document: str | None, third_party: bool = False, bank_link_id: uuid.UUID | None = None) -> dict:
     account = await _account(session, account_id, firm_id)
     if frequency not in FREQUENCIES:
         raise CashMovementError(f"The frequency must be one of {', '.join(FREQUENCIES)}.")
     to, named = (payee or "").strip(), (source_document or "").strip()
+    bank = await _registered_payee(session, await session.get(Firm, firm_id), account, bank_link_id, third_party)
+    if bank:
+        to = bank["payee"]
     if len(to) < 2:
         raise CashMovementError("Say who it pays.")
     if len(named) < 5:
         raise CashMovementError("Say which signed form this comes from.")
     if first_due is None:
         raise CashMovementError("Give the first date it is due.")
-    return {"account": account, "payee": to, "amount": _money(amount, "The amount"), "frequency": frequency, "first_due": first_due, "document": named, "third_party": bool(third_party)}
+    return {"account": account, "payee": to, "amount": _money(amount, "The amount"), "frequency": frequency, "first_due": first_due, "document": named,
+            "third_party": bool(third_party), "bank": bank}
 
 
 async def record_standing(session: AsyncSession, account_id: uuid.UUID, *, firm_id: uuid.UUID, by: str, **terms) -> StandingInstruction:
     ready = await prepare_standing(session, account_id, firm_id=firm_id, **terms)
     row = StandingInstruction(firm_id=firm_id, account_id=account_id, payee=ready["payee"], third_party=ready["third_party"], amount=ready["amount"], frequency=ready["frequency"],
-                              first_due=ready["first_due"], source_document=ready["document"], recorded_by=by)
+                              first_due=ready["first_due"], source_document=ready["document"], recorded_by=by,
+                              bank_link_id=ready["bank"]["link"].id if ready["bank"] else None)
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="standing_instruction_recorded", actor=by, content={"account_id": str(account_id), "payee": row.payee, "amount": ready["amount"]})

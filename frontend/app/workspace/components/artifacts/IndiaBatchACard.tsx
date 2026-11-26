@@ -2,12 +2,13 @@
 
 import { money } from "@/lib/format";
 import { CounselChip } from "./GovernanceCard";
+import { MandateQueueRows } from "./IndiaMoneyCard";
 
 // India batch A: overseas remittances, a SIP's debit mandate, the shelf's other classes and the pledge of units, and the tax habits.
 // Figures and chips only: the agent's message carries the sentences, and every source and caveat is a chip's title.
 
 const usd = (v: number) => `USD ${Math.round(v).toLocaleString("en-US")}`;
-const MANDATE_TONE: Record<string, string> = { active: "text-ok", not_yet: "text-warn", expired: "text-crit", paused: "text-warn", rejected: "text-crit", cancelled: "text-ink-muted", none: "text-warn" };
+const MANDATE_TONE: Record<string, string> = { active: "text-ok", requested: "text-warn", failed: "text-crit", not_yet: "text-warn", expired: "text-crit", paused: "text-warn", rejected: "text-crit", cancelled: "text-ink-muted", none: "text-warn" };
 
 /** Each person's year against the Scheme's limit: the dollars counted, the headroom, the rupees toward the tax threshold and the tax collected. */
 export function LrsRows({ people, figures }: { people: any[]; figures?: any[] }) {
@@ -40,10 +41,11 @@ export function LrsRows({ people, figures }: { people: any[]; figures?: any[] })
   );
 }
 
-/** Every mandate with its state today, then each active SIP against the one behind it. */
+/** What would let a SIP die silently, every mandate with its state today, then each active SIP against the one behind it. */
 export function MandateRows({ data }: { data: any }) {
   return (
     <div className="divide-y divide-border-soft" data-testid="sip-mandates">
+      {(data.queue ?? []).length > 0 && <div className="border-b border-border-soft"><MandateQueueRows queue={data.queue} /></div>}
       {(data.mandates ?? []).map((m: any) => (
         <div key={m.id} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5" data-testid="sip-mandate" title={m.document}>
           <span className="mr-auto text-sm text-ink">{m.reference}</span>
@@ -51,6 +53,7 @@ export function MandateRows({ data }: { data: any }) {
           <span className="chip tabular-nums text-ink-muted" title="The most one debit may be">{money(m.per_debit_limit, "INR")}</span>
           {m.last4 && <span className="chip text-ink-muted" title={m.bank}>ending {m.last4}</span>}
           {m.expires_on && <span className="chip tabular-nums text-ink-muted">to {m.expires_on}</span>}
+          {m.first_debit && <span className={`chip ${m.first_debit.outcome === "confirmed" ? "text-ok" : "text-crit"}`} title={m.first_debit.reason ?? m.first_debit.on} data-testid="sip-first-debit">First debit {m.first_debit.outcome}</span>}
           {m.over_upi_line && <span className="chip text-warn" title="Above the line for mutual-fund debits; counsel has not read it">Over the UPI line</span>}
           <span className={`chip ${MANDATE_TONE[m.state]}`} data-testid="sip-mandate-state">{m.label}</span>
         </div>

@@ -26,6 +26,8 @@ class StandingInstruction(Base):
     frequency: Mapped[str] = mapped_column(String(12))
     first_due: Mapped[date] = mapped_column(Date)
     source_document: Mapped[str] = mapped_column(String(300))
+    # India (B-388): the registered bank account of the investor the payment goes to.
+    bank_link_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bank_link.id", ondelete="SET NULL"), nullable=True)
     ended_on: Mapped[date | None] = mapped_column(Date)
     recorded_by: Mapped[str] = mapped_column(String(200))
 
@@ -45,6 +47,7 @@ class CashRequest(Base):
     status: Mapped[str] = mapped_column(String(12), default="requested", index=True)  # requested | paid | cancelled
     requested_by: Mapped[str] = mapped_column(String(200))
     standing_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("standing_instruction.id", ondelete="SET NULL"), nullable=True)
+    bank_link_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bank_link.id", ondelete="SET NULL"), nullable=True)   # India (B-388)
     callback_number: Mapped[str | None] = mapped_column(String(48))
     callback_by: Mapped[str | None] = mapped_column(String(200))
     paid_on: Mapped[date | None] = mapped_column(Date)

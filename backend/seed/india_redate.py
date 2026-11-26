@@ -34,7 +34,7 @@ from app.models.kyc import KycRecord
 from app.models.portfolio import Holding, Instrument, TaxLot, Transaction
 from app.models.sip import Sip
 from app.models.tenant import Firm
-from seed import india_batch_a, india_l100a, india_row10, india_row12, india_row14
+from seed import india_b388, india_batch_a, india_l100a, india_row10, india_row12, india_row14
 from seed.india_demo import HOUSEHOLDS, SLUG
 
 BUILT_WITHIN = timedelta(hours=1)        # a lot the build wrote was created with the firm
@@ -240,7 +240,7 @@ async def _certificates(s: AsyncSession, firm: Firm, today: date) -> int:
 
 
 async def _sips(s: AsyncSession, firm: Firm, today: date) -> int:
-    rows = (await s.execute(select(Sip).where(Sip.firm_id == firm.id, Sip.recorded_by == india_batch_a.BY, Sip.simulated.is_(True),
+    rows = (await s.execute(select(Sip).where(Sip.firm_id == firm.id, Sip.recorded_by.in_([india_batch_a.BY, india_b388.BY]), Sip.simulated.is_(True),
                                               Sip.ended_on.is_(None)))).scalars().all()
     moved = 0
     for r in rows:
@@ -257,6 +257,7 @@ async def refresh(s: AsyncSession, firm: Firm) -> dict[str, int]:
     today = firm_time.today(firm)
     out = {"tax lots": await _lots(s, firm, today), "this tax year": await _this_year(s, firm, today),
            "complaints": await _complaints(s, firm, today), "policies": await _policies(s, firm, today),
-           "KYC": await _kyc_due(s, firm, today), "certificates": await _certificates(s, firm, today), "SIPs": await _sips(s, firm, today)}
+           "KYC": await _kyc_due(s, firm, today), "certificates": await _certificates(s, firm, today), "SIPs": await _sips(s, firm, today),
+           "mandates and banks": await india_b388.redate(s, firm, today)}
     await s.flush()
     return out

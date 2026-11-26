@@ -29,6 +29,7 @@ from app.llm.india_polish_executors import IndiaPolishExecutors
 from app.llm.india_gates_executors import IndiaGatesExecutors
 from app.llm.india_batch_b_executors import IndiaBatchBExecutors
 from app.llm.india_batch_a_executors import IndiaBatchAExecutors
+from app.llm.india_money_executors import IndiaMoneyExecutors
 from app.llm.india_batch_c_executors import IndiaBatchCExecutors
 from app.llm.india_rem_e_executors import IndiaRemEExecutors
 from app.llm.india_rem_d_executors import IndiaRemDExecutors
@@ -72,7 +73,8 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
-                    IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors):
+                    IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
+                    IndiaMoneyExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -370,6 +372,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_batch_b_map(),
             # India, batch A (B-293, B-295, B-296, B-299): app/llm/india_batch_a_executors.py.
             **self._india_batch_a_map(),
+            # India money in and bank rules (B-388): app/llm/india_money_executors.py.
+            **self._india_money_map(),
             # India, batch C (B-294, B-297, B-298): app/llm/india_batch_c_executors.py.
             **self._india_batch_c_map(),
             # India, batch E (B-324, B-330, B-331, B-332): app/llm/india_rem_e_executors.py.
@@ -2235,14 +2239,16 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         return result
 
     def _request_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        return {"kind": inputs.get("kind"), "amount": inputs.get("amount"), "payee": inputs.get("payee"), "reason": inputs.get("reason"), "third_party": str(inputs.get("third_party")).lower() == "true"}
+        return {"kind": inputs.get("kind"), "amount": inputs.get("amount"), "payee": inputs.get("payee"), "reason": inputs.get("reason"), "third_party": str(inputs.get("third_party")).lower() == "true",
+                "bank_link_id": _parse_uuid(inputs["bank_link_id"], "bank_link_id") if inputs.get("bank_link_id") else None}
 
     def _paid_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {"paid_on": self._exit_day(inputs.get("paid_on"), "paid_on"), "source_document": inputs.get("source_document"), "callback_number": inputs.get("callback_number")}
 
     def _standing_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {"payee": inputs.get("payee"), "amount": inputs.get("amount"), "frequency": inputs.get("frequency"), "first_due": self._exit_day(inputs.get("first_due"), "first_due"),
-                "source_document": inputs.get("source_document"), "third_party": str(inputs.get("third_party")).lower() == "true"}
+                "source_document": inputs.get("source_document"), "third_party": str(inputs.get("third_party")).lower() == "true",
+                "bank_link_id": _parse_uuid(inputs["bank_link_id"], "bank_link_id") if inputs.get("bank_link_id") else None}
 
     def _phase_args(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {"amount": inputs.get("amount"), "tranches": inputs.get("tranches"), "every_months": inputs.get("every_months"), "reason": inputs.get("reason"), "start_on": self._exit_day(inputs.get("start_on"), "start_on")}
@@ -2362,6 +2368,14 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         except e.SipError as exc:
             raise ExecutorError(str(exc))
 
+    def _payout_bank_said(self, ready: dict[str, Any]) -> str | None:
+        """India (B-388): the registered bank a payment goes to, with where the firm's cooling-off stands."""
+        if not ready.get("bank"):
+            return None
+        from app.aurea_core import india_money
+
+        return f"Registered bank of the investor. {india_money.cooling_label(ready['bank'])}"
+
     async def _cash_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         from app.aurea_core import cash_movement as e, firm_time, markets
 
@@ -2373,7 +2387,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
 
                 signers = await india_onboarding.holder_note(self.session, await self._firm(), r["account"])
                 return [("Holders", signers), ("Account", r["account"].name), ("Kind", r["kind"].upper() if r["kind"] == "rmd" else r["kind"].capitalize()), ("Amount", say(r["amount"])), ("To", r["payee"]), ("Third party", "Yes, a callback is needed" if r["third_party"] else None),
-                        ("For", r["reason"]), ("Cash there", say(r["cash"])), ("Already asked for", say(r["already_open"]) if r["already_open"] else None), ("Short by", say(r["short_by"]) if r["short_by"] else None), ("Then", "Held back from purchases, nothing paid")]
+                        ("For", r["reason"]), ("Bank", self._payout_bank_said(r)), ("Cash there", say(r["cash"])), ("Already asked for", say(r["already_open"]) if r["already_open"] else None), ("Short by", say(r["short_by"]) if r["short_by"] else None), ("Then", "Held back from purchases, nothing paid")]
             if tool_key == "record_cash_paid":
                 who = await self._shelf_user()
                 r = await e.prepare_paid(self.session, _parse_uuid(inputs.get("request_id") or "", "request_id"), firm_id=self.firm_id, by=who, **self._paid_args(inputs))
@@ -2381,13 +2395,13 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 from app.aurea_core import india_onboarding
 
                 signers = await india_onboarding.holder_note(self.session, await self._firm(), r["account"])
-                return [("Holders", signers), ("Account", r["account"].name), ("Amount", say(float(q.amount))), ("To", q.payee), ("Paid", firm_time.spoken(r["day"])), ("Callback", r["callback"]), ("Cash then", say(float(r["account"].cash_balance or 0) - float(q.amount))), ("Document", r["document"])]
+                return [("Holders", signers), ("Account", r["account"].name), ("Amount", say(float(q.amount))), ("To", q.payee), ("Paid", firm_time.spoken(r["day"])), ("Registered bank", r["bank"]), ("Callback", r["callback"]), ("Cash then", say(float(r["account"].cash_balance or 0) - float(q.amount))), ("Document", r["document"])]
             if tool_key == "cancel_cash_request":
                 r = await e.prepare_cancel(self.session, _parse_uuid(inputs.get("request_id") or "", "request_id"), firm_id=self.firm_id, reason=inputs.get("reason"))
                 return [("Account", r["account"].name), ("Amount", say(float(r["request"].amount))), ("To", r["request"].payee), ("Reason", r["reason"]), ("Then", "The cash is released")]
             if tool_key == "record_standing_instruction":
                 r = await e.prepare_standing(self.session, _parse_uuid(inputs.get("account_id") or "", "account_id"), firm_id=self.firm_id, **self._standing_args(inputs))
-                return [("Account", r["account"].name), ("To", r["payee"]), ("Amount", f"{say(r['amount'])} {r['frequency']}"), ("First due", firm_time.spoken(r["first_due"])), ("Third party", "Yes" if r["third_party"] else None), ("Document", r["document"])]
+                return [("Account", r["account"].name), ("To", r["payee"]), ("Amount", f"{say(r['amount'])} {r['frequency']}"), ("First due", firm_time.spoken(r["first_due"])), ("Third party", "Yes" if r["third_party"] else None), ("Bank", self._payout_bank_said(r)), ("Document", r["document"])]
             if tool_key == "end_standing_instruction":
                 r = await e.prepare_end_standing(self.session, _parse_uuid(inputs.get("standing_id") or "", "standing_id"), firm_id=self.firm_id)
                 return [("Account", r["account"].name if r["account"] else None), ("To", r["standing"].payee), ("Amount", f"{say(float(r['standing'].amount))} {r['standing'].frequency}")]
@@ -2795,6 +2809,10 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                                          household_id=_parse_uuid(inputs["household_id"], "household_id") if inputs.get("household_id") else None)
         s = result["summary"]
         result["message"] = f"{len(result['deposits'])} deposit(s), {s['returned']} returned; {s['instructions_overdue']} instruction(s) overdue for revalidation."
+        india = result.get("india")
+        if india:
+            result["message"] += (f" {len(india['queue'])} mandate item(s) in the queue; {sum(1 for b in india['banks'] if b['registered'] and not b['payable'])} "
+                                  f"bank(s) cooling off. {india['cooling']['label']}. The US ACH rules and deposit hold threshold are not applied.")
         return result
 
     async def record_bank_link(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -2814,7 +2832,19 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             r = await money_in.prepare_link(self.session, self.firm_id, **self._link_args(inputs))
         except money_in.MoneyInError as exc:
             raise ExecutorError(str(exc))
-        return [("Account", r["account"].name), ("Bank", f"{r['bank']} ending {r['last4']}"), ("Owner", r["owner"]),
+        from app.aurea_core import india_money
+        from app.models.tenant import Firm
+
+        firm = await self.session.get(Firm, self.firm_id)
+        india: list[tuple[str, Any]] = []
+        if india_money.applies(firm) and r["status"] == "verified":
+            inv = await india_money.investor(self.session, firm, r["account"])
+            reading = india_money.match(r["owner"], inv["name"]) if inv else "none"
+            days = india_money.cooling_days(firm)
+            india = [("Investor", inv["name"] if inv else "None recorded on the account"),
+                     ("Owner is the investor", {"full": "Yes", "initials": "By initials only: confirm the full name before it is used", "none": "No: it cannot be paid out to"}[reading]),
+                     ("If this changes the bank", f"Not paid until the firm's {days}-day cooling-off has passed" if days else "No cooling-off set by the firm: payable at once")]
+        return [*india, ("Account", r["account"].name), ("Bank", f"{r['bank']} ending {r['last4']}"), ("Owner", r["owner"]),
                 ("Party", "Third party" if r["third_party"] else "In the household"), ("Callback by", r["callback_by"]),
                 ("Verified by", r["method"].replace("_", " ")), ("On", firm_time.spoken(r["on"])), ("Evidence", r["evidence"]),
                 ("Status", r["status"].capitalize())]
@@ -5531,6 +5561,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._india_batch_b_preview(tool_key, inputs))
         if tool_key in ("record_lrs_remittance", "record_sip_mandate", "record_savings_holding", "record_pledge", "record_tax_gift"):
             return rows(*await self._india_batch_a_preview(tool_key, inputs))
+        if tool_key in ("record_payer_exception", "record_india_credit", "record_inward_remittance", "record_first_debit", "set_bank_cooling_off"):
+            return rows(*await self._india_money_preview(tool_key, inputs))
         if tool_key in ("record_mf_order", "record_group_entity", "record_group_trail", "record_scheme_ter", "record_adviser_certification", "submit_ad_copy",
                         "decide_ad_copy"):
             return rows(*await self._india_batch_c_preview(tool_key, inputs))

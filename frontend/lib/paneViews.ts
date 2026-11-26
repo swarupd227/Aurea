@@ -362,6 +362,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_bank_link":
     case "record_deposit":
     case "revalidate_standing_instruction":
+    case "check_payer":
+    case "record_payer_exception":
+    case "record_india_credit":
+    case "record_inward_remittance":
+    case "set_bank_cooling_off":
       return "/studio/money-in";
     case "read_transaction_monitoring":
     case "decide_monitoring_alert":
@@ -504,6 +509,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_lrs_remittance":
     case "read_sip_mandates":
     case "record_sip_mandate":
+    case "record_first_debit":
     case "read_india_savings":
     case "record_savings_holding":
     case "read_pledges":

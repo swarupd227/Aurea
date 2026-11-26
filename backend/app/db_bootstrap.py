@@ -264,6 +264,11 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE product_decision ADD COLUMN IF NOT EXISTS category VARCHAR(12)"))
         # B-393: whether a client who lives abroad came on a visit that year. Empty on every record before: not recorded.
         await conn.execute(text("ALTER TABLE residency_record ADD COLUMN IF NOT EXISTS visiting_india BOOLEAN"))
+        # India money in and bank rules (B-388): a mandate's event day and the request it replaces; the registered bank a payment goes to.
+        await conn.execute(text("ALTER TABLE debit_mandate ADD COLUMN IF NOT EXISTS event_on DATE"))
+        await conn.execute(text("ALTER TABLE debit_mandate ADD COLUMN IF NOT EXISTS supersedes_reference VARCHAR(60)"))
+        await conn.execute(text("ALTER TABLE cash_request ADD COLUMN IF NOT EXISTS bank_link_id UUID REFERENCES bank_link(id) ON DELETE SET NULL"))
+        await conn.execute(text("ALTER TABLE standing_instruction ADD COLUMN IF NOT EXISTS bank_link_id UUID REFERENCES bank_link(id) ON DELETE SET NULL"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

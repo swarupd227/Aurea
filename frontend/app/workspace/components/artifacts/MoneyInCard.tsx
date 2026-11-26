@@ -1,6 +1,8 @@
 import { money } from "@/lib/format";
+import { IndiaMoneyCard } from "./IndiaMoneyCard";
 
 export function MoneyInCard({ result }: { result: any }) {
+  if (result.india) return <IndiaMoneyCard result={result} />;   // rupees, Indian rails and registered banks
   const s = result.summary;
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface" data-testid="money-in-card">

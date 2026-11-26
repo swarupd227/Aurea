@@ -375,8 +375,8 @@ async def main() -> int:
             check("the Confirm card names the fund, the plan and the registration",
                   (shown.get("Plan"), shown.get("Registration")), ("Direct", "Simulated, demonstration firm"))
             read = await ex.execute("read_sips", {})
-            mine = next(x for x in read["sips"] if x["bought"] == 1)       # the demonstration firm also carries the two SIPs of the batch A seed
-            check("the SIP is read back, with what it bought", (read["active"], mine["bought"], mine["plan"]), (3, 1, "direct"))
+            mine = next(x for x in read["sips"] if x["bought"] == 1)       # the demonstration firm also carries batch A's two SIPs and B-388's three
+            check("the SIP is read back, with what it bought", (read["active"], mine["bought"], mine["plan"]), (6, 1, "direct"))
             await sip_core.end(s, firm, row.id, by="adviser@astra-india.demo", reason="the client asked to stop")
             check("ended, nothing more is bought", await sip_core.run_due(s, firm, today=_date(2030, 3, 5)), {"bought": 0, "missed": 0})
 

@@ -471,6 +471,10 @@ ALL: tuple[LawFigure, ...] = (
     LawFigure("in_upi_autopay_limit_mf", "A UPI Autopay mandate for mutual-fund subscriptions: the most a single debit may be without a further authentication", 100_000, "INR",
               "ASSUMED: RBI's e-mandate framework as raised in December 2023 for mutual funds, insurance premium and credit-card payments, as understood; "
               "not read in the L100 India edition and not re-read; a bank's own limit may be lower", date(2026, 11, 25)),
+    LawFigure("in_third_party_minor_limit", "A parent or relative paying for a minor's mutual-fund investment from their own bank: the most one purchase or instalment may be", 50_000, "INR",
+              "ASSUMED: AMFI best-practice circular 135/BP/16/10-11 (2010) on third-party payments, as understood; not re-read, and later SEBI circulars on "
+              "a minor's folio may treat a parent or guardian differently; the L200-1 India edition section 4.2 says 'within limits' and states no figure",
+              date(2026, 11, 27)),
     LawFigure("in_ppf_rule", "Public Provident Fund: 15-year term, up to Rs 1.5 lakh a year, rate set by the Government each quarter; interest and maturity are tax-free", None, "rule",
               "Public Provident Fund Scheme 2019 and the Income-tax Act's exempt-exempt-exempt treatment, as understood; L100 India edition section 7 names the scheme and "
               "says its rates are administratively set; neither was re-read", date(2026, 11, 25)),

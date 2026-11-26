@@ -28,7 +28,7 @@ from app.api import onboarding as onboarding_api
 from app.atlas.base import Subject
 from app.aurea_core import (
     client_file, document_matrix, firm_time, gates as gates_core, onboarding_start, order_guard, parties as parties_core, registration,
-)
+    money_in)
 from app.core.db import Base, utcnow
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.models.enums import EntityType, PartyRole, UserRole
@@ -36,6 +36,7 @@ from app.models.graph import Account, AccountBeneficiary, Household, LegalEntity
 from app.models.identity import User
 from app.models.india_family import AssetNomination
 from app.models.kyc import KycRecord
+from app.models.money_in import BankLink
 from app.models.onboarding import OnboardingCase, OnboardingParty
 from app.models.portfolio import Instrument
 from app.models.tenant import Firm
@@ -348,8 +349,12 @@ async def main() -> int:
                 said = await notes(made["joint_all"])
                 check("an order on an all-sign account says who must sign", (len(said), all(w in said[0] for w in ("All holders must sign", "Sunil Bose", "Tara Bose"))), (1, True))
                 check("an anyone-or-survivor account says nothing of the kind", await notes(made["joint_anyone"]), [])
+                # A redemption goes to a registered bank of the investor (B-388): the holders' joint bank account, from its evidence.
+                await money_in.record_link(s, india.id, by="ops", account_id=made["joint_all"].id, bank="A demonstration bank (invented)", last4="2468",
+                                           owner_name="Sunil Bose & Tara Bose", method="voided_cheque", evidence="Cancelled cheque, filed", verified_on=today)
+                joint_bank = (await s.execute(select(BankLink).where(BankLink.account_id == made["joint_all"].id))).scalars().one()
                 card = {r["label"]: r["value"] for r in (await ex(ops, india).preview_change("request_cash_movement", {
-                    "account_id": str(made["joint_all"].id), "kind": "withdrawal", "amount": 1, "payee": "Sunil Bose", "reason": "School fees"}))["rows"]}
+                    "account_id": str(made["joint_all"].id), "kind": "withdrawal", "amount": 1, "bank_link_id": str(joint_bank.id), "reason": "School fees"}))["rows"]}
                 check("a redemption's card says it too", "All holders must sign" in str(card.get("Holders")), True)
                 await refused("an Indian account is not re-registered as a US tenancy",
                               ex(ops, india).preview_change("set_account_registration", {"account_id": str(made["joint_all"].id), "registration_type": "joint_tic"}), "joint_all")

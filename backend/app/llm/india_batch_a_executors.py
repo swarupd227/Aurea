@@ -12,7 +12,8 @@ from typing import Any
 BATCH_A_TOOLS = ("read_lrs", "record_lrs_remittance", "read_sip_mandates", "record_sip_mandate", "read_india_savings", "record_savings_holding",
                  "read_pledges", "record_pledge", "read_tax_habits", "record_tax_gift")
 LRS_TERMS = ("person_id", "remitted_on", "amount_usd", "amount_inr", "purpose", "bank", "tcs", "document", "reverses_id", "reason")
-MANDATE_TERMS = ("account_id", "reference", "mandate_type", "per_debit_limit", "starts_on", "expires_on", "last4", "status", "document", "cancel", "reason")
+MANDATE_TERMS = ("account_id", "reference", "mandate_type", "per_debit_limit", "starts_on", "expires_on", "last4", "status", "document", "cancel", "reason",
+                 "stage", "request_reference", "on")
 SAVINGS_TERMS = ("household_id", "kind", "institution", "value", "value_on", "document", "person_id", "rate", "maturity_on", "account_label")
 SAVINGS_DETAILS = ("started_on", "annual_premium", "fund_management_charge", "charges_note", "grams", "series", "tier", "opened_on", "employer", "issuer")
 PLEDGE_TERMS = ("account_id", "instrument", "lender", "units", "marked_on", "document", "release_of")
@@ -67,7 +68,9 @@ class IndiaBatchAExecutors:
             result["message"] = "SIP mandates are recorded for an Indian firm."
         else:
             result["message"] = (f"{len(result['mandates'])} mandate(s) on file; {result['without_mandate']} active SIP(s) with no mandate on file (warned, not stopped), "
-                                 f"{result['failing']} whose debit would fail on its mandate. Nothing here registers a mandate or moves money.")
+                                 f"{result['failing']} whose debit would fail on its mandate; {len(result['queue'])} item(s) in the queue, "
+                                 f"{sum(1 for e in result['queue'] if e['overdue'])} past the chase line. Nothing here registers a mandate, retries a debit, "
+                                 "tells a client or moves money.")
         return result
 
     async def read_india_savings(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -129,7 +132,9 @@ class IndiaBatchAExecutors:
             result = await sip_mandates.record(self.session, await self._firm(), self.role, by=await self._shelf_user(), **_terms(inputs, MANDATE_TERMS))
         except sip_mandates.MandateError as exc:
             raise _error(exc)
-        result["message"] = "Recorded. It registers nothing with a bank and moves no money."
+        raised = result.get("tasks_raised") or []
+        result["message"] = ("Recorded. It registers nothing with a bank and moves no money." +
+                             (f" A task is open for {raised[0]['to'] or 'nobody: the household has no adviser'}." if raised else ""))
         return result
 
     async def record_savings_holding(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -183,13 +188,23 @@ class IndiaBatchAExecutors:
                 return [*rows, ("Reason", p["reason"]), ("Evidence", p["document"]), ("Note", "It moves no money and estimates nothing")]
             if tool_key == "record_sip_mandate":
                 p = await sip_mandates.prepare(self.session, firm, self.role, **_terms(inputs, MANDATE_TERMS))
-                rows = [("Account", p["account"].name), ("Reference", p["reference"]), ("Recording", "Cancellation" if p["kind"] == "cancelled" else sip_mandates.TYPES[p["type"]] + " mandate"),
+                recording = {"cancelled": "Cancellation", "requested": "A request, not yet registered", "failed": "A failed registration",
+                             "registered": f"{sip_mandates.TYPES[p['type']]} registration"}[p["kind"]]
+                then = None
+                if p["kind"] == "failed" or (p["kind"] == "registered" and p["status"] == "rejected"):
+                    from app.aurea_core import india_money
+
+                    then = await india_money.task_owner_said(self.session, firm, p["account"])
+                rows = [("Account", p["account"].name), ("Reference", p["reference"]), ("Recording", recording), ("Rail", sip_mandates.TYPES[p["type"]]),
                         ("Per-debit limit", money(p["limit"])), ("Starts", spoken(p["starts_on"])), ("Expires", spoken(p["expires_on"]) if p["expires_on"] else "No expiry on the registration"),
-                        ("Status", sip_mandates.STATUSES.get(p["status"], p["status"])),
+                        ("Status", sip_mandates.STATUSES.get(p["status"], p["status"]) if p["kind"] in ("registered", "cancelled") else sip_mandates.STATES[p["kind"]]),
+                        ("On", spoken(p["event_on"])),
                         ("Bank account", f"{p['link'].bank} ending {p['link'].last4}, verified {spoken(p['link'].verified_on)}" if p["link"] else None),
-                        ("Replaces", "Nothing on file" if p["before"] is None else f"The registration of {spoken(p['before'].starts_on)}"),
+                        ("Payer check", p["payer"]["label"] if p["payer"] else None),
+                        ("Follows", f"Request {p['supersedes']}" if p["supersedes"] else None),
+                        ("Replaces", "Nothing on file" if p["before"] is None else f"The record of {p['before'].reference}, starting {spoken(p['before'].starts_on)}"),
                         ("Over the UPI Autopay line", "Yes: above the figure for mutual-fund debits, which counsel has not read" if p.get("over_upi_line") else None),
-                        ("Reason", p["reason"]), ("Evidence", p["document"]), ("Note", "It registers nothing with a bank and moves no money")]
+                        ("Reason", p["reason"]), ("Then", then), ("Evidence", p["document"]), ("Note", "It registers nothing with a bank and moves no money")]
                 return rows
             if tool_key == "record_savings_holding":
                 p = await india_savings.prepare(self.session, firm, self.role, **_savings_terms(inputs))

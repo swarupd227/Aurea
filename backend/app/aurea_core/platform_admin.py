@@ -108,7 +108,7 @@ BRANDING_NAMES = {"primary": "primary_color", "accent": "accent_color", "tagline
                   "logo_url": "logo_url"}
 # Settings that only their own routes change, each with its own checks: the regulatory rules, the foundation
 # policy, the capital market assumptions and PII handling.
-RESERVED_SETTINGS = {"compliance", "foundation", "cmas", "pii", "kyc_review_months"}
+RESERVED_SETTINGS = {"compliance", "foundation", "cmas", "pii", "kyc_review_months", "india_money"}
 # The tasks a model is chosen for (app/llm/service.TASK_DEFAULTS).
 MODEL_TASKS = ("advice", "narrative", "classify")
 

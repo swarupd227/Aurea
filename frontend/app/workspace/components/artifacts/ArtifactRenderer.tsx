@@ -43,6 +43,7 @@ import { GovernanceCard } from "./GovernanceCard";
 import { IndiaGatesCard } from "./IndiaGatesCard";
 import { IndiaChannelsCard } from "./IndiaChannelsCard";
 import { IndiaBatchACard } from "./IndiaBatchACard";
+import { IndiaMoneyCard } from "./IndiaMoneyCard";
 import { IndiaBatchCCard } from "./IndiaBatchCCard";
 import { IndiaRemECard } from "./IndiaRemECard";
 import { IndiaRemDCard } from "./IndiaRemDCard";
@@ -332,8 +333,15 @@ export function artifactCard(artifact: Artifact) {
       case "record_bank_link":
       case "record_deposit":
       case "revalidate_standing_instruction":
+      case "record_india_credit":
         if (!Array.isArray(artifact.result?.deposits)) return null;
         return <MoneyInCard result={artifact.result as any} />;
+      case "check_payer":
+      case "record_payer_exception":
+      case "record_inward_remittance":
+      case "set_bank_cooling_off":
+        if (!artifact.result?.check && !Array.isArray(artifact.result?.banks)) return null;
+        return <IndiaMoneyCard result={artifact.result as any} />;
       case "read_transaction_monitoring":
       case "decide_monitoring_alert":
       case "record_investigation_step":
@@ -529,6 +537,7 @@ export function artifactCard(artifact: Artifact) {
       case "record_lrs_remittance":
       case "read_sip_mandates":
       case "record_sip_mandate":
+      case "record_first_debit":
       case "read_india_savings":
       case "record_savings_holding":
       case "read_pledges":

@@ -4,6 +4,7 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { money } from "@/lib/format";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
+import { BankRows, CoolingChip, CreditRows, ExceptionRows, MandateQueueRows, RemittanceRows } from "@/app/workspace/components/artifacts/IndiaMoneyCard";
 import { ViewHeader } from "./ViewHeader";
 
 const th = "px-4 py-2 font-medium";
@@ -13,6 +14,7 @@ export function MoneyInView() {
   const { data, loading, error, refetch } = useApi<any>("/api/money-in", []);
   if (error) return <div className="view-container"><Card><ErrorState what="money in" message={error} onRetry={refetch} /></Card></div>;
   if (loading || !data) return <div className="view-container"><SkeletonList count={4} /></div>;
+  if (data.india) return <IndiaMoneyIn data={data} />;
   const s = data.summary;
   const p = data.policy;
   return (
@@ -73,6 +75,46 @@ export function MoneyInView() {
           </table></div>
         )}
       </Card>
+    </div>
+  );
+}
+
+function Block({ title, count, empty, children }: { title: string; count: number; empty: string; children: React.ReactNode }) {
+  return (
+    <Card className="mb-4 overflow-hidden p-0">
+      <div className="flex items-center justify-between gap-2 border-b border-border-soft px-4 py-2">
+        <div className="text-sm font-medium text-ink">{title}</div>
+        <span className="chip tabular-nums text-ink-muted">{count}</span>
+      </div>
+      {count === 0 ? <div className="px-4 py-3"><Empty>{empty}</Empty></div> : children}
+    </Card>
+  );
+}
+
+/** India's money in: the mandate queue first, then credits, registered banks, payer exceptions and inward remittances. */
+function IndiaMoneyIn({ data }: { data: any }) {
+  const india = data.india;
+  const p = data.policy;
+  const cooling = india.banks.filter((b: any) => b.registered && !b.payable).length;
+  return (
+    <div className="view-container">
+      <ViewHeader title="Money in" />
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="money-in-summary">
+        {[["Mandate queue", india.queue.length], ["Credits", data.deposits.length], ["Returned", data.summary.returned], ["Banks cooling off", cooling]].map(([label, n]) => (
+          <Card key={label as string}><div className="text-[10px] uppercase tracking-wide text-ink-muted">{label}</div><div className="font-mono text-xl text-ink">{n as any}</div></Card>
+        ))}
+      </div>
+      <Card className="mb-4"><div className="flex flex-wrap gap-1.5" data-testid="money-in-policy">
+        <CoolingChip cooling={india.cooling} />
+        <span className="chip text-ink-muted">UPI · Netbanking · RTGS · NEFT · Cheque</span>
+        <span className="chip text-ink-muted">{p.deposit_hold_threshold != null ? `Hold from ${money(p.deposit_hold_threshold, "INR")}` : "No deposit hold set"}</span>
+        <span className="chip text-warn" title={india.line.source}>Minor payer line {money(india.line.value, "INR")}, assumed</span>
+      </div></Card>
+      <Block title="Mandate queue" count={india.queue.length} empty="Nothing is waiting."><MandateQueueRows queue={india.queue} /></Block>
+      <Block title="Credits" count={data.deposits.length} empty="No credits recorded."><CreditRows deposits={data.deposits} /></Block>
+      <Block title="Registered banks" count={india.banks.length} empty="No bank accounts recorded."><BankRows banks={india.banks} /></Block>
+      <Block title="Payer exceptions" count={india.exceptions.length} empty="No exceptions recorded."><ExceptionRows items={india.exceptions} /></Block>
+      <Block title="Inward remittances" count={india.remittances.length} empty="No remittances recorded."><RemittanceRows items={india.remittances} /></Block>
     </div>
   );
 }

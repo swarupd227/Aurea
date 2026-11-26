@@ -75,6 +75,8 @@ from app.models import plan_tier  # noqa: F401,E402
 from app.models import employer_benefit  # noqa: F401,E402
 # A client's residence, FATCA and CRS declarations and a minor's guardian (India row 7).
 from app.models import residency  # noqa: F401,E402
+# India money in and bank rules: a mandate's first debit, payer exceptions, Indian credits and inward remittances (B-388).
+from app.models import india_money  # noqa: F401,E402
 # A Portfolio Manager's agreement with a client (India row 8).
 from app.models import pms  # noqa: F401,E402
 # Account Aggregator consents and e-CAS statements (India row 9), and the complaints register (India row 10).

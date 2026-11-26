@@ -109,7 +109,7 @@ async def main() -> int:
             await refused("an adviser does not raise the firm's reminders", ex[UserRole.ADVISER].execute("raise_india_reminders", {}))
             hh_sub = await s.get(Household, sub.household_id)
             existing = (await s.execute(select(Task).where(Task.title.like("%Subir Banerjee%"), Task.source == india_reminders.SOURCE))).scalars().all()
-            check("a client whose KYC is only due is not raised: due warns", existing, [])
+            check("a client whose KYC is only due is not raised: due warns", [t for t in existing if "KYC" in t.title], [])
 
             print("\n=== B-273: an overdue or blocked KYC holds the household's book ===")
             from app.aurea_core import wash_sale

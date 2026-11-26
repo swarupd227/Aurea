@@ -14,6 +14,9 @@ shown, not solved: what to sell is a person's decision. Nothing here writes cash
 A standing instruction is revalidated from the client's confirmation each year, with a callback where it pays a
 third party, and one past due is listed. The thresholds are the firm's; until it sets its own the platform's are
 used, and the view says which.
+
+An Indian firm records money in through `india_money` (B-388): UPI, netbanking, RTGS, NEFT and cheque, each with its payer checked.
+ACH, NACHA codes and the platform's deposit hold threshold are US rules and are not applied to it: it has no hold unless it sets one.
 """
 from __future__ import annotations
 
@@ -24,8 +27,9 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time
+from app.aurea_core import firm_time, india_money
 from app.aurea_core.billing import _mandate_households
+from app.core.db import utcnow
 from app.models.cash_movement import StandingInstruction
 from app.models.graph import Account, Household, Mandate, Person
 from app.models.money_in import BankLink, IncomingDeposit, InstructionCheck
@@ -48,9 +52,14 @@ class MoneyInError(ValueError):
     """This cannot be recorded, with the reason."""
 
 
+# An Indian firm has no deposit hold until it sets one: the platform's 25,000 is a US figure and is not read in rupees.
+INDIA_DEFAULTS = {**DEFAULTS, "deposit_hold_threshold": None, "deposit_hold_days": {}}
+
+
 def policy(firm: Firm) -> dict:
     s = (firm.settings or {}).get("money_in") or {}
-    return {k: s.get(k, v) for k, v in DEFAULTS.items()} | {"set_by_firm": bool(s)}
+    defaults = INDIA_DEFAULTS if india_money.applies(firm) else DEFAULTS
+    return {k: s.get(k, v) for k, v in defaults.items()} | {"set_by_firm": bool(s)}
 
 
 def business_days_after(start: date, n: int) -> date:
@@ -141,6 +150,14 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, household_id: u
                      "on_hold": deposit_hold(firm, d, today) > 0, "returned_on": d.returned_on.isoformat() if d.returned_on else None,
                      "return_code": d.return_code, "return_reason": RETURN_CODES.get(d.return_code) if d.return_code else None,
                      "may_have_been_invested": spent_risk})
+    india = None
+    if india_money.applies(firm):
+        shown = await india_money.credit_rows(session, firm, [d.id for d in deposits])
+        for row in deps:
+            row.update(shown.get(row["id"], {}))
+            if row["returned_on"] and row.get("return_memo"):
+                row["return_reason"] = row["return_memo"]
+        india = await india_money.overview(session, firm, household_id=household_id)
     returns: dict = {}
     for d in deposits:
         if d.return_code:
@@ -152,7 +169,7 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, household_id: u
             "returns_by_code": [{"code": k, "reason": RETURN_CODES.get(k, k), "count": n} for k, n in sorted(returns.items())],
             "summary": {"on_hold": round(sum(deposit_hold(firm, d, today) for d in deposits), 2), "returned": sum(1 for d in deposits if d.returned_on),
                         "instructions_overdue": sum(1 for r in instr if r["overdue"]), "links_verified": sum(1 for link in links if link.status == "verified")},
-            "policy": pol, "as_of": today.isoformat(), "household_id": str(household_id) if household_id else None}
+            "policy": pol, "as_of": today.isoformat(), "household_id": str(household_id) if household_id else None, "india": india}
 
 
 # ── Recording ─────────────────────────────────────────────────────────────────
@@ -177,6 +194,8 @@ async def prepare_link(session: AsyncSession, firm_id: uuid.UUID, *, account_id:
         raise MoneyInError("A verification cannot be dated ahead.")
     hid, people = await _household_names(session, firm_id, account)
     third = not first_party(owner_name, people)
+    if third and india_money.applies(firm):     # a joint bank account is shown as both holders' names
+        third = not any(india_money.match(owner_name, p) == "full" for p in people)
     if third and not failed and not (callback_by or "").strip():
         raise MoneyInError(f"{owner_name.strip()} is not in the household on file, so this is a third-party account: it needs a callback to the client "
                            "on the number of record first. Give who made it.")
@@ -186,7 +205,7 @@ async def prepare_link(session: AsyncSession, firm_id: uuid.UUID, *, account_id:
 
 async def record_link(session: AsyncSession, firm_id: uuid.UUID, *, by: str, **terms) -> dict:
     r = await prepare_link(session, firm_id, **terms)
-    session.add(BankLink(firm_id=firm_id, account_id=r["account"].id, bank=r["bank"], last4=r["last4"], owner_name=r["owner"], third_party=r["third_party"],
+    session.add(BankLink(created_at=utcnow(), firm_id=firm_id, account_id=r["account"].id, bank=r["bank"], last4=r["last4"], owner_name=r["owner"], third_party=r["third_party"],
                          method=r["method"], status=r["status"], verified_on=r["on"], evidence=r["evidence"], callback_by=r["callback_by"], recorded_by=by))
     await session.flush()
     await ledger.append_entry(session, firm_id=firm_id, event_type="bank_link_recorded", actor=by,
@@ -198,6 +217,9 @@ async def prepare_deposit(session: AsyncSession, firm_id: uuid.UUID, *, account_
                           method: str | None = None, amount=None, bank_link_id: uuid.UUID | None = None, on: date | None = None,
                           evidence: str | None = None, return_code: str | None = None) -> dict:
     firm = await session.get(Firm, firm_id)
+    if india_money.applies(firm):
+        raise MoneyInError("An Indian firm records money in with record_india_credit: UPI, netbanking, RTGS, NEFT or cheque, with the paying account checked. "
+                           "ACH, wire and NACHA return codes are US rules.")
     today = firm_time.today(firm)
     day = on or today
     if day > today:

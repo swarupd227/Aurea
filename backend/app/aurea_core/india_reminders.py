@@ -6,7 +6,8 @@ The compliance calendar and the countdown only showed dates. This reads the same
   the firm's    a filing, the registration's expiry, a policy's review and an adviser's NISM certificate (expired or due within 90 days, once
                 per person, certificate and expiry: B-298) go to compliance (the compliance officer the firm
                 recorded when a user carries that name, else the firm's first active compliance user, else nobody in particular)
-  a client's    a periodic KYC and risk review coming up or past, a KYC the KRA holds or has rejected or that has run out, and a
+  a client's    a debit mandate requested, failed, lapsed or missing, or a first debit failed or unrecorded, past its chase line (B-388);
+                a periodic KYC and risk review coming up or past, a KYC the KRA holds or has rejected or that has run out, and a
                 minor who is now an adult go to the household's recorded adviser (`advisers.adviser_of`), never someone
                 worked out; a household with none gets an unassigned task that says so
 
@@ -122,10 +123,11 @@ async def _batch_items(session: AsyncSession, firm: Firm, household_id: uuid.UUI
     """A household's other dates (B-310, B-311): a SIP debit mandate that ends within 30 days, a person who has remitted nine tenths of the year's
     overseas limit, and a small-savings or bond holding that matures, or a lock-in that ends, within 30 days. Each reads what a person recorded:
     a holding with no maturity day is not raised, and none of it moves money or registers anything."""
-    from app.aurea_core import india_savings, lrs, sip_mandates
+    from app.aurea_core import india_money, india_savings, lrs, sip_mandates
 
-    out: list[dict] = []
-    for m in (await sip_mandates.overview(session, firm, household_id=household_id)).get("mandates", []):
+    # A mandate requested, failed, lapsed or missing, or a first debit failed or unrecorded, past its chase line (B-388).
+    out: list[dict] = await india_money.chase_items(session, firm, household_id, today)
+    for m in (await sip_mandates.overview(session, firm, household_id=household_id, with_queue=False)).get("mandates", []):
         if m["state"] == "active" and m.get("expires_on"):
             due = date.fromisoformat(m["expires_on"])
             if (due - today).days <= MATURITY_WITHIN_DAYS:
@@ -189,6 +191,27 @@ async def view(session: AsyncSession, firm: Firm) -> dict:
              "assumed": r["item"].get("assumed")} for r in p["items"]]
     raising = sum(1 for r in rows if not r["task_exists"])
     return {"applies": True, "as_of": p["as_of"], "reminders": rows, "to_raise": raising, "tasks_exist": len(rows) - raising}
+
+
+async def raise_items(session: AsyncSession, firm: Firm, household_id: uuid.UUID | None, items: list[dict]) -> list[dict]:
+    """Raise a household's task for each of these items that has none, for its recorded adviser: the same title the daily job reads,
+    so an item raised at once is not raised again."""
+    household = await session.get(Household, household_id) if household_id else None
+    if household is None or household.firm_id != firm.id:
+        return []
+    adviser = await advisers.adviser_of(session, firm.id, household.id)
+    adviser = adviser if adviser is not None and adviser.is_active else None
+    have = await _raised(session, firm.id)
+    raised = []
+    for item in items:
+        if (_title(item), household.id) in have:
+            continue
+        t = _task(firm.id, item, household=household, owner=adviser, unassigned_note="The household has no adviser on record: assign one.")
+        session.add(t)
+        have.add((t.title, household.id))
+        raised.append({"title": t.title, "due_on": item["due_on"], "household": household.name, "to": adviser.full_name if adviser else None})
+    await session.flush()
+    return raised
 
 
 async def raise_due(session: AsyncSession, firm: Firm) -> dict:

@@ -6,7 +6,7 @@ This resets the goals from the seed and reruns the tax agent, which refreshes it
 rather than raising more. It touches no other firm. Safe to run twice.
 
 Row 7 (a non-resident household and a minor), row 8 (a Portfolio Manager client's agreement and fee), row 9 (a consolidated
-statement) row 10 (a complaints register), row 13 (a family and its estate records) and row 14 (a governance register and counsel's review) and the L100 items (accredited investors, an adviser's fee terms, the deposit, a wait for the Budget) and batch A (remittances, a SIP mandate, the shelf's other classes, a pledge, gifts and dividends) and batch C (mutual fund order rails, the firm's group and its trail, expense ratios, an adviser's certificates, advertisement approvals) are added once. The simulated Account Aggregator, WhatsApp channel and DigiLocker and eSign provider are not written here: they are
+statement) row 10 (a complaints register), row 13 (a family and its estate records) and row 14 (a governance register and counsel's review) and the L100 items (accredited investors, an adviser's fee terms, the deposit, a wait for the Budget) and batch A (remittances, a SIP mandate, the shelf's other classes, a pledge, gifts and dividends) and India money in (B-388: mandate states, first debits, credits by Indian rails, registered banks, a cooling-off, an inward remittance) and batch C (mutual fund order rails, the firm's group and its trail, expense ratios, an adviser's certificates, advertisement approvals) are added once. The simulated Account Aggregator, WhatsApp channel and DigiLocker and eSign provider are not written here: they are
 opt-in (`python -m app.simulations seed aa_feed whatsapp_channel india_stack`, with AUREA_SIMULATIONS on). Languages, WhatsApp opt-ins and templates (B-301) are added once.
 The polish row (B-247 and others: Tara Menon as a minor now an adult, Kabir's case, a PMS fee line, segment minimums in rupees, the reminders as tasks) is added once.
 Row 11 (capital losses carried forward, a 2018 value, a regime comparison's inputs) and row 12 (KYC in every state) likewise.
@@ -130,6 +130,9 @@ async def main() -> None:
         from seed import india_consolidation
 
         consolidation_rows = await india_consolidation.add(s, firm)
+        from seed import india_b388
+
+        money = await india_b388.add(s, firm)
         # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
         # open reminder tasks raised in the older wording (B-372).
         from app.aurea_core import india_reminders
@@ -144,7 +147,7 @@ async def main() -> None:
         await run_agent(s, firm=firm, agent_key=AgentKey.TAX_INTELLIGENCE, trigger="seed_scan",
                         subject=Subject("firm", firm.id, firm.name), require_human=True)
         await s.commit()
-    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11, {row12} row 12, {row13} row 13, {row14} row 14, {polish} polish, {l100a} L100, {batch_a} batch A, {batch_c} batch C, {rem_e} batch E, {rem_d} remainder(s), {planning_records} goal tier(s) and spending record(s) and {batch_b} language and WhatsApp record(s), priced {priced['resolved']} instrument(s) "
+    print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11, {row12} row 12, {row13} row 13, {row14} row 14, {polish} polish, {l100a} L100, {batch_a} batch A, {batch_c} batch C, {rem_e} batch E, {rem_d} remainder(s), {planning_records} goal tier(s) and spending record(s), {money} money-in record(s) and {batch_b} language and WhatsApp record(s), priced {priced['resolved']} instrument(s) "
           f"({len(priced['failed'])} failed), and refreshed the tax positions.\n"
           f"Re-dated for today: {', '.join(f'{n} {k}' for k, n in redated.items() if n) or 'nothing'}. "
           f"Rewrote {reworded} open reminder task description(s). Consolidation workbench: {consolidation_rows} holding(s) added or re-dated.\n")

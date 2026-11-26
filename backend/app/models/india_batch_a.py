@@ -38,8 +38,8 @@ class LrsRemittance(Base):
 class DebitMandate(Base):
     """A client's registered mandate to debit a verified bank account (NACH or UPI Autopay), from its registration (B-295).
 
-    `reference` is the registration's own number (the UMRN for a NACH mandate). `kind` is `registered` or `cancelled`: the latest row for a
-    reference stands, so a cancellation is a second row and the first stays."""
+    `reference` is the registration's own number (the UMRN for a NACH mandate), or the request's number before one is issued. `kind` is
+    `requested`, `registered`, `failed` or `cancelled`: the latest row for a reference stands, so a change is another row and the first stays."""
 
     __tablename__ = "debit_mandate"
 
@@ -47,8 +47,8 @@ class DebitMandate(Base):
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("account.id", ondelete="CASCADE"), index=True)
     bank_link_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bank_link.id", ondelete="SET NULL"), nullable=True)
     reference: Mapped[str] = mapped_column(String(60), index=True)
-    mandate_type: Mapped[str] = mapped_column(String(16))            # nach | upi_autopay
-    kind: Mapped[str] = mapped_column(String(10), default="registered")   # registered | cancelled
+    mandate_type: Mapped[str] = mapped_column(String(16))            # nach | upi_autopay | nach_paper
+    kind: Mapped[str] = mapped_column(String(10), default="registered")   # requested | registered | failed | cancelled
     per_debit_limit: Mapped[float] = mapped_column(Numeric(18, 2))
     starts_on: Mapped[date] = mapped_column(Date)
     expires_on: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -56,6 +56,9 @@ class DebitMandate(Base):
     source_document: Mapped[str] = mapped_column(String(300))
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     recorded_by: Mapped[str] = mapped_column(String(200))
+    # B-388: the day a request was made or a registration failed, and the request's reference a later registration replaces.
+    event_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    supersedes_reference: Mapped[str | None] = mapped_column(String(60), nullable=True)
 
 
 class SecuritiesPledge(Base):

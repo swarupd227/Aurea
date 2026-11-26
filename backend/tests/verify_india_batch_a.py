@@ -36,7 +36,7 @@ from app.models.money_in import BankLink
 from app.models.portfolio import Holding, Instrument, Price
 from app.models.sip import Sip
 from app.models.tenant import Firm
-from seed import india_batch_a, india_demo
+from seed import india_b388, india_batch_a, india_demo
 
 PASS, FAIL = [], []
 ERRORS = (lrs.LrsError, sip_mandates.MandateError, india_savings.SavingsError, pledges.PledgeError, tax_habits.HabitError, held_away.HeldAwayError, ExecutorError)
@@ -74,6 +74,9 @@ async def main() -> int:
         Session = async_sessionmaker(db, expire_on_commit=False)
         async with Session() as s:
             firm = await india_demo.build(s)
+            # B-388's demonstration rows (its own SIPs and mandates, proved in verify_india_money) are set aside, so this reads batch A's.
+            for model in (Sip, DebitMandate):
+                await s.execute(model.__table__.delete().where(model.recorded_by == india_b388.BY))
             await s.commit()
             today = firm_time.today(firm)
             users = {u.role: u for u in (await s.execute(select(User).where(User.firm_id == firm.id))).scalars().all()}
