@@ -5,7 +5,8 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import { withRef } from "@/lib/refs";
-import { CARE_FUNDING_TEXT, CareFundingChips, KIND_TEXT, Scenario, money, payeeText } from "@/app/workspace/components/artifacts/ProtectionCard";
+import { CARE_FUNDING_TEXT, CareFundingChips, KIND_TEXT, RiderTable, Scenario, isRider, money, payeeText } from "@/app/workspace/components/artifacts/ProtectionCard";
+import { HealthCoverSection } from "./HealthCoverSection";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
@@ -327,6 +328,15 @@ export function ProtectionView({ household = null }: { household?: string | null
             </table>
           </div>
         </Card>
+      )}
+
+      <HealthCoverSection household={household} protectionHomes={data.households} />
+
+      {policies.some((p: any) => isRider(p) && p.status !== "ended") && (
+        <>
+          <h2 className="mb-2 text-sm font-medium text-ink">Riders and critical illness</h2>
+          <Card className="mb-4 overflow-hidden p-0"><RiderTable policies={policies} /></Card>
+        </>
       )}
 
       <h2 className="mb-2 text-sm font-medium text-ink">How care will be paid</h2>

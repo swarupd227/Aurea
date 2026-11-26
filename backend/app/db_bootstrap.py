@@ -269,6 +269,8 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE debit_mandate ADD COLUMN IF NOT EXISTS supersedes_reference VARCHAR(60)"))
         await conn.execute(text("ALTER TABLE cash_request ADD COLUMN IF NOT EXISTS bank_link_id UUID REFERENCES bank_link(id) ON DELETE SET NULL"))
         await conn.execute(text("ALTER TABLE standing_instruction ADD COLUMN IF NOT EXISTS bank_link_id UUID REFERENCES bank_link(id) ON DELETE SET NULL"))
+        # B-397: what a schedule says a rider or a critical-illness cover does, as recorded. Empty on every policy before.
+        await conn.execute(text("ALTER TABLE protection_policy ADD COLUMN IF NOT EXISTS terms_stated VARCHAR(500)"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

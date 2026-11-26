@@ -46,6 +46,7 @@ class PolicyIn(BaseModel):
     nominee: str | None = None
     nominee_relationship: str | None = None
     mwp: bool = False
+    terms_stated: str | None = None
 
 
 class EndIn(BaseModel):

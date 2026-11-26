@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.aurea_core.graph import household_brain
 from app.llm.admin_executors import AdminToolExecutors
 from app.llm.consolidation_executors import ConsolidationExecutors
+from app.llm.health_cover_executors import HealthCoverExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
@@ -74,7 +75,7 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
-                    IndiaMoneyExecutors):
+                    IndiaMoneyExecutors, HealthCoverExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -384,6 +385,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "record_tax_inputs": self.record_tax_inputs,
             # India, the consolidation workbench (B-389): app/llm/consolidation_executors.py.
             **self._consolidation_map(),
+            # India, health cover and a savings policy's values (B-397): app/llm/health_cover_executors.py.
+            **self._health_map(),
             "read_kyc_review_period": self.read_kyc_review_period,
             "set_kyc_review": self.set_kyc_review,
         }
@@ -1155,7 +1158,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 "cover_basis": inputs.get("cover_basis"),
                 "rider_of": _parse_uuid(inputs["rider_of"], "rider_of") if inputs.get("rider_of") else None,
                 "group_cover": str(inputs.get("group_cover")).lower() == "true", "nominee": inputs.get("nominee"),
-                "nominee_relationship": inputs.get("nominee_relationship"), "mwp": str(inputs.get("mwp")).lower() == "true"}
+                "nominee_relationship": inputs.get("nominee_relationship"), "mwp": str(inputs.get("mwp")).lower() == "true",
+                "terms_stated": inputs.get("terms_stated")}
 
     async def record_protection_policy(self, inputs: dict[str, Any]) -> dict[str, Any]:
         args = self._policy_args(inputs)
@@ -1172,7 +1176,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         say = markets.money_for(firm)
         kinds = {"life": "Life", "tpd": "Total and permanent disablement", "income_protection": "Income protection",
                  "long_term_care": "Long-term care", "critical_illness": "Critical illness", "personal_accident": "Personal accident",
-                 "umbrella": "Umbrella (liability)", "property": "Property"}
+                 "umbrella": "Umbrella (liability)", "property": "Property", "waiver_of_premium": "Waiver of premium"}
         try:
             if tool_key == "set_care_assumptions":
                 r = await protection.prepare_care(self.session, self.firm_id, annual_cost=inputs.get("annual_cost"),
@@ -1196,6 +1200,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                         ("Group cover", "Employer group cover" if r["group_cover"] else None),
                         ("Nominee", f"{r['nominee']} ({r['nominee_relationship']})" if r["nominee"] and r["nominee_relationship"] else r["nominee"]),
                         ("Written under", "Married Women's Property Act: outside the estate" if r["mwp"] else None),
+                        ("Terms stated", r["terms_stated"]),
                         ("Counted", "No, " + why if (why := protection.not_counted_for(r["kind"], r["cover_basis"])
                                                      or (protection.GROUP_NOT_COUNTED if r["group_cover"] else None)) else None),
                         ("Document", r["source"])]
@@ -5509,6 +5514,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._ips_preview(inputs))
         if tool_key in ("record_protection_policy", "end_protection_policy", "record_income", "set_care_assumptions"):
             return rows(*await self._protection_preview(tool_key, inputs))
+        if tool_key in ("record_health_policy", "end_health_policy", "set_health_cover_figure", "record_policy_values"):
+            return rows(*await self._health_preview(tool_key, inputs))
         if tool_key == "decide_risk_profile":
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):

@@ -256,6 +256,8 @@ def not_counted_for(kind: str, cover_basis: str | None) -> str | None:
     modelled, so they are listed and never added."""
     if kind == "critical_illness":
         return "critical illness: no need is modelled for it"
+    if kind == "waiver_of_premium":
+        return "waiver of premium: it keeps a policy paid and pays no claim of its own, and no need is modelled for it"
     if kind in ("umbrella", "property"):
         return f"{kind} cover protects what a household owns, not an earner's life or income, so it is listed and not counted against a gap"
     if kind == "personal_accident" or (cover_basis or "any_cause") == "accident_only":
@@ -285,7 +287,7 @@ def _policy_row(p: ProtectionPolicy, names: dict, today: date, market: str | Non
         "not_counted": not_counted(p), "source_document": p.source_document,
         "recorded_by": p.recorded_by, "cover_basis": p.cover_basis or "any_cause",
         "rider_of": str(p.rider_of) if p.rider_of else None, "group_cover": bool(p.group_cover),
-        "payee": payee_of(p, market),
+        "payee": payee_of(p, market), "terms_stated": p.terms_stated,
         # The day it is dated (B-182); a row from before that was kept reads the day it was created.
         "as_of": d.isoformat() if (d := p.as_of or (p.created_at.date() if p.created_at else None)) else None,
     }
@@ -316,7 +318,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     for r in rows:
         if r["rider_of"] in by_id:
             by_id[r["rider_of"]]["riders"].append({"id": r["id"], "kind": r["kind"], "sum_insured": r["sum_insured"], "annual_benefit": r["annual_benefit"],
-                                                   "status": r["status"], "counted": r["counted"]})
+                                                   "status": r["status"], "counted": r["counted"], "terms_stated": r["terms_stated"]})
     in_force = [p for p, r in zip(policies, rows) if r["counted"]]
     # An employer's cover that would count if it were the person's own: shown apart (B-393).
     employer = [p for p, r in zip(policies, rows)
@@ -467,7 +469,7 @@ async def prepare_policy(
     source_document: str, sum_insured=None, annual_benefit=None, benefit_to_age=None, benefit_years=None,
     annual_premium=None, expires_on: date | None = None, today: date | None = None,
     cover_basis: str | None = None, rider_of: uuid.UUID | None = None, group_cover: bool = False,
-    nominee: str | None = None, nominee_relationship: str | None = None, mwp: bool = False,
+    nominee: str | None = None, nominee_relationship: str | None = None, mwp: bool = False, terms_stated: str | None = None,
 ) -> dict:
     """Everything recording a policy would refuse, refused without writing, so a Confirm card that
     would only fail is not shown. Returns what would be written."""
@@ -487,6 +489,12 @@ async def prepare_policy(
             raise ProtectionError("Income protection needs its annual benefit." if kind == "income_protection"
                                   else "Long-term care cover needs its annual benefit.")
         lump = None
+    elif kind == "waiver_of_premium":
+        if not rider_of:
+            raise ProtectionError("A waiver of premium is a rider: give the policy whose premiums it waives.")
+        if lump or benefit:
+            raise ProtectionError("A waiver of premium has no sum insured or benefit of its own: record what it waives in the terms.")
+        lump, benefit, benefit_to_age = None, None, None
     else:
         if not lump:
             raise ProtectionError("This cover needs its sum insured.")
@@ -513,7 +521,8 @@ async def prepare_policy(
             "annual_benefit": benefit, "benefit_to_age": int(benefit_to_age) if benefit_to_age else None,
             "benefit_years": paid_for, "annual_premium": premium, "expires_on": expires_on,
             "cover_basis": basis, "rider_of": parent, "group_cover": bool(group_cover), "nominee": named,
-            "nominee_relationship": (nominee_relationship or "").strip()[:40] or None if named else None, "mwp": bool(mwp)}
+            "nominee_relationship": (nominee_relationship or "").strip()[:40] or None if named else None, "mwp": bool(mwp),
+            "terms_stated": (terms_stated or "").strip()[:500] or None}
 
 
 async def record_policy(
@@ -538,7 +547,7 @@ async def record_policy(
         as_of=today or firm_time.today(firm),
         cover_basis=ready["cover_basis"], rider_of=ready["rider_of"].id if ready["rider_of"] else None,
         group_cover=ready["group_cover"], nominee=ready["nominee"], nominee_relationship=ready["nominee_relationship"],
-        mwp=ready["mwp"],
+        mwp=ready["mwp"], terms_stated=ready["terms_stated"],
     )
     session.add(row)
     await session.flush()

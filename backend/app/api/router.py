@@ -86,3 +86,8 @@ api_router.include_router(plan_record_api.router)
 from app.api import consolidation as consolidation_api  # noqa: E402
 
 api_router.include_router(consolidation_api.router)
+
+# Health cover and a savings policy's values, India (B-397).
+from app.api import health_cover as health_cover_api  # noqa: E402
+
+api_router.include_router(health_cover_api.router)

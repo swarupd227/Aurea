@@ -221,6 +221,10 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Not assessed", prompt: "Who can't be assessed for protection, and what's missing?" },
         h1 ? { label: `${short(h1)}'s cover`, prompt: `What happens to ${the(h1)} if an earner dies or can't work?` } : { label: "Explain the basis", prompt: "How is a protection gap worked out, and what does it leave out?" },
         { label: "Who may need care", prompt: "Who is old enough for long-term care to be the question, and what would it cost them?" },
+        ...(firmMarket() === "IN" ? [
+          { label: "Health cover", prompt: h1 ? `Who in ${the(h1)} is covered by which health policy, and what limits it?` : "Who relies only on an employer's health cover, and which health policies renew soon?" },
+          { label: "Old policies", prompt: "Lay out surrender, paid-up and continue for the endowment and unit-linked policies on file." },
+        ] : []),
       ];
     case "/studio/risk-profiles":
       return [

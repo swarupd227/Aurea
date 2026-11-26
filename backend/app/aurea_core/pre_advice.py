@@ -28,6 +28,7 @@ from app.core import decision_rights
 from app.models.balance_sheet import BalanceItem
 from app.models.consent_registry import ConsentRecord
 from app.models.graph import Household, LegalEntity, Mandate, Person
+from app.models.health_cover import HealthPolicy
 from app.models.onboarding import DisclosureDelivery, OnboardingCase
 from app.models.protection import ProtectionPolicy
 from app.models.risk_assessment import RiskAssessment
@@ -75,9 +76,13 @@ async def _non_sebi(session: AsyncSession, household_id: uuid.UUID) -> list[str]
         Person.household_id == household_id, ProtectionPolicy.status == "in_force"))).scalars().all()
     items = (await session.execute(select(BalanceItem.kind).where(
         BalanceItem.household_id == household_id, BalanceItem.status == "current", BalanceItem.kind.in_(NON_SEBI_ASSETS)))).scalars().all()
+    # A health policy is insurance too (B-397).
+    health = (await session.execute(select(HealthPolicy.id).where(
+        HealthPolicy.household_id == household_id, HealthPolicy.status == "in_force"))).scalars().all()
+    held = len(policies) + len(health)
     out = []
-    if policies:
-        out.append(f"{len(policies)} insurance polic{'y' if len(policies) == 1 else 'ies'}")
+    if held:
+        out.append(f"{held} insurance polic{'y' if held == 1 else 'ies'}")
     for kind in NON_SEBI_ASSETS:
         n = sum(1 for k in items if k == kind)
         if n:

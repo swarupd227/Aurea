@@ -28,6 +28,7 @@ import { ValuationCard } from "./ValuationCard";
 import { PriceFreshnessCard } from "./PriceFreshnessCard";
 import { ReconciliationCard } from "./ReconciliationCard";
 import { CareFundingChips, ProtectionCard } from "./ProtectionCard";
+import { HealthCoverCard, PolicyValuesCard } from "./HealthCoverCard";
 import { AdviceFileCard } from "./AdviceFileCard";
 import { PlanRecordCard } from "./PlanRecordCard";
 import { LicenceCard } from "./LicenceCard";
@@ -263,6 +264,19 @@ export function artifactCard(artifact: Artifact) {
       case "record_care_funding":
         if (typeof artifact.result?.choice !== "string") return null;
         return <CareFundingChips funding={artifact.result as any} testid="care-funding-card" />;
+      // B-397: health cover, and a savings policy's surrender, paid-up and continue figures.
+      case "read_health_cover":
+        if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.members) && artifact.result?.applies !== false) return null;
+        return <HealthCoverCard result={artifact.result as any} />;
+      case "record_health_policy":
+      case "end_health_policy":
+      case "set_health_cover_figure":
+        if (!artifact.result?.policy_id && artifact.result?.family_cover == null) return null;
+        return <HealthCoverCard result={artifact.result as any} />;
+      case "read_policy_values":
+      case "record_policy_values":
+        if (!Array.isArray(artifact.result?.policies) && !artifact.result?.statement) return null;
+        return <PolicyValuesCard result={artifact.result as any} />;
       case "read_risk_profiles":
         if (!Array.isArray(artifact.result?.households) && !Array.isArray(artifact.result?.mandates)) return null;
         return <RiskProfileCard result={artifact.result as any} />;

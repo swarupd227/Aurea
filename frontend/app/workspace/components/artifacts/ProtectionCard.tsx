@@ -43,6 +43,7 @@ export interface ProtectionPolicy {
   rider_of?: string | null;
   group_cover?: boolean;
   payee?: { to: string | null; relationship?: string | null; means: string | null };
+  terms_stated?: string | null;
   source_document: string;
 }
 
@@ -97,7 +98,7 @@ export function money(v: number | null | undefined) {
 }
 
 export const KIND_TEXT: Record<string, string> = {
-  life: "life", tpd: "TPD", income_protection: "income", long_term_care: "care", critical_illness: "critical illness", personal_accident: "personal accident", umbrella: "umbrella", property: "property",
+  life: "life", tpd: "TPD", income_protection: "income", long_term_care: "care", critical_illness: "critical illness", personal_accident: "personal accident", umbrella: "umbrella", property: "property", waiver_of_premium: "waiver of premium",
 };
 
 /** Who a policy pays, as chip text: the nominee as named, or a Married Women's Property Act trust. */
@@ -107,6 +108,50 @@ export function payeeText(p: ProtectionPolicy): string | null {
 }
 
 export const SCENARIO_TEXT: Record<string, string> = { death: "if they die", disability: "if they cannot work", care: "if they need care" };
+
+/** Riders, critical illness, accident and waiver of premium as the schedules state them (B-397). No need is modelled. */
+export function isRider(p: ProtectionPolicy): boolean {
+  return !!p.rider_of || ["critical_illness", "personal_accident", "waiver_of_premium"].includes(p.kind);
+}
+
+export function RiderTable({ policies }: { policies: ProtectionPolicy[] }) {
+  const rows = policies.filter((p) => isRider(p) && p.status !== "ended");
+  if (!rows.length) return null;
+  const base = (id?: string | null) => policies.find((p) => p.id === id);
+  return (
+    <div className="overflow-x-auto" data-testid="protection-riders">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
+            <th className="px-3 py-1.5 font-medium">Insured</th>
+            <th className="px-3 py-1.5 font-medium">Rider or illness cover</th>
+            <th className="px-3 py-1.5 text-right font-medium">Amount</th>
+            <th className="px-3 py-1.5 font-medium">As the schedule states</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border-soft">
+          {rows.map((p) => (
+            <tr key={p.id} className="align-top" title={p.source_document}>
+              <td className="px-3 py-1.5 text-ink">{p.person}</td>
+              <td className="px-3 py-1.5 text-ink-muted">
+                {KIND_TEXT[p.kind] ?? p.kind} · {p.provider}
+                {p.rider_of && <span className="chip ml-1 text-ink-muted">on {KIND_TEXT[base(p.rider_of)?.kind ?? ""] ?? "base"} policy</span>}
+              </td>
+              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-ink-muted">{money(p.sum_insured ?? p.annual_benefit)}</td>
+              <td className="px-3 py-1.5">
+                <div className="flex flex-wrap gap-1">
+                  {p.cover_basis === "accident_only" && <span className="chip text-ink-muted">accident only</span>}
+                  {p.terms_stated ? <span className="chip text-ink-muted">{p.terms_stated}</span> : <span className="chip text-warn">terms not on file</span>}
+                  {!p.counted && <span className="chip text-warn" title={p.not_counted ?? undefined}>not counted</span>}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 /** An employer's cover, apart from the gap because it ends with the job, with what the gap would be with it. */
 function EmployerCover({ s }: { s: ProtectionScenario }) {
@@ -206,6 +251,9 @@ export function ProtectionCard({ result }: { result: any }) {
         {h.people.length === 0
           ? <div className="px-3 py-3 font-mono text-xs text-ink-muted">no one to assess</div>
           : <PeopleTable rows={h.people.map((p) => ({ p }))} currency={h.currency} />}
+        {h.policies.some((p) => isRider(p) && p.status !== "ended") && (
+          <div className="border-t border-border-soft"><RiderTable policies={h.policies} /></div>
+        )}
         <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-2">
           {h.policies.filter((p) => p.counted).map((p) => (
             <span key={p.id} className="chip text-ink-muted" title={[p.source_document, p.payee?.means].filter(Boolean).join(" · ")}>

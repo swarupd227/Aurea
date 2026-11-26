@@ -310,6 +310,12 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "end_protection_policy":
     case "record_income":
     case "record_care_funding":
+    case "read_health_cover":
+    case "record_health_policy":
+    case "end_health_policy":
+    case "set_health_cover_figure":
+    case "read_policy_values":
+    case "record_policy_values":
       return onClient("/studio/protection");
     case "read_risk_profiles":
     case "decide_risk_profile":

@@ -12,6 +12,8 @@ The polish row (B-247 and others: Tara Menon as a minor now an adult, Kabir's ca
 Row 11 (capital losses carried forward, a 2018 value, a regime comparison's inputs) and row 12 (KYC in every state) likewise.
 A tier on each seeded goal and each household's essential spending (B-393) are added where missing; a tier on file stays.
 The consolidation workbench's folios, classifications and requests (B-389, `seed/india_consolidation.py`) are added once.
+Health policies, an endowment and a unit-linked statement, a waiver rider and a stated health cover figure (B-397,
+`seed/india_protection.py`) are added once; a renewal date of theirs that is near or past is moved ahead.
 
 Every run also moves the dated demonstration scenarios back to their distance from today (`seed/india_redate.py`) and rewrites the
 description of an open reminder task still in the older wording.
@@ -133,6 +135,9 @@ async def main() -> None:
         from seed import india_b388
 
         money = await india_b388.add(s, firm)
+        from seed import india_protection
+
+        protection_rows = await india_protection.add(s, firm)
         # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
         # open reminder tasks raised in the older wording (B-372).
         from app.aurea_core import india_reminders
@@ -150,7 +155,7 @@ async def main() -> None:
     print(f"\nReset {changed} goal(s), added {funds} fund(s), {row5} row 5, {row6} row 6, {row7} row 7, {row8} row 8, {row9} row 9, {row10} row 10, {row11} row 11, {row12} row 12, {row13} row 13, {row14} row 14, {polish} polish, {l100a} L100, {batch_a} batch A, {batch_c} batch C, {rem_e} batch E, {rem_d} remainder(s), {planning_records} goal tier(s) and spending record(s), {money} money-in record(s) and {batch_b} language and WhatsApp record(s), priced {priced['resolved']} instrument(s) "
           f"({len(priced['failed'])} failed), and refreshed the tax positions.\n"
           f"Re-dated for today: {', '.join(f'{n} {k}' for k, n in redated.items() if n) or 'nothing'}. "
-          f"Rewrote {reworded} open reminder task description(s). Consolidation workbench: {consolidation_rows} holding(s) added or re-dated.\n")
+          f"Rewrote {reworded} open reminder task description(s). Consolidation workbench: {consolidation_rows} holding(s) added or re-dated. Health cover and policy values: {protection_rows} added or re-dated.\n")
 
 
 if __name__ == "__main__":

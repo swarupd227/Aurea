@@ -99,3 +99,5 @@ from app.models import india_rem_e  # noqa: F401,E402
 from app.models import india_rem_d  # noqa: F401,E402
 # The consolidation workbench: classification, facts, tracked work and its steps (B-389).
 from app.models import consolidation  # noqa: F401,E402
+# Health policies and a savings policy's value statements (B-397).
+from app.models import health_cover  # noqa: F401,E402

@@ -18,7 +18,9 @@ from app.core.db import Base
 # life and tpd pay a lump sum; income_protection pays a yearly benefit while the insured cannot work,
 # and long_term_care one while they need care.
 # umbrella (liability) and property cover are listed beside the rest and never counted against a gap (B-193).
-POLICY_KINDS = ("life", "tpd", "income_protection", "long_term_care", "critical_illness", "personal_accident", "umbrella", "property")
+# A waiver of premium is a rider with no sum of its own (B-397); health cover is a record of its own (models/health_cover.py).
+POLICY_KINDS = ("life", "tpd", "income_protection", "long_term_care", "critical_illness", "personal_accident", "umbrella", "property",
+                "waiver_of_premium")
 COVER_BASES = ("any_cause", "accident_only")
 # How a household means to pay for care (B-186). Medicaid is a US programme, so medicaid_planning is a US household's.
 CARE_FUNDING_CHOICES = ("self_fund", "care_insurance", "hybrid", "medicaid_planning", "undecided")
@@ -55,6 +57,8 @@ class ProtectionPolicy(Base):
     nominee: Mapped[str | None] = mapped_column(String(200), nullable=True)
     nominee_relationship: Mapped[str | None] = mapped_column(String(40), nullable=True)
     mwp: Mapped[bool] = mapped_column(Boolean, default=False)
+    # What the schedule says it does - the events, a survival or waiting period, what is waived - in its own words (B-397).
+    terms_stated: Mapped[str | None] = mapped_column(String(500), nullable=True)
     recorded_by: Mapped[str] = mapped_column(String(120), default="unknown")
     # The day the figures were on file as true (B-182): the firm's day it was recorded. None on a row recorded
     # before this was kept, which reads the day it was created.
