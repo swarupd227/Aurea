@@ -41,7 +41,9 @@ OFFICERS = (("registration_number", "SEBI registration number"), ("registration_
             ("grievance_contact", "Grievance contact"),
             # B-292: the Investment Adviser's refundable deposit with IAASB, from the deposit's own document.
             ("iaasb_deposit", "Refundable deposit with IAASB"), ("iaasb_deposit_held_in", "Deposit held in"),
-            ("iaasb_deposit_document", "Deposit evidence"))
+            ("iaasb_deposit_document", "Deposit evidence"),
+            # B-399: which Investment Adviser registration the firm holds, for the client-count line.
+            ("ia_registration_type", "Investment Adviser registration (individual or non-individual)"))
 OFFICER_KEYS = {k for k, _ in OFFICERS}
 
 
@@ -243,6 +245,11 @@ def prepare_officers(firm: Firm, details: dict | None, reason: str | None) -> di
         raise CalendarError(f"Not a registration detail: {', '.join(unknown)}. One of {', '.join(k for k, _ in OFFICERS)}.")
     if not given:
         raise CalendarError("Give at least one detail to record.")
+    if "ia_registration_type" in given:
+        kind = given["ia_registration_type"].lower().replace("-", "_").replace(" ", "_")
+        if kind not in ("individual", "non_individual"):
+            raise CalendarError("The Investment Adviser registration is individual or non-individual.")
+        given["ia_registration_type"] = kind
     if "iaasb_deposit_held_in" in given:
         given["iaasb_deposit_held_in"] = given["iaasb_deposit_held_in"].lower()
     from app.aurea_core import adviser_fees

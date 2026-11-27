@@ -51,6 +51,7 @@ INDIA_READ_TOOLS = {
     "read_mf_figures": {}, "read_agreement_contents": {"household": "The Sharma Family"},
     "read_health_cover": {"household": "The Sharma Family"}, "read_policy_values": {"household": "The Sharma Family"},
     "read_retirement_stack": {"household": "The Sharma Family"},
+    "read_advice_audit": {},
     "read_manager_staff": {}, "read_pms_ledger": {}, "read_guardian_papers": {}, "read_kyc_review_period": {},
     "read_real_estate_choice": {"acquired_on": "2015-04-01", "sold_on": "2026-06-01", "cost": 5000000, "proceeds": 12000000, "resident_individual_or_huf": "yes"},
 }

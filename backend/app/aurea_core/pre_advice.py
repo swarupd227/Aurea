@@ -10,7 +10,9 @@ Each is read from what a person recorded: an onboarding case's own agreement and
 on the books, the consent registry (`consents.py`, the India kinds). Nothing is assumed from a household being a client.
 The gate applies to a household with a mandate on the adviser's track; a portfolio manager's discretionary client and a
 firm with no licence are outside it. Approving a book-moving proposal is advice reaching the client, so
-`runtime.decide` refuses it while the gate is open, and the billing run blocks a fee with no signed agreement.
+`runtime.decide` refuses it while the gate is open, and the billing run blocks a fee with no signed agreement. A plan
+summary's approval, a recorded plan delivery and an adviser's recorded recommendation are held by the same reason
+(B-399); recording the paperwork, a baseline, a review or what became of earlier advice is never held.
 
 "Family of client" in SEBI's sense is not the household (a non-dependent adult child is a family of their own). It is what a
 person recorded (`sebi_family.py`, India row 13); with none recorded the household stands in for it and says so.
@@ -241,9 +243,36 @@ def refusal_text(s: dict) -> str:
             f"Record it in the consent registry from its evidence ({CITATION}).")
 
 
+async def household_refusal(session: AsyncSession, firm, household_id: uuid.UUID) -> str | None:
+    """Why nothing is advised to this household yet, in the words a book-moving approval is refused with, or None (B-399):
+    a plan delivery, a published plan summary and an adviser's recorded recommendation ask this. A household with no
+    mandate on the adviser's track, and a firm with no licence, are never held."""
+    if firm is None or not licences.held(firm):
+        return None
+    s = await status(session, firm, household_id)
+    return None if s["met"] else refusal_text(s)
+
+
+async def held_view(session: AsyncSession, firm, household_id: uuid.UUID) -> dict | None:
+    """The gate beside a plan or an advice file, as chips: None where it does not apply to this household."""
+    if firm is None or not licences.held(firm):
+        return None
+    s = await status(session, firm, household_id)
+    if not s["applies"]:
+        return None
+    return {"met": s["met"], "missing": s["missing"], "reason": None if s["met"] else refusal_text(s), "citation": CITATION}
+
+
 async def refusal(session: AsyncSession, firm, rec) -> str | None:
-    """Why this proposal may not be approved yet, or None. Only a book-moving proposal on the adviser's track is held."""
-    if not licences.held(firm) or not decision_rights.moves_the_book(rec.agent_key):
+    """Why this proposal may not be approved yet, or None. On the adviser's track a book-moving proposal is held, and so
+    is a client's plan summary, because publishing it puts advice in front of them (B-399)."""
+    if not licences.held(firm):
+        return None
+    if str(rec.agent_key) in decision_rights.PLAN_SUMMARY_AGENTS:
+        if rec.subject_type != "household" or not rec.subject_id:
+            return None
+        return await household_refusal(session, firm, rec.subject_id)
+    if not decision_rights.moves_the_book(rec.agent_key):
         return None
     if rec.subject_type != "mandate" or not rec.subject_id:
         return None

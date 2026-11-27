@@ -45,6 +45,9 @@ class AdviceRecommendation(Base):
     revisit_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     recorded_by: Mapped[str] = mapped_column(String(200))
     recorded_by_role: Mapped[str] = mapped_column(String(32))
+    # The risk profile it rests on, as on file the day it was made (B-399, advice_practice.risk_basis). Null on a record
+    # made before this was kept.
+    risk_basis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class AdviceOutcome(Base):

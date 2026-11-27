@@ -23,6 +23,7 @@ The PMLA programme's cases, invented screening list entries, monitoring scenario
 `seed/india_pmla.py`) are added once.
 The retirement stack (B-395, seed/india_retirement.py): statement lines, monthly contributions and a quoted annuity rate, added
 where missing; a pension total those lines stand for is ended, so net worth counts it once.
+Advice files and one sample audit with a finding (B-399, `seed/india_advice.py`) are added once.
 
 Every run also moves the dated demonstration scenarios back to their distance from today (`seed/india_redate.py`) and rewrites the
 description of an open reminder task still in the older wording.
@@ -168,6 +169,9 @@ async def main() -> None:
         from seed import india_retirement
 
         stack_rows = await india_retirement.add(s, firm)
+        from seed import india_advice
+
+        advice_rows = await india_advice.add(s, firm)
         # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
         # open reminder tasks raised in the older wording (B-372).
         from app.aurea_core import india_reminders
@@ -187,7 +191,8 @@ async def main() -> None:
           f"Re-dated for today: {', '.join(f'{n} {k}' for k, n in redated.items() if n) or 'nothing'}. "
           f"Rewrote {reworded} open reminder task description(s). Consolidation workbench: {consolidation_rows} holding(s) added or re-dated. Health cover and policy values: {protection_rows} added or re-dated. "
           f"KYC registry: {registry_rows} answer(s), step(s) and contact attempt(s) added. Identity and bank checks done by hand: {check_rows} added. "
-          f"PMLA programme: {pmla_rows} row(s) added. Retirement stack: {stack_rows} record(s) added.\n")
+          f"PMLA programme: {pmla_rows} row(s) added. Retirement stack: {stack_rows} record(s) added. "
+          f"Advice files and audit: {advice_rows} added.\n")
 
 
 if __name__ == "__main__":

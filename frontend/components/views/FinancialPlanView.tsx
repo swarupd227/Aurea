@@ -17,6 +17,7 @@ import { GuardrailChips, GuardrailTable } from "@/app/workspace/components/artif
 import { agesOfLabel, basisLabel, planToLabel, RATE_ASSUMED, returnsLabel } from "@/lib/planBasis";
 import { PlanInputsChips, SequenceIllustration } from "@/components/PlanInputs";
 import { FiguresTable, FreshnessChip, PlanStateChip, ReviewNeedChip, SummaryChip } from "@/app/workspace/components/artifacts/PlanRecordCard";
+import { AdviceHoldChips } from "@/app/workspace/components/artifacts/AdvicePracticeCard";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { withRef } from "@/lib/refs";
 import { ViewLink, useViewNav } from "./ViewNav";
@@ -225,6 +226,7 @@ function PlanRecordSection({ household }: { household: string }) {
           <ReviewNeedChip need={data.review_need} />
           <FreshnessChip f={data.freshness} />
           <SummaryChip summary={summary} baselineId={data.baseline?.id} />
+          <AdviceHoldChips gate={data.pre_advice} />
         </div>
         {say && (
           <div className="flex flex-wrap gap-1.5">

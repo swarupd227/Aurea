@@ -5,6 +5,8 @@ import { useApi } from "@/lib/hooks";
 import { withRef } from "@/lib/refs";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { ADVICE_CATEGORY, AdviceStatusChip, ImplementationChips, adviceRate } from "@/app/workspace/components/artifacts/AdviceFileCard";
+import { AdviceHoldChips, HeldHouseholdChips, RetentionChip, RiskBasisChips } from "@/app/workspace/components/artifacts/AdvicePracticeCard";
+import { AdviceAuditSection } from "./AdviceAuditSection";
 import { ViewLink, useViewNav } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 
@@ -35,7 +37,10 @@ export function AdviceFileView({ household = null }: { household?: string | null
         <span className="chip text-ink-muted">not on file does not mean not advised</span>
         <span className="chip text-ink-muted">staff only</span>
         <span className="chip text-ink-muted" title="The firm's assumption set today">assumptions {data.assumption_version}</span>
+        <RetentionChip retention={data.retention} />
+        <AdviceHoldChips gate={data.pre_advice} />
       </div>
+      {(data.held ?? []).length > 0 && <div className="mt-1.5"><HeldHouseholdChips held={data.held} /></div>}
     </Card>
   );
 
@@ -52,6 +57,7 @@ export function AdviceFileView({ household = null }: { household?: string | null
         </div>
         {basis}
         <Card className="mb-4"><ImplementationChips implementation={data.implementation} /></Card>
+        {data.retention && <AdviceAuditSection />}
         {data.households.length === 0 ? <Empty>No recommendations on file in this period.</Empty> : (
           <Card className="mb-4 overflow-hidden p-0">
             <div className="overflow-x-auto">
@@ -126,6 +132,7 @@ function Rows({ rows, showClient = false, detail = false, canAsk, say }: {
             {r.revisit_on && !r.revisit_due && <span className="chip text-ink-muted">revisit {reviewDay(r.revisit_on)}</span>}
             <span className="chip text-ink-muted">facts as of {reviewDay(r.data_as_of)}</span>
             <span className="chip text-ink-muted">assumptions {r.assumption_version}</span>
+            <RiskBasisChips r={r} />
           </div>
           {detail && (
             <div className="mb-2 overflow-x-auto">

@@ -1,5 +1,6 @@
 import { money } from "@/lib/format";
 import { reviewDay } from "./ReviewsCard";
+import { AdviceHoldChips } from "./AdvicePracticeCard";
 
 /** B-181: the plan of record. Figures, tables and chips: where a plan stands, what was frozen, and the firm's measures. */
 
@@ -157,6 +158,7 @@ export function PlanRecordCard({ result }: { result: any }) {
           {(result?.data?.missing ?? []).map((m: any) => <span key={m.text} className="chip text-warn">missing {m.text}</span>)}
           {result?.sent_back && <span className="chip text-warn" title={result.sent_back.findings}>sent back {reviewDay(result.sent_back.happened_on)}</span>}
           <SummaryChip summary={result?.summary} baselineId={result?.baseline?.id} />
+          <AdviceHoldChips gate={result?.pre_advice} />
         </div>
         {frozen && <div className="-mx-3"><FiguresTable frozen={frozen} today={result?.today} differences={result?.differences} /></div>}
       </div>

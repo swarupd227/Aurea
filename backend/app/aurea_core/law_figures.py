@@ -449,6 +449,14 @@ ALL: tuple[LawFigure, ...] = (
     LawFigure("in_ia_deposit_liquid_funds", "Investment Adviser: the refundable deposit with IAASB may be held in liquid or overnight mutual funds", None, "rule",
               "SEBI circular of August 2025 on the Investment Adviser deposit, as read in the L100 India edition (Nov 2026) section 4.2; the "
               "circular was not re-read", date(2026, 11, 25), applies_from=date(2025, 8, 1)),
+    # ── India: advice under the IA operating model (B-399). Neither the Regulations nor a circular was re-read.
+    LawFigure("in_ia_record_retention_years", "Investment Adviser: records of advice are preserved for at least, years", 5, "years",
+              "ASSUMED: SEBI (Investment Advisers) Regulations 2013, regulation 19, as understood (a minimum of five years); the L200-2 India edition "
+              "(Nov 2026) section 9 names record retention and gives no period; the Regulations were not re-read", date(2026, 11, 27)),
+    LawFigure("in_ia_individual_client_limit", "An individual Investment Adviser moves to non-individual registration above this many clients", 300, "count",
+              "ASSUMED: SEBI (Investment Advisers) (Second Amendment) Regulations 2024 and the guidelines of January 2025, as understood (300 clients, "
+              "or Rs 3 crore of fees in a year, which is not counted here); the L200-2 India edition (section 9) says to verify the current thresholds; "
+              "not re-read", date(2026, 11, 27)),
     # ── India: the L100 batch A items (B-293, B-295, B-296, B-299). The L100 edition states the LRS limit and says to verify the tax
     # collected at source, so those are ASSUMED here from the Finance Act 2025 as understood and stand "not reviewed" in the counsel
     # tracker until compliance records counsel's reading. None was re-read against its source on 25 Nov 2026.

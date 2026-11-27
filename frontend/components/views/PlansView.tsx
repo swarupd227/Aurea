@@ -69,7 +69,7 @@ export function PlansView() {
                 {rows.map((r) => (
                   <tr key={r.household_id} data-testid="plans-row">
                     <td className="px-4 py-2"><ViewLink href={`/studio/plan?household=${r.household_id}`} className="text-ink hover:underline">{r.household}</ViewLink></td>
-                    <td className="px-4 py-2"><PlanStateChip state={r.state} /></td>
+                    <td className="px-4 py-2"><PlanStateChip state={r.state} />{r.advice_held && <span className="chip ml-1.5 text-warn" data-testid="advice-gate">new advice held</span>}</td>
                     <td className={num}>{r.version || "—"}</td>
                     <td className="px-4 py-2 text-xs text-ink-muted">{r.adviser ?? "unassigned"}</td>
                     <td className={num}>{r.complexity}</td>

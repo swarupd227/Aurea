@@ -211,6 +211,15 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         h1 ? { label: `${short(h1)}'s exits`, prompt: `Which of ${the(h1)}'s holdings are marked to exit, and how do they sit against the gain budget?` }
           : { label: "Redeem instead", prompt: "What would redeeming instead of transferring crystallise, household by household?" },
       ];
+    case "/studio/advice-file":
+      return [
+        { label: "Overdue advice", prompt: "Which recommendations on the advice file are overdue or due a revisit?" },
+        h1 ? { label: `${short(h1)}'s advice`, prompt: `What have we recommended to ${the(h1)}, and what became of it?` } : { label: "Implementation rate", prompt: "What is our advice implementation rate this year, by type?" },
+        ...(firmMarket() === "IN" ? [
+          { label: "Advice audit", prompt: "Show the advice file audit: the findings, retention and our client count against the registration line." },
+          ...(role === "compliance" ? [{ label: "Draw a sample", prompt: "Draw a sample of advice files for audit." }] : []),
+        ] : []),
+      ];
     case "/studio/licences":
       return [
         { label: "Waiting on clients", prompt: "Which proposals are waiting for a client's consent?" },

@@ -44,7 +44,7 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import balance_sheet, firm_time, planning, plan_inputs, reviews
+from app.aurea_core import balance_sheet, firm_time, planning, plan_inputs, pre_advice, reviews
 from app.models.engagement import Task
 from app.models.enums import TaskStatus
 from app.models.equity_comp import EquityGrant
@@ -422,6 +422,8 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
 
     out["summary"] = await plan_summary.latest(session, firm_id, household.id)
     out["summary_ready"] = {k: v for k, v in plan_summary.ready(out).items() if k in ("ok", "why")}
+    # India's adviser track (B-399): what holds a delivery and the summary's publication, or None where the gate does not apply.
+    out["pre_advice"] = await pre_advice.held_view(session, firm, household.id)
     return out
 
 
@@ -451,6 +453,7 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, role: Any = Non
     status = {k: str(t.status) for k, t in tasks.items()}
     uids = set(held.get(h) for h in ids if held.get(h))
     names = {u.id: u.full_name for u in (await session.execute(select(User).where(User.id.in_(uids)))).scalars().all()} if uids else {}
+    held_back = {g["household_id"] for g in await pre_advice.for_firm(session, firm) if not g["met"]}   # B-399
     rows, depths, fresh_n, delivered_n, assumed_n = [], [], 0, 0, 0
     passed = failed = 0
     for h in homes:
@@ -475,7 +478,7 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, role: Any = Non
                      "complexity": complexity["score"], "review_needed": bool(need.get("needed")),
                      "missing": len(data["missing"]), "scenarios_since_baseline": st["scenarios_since"],
                      "delivered_on": fresh["delivered_on"] if fresh else None, "fresh": fresh["fresh"] if fresh else None,
-                     "open_tasks": st["open_tasks"]})
+                     "open_tasks": st["open_tasks"], "advice_held": str(h.id) in held_back})
     reviews_n = passed + failed
     active = len(homes)
     by_state = {s: sum(1 for r in rows if r["state"] == s) for s in STATES}
@@ -647,6 +650,10 @@ async def prepare_delivery(session: AsyncSession, firm_id: uuid.UUID, *, role: A
         why = ("every plan is reviewed until the firm sets its complexity line" if need.get("line_assumed")
                else f"its complexity of {need.get('score')} is above the firm's line of {need.get('line')}")
         raise PlanRecordError(f"This plan needs a review by a second person before it is delivered: {why}.")
+    # A delivered plan is advice: on India's adviser track it waits for the same paperwork a book-moving approval does (B-399).
+    why = await pre_advice.household_refusal(session, await session.get(Firm, firm_id), household.id)
+    if why:
+        raise PlanRecordError(why)
     kind = str(evidence_kind or "").strip().lower()
     if kind not in EVIDENCE_KINDS:
         raise PlanRecordError("A delivery is recorded from its evidence: say whether it is a document or a meeting note.")

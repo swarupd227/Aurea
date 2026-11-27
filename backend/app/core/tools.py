@@ -398,7 +398,7 @@ TOOLS: dict[str, Tool] = {
         key="record_sebi_registration",
         name="Record SEBI Registration",
         speaking_agent="astra",
-        description="Records the firm's SEBI registration details and the people it must name, from the registration certificate or a board record: registration_number, registration_valid_to, registered_address, sebi_regional_office, principal_officer, compliance_officer, designated_director, ciso, grievance_contact, and for an Investment Adviser iaasb_deposit, iaasb_deposit_held_in and iaasb_deposit_document. Give only what changes, and a reason for the audit log. The firm's administrator only.",
+        description="Records the firm's SEBI registration details and the people it must name, from the registration certificate or a board record: registration_number, registration_valid_to, registered_address, sebi_regional_office, principal_officer, compliance_officer, designated_director, ciso, grievance_contact, and for an Investment Adviser iaasb_deposit, iaasb_deposit_held_in, iaasb_deposit_document and ia_registration_type (individual or non-individual). Give only what changes, and a reason for the audit log. The firm's administrator only.",
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
         confirmation="Record these registration details?",
         inputs=[
@@ -414,6 +414,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("iaasb_deposit", "string", "India, an Investment Adviser: the refundable deposit with IAASB, as its receipt states it", required=False),
             ToolInput("iaasb_deposit_held_in", "string", "Where the deposit is held: bank deposit, liquid fund, overnight fund or other (liquid or overnight funds allowed since August 2025)", required=False),
             ToolInput("iaasb_deposit_document", "string", "Where the deposit's receipt or statement is filed; needed with the deposit", required=False),
+            ToolInput("ia_registration_type", "string", "individual or non-individual, as the registration certificate says", required=False),
             ToolInput("reason", "string", "Why it changes, for the audit log", required=True),
         ],
         output=ToolOutput("object", "The calendar, with the details recorded"),
@@ -1835,7 +1836,7 @@ TOOLS: dict[str, Tool] = {
         key="record_recommendation",
         name="Record Recommendation",
         speaking_agent="astra",
-        description="Put an adviser's own recommendation to a client on the advice file: what was recommended, its type, the facts it rested on, the alternatives considered and why each was rejected, and the client's decision so far (open, accepted or declined; accepted or declined needs its evidence, a document or a note). The firm's assumption version is captured with it. The owner defaults to the client's recorded adviser. It is added and never edited: a later decision or the implementation is record_advice_outcome. Take every word from the user; never suggest a recommendation, an alternative or a reason. It is not sent to the client.",
+        description="Put an adviser's own recommendation to a client on the advice file: what was recommended, its type, the facts it rested on, the alternatives considered and why each was rejected, and the client's decision so far (open, accepted or declined; accepted or declined needs its evidence, a document or a note). The firm's assumption version is captured with it. The owner defaults to the client's recorded adviser. It is added and never edited: a later decision or the implementation is record_advice_outcome. Take every word from the user; never suggest a recommendation, an alternative or a reason. It is not sent to the client. The risk profile on file that day is kept on the record with it. For an Indian household on the Investment Adviser track it is refused while the client's pre-advice paperwork is incomplete, with the same reason a book-moving approval gives; say the reason and what to record, never a way round it. What became of earlier advice (record_advice_outcome) is never held.",
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
         confirmation="Put this recommendation on the client's advice file? It is added and cannot be edited.",
         inputs=[
@@ -1876,6 +1877,51 @@ TOOLS: dict[str, Tool] = {
         ],
         output=ToolOutput("object", "The recommendation with its history"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
+    # B-399: India's adviser operating model. The registration line, retention, who is held before advice, and compliance's
+    # sample audit of advice files. Staff only.
+    "read_advice_audit": Tool(
+        key="read_advice_audit",
+        name="Read Advice Audit",
+        speaking_agent="astra",
+        description="India, a firm registered as an Investment Adviser: the clients on the adviser's track against the line above which an individual adviser registers as non-individual (an assumed figure, not reviewed; counted as each person or entity holding an active advisory mandate, households beside it, with the registration type only if recorded), how long advice records are kept (assumed, not reviewed; nothing is ever deleted), which households may not yet be advised and what paperwork is missing, and compliance's sample audits of the advice file: each drawn file with what the record shows (risk profile it rests on, whether it was consented when advised, alternatives, the client's decision, paperwork today), its result and findings in the reviewer's words, and the share with findings. A drawn file with no result has not been reviewed. Never say the firm complies with anything, and never say a file passed unless a result records it.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "Capacity, retention, who is held, and the sample audits"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE, UserRole.BRANCH_LEADER},
+    ),
+    "draw_advice_audit": Tool(
+        key="draw_advice_audit",
+        name="Draw Advice Audit",
+        speaking_agent="astra",
+        description="India: draw a sample of advice files for compliance to review, from the recommendations put on file in a period (the last year unless since/until are given). size is the number of files (5 unless given, at most the number made). The draw picks the files; nobody chooses them, and files never drawn come first. It records the sample and changes no advice record. Compliance only.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Draw this sample of advice files? The draw is recorded.",
+        inputs=[
+            ToolInput("size", "number", "How many files, 5 unless given", required=False),
+            ToolInput("since", "string", "First day of the period, YYYY-MM-DD", required=False),
+            ToolInput("until", "string", "Last day of the period, YYYY-MM-DD. Defaults to today", required=False),
+        ],
+        output=ToolOutput("object", "The drawn files with what each record shows"),
+        roles_required={UserRole.COMPLIANCE},
+    ),
+    "record_advice_audit": Tool(
+        key="record_advice_audit",
+        name="Record Advice Audit Result",
+        speaking_agent="astra",
+        description="India: record compliance's result on one drawn advice file: outcome met (no finding) or finding, and for a finding each as {item, words} with item one of risk_profile, suitability, alternatives, client_decision, paperwork, disclosure or other and words in the reviewer's own. Take the outcome and every finding from the user; never suggest one or mark a file met on your own reading. One result per file per sample, added and never edited; the advice record is unchanged. Compliance only.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this audit result? It is added and cannot be edited.",
+        inputs=[
+            ToolInput("recommendation_id", "uuid", "The drawn file, from read_advice_audit", required=True),
+            ToolInput("outcome", "string", "met or finding", required=True),
+            ToolInput("findings", "list[object]", "For finding: each {item, words}", required=False),
+            ToolInput("audit_id", "uuid", "The sample, from read_advice_audit; the latest holding the file unless given", required=False),
+        ],
+        output=ToolOutput("object", "The audits with the result"),
+        roles_required={UserRole.COMPLIANCE},
     ),
 
     # B-181: the plan of record. A household's plan as a produced artifact: a baseline freezes its figures, a second
@@ -1928,7 +1974,7 @@ TOOLS: dict[str, Tool] = {
         key="record_plan_delivery",
         name="Record Plan Delivery",
         speaking_agent="astra",
-        description="Record that the household's current plan baseline was delivered to the client, from its evidence (a document or a meeting note). Refused until a needed review has passed. The delivery keeps the baseline's figures and assumption version exactly as they were frozen, never worked out again. Each action item becomes a task for the household's recorded adviser (unassigned when none is on record), due when given, on the firm's calendar. Take every action item from the user. It sends nothing to the client and changes no goal, mandate or plan figure.",
+        description="Record that the household's current plan baseline was delivered to the client, from its evidence (a document or a meeting note). Refused until a needed review has passed. The delivery keeps the baseline's figures and assumption version exactly as they were frozen, never worked out again. Each action item becomes a task for the household's recorded adviser (unassigned when none is on record), due when given, on the firm's calendar. Take every action item from the user. It sends nothing to the client and changes no goal, mandate or plan figure. For an Indian household on the Investment Adviser track it is refused while the client's pre-advice paperwork is incomplete, with the same reason a book-moving approval gives; say the reason and what to record, never a way round it. A baseline and a review are not held.",
         change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
         confirmation="Record this plan as delivered and raise its action items as tasks? It is added and cannot be edited.",
         inputs=[

@@ -59,7 +59,9 @@ class PlanRecordExecutors:
                         f"{f['cadence_months']}-month cadence{' (assumed)' if f['cadence_assumed'] else ''}")
         if r.get("tasks"):
             bits.append(f"{r['open_tasks']} of {r['tasks']} task(s) open")
-        return "; ".join(bits) + ". Every figure is an estimate."
+        held = r.get("pre_advice")
+        return ("; ".join(bits) + ". Every figure is an estimate."
+                + (f" Neither a delivery nor the client's summary may go yet: {held['reason']}" if held and not held["met"] else ""))
 
     async def read_plan_record(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.aurea_core import plan_record

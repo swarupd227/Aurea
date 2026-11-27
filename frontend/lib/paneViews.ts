@@ -431,6 +431,11 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_recommendation":
     case "record_advice_outcome":
       return onClient("/studio/advice-file");
+    // The operating model and the sample audit are the firm's (B-399).
+    case "read_advice_audit":
+    case "draw_advice_audit":
+    case "record_advice_audit":
+      return "/studio/advice-file";
     // The plan of record (B-181): one household's opens on its Plan tab, the firm's on the plans of record.
     case "read_plan_record":
     case "record_plan_baseline":

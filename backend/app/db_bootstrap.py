@@ -281,6 +281,8 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE kyc_record ADD COLUMN IF NOT EXISTS kra_status_stated BOOLEAN"))
         # B-390: a party's father's name, which screening compares beside the date of birth. Empty on every party before.
         await conn.execute(text("ALTER TABLE onboarding_party ADD COLUMN IF NOT EXISTS father_name VARCHAR(200)"))
+        # B-399: the risk profile a recorded recommendation rests on, frozen when made. Empty on every record before: "not kept".
+        await conn.execute(text("ALTER TABLE advice_recommendation ADD COLUMN IF NOT EXISTS risk_basis JSON"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

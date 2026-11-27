@@ -30,6 +30,7 @@ import { ReconciliationCard } from "./ReconciliationCard";
 import { CareFundingChips, ProtectionCard } from "./ProtectionCard";
 import { HealthCoverCard, PolicyValuesCard } from "./HealthCoverCard";
 import { AdviceFileCard } from "./AdviceFileCard";
+import { AdviceAuditCard } from "./AdvicePracticeCard";
 import { PlanRecordCard } from "./PlanRecordCard";
 import { LicenceCard } from "./LicenceCard";
 import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
@@ -434,6 +435,12 @@ export function artifactCard(artifact: Artifact) {
       case "record_advice_outcome":
         if (!Array.isArray(artifact.result?.recommendations) && typeof artifact.result?.status !== "string") return null;
         return <AdviceFileCard result={artifact.result as any} />;
+      case "read_advice_audit":
+      case "draw_advice_audit":
+      case "record_advice_audit":
+        // India's adviser operating model and the sample audit (B-399).
+        if (typeof artifact.result?.applies !== "boolean") return null;
+        return <AdviceAuditCard result={artifact.result as any} />;
       case "read_plan_record":
       case "record_plan_baseline":
       case "record_plan_review":

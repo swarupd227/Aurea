@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_firm
-from app.aurea_core import advice_file
+from app.aurea_core import advice_file, advice_practice, counsel_review
 from app.core.db import get_db
 from app.core.security import UserRole, require_roles
 from app.models.identity import User
@@ -32,3 +32,11 @@ async def read(household: uuid.UUID | None = None, since: str | None = None, unt
         raise HTTPException(status_code=404, detail="Household not found.")
     result["can_record"] = str(user.role) in advice_file.RECORDERS
     return result
+
+
+@router.get("/audit")
+async def audit(user: User = ReaderDep, firm: Firm = Depends(current_firm), session: AsyncSession = Depends(get_db)) -> dict:
+    """India's adviser operating model and the sample audits (B-399). Compliance draws and records through the conversation."""
+    result = await advice_practice.overview(session, firm)
+    result["can_record"] = str(user.role) in advice_practice.RECORDERS
+    return await counsel_review.annotate(session, firm, result)

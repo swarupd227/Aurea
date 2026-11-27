@@ -26,6 +26,23 @@ def _error(exc: Exception):
     return ExecutorError(str(exc))
 
 
+def _held_one(v: dict) -> str:
+    gate = v.get("pre_advice")
+    return f" No new advice may be recorded or delivered yet: {gate['reason']}" if gate and not gate["met"] else ""
+
+
+def _kept(v: dict) -> str:
+    kept = v.get("retention")
+    return (f" Advice records are kept at least {kept['years']} years (an assumed period, not reviewed); nothing is deleted."
+            if kept else "")
+
+
+def _rests_on(row: dict) -> str:
+    from app.aurea_core import advice_practice
+
+    return f" Risk profile it rests on: {advice_practice.basis_text(row.get('risk_basis'))}."
+
+
 class AdviceFileExecutors:
     """Needs the host's session, firm_id, user_id, role and _shelf_user()."""
 
@@ -54,7 +71,7 @@ class AdviceFileExecutors:
                 o = result["implementation"]["overall"]
                 result["message"] = (f"{result['household']}: {o['made']} recommendation(s) on file, {o['implemented']} implemented, "
                                      f"{o['accepted']} accepted, {o['declined']} declined, {o['open']} open; {result['overdue']} overdue, "
-                                     f"{result['revisit_due']} due a revisit. {advice_file.NOT_ON_FILE}")
+                                     f"{result['revisit_due']} due a revisit. {advice_file.NOT_ON_FILE}") + _held_one(result) + _kept(result)
                 return result
             result = await advice_file.for_firm(self.session, self.firm_id, since=inputs.get("since"), until=inputs.get("until"),
                                                 category=inputs.get("category"))
@@ -65,6 +82,10 @@ class AdviceFileExecutors:
         rate = f"{o['rate'] * 100:.0f}%" if o["rate"] is not None else "no rate (none made)"
         result["message"] = (f"{imp['since']} to {imp['until']}: {o['made']} made, {o['implemented']} implemented ({rate}), {o['accepted']} accepted, "
                              f"{o['declined']} declined, {o['open']} open; {result['summary']['overdue']} overdue. {advice_file.NOT_ON_FILE}")
+        if result.get("held"):
+            result["message"] += (" No new advice may be recorded or delivered yet for "
+                                  + "; ".join(f"{h['household']} ({'; '.join(h['missing'])})" for h in result["held"]) + ".")
+        result["message"] += _kept(result)
         return result
 
     async def record_recommendation(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -78,7 +99,7 @@ class AdviceFileExecutors:
             raise _error(exc)
         row["message"] = (f"{row['household']}: {advice_file.CATEGORY_TEXT[row['category']].lower()} recommendation on file, "
                           f"{row['status']}, owned by {row['owner'] or 'nobody yet'}, against assumption version {row['assumption_version']}. "
-                          "Nothing was sent to the client.")
+                          f"{_rests_on(row)} Nothing was sent to the client.")
         return row
 
     async def record_advice_outcome(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -97,7 +118,7 @@ class AdviceFileExecutors:
 
     async def _advice_preview(self, tool_key: str, inputs: dict[str, Any]) -> list[tuple[str, Any]]:
         """What the Confirm card names, refused for the reasons recording it would be refused."""
-        from app.aurea_core import advice_file, firm_time
+        from app.aurea_core import advice_file, advice_practice, firm_time
 
         self._advice_may(ADVICE_RECORDERS, advice_file.REFUSED_ROLE)
         spoken = lambda d: firm_time.spoken(d) if d else None  # noqa: E731
@@ -109,6 +130,8 @@ class AdviceFileExecutors:
                         ("Type", advice_file.CATEGORY_TEXT[r["category"]]), ("Recommended", r["recommendation"]),
                         ("Rested on", f"{r['facts']} (as of {spoken(r['data_as_of'])})"),
                         ("Assumption version", r["assumption_version"]),
+                        ("Risk profile it rests on", advice_practice.basis_text(r["risk_basis"])),
+                        ("Kept", f"At least {r['retention']['years']} years (assumed, not reviewed)" if r["retention"] else None),
                         ("Alternatives", "; ".join(f"{a['option']}: rejected, {a['why_rejected']}" for a in r["alternatives"])),
                         ("Client's decision", advice_file.STATUS_TEXT[r["status"]]
                          + (f", {spoken(r['decided_on'])}, from a {r['evidence_kind']}: {r['evidence']}" if r["status"] != "open" else "")),

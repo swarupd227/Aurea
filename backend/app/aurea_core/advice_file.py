@@ -13,6 +13,10 @@ because advice reaches a client through their adviser, so nothing here is a clie
 The implementation rate is implemented over made, by type and overall, for the recommendations made in a period and
 where each stands today. Declined and open are counted beside it, never folded in, and nothing is estimated: what is
 not on file here is not counted, which does not mean no advice was given.
+
+On India's adviser track (B-399) a new recommendation is refused while the client's pre-advice paperwork is incomplete,
+with the reason a book-moving approval gives (pre_advice.py); what became of one already on file is a fact and is always
+recordable. Each record keeps the risk profile it rested on, and shows how long it is kept (advice_practice.py).
 """
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time
+from app.aurea_core import advice_practice, firm_time, pre_advice
 from app.models.advice_file import ADVICE_CATEGORIES, ADVICE_STATUSES, EVIDENCE_KINDS, AdviceOutcome, AdviceRecommendation
 from app.models.graph import Household, Person
 from app.models.identity import User
@@ -163,6 +167,10 @@ async def prepare_recommendation(
     household = await _household(session, _uuid(household_id, "household_id"), firm_id)
     if household.left_on is not None:
         raise AdviceError(f"{household.name} has left the firm; a new recommendation is not recorded for them.")
+    firm = await session.get(Firm, firm_id)
+    held = await pre_advice.household_refusal(session, firm, household.id)
+    if held:
+        raise AdviceError(held)
     person = None
     pid = _uuid(person_id, "person_id")
     if pid:
@@ -202,6 +210,8 @@ async def prepare_recommendation(
         "status": status, "decided_on": decided, "evidence_kind": ev_kind, "evidence": ev_text,
         "owner": await _owner(session, firm_id, owner, household.id, by_user),
         "assumption_version": await assumption_version_of(session, firm_id), "today": today,
+        "risk_basis": await advice_practice.risk_basis(session, firm, household.id, person.id if person else None, made_on),
+        "retention": advice_practice.retention(firm),
     }
 
 
@@ -214,7 +224,8 @@ async def record_recommendation(session: AsyncSession, firm_id: uuid.UUID, *, re
         category=ready["category"], recommendation=ready["recommendation"], facts=ready["facts"],
         data_as_of=ready["data_as_of"], assumption_version=ready["assumption_version"], alternatives=ready["alternatives"],
         recommended_on=ready["recommended_on"], owner_id=ready["owner"].id if ready["owner"] else None,
-        due_on=ready["due_on"], revisit_on=ready["revisit_on"], recorded_by=recorded_by, recorded_by_role=str(role))
+        due_on=ready["due_on"], revisit_on=ready["revisit_on"], recorded_by=recorded_by, recorded_by_role=str(role),
+        risk_basis=ready["risk_basis"])
     session.add(row)
     await session.flush()
     session.add(AdviceOutcome(firm_id=firm_id, recommendation_id=row.id, seq=1, status=ready["status"],
@@ -281,7 +292,7 @@ async def record_outcome(session: AsyncSession, firm_id: uuid.UUID, *, recorded_
 
 # ── Reading ─────────────────────────────────────────────────────────────────
 
-def _view(rec: AdviceRecommendation, history: list[AdviceOutcome], names: dict, today: date) -> dict:
+def _view(rec: AdviceRecommendation, history: list[AdviceOutcome], names: dict, today: date, years: int | None = None) -> dict:
     now = history[-1]
     revisit = next((o.revisit_on for o in reversed(history) if o.revisit_on), None) or rec.revisit_on
     return {
@@ -296,6 +307,9 @@ def _view(rec: AdviceRecommendation, history: list[AdviceOutcome], names: dict, 
         "overdue": now.status in ("open", "accepted") and rec.due_on is not None and rec.due_on < today,
         "revisit_due": now.status in ("open", "declined") and revisit is not None and revisit <= today,
         "recorded_by": rec.recorded_by, "recorded_by_role": rec.recorded_by_role,
+        "risk_basis": rec.risk_basis,
+        # Kept at least until then, counted from the record's latest entry, where a retention period applies. Nothing is deleted after it.
+        "keep_until": advice_practice.keep_until(max(rec.recommended_on, now.happened_on), years).isoformat() if years else None,
         "history": [{"seq": o.seq, "status": o.status, "happened_on": o.happened_on.isoformat(), "evidence_kind": o.evidence_kind,
                      "evidence": o.evidence, "revisit_on": o.revisit_on.isoformat() if o.revisit_on else None,
                      "recorded_by": o.recorded_by, "recorded_by_role": o.recorded_by_role} for o in history],
@@ -347,7 +361,8 @@ async def _load(session: AsyncSession, firm_id: uuid.UUID, household_id: uuid.UU
     if uids:
         names.update({u.id: u.full_name for u in (await session.execute(select(User).where(User.id.in_(uids)))).scalars().all()})
     today = await firm_time.today_of(session, firm_id)
-    return [_view(r, outcomes[r.id], names, today) for r in recs if outcomes.get(r.id)]
+    kept = advice_practice.retention(await session.get(Firm, firm_id))
+    return [_view(r, outcomes[r.id], names, today, kept["years"] if kept else None) for r in recs if outcomes.get(r.id)]
 
 
 async def one(session: AsyncSession, recommendation_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict:
@@ -367,7 +382,9 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
     if household is None or household.firm_id != firm_id:
         return None
     rows = await _load(session, firm_id, household_id=household_id)
-    return {"household_id": str(household.id), "household": household.name, "as_of": (await firm_time.today_of(session, firm_id)).isoformat(),
+    firm = await session.get(Firm, firm_id)
+    return {"pre_advice": await pre_advice.held_view(session, firm, household.id), "retention": advice_practice.retention(firm),
+            "household_id": str(household.id), "household": household.name, "as_of": (await firm_time.today_of(session, firm_id)).isoformat(),
             "categories": list(ADVICE_CATEGORIES), "recommendations": rows, "implementation": implementation_rate(rows),
             "overdue": sum(1 for r in rows if r["overdue"]), "revisit_due": sum(1 for r in rows if r["revisit_due"]),
             "assumption_version": await assumption_version_of(session, firm_id), "not_on_file": NOT_ON_FILE}
@@ -398,7 +415,10 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, since: Any = No
     in_period = {r["id"] for r in period}
     # Rows come newest first, and the sort is stable, so within each rank the newest leads.
     shown = sorted((r for r in rows if r["id"] in in_period or r["overdue"] or r["revisit_due"]), key=_rank)
-    return {"household_id": None, "as_of": today.isoformat(), "category": kind, "categories": list(ADVICE_CATEGORIES),
+    firm = await session.get(Firm, firm_id)
+    held = [{"household_id": g["household_id"], "household": g["household"], "missing": g["missing"]}
+            for g in await pre_advice.for_firm(session, firm) if not g["met"]]
+    return {"held": held, "retention": advice_practice.retention(firm), "household_id": None, "as_of": today.isoformat(), "category": kind, "categories": list(ADVICE_CATEGORIES),
             "implementation": implementation_rate(rows, since=start, until=end),
             "summary": {"made": len(period), "overdue": sum(1 for r in rows if r["overdue"]),
                         "revisit_due": sum(1 for r in rows if r["revisit_due"]), "households": len(homes)},

@@ -1,4 +1,5 @@
 import { reviewDay } from "./ReviewsCard";
+import { AdviceHoldChips, HeldHouseholdChips, RetentionChip, RiskBasisChips } from "./AdvicePracticeCard";
 
 /** B-175: the advice file. Figures and chips: what was recommended, where it stands, and the implementation rate. */
 
@@ -62,6 +63,7 @@ function One({ r }: { r: any }) {
         <span className="chip text-ink-muted" title="The firm's assumption set when it was recorded">assumptions {r.assumption_version}</span>
         <span className="chip text-ink-muted">{(r.alternatives ?? []).length} alternative{(r.alternatives ?? []).length === 1 ? "" : "s"}</span>
         {r.evidence_kind && <span className="chip text-ink-muted" title={r.evidence ?? undefined}>{r.evidence_kind}</span>}
+        <RiskBasisChips r={r} />
       </div>
       {(r.history ?? []).length > 1 && (
         <div className="flex flex-wrap gap-1.5" data-testid="advice-history">
@@ -91,6 +93,10 @@ export function AdviceFileCard({ result }: { result: any }) {
       </div>
       <div className="space-y-2 px-3 py-2">
         <ImplementationChips implementation={imp} />
+        {(result.pre_advice || result.retention) && (
+          <div className="flex flex-wrap gap-1.5"><AdviceHoldChips gate={result.pre_advice} /><RetentionChip retention={result.retention} /></div>
+        )}
+        <HeldHouseholdChips held={result.held} />
         {recs.length === 0 ? <span className="chip text-ink-muted">none on file</span> : recs.slice(0, 3).map((r) => <One key={r.id} r={r} />)}
         {recs.length > 3 && <span className="chip text-ink-muted">+{recs.length - 3} more</span>}
       </div>
