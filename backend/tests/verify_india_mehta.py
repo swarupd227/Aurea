@@ -220,6 +220,22 @@ async def run(s) -> None:
     await section("2. The backfill", backfill)
     await s.commit()
 
+    async def lengths():
+        # Postgres holds every String(n) to its length and SQLite does not, so the whole seeded firm is read.
+        from sqlalchemy import String
+
+        long = []
+        for table in Base.metadata.sorted_tables:
+            for column in table.columns:
+                size = getattr(column.type, "length", None)
+                if isinstance(column.type, String) and size:
+                    worst = (await s.execute(select(func.max(func.length(column))))).scalar_one()
+                    if worst and worst > size:
+                        long.append((table.name, column.name, worst, size))
+        check("every seeded string fits its column", long, [])
+
+    await section("2b. The seeded firm against Postgres's column lengths", lengths)
+
     mehta, brother = await home(india_mehta.HOME), await home(india_mehta.BROTHER_HOME)
     vivek, anjali, sameer = [await person(n) for n in (india_mehta.VIVEK, india_mehta.ANJALI, india_mehta.SAMEER)]
     cases = {c.prospect_name: c for c in (await s.execute(select(OnboardingCase).where(
