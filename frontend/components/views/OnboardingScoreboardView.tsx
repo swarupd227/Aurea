@@ -9,7 +9,7 @@ import { ViewLink } from "./ViewNav";
 const US_RACI = [{ key: "R", label: "Responsible" }, { key: "A", label: "Accountable" }, { key: "C", label: "Consulted" }, { key: "I", label: "Informed" }];
 
 const th = "px-4 py-2 font-medium";
-const days = (x: number | null | undefined) => (x == null ? "—" : `${x}d`);
+const days = (x: number | null | undefined) => (x == null ? "—" : `${Math.round(x * 10) / 10}d`);
 
 /** Onboarding, measured from the record: time to invest, where it stalls, screening, NPS, rejects, capacity and who does what. */
 export function OnboardingScoreboardView() {
