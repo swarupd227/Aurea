@@ -204,6 +204,12 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_tax_loss":
     case "record_tax_inputs":
     case "record_grandfather_value":
+    // India's tax planning (B-396): sections of the Tax page.
+    case "read_after_tax_comparison":
+    case "record_stated_return":
+    case "read_tax_reviews":
+    case "record_tax_review":
+    case "raise_harvest_tasks":
     case "check_household_wash_sale":
       return onClient("/studio/tax");
     case "read_estate":

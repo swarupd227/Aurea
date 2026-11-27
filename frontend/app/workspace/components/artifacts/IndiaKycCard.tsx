@@ -124,18 +124,47 @@ export function TaxEngine({ engine }: { engine: any }) {
       )}
       {engine.on_file && (
         <div className="flex flex-wrap gap-1.5" data-testid="tax-inputs-on-file" title={engine.on_file.document ?? undefined}>
-          {([["Salary", engine.on_file.salary_income], ["Old-regime deductions", engine.on_file.old_regime_deductions]] as [string, number | null][]).map(([label, v]) => (
+          {([["Salary", engine.on_file.salary_income], ["Old-regime deductions", engine.on_file.old_regime_deductions],
+             ["Basic salary", engine.on_file.basic_salary], ["Business income", engine.on_file.business_income]] as [string, number | null][]).map(([label, v]) => (
             <span key={label} className={`chip tabular-nums ${v == null ? "text-warn" : "text-ink-muted"}`}>{label} {v == null ? "not on file" : rupees(v)}</span>
           ))}
           <span className={`chip ${engine.on_file.regime ? "text-ink-muted" : "text-warn"}`}>{engine.on_file.regime ? `${engine.on_file.regime} regime recorded` : "regime not on file, new assumed"}</span>
+        </div>
+      )}
+      {(regime?.employer_nps || regime?.switching) && (
+        <div className="flex flex-wrap gap-1.5" data-testid="tax-regime-facts">
+          {regime.employer_nps && (regime.employer_nps.state === "none_on_file" ? (
+            <span className="chip text-ink-muted" title={regime.employer_nps.said} data-testid="tax-employer-nps">Employer NPS not on file</span>
+          ) : (
+            <span className={`chip tabular-nums ${regime.employer_nps.state === "cap_not_checked" ? "text-warn" : "text-ink-muted"}`}
+              title={`${regime.employer_nps.said} ${regime.employer_nps.basis} ${regime.employer_nps.document ?? ""} Limits assumed, not reviewed.`}
+              data-testid="tax-employer-nps">
+              Employer NPS {rupees(regime.employer_nps.recorded_yearly)} · deducted new {rupees(regime.employer_nps.new)}, old {rupees(regime.employer_nps.old)}
+              {regime.employer_nps.state === "cap_not_checked" ? " · limit not checked" : ""}
+            </span>
+          ))}
+          {regime.employer_nps?.above_line > 0 && (
+            <span className="chip tabular-nums text-warn" title="Assumed taxable as a perquisite, taken to be inside the income on file">
+              Employer money above the yearly line {rupees(regime.employer_nps.above_line)}
+            </span>
+          )}
+          {regime.without_employer_nps && (
+            <span className="chip tabular-nums text-ink-muted" title="The comparison with no employer contribution deducted">
+              Without it: new {rupees(regime.without_employer_nps.new_tax)}, old {rupees(regime.without_employer_nps.old_tax)}
+            </span>
+          )}
+          {regime.switching && (
+            <span className={`chip ${regime.switching.state === "no_business_income" ? "text-ink-muted" : "text-warn"}`} title={regime.switching.said}
+              data-testid="tax-regime-switching">{regime.switching.label}</span>
+          )}
         </div>
       )}
       {regime?.assessed ? (
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4" data-testid="tax-regime">
           <Figure label="New regime" value={rupees(regime.new.tax)} />
           <Figure label="Old regime" value={rupees(regime.old.tax)} />
-          <Figure label={regime.conclusive ? "Cheaper" : "Cheaper without deductions"} value={regime.cheaper === "old" ? "Old regime" : "New regime"} />
-          <Figure label={regime.conclusive ? "Saves" : "Old wins above"} value={regime.conclusive ? rupees(regime.saving) : (regime.break_even_deductions != null ? rupees(regime.break_even_deductions) : "-")} />
+          <Figure label={regime.conclusive ? "Cheaper" : regime.turns_on_nps_limit ? "Cheaper if within the NPS limit" : "Cheaper without deductions"} value={regime.cheaper === "old" ? "Old regime" : "New regime"} />
+          <Figure label={regime.conclusive || regime.turns_on_nps_limit ? "Saves" : "Old wins above"} value={regime.conclusive || regime.turns_on_nps_limit ? rupees(regime.saving) : (regime.break_even_deductions != null ? rupees(regime.break_even_deductions) : "-")} />
         </div>
       ) : (
         <div className="flex flex-wrap gap-1.5">{(regime?.needs ?? []).map((n: string) => <span key={n} className="chip text-warn">Regime comparison needs {n}</span>)}</div>

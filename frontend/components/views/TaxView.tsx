@@ -6,6 +6,7 @@ import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { firmMarket, money, firmLocale } from "@/lib/format";
 import { TaxPositionCard } from "@/app/workspace/components/artifacts/TaxPositionCard";
+import { AfterTaxRows, TaxReviewRows } from "@/app/workspace/components/artifacts/IndiaTaxPlanningCard";
 import { RothWindowChips, RothWindowTable } from "@/app/workspace/components/artifacts/RothWindowCard";
 import { GivingSections } from "@/app/workspace/components/artifacts/GivingCard";
 import { ViewLink } from "./ViewNav";
@@ -225,7 +226,7 @@ function TaxBook() {
   return (
     <Shell>
       <ViewHeader title="Tax intelligence" meta={meta} actions={refresh} />
-      {india ? <IndiaBook data={data} /> : <Book data={data} />}
+      {india ? <><IndiaBook data={data} /><IndiaReviewsSection /><IndiaAfterTaxSection /></> : <Book data={data} />}
       <HouseholdPicker />
     </Shell>
   );
@@ -354,6 +355,43 @@ function IndiaBook({ data }: { data: any }) {
   );
 }
 
+/** The year's regime and harvest reviews with completion shares and the gain-harvest queue (B-396). */
+function IndiaReviewsSection({ household }: { household?: string }) {
+  const path = `/api/india-tax/reviews${household ? `?household_id=${household}` : ""}`;
+  const { data, loading, error, refetch } = useApi<any>(path, [path]);
+  if (error) return <Card className="mb-4"><ErrorState what="the tax reviews" message={error} onRetry={refetch} /></Card>;
+  if (loading || !data) return <div className="mb-4"><SkeletonList count={2} /></div>;
+  if (!data.applies) return null;
+  return (
+    <Section title="Regime and harvest reviews" testId="tax-india-reviews"
+      chips={<><Chip>Tax Year {data.tax_year}</Chip><Chip>{data.days_left} days left</Chip></>}>
+      <TaxReviewRows data={data} full />
+    </Section>
+  );
+}
+
+/** The stated returns, and for a household what is left after tax on them at each taxpayer's recorded slab (B-396). */
+function IndiaAfterTaxSection({ household }: { household?: string }) {
+  const [months, setMonths] = useState(36);
+  const path = `/api/india-tax/after-tax?months=${months}${household ? `&household_id=${household}` : ""}`;
+  const { data, loading, error, refetch } = useApi<any>(path, [path]);
+  if (error) return <Card className="mb-4"><ErrorState what="the after-tax comparison" message={error} onRetry={refetch} /></Card>;
+  if (loading || !data) return <div className="mb-4"><SkeletonList count={2} /></div>;
+  if (!data.applies) return null;
+  return (
+    <Section title={household ? "After tax" : "Stated returns"} testId="tax-india-after-tax"
+      chips={household &&
+        <select className="input py-1 text-xs" aria-label="Months held" value={months} onChange={(e) => setMonths(Number(e.target.value))}
+          data-testid="after-tax-months">
+          {[12, 36, 60, 120].map((m) => <option key={m} value={m}>{m} months</option>)}
+        </select>
+      }>
+      {/* The page asks for the period itself, so only the amount is an assumption here. */}
+      <AfterTaxRows data={{ ...data, months_assumed: false }} />
+    </Section>
+  );
+}
+
 /** Whom to open: every household, each a link that opens its report (in the pane, in the pane). */
 function HouseholdPicker() {
   const { data, loading, error, refetch } = useApi<{ id: string; name: string }[]>("/api/core/households");
@@ -416,6 +454,7 @@ function HouseholdTax({ id }: { id: string }) {
         <>
           {jur === "US" && <WashSaleCalendar state={wash} ccy={ccy} />}
           {jur === "IN" && <TaxPositionCard result={data} full />}
+          {jur === "IN" && <div className="mt-4"><IndiaReviewsSection household={id} /><IndiaAfterTaxSection household={id} /></div>}
           {jur === "US" && <UnitedStates data={data} ccy={ccy} />}
           {jur === "UK" && <UnitedKingdom data={data} ccy={ccy} />}
           {jur === "NZ" && <NewZealand data={data} ccy={ccy} />}

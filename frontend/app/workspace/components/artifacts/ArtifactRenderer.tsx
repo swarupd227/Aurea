@@ -55,6 +55,7 @@ import { IndiaBatchCCard } from "./IndiaBatchCCard";
 import { IndiaRemECard } from "./IndiaRemECard";
 import { IndiaRemDCard } from "./IndiaRemDCard";
 import { TaxPositionCard } from "./TaxPositionCard";
+import { AfterTaxCard, TaxReviewsCard } from "./IndiaTaxPlanningCard";
 import { RiskProfileCard } from "./RiskProfileCard";
 import { ReviewsCard } from "./ReviewsCard";
 import { IpsCard } from "./IpsCard";
@@ -502,6 +503,16 @@ export function artifactCard(artifact: Artifact) {
       case "record_tax_inputs":
         if (!Array.isArray(artifact.result?.taxpayers)) return null;
         return <TaxPositionCard result={artifact.result as any} />;
+      // B-396: India's after-tax comparison, and the year's tax reviews with the gain-harvest queue.
+      case "read_after_tax_comparison":
+      case "record_stated_return":
+        if (!Array.isArray(artifact.result?.rates) && artifact.result?.applies !== false) return null;
+        return <AfterTaxCard result={artifact.result as any} />;
+      case "read_tax_reviews":
+      case "record_tax_review":
+      case "raise_harvest_tasks":
+        if (!artifact.result?.completion && artifact.result?.applies !== false) return null;
+        return <TaxReviewsCard result={artifact.result as any} />;
       case "read_licences":
         if (!artifact.result?.applies || !Array.isArray(artifact.result?.licences)) return null;
         return <LicenceCard result={artifact.result as any} />;
