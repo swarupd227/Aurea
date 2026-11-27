@@ -517,6 +517,8 @@ async def prepare_euin(session: AsyncSession, firm: Firm, role, *, order_id, eui
                        execution_only=None, document: str | None = None) -> dict:
     _need(firm, role)
     order, inst, household_id, account = await _order(session, firm, order_id)
+    if household_id is None:
+        raise AgreementError("That order's account is not tied to a household.")
     if _plan(inst) == "direct":
         raise AgreementError(f"{inst.symbol} is a direct plan: it goes through no distributor, so it carries no EUIN or declaration.")
     only = execution_only if isinstance(execution_only, bool) else str(execution_only or "").strip().lower() in ("true", "yes", "1")
