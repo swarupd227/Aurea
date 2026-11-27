@@ -184,11 +184,14 @@ async def page(Session, db, firm_id) -> None:
             asked = sent["n"]
         async with Session() as s:
             firm = await s.get(Firm, firm_id)
+            sent["n"] = 0
             plain = await licences._overview(s, firm)
+            unshared = sent["n"]
     finally:
         event.remove(db.sync_engine, "before_cursor_execute", count)
-    print(f"  ({asked} statements; 1,191 before)")
-    check("fewer than half the statements it sent", asked < 600, True)
+    # Read against the same page asked without sharing its reads, so another household on the demonstration moves both.
+    print(f"  ({asked} statements; {unshared} without sharing reads)")
+    check("fewer than half the statements it would send", asked < unshared / 2, True)
 
     def settled(view: dict) -> str:
         view = json.loads(json.dumps(view, default=str))

@@ -126,8 +126,8 @@ async def main() -> int:
             met = sum(on_track.values())
             check("a book with some goals met and some to talk about", 0 < met < len(on_track), True)
             # Sharma's three: the postgraduate study, the wedding (B-394) and retirement, in name order.
-            check("the client we sign in as has one of each", [v for k, v in sorted(on_track.items()) if "Sharma" in k],
-                  [False, False, True])
+            check("the client we sign in as has goals on track and not", [v for k, v in sorted(on_track.items()) if "Sharma" in k],
+                  [True, False, True])
 
             print("\n=== The client's own tools ===")
             # The client asks in the conversation (B-95); their tools read the Sharma household and no other.
@@ -146,7 +146,7 @@ async def main() -> int:
 
             print("\n=== Every mandate through the rebalancer ===")
             mandates = (await s.execute(select(Mandate).where(Mandate.firm_id == firm.id))).scalars().all()
-            check("seven taxpayers, the Menons' NRO account and Tara Menon's savings hold mandates", len(mandates), 9)
+            check("seven taxpayers, the Menons' NRO account, Tara Menon's savings and the three Mehtas (B-400) hold mandates", len(mandates), 12)
             recs = {}
             for m in mandates:
                 run = await runtime.run_agent(s, firm=firm, agent_key=AgentKey.DRIFT_REBALANCING,
@@ -376,8 +376,8 @@ async def main() -> int:
             check("the Confirm card names the fund, the plan and the registration",
                   (shown.get("Plan"), shown.get("Registration")), ("Direct", "Simulated, demonstration firm"))
             read = await ex.execute("read_sips", {})
-            mine = next(x for x in read["sips"] if x["bought"] == 1)       # the demonstration firm also carries batch A's two SIPs, B-388's three and B-394's
-            check("the SIP is read back, with what it bought", (read["active"], mine["bought"], mine["plan"]), (7, 1, "direct"))
+            mine = next(x for x in read["sips"] if x["bought"] == 1)       # the demonstration firm also carries batch A's two SIPs, B-388's three, B-394's and the Mehtas' three
+            check("the SIP is read back, with what it bought", (read["active"], mine["bought"], mine["plan"]), (10, 1, "direct"))
             await sip_core.end(s, firm, row.id, by="adviser@astra-india.demo", reason="the client asked to stop")
             check("ended, nothing more is bought", await sip_core.run_due(s, firm, today=_date(2030, 3, 5)), {"bought": 0, "missed": 0})
 
@@ -493,7 +493,8 @@ async def main() -> int:
             households = {h.name: h for h in (await s.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all()}
             gate = {n: await pre_advice.status(s, firm, households[n].id) for n in households}
             check("the adviser's households are gated, the portfolio manager's are not",
-                  sorted(n for n, g in gate.items() if g["applies"]), ["The Banerjee Household", "The D'Souza Household", "The Menon NRI Household", "The Sharma Family"])
+                  sorted(n for n, g in gate.items() if g["applies"]), ["The Banerjee Household", "The D'Souza Household", "The Mehta Family", "The Menon NRI Household",
+                                                                       "The Sameer Mehta Household", "The Sharma Family"])
             check("the Sharmas have all five on file, the declaration included because they hold policies",
                   (gate["The Sharma Family"]["met"], [c["state"] for c in gate["The Sharma Family"]["checks"] if c["key"] != "family"]), (True, ["pass"] * 5))
             check("the D'Souzas hold nothing outside SEBI's purview, so no declaration is asked",
@@ -549,8 +550,8 @@ async def main() -> int:
             bills = {}
             for e in pv["arrangements"]:
                 bills.setdefault(e["household_name"], []).append(e)
-            check("the three adviser families are billed", sorted(n for n in bills if n in gate and gate[n]["applies"]),
-                  ["The Banerjee Household", "The D'Souza Household", "The Sharma Family"])
+            check("the five adviser families with a fee are billed", sorted(n for n in bills if n in gate and gate[n]["applies"]),
+                  ["The Banerjee Household", "The D'Souza Household", "The Mehta Family", "The Sameer Mehta Household", "The Sharma Family"])
             dsouza_bill = bills["The D'Souza Household"][0]
             check("a fixed fee above the cap is held, at the fixed cap",
                   (dsouza_bill["blocked"], dsouza_bill["fee_cap"]["cap"], dsouza_bill["fee_cap"]["basis"], "sebi_fee_cap" in [c["code"] for c in dsouza_bill["checks"]]),
@@ -567,7 +568,7 @@ async def main() -> int:
             check("no fee with no signed agreement standing", all(any(c["code"] == "no_signed_agreement" for c in e["checks"]) and e["blocked"] for e in withdrawn), True)
             overview = await licences.overview(s, firm)
             check("the licences page carries the gate, the caps and the calendar",
-                  (len(overview["pre_advice"]), len(overview["fee_caps"]), overview["calendar"]["applies"]), (4, 3, True))
+                  (len(overview["pre_advice"]), len(overview["fee_caps"]), overview["calendar"]["applies"]), (6, 5, True))
 
             print("\n=== Row 6: the compliance calendar ===")
             firm.created_at = firm.created_at.replace(year=2026, month=10, day=31)

@@ -176,7 +176,8 @@ async def main() -> int:
             none = await sip_mandates.for_sip(s, c_sip, today)
             check("the trust's SIP has none: mandate not on file, warned", (none["state"], none["label"], "Mandate not on file" in none["warning"]), ("none", "Mandate not on file", True))
             ov = await sip_mandates.overview(s, firm)
-            check("the overview counts the SIP without one", (ov["without_mandate"], len(ov["mandates"]), ov["failing"]), (1, 1, 0))
+            # Karthik's, and the Mehtas' three (B-400).
+            check("the overview counts the SIP without one", (ov["without_mandate"], len(ov["mandates"]), ov["failing"]), (1, 4, 0))
             link_n = (await s.execute(select(func.count()).select_from(BankLink))).scalar_one()
             terms = dict(account_id=k_account.id, reference="UMRN-DEMO-IYER-0002", mandate_type="nach", per_debit_limit=5_000, starts_on=today - timedelta(days=5),
                          expires_on=today + timedelta(days=300), last4="4821", status="active", document="Registration, filed")
@@ -195,14 +196,14 @@ async def main() -> int:
             bank.third_party = False
             await s.flush()
             check("none of that wrote a mandate or a link", ((await s.execute(select(func.count()).select_from(DebitMandate))).scalar_one(), (await s.execute(select(func.count()).select_from(BankLink))).scalar_one()),
-                  (1, link_n))
+                  (4, link_n))
             await sip_mandates.record(s, firm, UserRole.ADVISER, by="adviser", **terms)
             lim = (await s.execute(select(DebitMandate).where(DebitMandate.reference == "UMRN-DEMO-IYER-0002"))).scalar_one()
             check("an instalment above the mandate's limit is named, with the limit", ("limit of 5,000" in sip_mandates.reason_unfit(lim, 10_000, today), sip_mandates.reason_unfit(lim, 4_000, today)), (True, None))
             await sip_mandates.record(s, firm, UserRole.ADVISER, by="adviser", account_id=k_account.id, reference="UMRN-DEMO-IYER-0002", cancel=True, document="Bank's cancellation notice",
                                       reason="The client cancelled it at the bank")
             ov = await sip_mandates.overview(s, firm)
-            check("a cancellation is a second row, and the latest stands", ({m["reference"]: m["state"] for m in ov["mandates"]}, (await s.execute(select(func.count()).select_from(DebitMandate).where(
+            check("a cancellation is a second row, and the latest stands", ({m["reference"]: m["state"] for m in ov["mandates"] if "IYER" in m["reference"]}, (await s.execute(select(func.count()).select_from(DebitMandate).where(
                 DebitMandate.reference == "UMRN-DEMO-IYER-0002"))).scalar_one()), ({"UMRN-DEMO-IYER-0001": "active", "UMRN-DEMO-IYER-0002": "cancelled"}, 2))
             await sip_mandates.record(s, firm, UserRole.ADVISER, by="adviser", **{**terms, "reference": "UPI-DEMO-IYER-1", "mandate_type": "upi_autopay", "per_debit_limit": 150_000})
             ov = await sip_mandates.overview(s, firm)
@@ -215,7 +216,7 @@ async def main() -> int:
             late = today.replace(day=28)
             await s.execute(Price.__table__.update().values(is_real=True))
             ran = await sip_core.run_due(s, firm, today=late)
-            check("both SIPs are tried and missed (no NAV in the demonstration)", (ran["bought"], ran["missed"]), (0, 2))
+            check("every SIP is tried and missed (no NAV in the demonstration)", (ran["bought"], ran["missed"]), (0, 5))
             await s.refresh(k_sip)
             await s.refresh(c_sip)
             hist_k, hist_c = k_sip.history[-1], c_sip.history[-1]

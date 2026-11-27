@@ -396,10 +396,10 @@ async def run(s) -> None:
 
         goal = await goal_named(iyer, "Retirement at 58")
         before = await retirement.for_household(s, iyer.id, firm_id=firm.id)
-        check("before: the figure recorded on the goal", before["contribution"], {"basis": "recorded", "first_year": 1000000.0})
+        check("before: the figure recorded on the goal", before["contribution"], {"basis": "recorded", "first_year": 9000000.0})
         account = (await s.execute(select(Account).join(Mandate, Mandate.id == Account.mandate_id).where(
             Mandate.person_id == people["Karthik Iyer"].id))).scalars().first()
-        row = await sip_core.record(s, firm, account.id, by="adviser", instrument="PPFAS-FLEXI-DIRECT", amount=200000, day_of_month=10, starts_on=today,
+        row = await sip_core.record(s, firm, account.id, by="adviser", instrument="PPFAS-FLEXI-DIRECT", amount=900000, day_of_month=10, starts_on=today,
                                     ends_on=None, evidence_ref=None, simulated=True, step_up_percent=10, step_up_every_months=12)
         card = await rows_of("link_sip_goal", {"sip_id": str(row.id), "goal_id": str(goal.id)})
         check("the link card", card["Saves towards"], "No goal becomes Retirement at 58")
@@ -407,7 +407,7 @@ async def run(s) -> None:
         done = await adv.link_sip_goal({"sip_id": str(row.id), "goal_id": str(goal.id)})
         after = await retirement.for_household(s, iyer.id, firm_id=firm.id)
         check("the retirement plan counts the registration in place of the recorded figure",
-              (after["contribution"]["basis"], 2_000_000 <= after["contribution"]["first_year"] <= 2_700_000), ("sip_registration", True))
+              (after["contribution"]["basis"], 9_000_000 <= after["contribution"]["first_year"] <= 12_150_000), ("sip_registration", True))
         check("so the pot is larger", after["projected_at_retirement"] > before["projected_at_retirement"], True)
         check("Astra says which goal", "Retirement at 58" in done["message"], True)
         ran = await scenarios.run(s, firm, iyer.id, {"extra_contribution": 500000})
