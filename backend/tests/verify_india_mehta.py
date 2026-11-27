@@ -309,6 +309,7 @@ async def run(s) -> None:
               (await india_mehta.confirm_risk_profiles(s, firm), unconsented()), (1 + len(advice), []))
         source = Path(india_demo_backfill.__file__).read_text(encoding="utf-8")
         check("the backfill runs both steps", ("india_figures.add" in source, "india_mehta.add" in source), (True, True))
+        check("and puts the slab right", "india_mehta.correct_slab" in source, True)
         check("every seeded record of the Mehtas says it is a demonstration record",
               [r.source_document for r in (await s.execute(select(BalanceItem).where(
                   BalanceItem.household_id == (await home(india_mehta.HOME)).id))).scalars().all() if "demonstration" not in r.source_document.lower()], [])
@@ -726,6 +727,25 @@ async def run(s) -> None:
         check("the page's route reads the same", (got["next"], got["can_record"]), ((await pm.for_household(s, mehta.id, firm_id=firm.id))["next"], True))
 
     await section("6. The tools, the pane and the page", tools_and_views)
+
+    async def slab():
+        anjali = (await s.execute(select(Person).where(Person.firm_id == firm.id, Person.full_name == india_mehta.ANJALI))).scalar_one()
+        slab = lambda: anjali.profile["tax"]["marginal_rate"]    # noqa: E731
+        check("Anjali's slab is the one her salary falls in", (slab(), await india_mehta.correct_slab(s, firm)), (0.20, 0))
+        # A firm built before: the profile still holds this seed's own 30%.
+        anjali.profile = {**anjali.profile, "tax": {**anjali.profile["tax"], "marginal_rate": 0.30}}
+        await s.flush()
+        check("on a firm built before, the slab is put right", (await india_mehta.correct_slab(s, firm), slab()), (1, 0.20))
+        anjali.profile = {**anjali.profile, "tax": {**anjali.profile["tax"], "marginal_rate": 0.30,
+                                                   "tax_inputs_source": {**anjali.profile["tax"]["tax_inputs_source"], "recorded_by": "adviser@firm"}}}
+        await s.flush()
+        check("what a person recorded stays", (await india_mehta.correct_slab(s, firm), slab()), (0, 0.30))
+        anjali.profile = {**anjali.profile, "tax": {**anjali.profile["tax"], "marginal_rate": 0.20,
+                                                   "tax_inputs_source": {**anjali.profile["tax"]["tax_inputs_source"], "recorded_by": india_mehta.BY}}}
+        await s.flush()
+
+    # Last, because the correction is a second salary record for her, as it is on a deployed firm.
+    await section("6b. Anjali's slab put right on a firm built before", slab)
 
 
 if __name__ == "__main__":

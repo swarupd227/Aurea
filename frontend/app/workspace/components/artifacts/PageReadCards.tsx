@@ -287,7 +287,7 @@ const TRACK_TONE: Record<string, string> = {
 export function OnboardingCasesCard({ result }: { result: OnboardingPayload }) {
   const s = result.summary;
   return (
-    <Frame title="Onboarding" count={`${s.open} open of ${s.total}`} testId="onboarding-card">
+    <Frame title="Onboarding" count={(result as any).scope === "client" ? `${s.total} case${s.total === 1 ? "" : "s"}` : `${s.open} open of ${s.total}`} testId="onboarding-card">
       <div className="flex flex-wrap gap-1.5 border-b border-border-soft px-3 py-1.5">
         <Chip tone={s.blocked ? "text-crit" : undefined}>Blocked {s.blocked}</Chip>
         <Chip tone={s.sla_breached ? "text-warn" : undefined}>Past SLA {s.sla_breached}</Chip>
@@ -302,6 +302,12 @@ export function OnboardingCasesCard({ result }: { result: OnboardingPayload }) {
                 <div className="text-xs text-ink-muted">{c.position}{c.owner ? ` · ${titleCase(c.owner)}` : ""}</div>
                 {(c as any).registry && c.status !== "approved" && (
                   <div className="mt-1 flex flex-wrap gap-1.5"><RegistryChip registry={(c as any).registry} /><TimelineChips registry={(c as any).registry} /></div>
+                )}
+                {(((c as any).not_on_file ?? (c as any).blocking ?? []) as string[]).length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1.5" data-testid="onboarding-card-gaps">
+                    {((c as any).not_on_file as string[] | undefined)?.map((g) => <Chip key={g}>{g} · not on file</Chip>)}
+                    {((c as any).blocking as string[] | undefined)?.map((g) => <Chip key={g} tone="text-warn">{g} · blocking</Chip>)}
+                  </div>
                 )}
               </td>
               <td className="px-3 py-1.5">

@@ -94,7 +94,7 @@ function Taxpayer({ t, full }: { t: any; full: boolean }) {
       <div className="flex flex-wrap gap-1.5 px-3 py-2">
         {t.opportunities.length > shown.length && <span className="chip text-ink-muted">+{t.opportunities.length - shown.length} more</span>}
         {t.return_needed_by && <span className="chip text-warn">File by {t.return_needed_by} to carry the loss</span>}
-        {t.demats.map((d: any) => <span key={d.id} className="chip text-ink-muted">{d.custodian}</span>)}
+        {t.demats.map((d: any) => <span key={d.id} className="chip text-ink-muted" data-testid="tax-demat">{[d.custodian, d.name].filter(Boolean).join(" · ")}</span>)}
       </div>
       <TaxEngine engine={t.engine} />
     </div>

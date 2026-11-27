@@ -53,6 +53,7 @@ SOURCE = "Demonstration record, invented for the demonstration firm"
 BY = "seed: India Mehta family (demonstration)"
 HOME, BROTHER_HOME = "The Mehta Family", "The Sameer Mehta Household"
 VIVEK, ANJALI, RHEA, DEV, SAMEER, MOTHER = "Vivek Mehta", "Anjali Mehta", "Rhea Mehta", "Dev Mehta", "Sameer Mehta", "Savitri Mehta"
+ANJALI_SLAB = 0.20      # new regime: Rs 20,00,000 less the deductions falls in this band
 DAY0 = 45
 BANK = "A demonstration bank (invented)"
 LEGACY, LEGACY_LABEL = "Legacy distributor demat (invented)", "Demat MEH-LEGACY-01"
@@ -469,12 +470,12 @@ async def _statements(c, home, people: dict, joint) -> None:
         await balance_sheet.record_item(s, home.id, firm_id=firm.id, by=BY, kind=kind, name=name, amount=amount, as_of=stated,
                                         source_document=_proof("Statement or schedule on file"), person_id=person.id if person else None, **extra)
     # One tax record a person: basic salary is what the employer's NPS contribution is held against (B-396).
-    for who, salary, basic, deductions in ((VIVEK, 4_000_000, 2_000_000, 650_000), (ANJALI, 2_000_000, 1_000_000, 475_000)):
+    for who, salary, basic, deductions, slab in ((VIVEK, 4_000_000, 2_000_000, 650_000, 0.30), (ANJALI, 2_000_000, 1_000_000, 475_000, ANJALI_SLAB)):
         if who not in people:
             continue
         await protection.record_income(s, firm.id, person_id=people[who].id, annual_income=salary, source_document=_proof("Form 16"), recorded_by=BY)
         await salary_tax.record(s, firm, adviser, by=BY, person_id=people[who].id, document=_proof("Form 16 and the investment declaration"),
-                                salary_income=salary, basic_salary=basic, old_regime_deductions=deductions, regime="new", marginal_rate=0.30)
+                                salary_income=salary, basic_salary=basic, old_regime_deductions=deductions, regime="new", marginal_rate=slab)
 
     # EPF passbooks, NPS statements and PPF, and what goes into them each month, the employer's NPS among it (80CCD(2)).
     for who, kind, institution, value, extra in (
@@ -649,6 +650,22 @@ ADVICE = [
     ("investment", "Hold gold at no more than 10 percent of investable assets", "The family asked to add to gold.",
      [("Add to gold as asked", "Takes the holding past the cap")], "accepted"),
 ]
+
+
+async def correct_slab(s: AsyncSession, firm: Firm) -> int:
+    """Anjali's slab as first seeded was 30%: on Rs 20,00,000 under the new regime it is 20% (B-422). Put right only
+    where the profile still holds this demonstration's own figures, so what a person has recorded since stays."""
+    people = (await s.execute(select(Person).join(Household, Household.id == Person.household_id).where(
+        Person.firm_id == firm.id, Household.name == HOME, Person.full_name == ANJALI))).scalars().all()
+    done = 0
+    for person in people:
+        tax = (person.profile or {}).get("tax") or {}
+        by = (tax.get("tax_inputs_source") or {}).get("recorded_by")
+        if by == BY and tax.get("marginal_rate") == 0.30 and tax.get("salary_income") == 2_000_000 and tax.get("regime") == "new":
+            await salary_tax.record(s, firm, UserRole.ADVISER, by=BY, person_id=person.id,
+                                    document=_proof("Form 16 and the investment declaration"), marginal_rate=ANJALI_SLAB)
+            done += 1
+    return done
 
 
 async def confirm_risk_profiles(s: AsyncSession, firm: Firm) -> int:

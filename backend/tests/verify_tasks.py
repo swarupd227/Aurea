@@ -17,6 +17,7 @@ Against a throwaway SQLite database, with the model scripted. Checks that:
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -379,6 +380,20 @@ async def behaviour() -> None:
             check("figures with nothing read are not shown", "91%" in shown(events), False)
             check("  nor stored", "91%" in reply.text, False)
             check("  the model is sent to read, and the read answer is", reply.text, "Two tasks are open.")
+            seen: list = []
+            held = iter([say("It is 91% today."), tool_round("read_tasks", {}), say("Two tasks are open.")])
+            async def watching(**kw):
+                seen.append(json.dumps(kw["messages"], default=str))
+                for ev in next(held):
+                    yield ev
+            t12 = await thread()
+            gw_mod.llm_service.stream = watching
+            async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t12.id, "please"):
+                pass
+            check("the model is not handed back the figures it was stopped from giving", "91%" in seen[1], False)
+            check("  and the note says the person is not to hear of it", "not to hear of it" in seen[1], True)
+            stored = (await s.execute(select(ThreadMessage.text).where(ThreadMessage.thread_id == t12.id))).scalars().all()
+            check("  nor is the note stored", any("note from the system" in (x or "") for x in stored), False)
             _, events, reply = await turn(say("About $218,000 a year."), say("Still $218,000 a year."))
             check("asked again, it gives no figure", reply.text, gw_mod._NO_FIGURES)
             check("  and none reaches the screen", "218" in shown(events), False)

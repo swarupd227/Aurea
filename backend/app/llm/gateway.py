@@ -57,8 +57,10 @@ _ACT_NOW = ("[You said what you would do and called no tool, so nothing has happ
 # tool has read something this turn, a round's words wait for it to end; one that gives figures from no
 # read is not shown, and is asked once to read first. Asked again, it says it has no figure to give.
 _FIGURE = re.compile(r"\d[\d,]*(?:\.\d+)?\s?%|[$£€₹]\s?\d|\b\d{1,3}(?:,\d{3})+\b")
-_READ_FIRST = ("[You gave figures and read nothing this turn, so they are not from the record and were not shown. "
-               "Call the tool for them now, or say in one sentence that you could not get them.]")
+# Added to the question itself when a reply gave figures with nothing read. The withheld words are not handed back:
+# live on 27 Nov a reply opened "You're right ... I had it wrong earlier" about something the person never saw (B-421).
+_READ_FIRST = ("[A note from the system, not from the person, who is not to hear of it: call the tool for what is asked "
+               "before giving any figure, then answer. If it cannot be read, say in one sentence that you could not get it.]")
 _NO_FIGURES = "I couldn't read that from the record just now, so I won't give a figure. Ask me again and I'll look it up."
 _CARD_ONLY = "[I showed a card for that change; what became of it follows.]"
 
@@ -68,6 +70,12 @@ _CARD_ONLY = "[I showed a card for that change; what became of it follows.]"
 _A_QUESTION = re.compile(r"^(?:what|which|when|who|whose|where|why|how|is|are|was|were|do|does|did|has|have|any)\b.*\?$", re.I | re.S)
 _STILL_DECLINED = ("The person chose Not now on this change earlier and has now asked a question, not for the change. "
                    "Answer the question and do not raise the change again.")
+
+
+def _noted(message: dict[str, Any], note: str) -> dict[str, Any]:
+    """A user turn with a note added to it, whether its content is words or blocks. Turns stay alternating."""
+    content = message["content"]
+    return {**message, "content": f"{content}\n\n{note}" if isinstance(content, str) else [*content, {"type": "text", "text": note}]}
 
 
 class GatewayError(Exception):
@@ -272,8 +280,7 @@ class Gateway:
                 if hold and not tool_uses and _FIGURE.search(round_text):
                     if not asked_to_read:
                         asked_to_read = True
-                        messages.append({"role": "assistant", "content": round_text})
-                        messages.append({"role": "user", "content": _READ_FIRST})
+                        messages[-1] = _noted(messages[-1], _READ_FIRST)
                         continue
                     round_text = _NO_FIGURES
                 if hold and round_text:

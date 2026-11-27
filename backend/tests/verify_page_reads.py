@@ -21,6 +21,7 @@ import sys
 import uuid
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  — registers every table on Base.metadata
@@ -173,6 +174,18 @@ async def behaviour() -> None:
             check("all includes the approved case", sorted(x["prospect_name"] for x in allc["cases"]), ["Done Person", "Ngata Trust"])
             check("the other firm sees only its own", [x["prospect_name"] for x in
                   (await ex(R.OPERATIONS, theirs).execute("read_onboarding_cases", {}))["cases"]], ["Their Prospect"])
+            check("the open list says closed files were not read", "closed case(s) are not in this list" in o["message"], True)
+            one_name = await ex(R.ADVISER).execute("read_onboarding_cases", {"name": "done person"})
+            check("a name reads that client alone, activated ones included",
+                  ([x["prospect_name"] for x in one_name["cases"]], one_name["scope"], one_name["summary"]["total"]), (["Done Person"], "client", 1))
+            lacking = one_name["cases"][0]["not_on_file"]
+            check("with the activation records not on file, said as records and not as open steps",
+                  (bool(lacking), all(g in one_name["message"] for g in lacking), "not steps in progress" in one_name["message"]), (True, True, True))
+            opened = await ex(R.ADVISER).execute("read_onboarding_cases", {"name": "Ngata"})
+            check("an open case named says what blocks it", (bool(opened["cases"][0]["blocking"]), "Blocking activation" in opened["message"]), (True, True))
+            nobody = await ex(R.ADVISER).execute("read_onboarding_cases", {"name": "Their Prospect"})
+            check("another firm's case is not found, and nothing is concluded from that",
+                  (nobody["cases"], "does not mean there was none" in nobody["message"]), ([], True))
 
             print("\n=== Meetings ===")
             # Households only here: the capacity checks above count a firm with none.
@@ -187,6 +200,11 @@ async def behaviour() -> None:
                           brief={"agenda": ["Drift", "Goals"]}, transcript="We talked.",
                           notes={"summary": ["ok"], "sentiment": "positive", "action_items": ["Send pack"]}))
             s.add(Meeting(id=uuid.uuid4(), firm_id=mine.id, household_id=hh_other.id, title="Intro"))
+            done = (await s.execute(select(OnboardingCase).where(OnboardingCase.prospect_name == "Done Person"))).scalar_one()
+            done.materialized = {"household_id": str(hh_mine.id)}
+            await s.flush()
+            by_home = await ex(R.ADVISER).execute("read_onboarding_cases", {"name": "the Chen family"})
+            check("a household's name picks out the case that made it", [x["prospect_name"] for x in by_home["cases"]], ["Done Person"])
             from datetime import timedelta
             from app.core.db import utcnow
             s.add(Meeting(id=uuid.uuid4(), firm_id=mine.id, household_id=hh_other.id, title="Missed check-in",

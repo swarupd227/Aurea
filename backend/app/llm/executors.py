@@ -2080,8 +2080,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         if r.get("band") == "above":
             said.append(f"Retirement success is above the firm's band ({r['success_ceiling']:.0%}): possibly over-saving.")
         if r.get("failed_shortfall_today"):
-            said.append(f"Where the money runs out, it does at {r['median_depletion_age']} at the median, leaving "
-                        f"{say(r['failed_shortfall_today'])} in today's money unpaid.")
+            said.append(f"On the paths that fail, and on those only, the money runs out at a median age of "
+                        f"{r['median_depletion_age']}, leaving {say(r['failed_shortfall_today'])} in today's money unpaid.")
         return " ".join(said)
 
     @staticmethod
@@ -4994,7 +4994,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 ("Opens as", "A draft: nothing is screened, signed or invested until each gate is met")]
 
     async def read_onboarding_cases(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """The onboarding board - cases with their four derived tracks (api.onboarding.cases_overview)."""
+        """The onboarding board - cases with their four derived tracks (api.onboarding.cases_overview). Given a name,
+        that client's cases alone, activated ones included, each with what its activation records lack (B-423)."""
         from collections import Counter
 
         from app.api.onboarding import cases_overview
@@ -5018,9 +5019,12 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 "registry": ({k: c["registry"][k] for k in ("status", "label", "timeline", "timeline_ok", "simulated")}
                              if c.get("registry") else None),
             })
+        name = str(inputs.get("name") or "").strip()
+        if name:
+            rows = await self._cases_named(name, rows, cases)
         total = len(rows)
         is_open = lambda r: r["status"] not in ("approved", "rejected")  # noqa: E731
-        shown = [r for r in rows if is_open(r)] if want != "all" else rows
+        shown = rows if name or want == "all" else [r for r in rows if is_open(r)]
         limit = self._limit(inputs.get("limit"), 25, 50)
         summary = {
             "total": total, "open": sum(1 for r in rows if is_open(r)),
@@ -5029,13 +5033,63 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             "blocked": sum(1 for r in rows if is_open(r) and r["blocked_tracks"]),
             "ready_to_activate": sum(1 for r in rows if is_open(r) and r["ready_to_activate"]),
         }
+        if name:
+            said = [await self._case_said(firm, r) for r in shown[:limit]]
+            return {
+                "cases": shown[:limit], "shown": min(len(shown), limit), "scope": "client", "client": name,
+                "summary": summary,
+                "message": (" ".join(said) + _registry_said([r for r in shown if is_open(r)]) if said else
+                            f"No onboarding case on file here is under '{name}'. That does not mean there was none: "
+                            "nothing is known about their onboarding from this."),
+            }
+        unread = total - summary["open"]
         return {
             "cases": shown[:limit], "shown": min(len(shown), limit), "scope": "all" if want == "all" else "open",
             "summary": summary,
             "message": (f"{summary['open']} open onboarding case(s) of {total}; {summary['blocked']} blocked, "
                         f"{summary['sla_breached']} past their SLA, {summary['ready_to_activate']} ready to activate."
-                        + _registry_said([r for r in rows if is_open(r)])),
+                        + _registry_said([r for r in rows if is_open(r)])
+                        + (f" {unread} closed case(s) are not in this list, and nothing here says what their files hold: "
+                           "give a client's name to read theirs." if want != "all" and unread else "")),
         }
+
+    async def _cases_named(self, name: str, rows: list, cases: list) -> list:
+        """The cases under a prospect's or client's name, or under a household that name picks out."""
+        def bare(text: str) -> str:
+            return " ".join(w for w in text.lower().replace("'s", "").split() if w not in ("the", "family", "household"))
+
+        want = bare(name)
+        if not want:
+            return []
+        households = {str(h) for h, n in (await self.session.execute(
+            select(Household.id, Household.name).where(Household.firm_id == self.firm_id))).all() if want in bare(n or "")}
+        under = {c["id"] for c in cases if str((c.get("materialized") or {}).get("household_id")) in households}
+        return [r for r in rows if want in bare(r["prospect_name"] or "") or r["id"] in under]
+
+    async def _case_said(self, firm, row: dict) -> str:
+        """One named case in a sentence, with its activation gates read onto the row. An activated account blocks
+        nothing, so a gate that does not pass there is a record not on file, as the case page reads it (B-418)."""
+        from app.api.onboarding import _gates_for
+        from app.aurea_core import firm_time
+        from app.models.onboarding import OnboardingCase
+
+        case = await self.session.get(OnboardingCase, uuid.UUID(row["id"]))
+        gates = await _gates_for(self.session, firm, case)
+        short = [g["label"] for g in gates["gates"] if g["blocks"]]
+        who = f"{row['prospect_name']}'s onboarding case"
+        if row["status"] == "approved":
+            row["not_on_file"] = short
+            when = f" on {firm_time.spoken(firm_time.today(firm, case.activated_at))}" if case.activated_at else ""
+            if not short:
+                return f"{who} was activated{when}; every activation record is on file."
+            return (f"{who} was activated{when}. {len(short)} activation record(s) are not on file: {'; '.join(short)}. "
+                    "The account is open, so these are records missing from its file, not steps in progress, and not on "
+                    "file does not mean never done.")
+        if row["status"] == "rejected":
+            return f"{who} was rejected."
+        row["blocking"] = short
+        return (f"{who} is open: {row['position']}."
+                + (f" Blocking activation: {'; '.join(short)}." if short else " No activation gate blocks it."))
 
     async def read_meetings(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """The Meetings page's list, with each meeting's brief, transcript and captured notes
