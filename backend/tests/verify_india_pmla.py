@@ -18,7 +18,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  - registers every table on Base.metadata
-from app.aurea_core import (aml_review, aml_risk, counsel_review, firm_time, fiu_reports, gates, indian_names, law_figures,
+from app.agents import onboarding as onboarding_agent
+from app.api import onboarding as onboarding_api
+from app.aurea_core import (aml_review, aml_risk, counsel_review, firm_time, fiu_reports, gates, identity_checks, indian_names, law_figures,
                             pep, screening, screening_lists, txn_monitoring)
 from app.core.db import Base, utcnow
 from app.core.tools import TOOLS, ToolChangeState
@@ -244,6 +246,18 @@ async def main() -> int:
             await refused("and needs the source of wealth with the approval", ex["comp"].preview_change("record_pep_approval", own), "source of wealth")
             await ex["comp"].record_pep_approval({**own, "source_of_wealth": "Inherited land, per the probate order and revenue records"})
             check("recorded", next(e for e in await pep.register(s, firm) if e["holder_id"] == str(client.id))["status"], "approved")
+
+            print("\n=== The registry, the identity check and senior approval each block, on the page and at approval ===")
+            all_case, _ = await new_case("Nitin Bose")
+            await ex["comp"].record_kyc({"case_id": str(all_case.id), "party_name": "Nitin Bose", "pep": True, "kra_status": "on_hold",
+                                         "document": "KRA acknowledgement"})
+            await identity_checks.record_result(s, firm, UserRole.OPERATIONS, by="ops@t", kind="pan", case_id=str(all_case.id),
+                                                party_name="Nitin Bose", outcome="failed", document="PAN card copy, compliance drive")
+            three = {"kyc_current", "identity_checks", "pep_senior_approval"}
+            page = await onboarding_api._gates_for(s, firm, all_case)
+            approval = await onboarding_agent._activation_gates(s, firm, all_case)
+            check("the page blocks on all three", sorted(three - set(page["blocking"])), [])
+            check("and so does approval", sorted(three - set(approval["blocking"])), [])
 
             print("\n=== The suspicious report is the Principal Officer's, and timed ===")
             m = Mandate(id=uuid.uuid4(), firm_id=firm.id, person_id=client.id, name="Das", mandate_type="advisory")
