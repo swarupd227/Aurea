@@ -184,6 +184,23 @@ async def _raise_india_reminders() -> None:
                 log.warning("india_reminders_failed", firm=firm.slug, error=str(exc))
 
 
+async def _raise_harvest_tasks() -> None:
+    """From January to March on an Indian firm's calendar, one year-end gain-harvest task per taxpayer and tax year, for the household's
+    recorded adviser (B-396). A second pass finds what is raised and does nothing; it trades nothing."""
+    from app.aurea_core import india_tax_year
+
+    async with SessionLocal() as s:
+        for firm in (await s.execute(select(Firm))).scalars().all():
+            try:
+                done = await india_tax_year.raise_due(s, firm)
+                await s.commit()
+                if done.get("raised"):
+                    log.info("gain_harvest_tasks_raised", firm=firm.slug, raised=done["raised"], tax_year=done["tax_year"])
+            except Exception as exc:  # pragma: no cover
+                await s.rollback()
+                log.warning("gain_harvest_tasks_failed", firm=firm.slug, error=str(exc))
+
+
 async def _run_evaluation() -> None:
     from app.provenance.evaluation import evaluate_firm
 
@@ -472,6 +489,8 @@ async def main() -> None:
     scheduler.add_job(_raise_india_reminders, "interval", hours=6, id="india_reminders")
     # The February rate card for an Indian firm's compliance team: raised once for the year, in February, by this same check.
     scheduler.add_job(_run_rate_card, "interval", hours=6, id="rate_card")
+    # India's year-end gain-harvest task (B-396): January to March, once per taxpayer and tax year.
+    scheduler.add_job(_raise_harvest_tasks, "interval", hours=6, id="gain_harvest_tasks")
     # The Foundation layer: what a connected product owns, pulled every six hours (native firms are skipped).
     scheduler.add_job(_sync_foundation_sources, "interval", hours=6, id="foundation_sync")
     # Pick up cadence changes made in Admin without needing a worker restart.

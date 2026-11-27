@@ -113,3 +113,5 @@ from app.models import retirement_stack  # noqa: F401,E402
 from app.models import advice_audit  # noqa: F401,E402
 # Wishes, will checks, treaty certificates and moves in and out of India (B-398).
 from app.models import estate_nri  # noqa: F401,E402
+# Stated returns for the after-tax comparison, and tax reviews held (B-396).
+from app.models import india_tax_planning  # noqa: F401,E402

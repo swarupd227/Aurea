@@ -1,7 +1,8 @@
 """What the Indian regime comparison reads about a person, as a person recorded it (B-393).
 
-Salary, the old regime's deductions, the regime the person is taxed under and their slab rate sit on the person's tax
-profile, where `tax_india` and `tax_india_full` already read them. An adviser or a paraplanner records them from a document;
+Salary, the old regime's deductions, the regime the person is taxed under, their slab rate, and (B-396) basic salary with
+dearness allowance and business or professional income sit on the person's tax profile, where `tax_india`,
+`tax_india_full` and `india_regime` read them. An adviser or a paraplanner records them from a document;
 each keeps the day it was recorded, and the ledger keeps what it replaced. Nothing is worked out: a salary is not read from
 an income, a deduction is not read from a policy, and a figure not given stays as it was. Total income is its own record
 (`protection.record_income`), and a salary or a deduction above the income on file is refused rather than reconciled here.
@@ -23,9 +24,10 @@ from app.provenance import ledger
 
 RECORDERS = frozenset({UserRole.ADVISER, UserRole.PARAPLANNER})
 REGIMES = {"new": "New regime", "old": "Old regime"}
-FIELDS = ("salary_income", "old_regime_deductions", "regime", "marginal_rate")
+FIELDS = ("salary_income", "old_regime_deductions", "regime", "marginal_rate", "basic_salary", "business_income")
 LABELS = {"salary_income": "Salary a year", "old_regime_deductions": "Old-regime deductions", "regime": "Tax regime",
-          "marginal_rate": "Slab rate"}
+          "marginal_rate": "Slab rate", "basic_salary": "Basic salary and dearness allowance a year",
+          "business_income": "Business or professional income a year"}
 
 
 class TaxInputError(ValueError):
@@ -57,7 +59,7 @@ def _amount(value, label: str) -> float:
 
 
 async def prepare(session: AsyncSession, firm: Firm, role, *, person_id, document: str | None, salary_income=None,
-                  old_regime_deductions=None, regime=None, marginal_rate=None) -> dict:
+                  old_regime_deductions=None, regime=None, marginal_rate=None, basic_salary=None, business_income=None) -> dict:
     """What recording would change, checked, and nothing written."""
     if role not in RECORDERS:
         raise TaxInputError("Salary, deductions, regime and slab rate are recorded by an adviser or a paraplanner.")
@@ -95,11 +97,19 @@ async def prepare(session: AsyncSession, firm: Firm, role, *, person_id, documen
             raise TaxInputError(f"A slab rate is one of {', '.join(f'{r:.0%}' for r in allowed)}"
                                 + (f" under the {after_regime} regime" if after_regime else "") + ", before surcharge and cess.")
         new["marginal_rate"] = rate
+    # B-396: basic salary limits the employer's NPS deduction; business income limits switching. Zero business income is a fact.
+    for key, value in (("basic_salary", basic_salary), ("business_income", business_income)):
+        if value not in (None, ""):
+            new[key] = _amount(value, LABELS[key])
     if not new:
-        raise TaxInputError("Give at least one figure to record: salary, old-regime deductions, regime or slab rate.")
+        raise TaxInputError("Give at least one figure to record: salary, old-regime deductions, regime, slab rate, basic salary or business income.")
+    basic, salary = new.get("basic_salary", tax.get("basic_salary")), new.get("salary_income", tax.get("salary_income"))
+    if basic is not None and salary is not None and float(basic) > float(salary) and ("basic_salary" in new or "salary_income" in new):
+        raise TaxInputError("Basic salary and dearness allowance are part of the salary, so they cannot be above it "
+                            f"({markets.money(float(salary), 'INR')}).")
     income = tax.get("annual_income")
     if income is not None:
-        for key in ("salary_income", "old_regime_deductions"):
+        for key in ("salary_income", "old_regime_deductions", "basic_salary", "business_income"):
             if key in new and new[key] > float(income):
                 raise TaxInputError(f"{LABELS[key]} is above the annual income on file ({markets.money(float(income), 'INR')}). "
                                     "Record the income from its document first (record_income).")

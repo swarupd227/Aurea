@@ -7,6 +7,7 @@ from app.api import (
     portfolios, preferences, prices, protection, provenance, reconciliation, reviews, risk_profile, skills, sleeves, studio,
     superadmin, threads, vault,
 )
+from app.api import india_tax_planning
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -32,6 +33,8 @@ api_router.include_router(prices.router)
 api_router.include_router(reconciliation.router)
 api_router.include_router(protection.router)
 api_router.include_router(licences.router)
+# India's tax planning (B-396).
+api_router.include_router(india_tax_planning.router)
 api_router.include_router(risk_profile.router)
 api_router.include_router(reviews.router)
 api_router.include_router(ips.router)

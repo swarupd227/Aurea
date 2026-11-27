@@ -469,6 +469,10 @@ async def build(s, *, quotes: dict | None = None) -> Firm:
     from seed import india_b392
 
     await india_b392.add(s, firm)
+    # Tax facts, stated returns and tax reviews (B-396), after the retirement stack that records the employer's NPS.
+    from seed import india_tax_planning
+
+    await india_tax_planning.add(s, firm)
     return firm
 
 

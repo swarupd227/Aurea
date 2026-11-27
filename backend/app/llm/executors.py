@@ -35,6 +35,7 @@ from app.llm.india_polish_executors import IndiaPolishExecutors
 from app.llm.india_gates_executors import IndiaGatesExecutors
 from app.llm.india_batch_b_executors import IndiaBatchBExecutors
 from app.llm.india_batch_a_executors import IndiaBatchAExecutors
+from app.llm.india_tax_planning_executors import IndiaTaxPlanningExecutors
 from app.llm.india_money_executors import IndiaMoneyExecutors
 from app.llm.identity_check_executors import IdentityCheckExecutors
 from app.llm.kyc_registry_executors import KycRegistryExecutors
@@ -100,7 +101,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
                     IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors, IdentityCheckExecutors,
-                    PmlaExecutors, RetirementStackExecutors,
+                    PmlaExecutors, RetirementStackExecutors, IndiaTaxPlanningExecutors,
                     AdvicePracticeExecutors, EstateNriExecutors, ClientOnboardingExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
@@ -429,6 +430,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._pmla_map(),
             # India's retirement stack (B-395): app/llm/retirement_stack_executors.py.
             **self._retirement_stack_map(),
+            # B-396: India's tax planning: app/llm/india_tax_planning_executors.py.
+            **self._india_tax_planning_map(),
             "read_kyc_review_period": self.read_kyc_review_period,
             "set_kyc_review": self.set_kyc_review,
         }
@@ -5644,6 +5647,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._advice_audit_preview(tool_key, inputs))
         if tool_key == "record_tax_inputs":
             return rows(*await self._tax_inputs_preview(inputs))
+        if tool_key in ("record_stated_return", "record_tax_review", "raise_harvest_tasks"):
+            return rows(*await self._india_tax_planning_preview(tool_key, inputs))
         if tool_key in ("add_goal", "link_sip_goal"):
             return rows(*await self._goal_tools_preview(tool_key, inputs))
         if tool_key == "record_tax_loss":

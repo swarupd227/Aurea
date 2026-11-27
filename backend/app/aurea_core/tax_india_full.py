@@ -26,7 +26,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, law_figures, markets, salary_tax, tax_india
+from app.aurea_core import firm_time, india_regime, law_figures, markets, salary_tax, tax_india
 from app.core.db import utcnow
 from app.core.security import UserRole
 from app.models.graph import Household, LegalEntity, Person
@@ -331,14 +331,16 @@ def _surcharge(total_income: float, key: str) -> float:
     return 0.0
 
 
-def regime_tax(regime: str, *, income: float, salary: float | None, deductions: float, age: int | None, gains: float) -> dict:
+def regime_tax(regime: str, *, income: float, salary: float | None, deductions: float, age: int | None, gains: float,
+               employer_nps: float = 0.0) -> dict:
     """Tax on ordinary income under one regime, with rebate, surcharge and cess. `gains` are the year's taxable gains, which
-    count toward the rebate line and the surcharge band but are taxed by `tax_india`, not here."""
+    count toward the rebate line and the surcharge band but are taxed by `tax_india`, not here. `employer_nps` is the
+    employer's NPS contribution this regime lets be deducted (B-396); both regimes let some of it be."""
     new = regime == "new"
     std = law_figures.value("in_new_regime_std_deduction" if new else "in_old_regime_std_deduction") if salary else 0.0
     std = min(std, salary or 0.0)
     ded = 0.0 if new else deductions
-    taxable = max(income - std - ded, 0.0)
+    taxable = max(income - std - ded - employer_nps, 0.0)
     exemption = None
     if not new and age is not None:
         exemption = (law_figures.value("in_old_regime_exemption_super_senior") if age >= 80
@@ -351,12 +353,18 @@ def regime_tax(regime: str, *, income: float, salary: float | None, deductions: 
     cess = law_figures.value("in_cess")
     total = after * (1 + rate) * (1 + cess)
     return {"regime": regime, "taxable_income": round(taxable, 2), "standard_deduction": round(std, 2), "deductions": round(ded, 2),
+            "employer_nps_deduction": round(employer_nps, 2),
             "slab_tax": round(slab, 2), "rebate": round(rebate, 2), "surcharge_rate": rate, "tax": round(total, 2)}
 
 
-def regime_comparison(*, income, salary, deductions, age: int | None, gains: float, is_individual: bool, resident: bool | None = None) -> dict:
-    """The new regime against the old, for salary and other ordinary income, only where that income was recorded."""
+def regime_comparison(*, income, salary, deductions, age: int | None, gains: float, is_individual: bool, resident: bool | None = None,
+                      facts: dict | None = None) -> dict:
+    """The new regime against the old, for salary and other ordinary income, only where that income was recorded. `facts`
+    are the employer's NPS contribution and the switching limit (`india_regime.facts`, B-396)."""
     out = {"assessed": False, "needs": [], "note": ESTIMATE + " Dividends, interest and TDS are not in the figures; surcharge is tested on the total only."}
+    nps = (facts or {}).get("employer_nps")
+    if facts and is_individual:
+        out.update(facts)
     if not is_individual:
         out["needs"] = ["an individual: the comparison is for a person's salary and other income"]
         return out
@@ -365,18 +373,31 @@ def regime_comparison(*, income, salary, deductions, age: int | None, gains: flo
         return out
     out["assessed"] = True
     have_ded = deductions is not None
-    new = regime_tax("new", income=float(income), salary=salary, deductions=0.0, age=age, gains=gains)
-    old = regime_tax("old", income=float(income), salary=salary, deductions=float(deductions or 0.0), age=age, gains=gains)
+    new_nps, old_nps = (nps["new"], nps["old"]) if nps else (0.0, 0.0)
+    new = regime_tax("new", income=float(income), salary=salary, deductions=0.0, age=age, gains=gains, employer_nps=new_nps)
+    old = regime_tax("old", income=float(income), salary=salary, deductions=float(deductions or 0.0), age=age, gains=gains,
+                     employer_nps=old_nps)
+    unchecked = bool(nps) and nps["state"] == "cap_not_checked"
+    if unchecked:
+        # The limit cannot be checked, so the answer without the contribution is shown beside it.
+        bare_new = regime_tax("new", income=float(income), salary=salary, deductions=0.0, age=age, gains=gains)
+        bare_old = regime_tax("old", income=float(income), salary=salary, deductions=float(deductions or 0.0), age=age, gains=gains)
+        out["without_employer_nps"] = {"new_tax": bare_new["tax"], "old_tax": bare_old["tax"],
+                                       "cheaper": "new" if bare_new["tax"] <= bare_old["tax"] else "old"}
     out.update({"new": new, "old": old, "old_deductions_recorded": have_ded, "salary_recorded": salary is not None,
                 "age_recorded": age is not None})
     if salary is None:
         out["needs"].append("salary, for the standard deduction")
     if age is None:
         out["needs"].append("date of birth, for the old regime's higher basic exemption at 60 and 80")
+    if unchecked:
+        out["needs"].append(india_regime.NEEDS_BASIC)
     if have_ded:
         out["cheaper"] = "new" if new["tax"] <= old["tax"] else "old"
         out["saving"] = round(abs(new["tax"] - old["tax"]), 2)
-        out["conclusive"] = True
+        # It does not pick where the limit on the contribution would change which regime is cheaper.
+        out["turns_on_nps_limit"] = unchecked and out["without_employer_nps"]["cheaper"] != out["cheaper"]
+        out["conclusive"] = not out["turns_on_nps_limit"]
         return out
     out["needs"].append("old-regime deductions (80C, 80D, home loan interest and the rest), from the client's papers")
     out["conclusive"] = False
@@ -385,13 +406,13 @@ def regime_comparison(*, income, salary, deductions, age: int | None, gains: flo
     if old["tax"] <= new["tax"]:
         out["cheaper"], out["break_even_deductions"] = "old", 0.0
         return out
-    if regime_tax("old", income=float(income), salary=salary, deductions=hi, age=age, gains=gains)["tax"] > new["tax"]:
+    if regime_tax("old", income=float(income), salary=salary, deductions=hi, age=age, gains=gains, employer_nps=old_nps)["tax"] > new["tax"]:
         out["cheaper"], out["break_even_deductions"] = "new", None
         out["saving"] = round(old["tax"] - new["tax"], 2)
         return out
     for _ in range(40):
         mid = (lo + hi) / 2
-        if regime_tax("old", income=float(income), salary=salary, deductions=mid, age=age, gains=gains)["tax"] > new["tax"]:
+        if regime_tax("old", income=float(income), salary=salary, deductions=mid, age=age, gains=gains, employer_nps=old_nps)["tax"] > new["tax"]:
             lo = mid
         else:
             hi = mid
@@ -489,8 +510,10 @@ async def engine(session: AsyncSession, firm: Firm, person: Person | None, entit
         b = person.date_of_birth
         age = today.year - b.year - ((today.month, today.day) < (b.month, b.day))
     gains = sum(max(float(v), 0.0) for v in (settled.get("net") or {}).values())
+    facts = await india_regime.facts(session, firm, person, tax_inputs) if person is not None else None
     comparison = regime_comparison(income=tax_inputs.get("annual_income"), salary=tax_inputs.get("salary_income"),
-                                   deductions=tax_inputs.get("old_regime_deductions"), age=age, gains=gains, is_individual=person is not None)
+                                   deductions=tax_inputs.get("old_regime_deductions"), age=age, gains=gains, is_individual=person is not None,
+                                   facts=facts)
     needs, total = [], None
     if comparison["assessed"]:
         chosen = (inputs.get("regime") or "new")

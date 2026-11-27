@@ -637,6 +637,35 @@ ALL: tuple[LawFigure, ...] = (
     LawFigure("in_stamp_duty_no_consideration_rule", "A transfer of securities that states no consideration (between one person's own accounts, or a gift) carries no stamp duty", None, "rule",
               "ASSUMED: Indian Stamp Act 1899 as amended from 1 July 2020, which charges duty on consideration, as understood; the Act and the depositories' notices were not re-read",
               date(2026, 11, 27)),
+    # ── India: tax planning in the plan (B-396). From the L200-2 India edition sections 3 and 11; no Act, circular or scheme was re-read,
+    # so every row is ASSUMED and stands "not reviewed" in the counsel tracker.
+    LawFigure("in_80ccd2_new_cap", "Employer's NPS contribution deductible under the new regime: at most this share of basic salary and dearness allowance", 0.14, "rate",
+              "ASSUMED: Income-tax Act 1961 s.80CCD(2) with s.115BAC, the 14% for every employer under the new regime brought in by the Union Budget of July 2024, "
+              "as understood; the L200-2 India edition (Nov 2026) section 3.1 says it remains deductible within the overall employer-contribution cap and gives no "
+              "percentage; the Act and the Income-tax Act 2025's renumbered provision were not read", date(2026, 11, 27)),
+    LawFigure("in_80ccd2_old_cap", "Employer's NPS contribution deductible under the old regime, for an employer that is not a government: at most this share of basic "
+              "salary and dearness allowance", 0.10, "rate",
+              "ASSUMED: Income-tax Act 1961 s.80CCD(2) as understood; the higher share for a central or state government employee is not encoded, because the kind of "
+              "employer is not on file; the Act was not re-read", date(2026, 11, 27)),
+    LawFigure("in_employer_contribution_cap", "Employer's contributions to a provident fund, NPS and superannuation together in a year: what is above this is a taxable "
+              "perquisite", 750_000, "INR",
+              "ASSUMED: Income-tax Act 1961 s.17(2)(vii) as understood; the L200-2 India edition names the overall cap and gives no figure; the Act was not re-read",
+              date(2026, 11, 27)),
+    LawFigure("in_regime_business_switch_rule", "With business or professional income, a person who opts out of the new regime may return to it only once, and has no further "
+              "choice while that income continues; without such income the regime is chosen year by year", None, "rule",
+              "ASSUMED: Income-tax Act 1961 s.115BAC(6) as understood, and the L200-2 India edition (Nov 2026) section 3.1 ('one-time-switch restrictions'); the Act, "
+              "the form and its due date were not read", date(2026, 11, 27)),
+    LawFigure("in_deposit_interest_rule", "Interest on a bank or company deposit is income taxed at slab in the year it accrues; tax deducted at source is credited against it",
+              None, "rule", "ASSUMED: Income-tax Act 1961 s.56 and s.194A as understood; the Act was not re-read", date(2026, 11, 27)),
+    LawFigure("in_specified_fund_rule", "Units of a specified (mainly debt) mutual fund bought on or after 1 April 2023: the gain is short-term however long they are held, "
+              "and taxed at slab", None, "rule", "ASSUMED: Income-tax Act 1961 s.50AA as understood, and the L200-2 India edition (Nov 2026) section 3.2 (debt fund "
+              "gains at slab); the Act was not re-read", date(2026, 11, 27)),
+    LawFigure("in_idcw_rule", "An income distribution (IDCW) from a mutual fund is income of the unit holder, taxed at slab in the year it is paid", None, "rule",
+              "ASSUMED: Income-tax Act 1961 s.56 as understood, and the L200-2 India edition (Nov 2026) section 3.2 (dividends at slab); the Act was not re-read",
+              date(2026, 11, 27)),
+    LawFigure("in_arbitrage_equity_rule", "An arbitrage fund that holds at least 65% in listed equity is taxed as an equity-oriented fund", None, "rule",
+              "ASSUMED: Income-tax Act 1961 s.112A (the meaning of an equity oriented fund) as understood, and the L200-2 India edition (Nov 2026) section 3.2; a "
+              "scheme's own holding is not tested here; the Act was not re-read", date(2026, 11, 27)),
 )
 
 VERSIONS: dict[str, tuple[LawFigure, ...]] = {}

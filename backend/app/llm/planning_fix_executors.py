@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
-TAX_INPUT_TERMS = ("person_id", "document", "salary_income", "old_regime_deductions", "regime", "marginal_rate")
+TAX_INPUT_TERMS = ("person_id", "document", "salary_income", "old_regime_deductions", "regime", "marginal_rate", "basic_salary",
+                   "business_income")
 
 
 def _error(exc: Exception):

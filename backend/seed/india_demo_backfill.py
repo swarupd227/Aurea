@@ -28,6 +28,8 @@ Will witnesses and a will check, a wish, a tax residency certificate and a plann
 `seed/india_estate_nri.py`) are added once. Run after `seed.india_demo_backfill`'s earlier rows, which record the wills.
 The accounts opened through onboarding and a minor near eighteen that the onboarding measures read (B-392, `seed/india_b392.py`) are
 added once, and their own dates are moved forward on a later run. Screening and reports are B-390's.
+Basic salary and business income, stated returns for the after-tax comparison and two tax reviews (B-396,
+`seed/india_tax_planning.py`) are added where missing.
 
 Every run also moves the dated demonstration scenarios back to their distance from today (`seed/india_redate.py`) and rewrites the
 description of an open reminder task still in the older wording.
@@ -182,6 +184,10 @@ async def main() -> None:
         from seed import india_b392
 
         measure_rows = await india_b392.add(s, firm)
+        # B-396, after the retirement stack that records the employer's NPS.
+        from seed import india_tax_planning
+
+        tax_planning_rows = await india_tax_planning.add(s, firm)
         # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
         # open reminder tasks raised in the older wording (B-372).
         from app.aurea_core import india_reminders
@@ -203,7 +209,8 @@ async def main() -> None:
           f"KYC registry: {registry_rows} answer(s), step(s) and contact attempt(s) added. Identity and bank checks done by hand: {check_rows} added. "
           f"PMLA programme: {pmla_rows} row(s) added. Retirement stack: {stack_rows} record(s) added. "
           f"Advice files and audit: {advice_rows} added. Estate and NRI records: {estate_rows} added. "
-          f"Onboarding measures: {measure_rows} record(s) added or re-dated.\n")
+          f"Onboarding measures: {measure_rows} record(s) added or re-dated. "
+          f"Tax planning facts, stated returns and reviews: {tax_planning_rows} added.\n")
 
 
 if __name__ == "__main__":
