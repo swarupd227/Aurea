@@ -36,6 +36,7 @@ ROLE_LABELS: dict[str, str] = {
     PartyRole.CUSTODIAN: "Custodian",
     PartyRole.MINOR: "Minor",
     PartyRole.EXECUTOR: "Executor",
+    PartyRole.PROTECTOR: "Protector",
 }
 
 # registration_type -> [(role, min_count, why)]

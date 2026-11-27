@@ -25,7 +25,7 @@ from app.models.onboarding import OnboardingCase, OnboardingParty
 
 # Whose identity is verified. A beneficiary of an IRA is not a customer; a beneficial owner and a control person are.
 CIP_ROLES = {PartyRole.OWNER, PartyRole.JOINT_OWNER, PartyRole.TRUSTEE, PartyRole.BENEFICIAL_OWNER, PartyRole.CONTROL_PERSON,
-             PartyRole.AUTHORISED_SIGNER, PartyRole.POA_HOLDER, PartyRole.CUSTODIAN, PartyRole.EXECUTOR}
+             PartyRole.AUTHORISED_SIGNER, PartyRole.POA_HOLDER, PartyRole.CUSTODIAN, PartyRole.EXECUTOR, PartyRole.PROTECTOR}
 DOCUMENTARY = {"passport", "licence", "drivers_licence", "national_id"}
 CIP_DAYS = 30   # how long after opening an unverified party may stand before it is an exception
 

@@ -100,6 +100,7 @@ FIELD_LABELS = {
     "termination_age": "Age of termination (from the state's act)", "successor": "Successor", "signed_by": "Signed by",
     "signed_on": "Application signed on", "tod": "Transfer on death",
     "country_of_residence": "Country of residence", "guardian_name": "Guardian", "guardian_relationship": "Guardian's relationship to the minor",
+    "repatriation_intent": "Repatriation intent",
 }
 FUNDING = ("contribution", "rollover", "conversion", "transfer")
 RMD_STATES = ("taken", "not_taken", "not_required")
@@ -242,6 +243,17 @@ def check(case, parties: list, documents: list, *, firm: Firm | None, today: dat
             issues.append(_issue(NIGORootCause.MISSING_BENEFICIARY, "critical", "beneficiaries",
                                  f"Beneficiaries' shares make {sum(got):g}% of 100%{'' if len(got) == n else ', and not every beneficiary has one'}."))
 
+    # India's NRI intake (B-391): the account type is chosen by what the client means to do with the money. Not recorded is
+    # named and does not hold the case; a wish to send money abroad again against an NRO account does.
+    if reg in ("nri_nre", "nri_nro"):
+        intent = detail.get("repatriation_intent")
+        if not intent:
+            issues.append(_issue(NIGORootCause.STALE_FORM, "medium", "repatriation_intent", "Not recorded: Repatriation intent."))
+        elif intent == "repatriable" and reg == "nri_nro":
+            issues.append(_issue(NIGORootCause.TITLE_MISMATCH, "critical", "repatriation_intent",
+                                 "The client means to send the money abroad again, and this is an NRO account: NRO money leaves only up "
+                                 "to the NRO limit a financial year. Open an NRE account, or record the client's changed intent."))
+
     signers = sorted({p.legal_name for p in parties if p.role in SIGNERS})
     signed_by = {s.strip().lower() for s in (detail.get("signed_by") or [])}
     signed_on = _day(detail.get("signed_on"))
@@ -274,7 +286,17 @@ async def check_case(session: AsyncSession, case: OnboardingCase, firm: Firm) ->
     parties = (await session.execute(select(OnboardingParty).where(OnboardingParty.case_id == case.id))).scalars().all()
     documents = (await session.execute(select(OnboardingDocument).where(OnboardingDocument.case_id == case.id))).scalars().all()
     held = await india_onboarding.registry_holds(session, firm, case, list(parties))
-    return check(case, list(parties), list(documents), firm=firm, today=firm_time.today(firm), held=held)
+    out = check(case, list(parties), list(documents), firm=firm, today=firm_time.today(firm), held=held)
+    # India: a trust's recorded beneficial owner who is not a party has not been screened, so the package is not in good
+    # order (B-391).
+    from app.aurea_core import trust_owners
+
+    unrecorded = await trust_owners.matrix_issues(session, firm, case, list(parties))
+    if unrecorded:
+        out["issues"] = [*out["issues"], *unrecorded]
+        out["in_good_order"] = False
+        out["readiness_score"] = max(0, out["readiness_score"] - 20 * len(unrecorded))
+    return out
 
 
 def matrix(firm: Firm) -> dict:
@@ -307,6 +329,13 @@ def _clean(field: str, value, reg: str):
         v = str(value).strip().upper()
         if not re.fullmatch(r"[A-Z]{2}", v):
             raise MatrixError("A state is its two-letter code.")
+        return v
+    if field == "repatriation_intent":
+        from app.aurea_core import residency
+
+        v = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+        if v not in residency.REPATRIATION:
+            raise MatrixError(f"A repatriation intent is one of {', '.join(residency.REPATRIATION)}, as the client said.")
         return v
     if field == "funding":
         v = str(value).strip().lower()

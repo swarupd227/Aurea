@@ -232,6 +232,7 @@ class PartyRole(StrEnum):
     KARTA = "karta"                         # India: the HUF's manager, who acts and signs for it
     COPARCENER = "coparcener"               # India: a member with a birthright in the HUF's property
     GUARDIAN = "guardian"                   # India: runs a minor's account; the minor never trades
+    PROTECTOR = "protector"                 # India: a trust's protector, always a beneficial owner (B-391)
 
 
 class PartyScreeningStatus(StrEnum):

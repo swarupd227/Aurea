@@ -109,6 +109,11 @@ async def barred(session: AsyncSession, firm: Firm, mandate: Mandate) -> dict[uu
 
     for instrument_id, reason in (await product_gates.bars(session, firm, mandate)).items():
         out.setdefault(instrument_id, reason)
+    # India: a scheme a recorded line says does not take a resident of the US or Canada, for a holder who is one (B-391).
+    from app.aurea_core import fund_acceptance
+
+    for instrument_id, reason in (await fund_acceptance.bars(session, firm, mandate)).items():
+        out.setdefault(instrument_id, reason)
     return out
 
 

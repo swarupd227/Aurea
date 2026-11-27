@@ -287,6 +287,8 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE will_status ADD COLUMN IF NOT EXISTS witnesses JSON"))
         await conn.execute(text("ALTER TABLE will_status ADD COLUMN IF NOT EXISTS executor_told BOOLEAN"))
         await conn.execute(text("ALTER TABLE will_status ADD COLUMN IF NOT EXISTS executor_told_on DATE"))
+        # B-391: whether an NRI means to send the money abroad again, as they said at intake. Empty on every record before: not recorded.
+        await conn.execute(text("ALTER TABLE residency_record ADD COLUMN IF NOT EXISTS repatriation_intent VARCHAR(20)"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

@@ -58,7 +58,10 @@ TDS_SOURCE = ("Income-tax Act 2025 (tax deducted on a non-resident's capital gai
 YEAR_FIELDS = ("days_in_india", "days_prior_four_years", "days_prior_seven_years", "nonresident_years_of_prior_ten",
                "left_for_employment_abroad", "visiting_india", "india_income", "taxed_elsewhere")
 PERSON_FIELDS = ("indian_citizen_or_pio", "fema_status", "country_of_residence", "accounts", "pis_permission",
-                 "tax_residencies", "us_person", "us_indicia", "self_certified_on")
+                 "tax_residencies", "us_person", "us_indicia", "self_certified_on", "repatriation_intent")
+# B-391: what an NRI said they mean to do with the money, asked at intake. Recorded in their words' sense, never inferred.
+REPATRIATION = {"repatriable": "Means to send the money abroad again", "non_repatriable": "Means to keep the money in India",
+                "undecided": "Not yet decided"}
 FIELD_LABELS = {
     "days_in_india": "Days in India in the year", "days_prior_four_years": "Days in India in the four years before",
     "days_prior_seven_years": "Days in India in the seven years before",
@@ -69,6 +72,7 @@ FIELD_LABELS = {
     "fema_status": "FEMA status", "country_of_residence": "Country of residence", "accounts": "NRE, NRO and FCNR accounts held",
     "pis_permission": "Portfolio Investment Scheme permission", "tax_residencies": "Countries of tax residence",
     "us_person": "US person", "us_indicia": "US indicia", "self_certified_on": "FATCA and CRS self-certification dated",
+    "repatriation_intent": "Repatriation intent",
 }
 
 
@@ -313,6 +317,21 @@ def fema_facts(f: dict, today: date) -> dict | None:
     }
 
 
+def repatriation(f: dict) -> dict:
+    """What the client said they mean to do with the money, read against the accounts recorded. Money in an NRO account
+    does not leave freely (the NRO limit), so a wish to repatriate with only an NRO account on file is named."""
+    intent = f.get("repatriation_intent")
+    held = {str(a).upper() for a in (f.get("accounts") or [])}
+    issue = None
+    if intent == "repatriable" and held and not held & {"NRE", "FCNR"}:
+        issue = ("Means to send the money abroad again, and only an NRO account is on file: NRO money leaves only up to the "
+                 "NRO limit a financial year, after tax")
+    elif intent == "repatriable" and not held:
+        issue = "Means to send the money abroad again, and no NRE or FCNR account is on file"
+    return {"intent": intent, "label": REPATRIATION.get(intent or ""), "issue": issue,
+            "state": "not_on_file" if intent is None else ("breach" if issue else "on_file")}
+
+
 def tax_treatment(f: dict, status: dict) -> dict | None:
     """How tax is taken from a non-resident's gains, laid out. None where the client is not one."""
     if status["status"] != "non_resident" and f.get("fema_status") not in NON_RESIDENT_FEMA:
@@ -343,7 +362,7 @@ async def person_view(session: AsyncSession, firm: Firm, person: Person, *, toda
         bool(f.get("fema_status") == "resident" and status["status"] == "non_resident")
     return {**base, "recorded": True, "tax": status, "fema": fema, "fema_status": f.get("fema_status"),
             "fema_label": FEMA_STATUSES.get(f.get("fema_status") or ""), "fatca_crs": fatca_crs(f, today),
-            "treatment": tax_treatment(f, status), "differs": differ,
+            "treatment": tax_treatment(f, status), "differs": differ, "repatriation": repatriation(f),
             "facts": {FIELD_LABELS[k]: f.get(k) for k in YEAR_FIELDS if f.get(k) is not None},
             "document": rows[0].document, "recorded_by": rows[0].recorded_by,
             "recorded_on": firm_time.today(firm, rows[0].created_at).isoformat(), "history": len(rows)}
@@ -432,6 +451,11 @@ async def prepare(session: AsyncSession, firm: Firm, *, person_id, document: str
                 raise ResidencyError(f"{label} cannot be negative.")
         elif key in ("left_for_employment_abroad", "visiting_india", "taxed_elsewhere", "indian_citizen_or_pio", "us_person"):
             new[key] = _bool(value, label)
+        elif key == "repatriation_intent":
+            said = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+            if said not in REPATRIATION:
+                raise ResidencyError(f"A repatriation intent is one of {', '.join(REPATRIATION)}, as the client said.")
+            new[key] = said
         elif key == "fema_status":
             if str(value).strip().lower() not in FEMA_STATUSES:
                 raise ResidencyError(f"A FEMA status is one of {', '.join(FEMA_STATUSES)}.")

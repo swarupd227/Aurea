@@ -36,6 +36,8 @@ class ResidencyRecord(Base):
     country_of_residence: Mapped[str | None] = mapped_column(String(80), nullable=True)
     accounts: Mapped[list] = mapped_column(JSON, default=list)             # NRE, NRO, FCNR the client holds, as recorded
     pis_permission: Mapped[str | None] = mapped_column(String(200), nullable=True)   # the designated bank's letter, as filed
+    # B-391: whether the client means to send the money abroad again, as they said: repatriable | non_repatriable | undecided.
+    repatriation_intent: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # FATCA and CRS: the client's own declaration, from the signed form.
     tax_residencies: Mapped[list] = mapped_column(JSON, default=list)
     us_person: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

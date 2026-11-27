@@ -117,3 +117,5 @@ from app.models import estate_nri  # noqa: F401,E402
 from app.models import india_tax_planning  # noqa: F401,E402
 # A household's emergency fund as a person recorded it (B-400).
 from app.models import emergency_fund  # noqa: F401,E402
+# India's agreements, disclosures and the NRI checklist: fund-house acceptance, mutual fund and PMS, AIF, broking and e-stamp papers (B-391).
+from app.models import india_agreements  # noqa: F401,E402

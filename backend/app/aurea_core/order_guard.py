@@ -131,6 +131,11 @@ async def review(session: AsyncSession, *, firm: Firm, mandate: Mandate, account
     refused += lrs_refused
     signers = await india_onboarding.holder_note(session, firm, account)      # an all-sign joint account says so (B-385)
     notes = [*(notes or []), signers] if signers else notes
+    # A US or Canada resident's purchase names a fund house's recorded conditions, or that nothing is on file (B-391).
+    from app.aurea_core import fund_acceptance
+
+    accepted = await fund_acceptance.order_notes(session, firm, mandate, filling, instruments)
+    notes = [*(notes or []), *accepted] if accepted else notes
     refused += _cash_short(account, filling, (await cash_movement.held_back(session, firm, mandate))["total"])
 
     policy, breaches = await ips.orders_against(session, mandate, firm=firm, orders=[

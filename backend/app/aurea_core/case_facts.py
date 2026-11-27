@@ -69,8 +69,10 @@ async def read(session: AsyncSession, firm: Firm, case_id) -> dict:
            "residence": None, "guardian": None, "unread": []}
     country = (detail.get("country_of_residence") or "").strip()
     account = ACCOUNT_OF.get(case.registration_type or "")
-    if country or account:
-        facts = {**({"country_of_residence": country} if country else {}), **({"accounts": [account]} if account else {})}
+    if country or account or detail.get("repatriation_intent"):
+        intent = detail.get("repatriation_intent")                 # asked at NRI intake (B-391)
+        facts = {**({"country_of_residence": country} if country else {}), **({"accounts": [account]} if account else {}),
+                 **({"repatriation_intent": intent} if intent else {})}
         out["residence"] = {"facts": facts, "evidence": await _evidence(session, case, EVIDENCE_KINDS[:3])}
     elif case.registration_type in ACCOUNT_OF:
         out["unread"].append("The case records no country of residence.")
