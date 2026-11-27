@@ -9,6 +9,7 @@ import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { ProductChips, type Product } from "@/app/workspace/components/artifacts/ShelfCard";
 import { ProductFitCard, TargetMarketCard } from "@/app/workspace/components/artifacts/ProductFitCard";
 import { useViewNav } from "./ViewNav";
+import { IndiaAcceptanceSection } from "./IndiaAgreementsSection";
 import { ViewHeader } from "./ViewHeader";
 
 /** One product: its target market, whether it may be offered, and who it fits (B-226, B-227). */
@@ -104,6 +105,9 @@ export function ProductsView({ symbol = null }: { symbol?: string | null } = {})
           {s.dearer_class > 0 && <span className="chip text-warn">{s.dearer_class} held in a dearer class</span>}
         </div>
       </Card>
+
+      {/* India (B-391): which fund houses take US or Canada residents. Hidden elsewhere. */}
+      <IndiaAcceptanceSection />
 
       {rows.length === 0 ? <Empty>No products.</Empty> : (
         <Card className="overflow-hidden p-0">

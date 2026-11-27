@@ -441,6 +441,22 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_treaty_certificate":
     case "record_residence_move":
       return onClient("/studio/client-file");
+    // India's agreement files sit on the client file, the acceptance list on the product shelf (B-391).
+    case "read_agreement_file":
+    case "record_order_euin":
+    case "record_scheme_document":
+    case "record_distribution_disclosure":
+    case "record_agreement_item":
+    case "record_aif_commitment":
+    case "record_aif_drawdown":
+    case "record_aif_payment":
+    case "record_estamp":
+      return onClient("/studio/client-file");
+    case "record_trust_owners":
+      return typeof r.case_id === "string" ? `/studio/onboarding/${r.case_id}` : "/studio/onboarding";
+    case "read_fund_acceptance":
+    case "record_fund_acceptance":
+      return "/studio/products";
     // The advice file (B-175): one recommendation or one client's opens on that client.
     case "read_advice_file":
     case "record_recommendation":

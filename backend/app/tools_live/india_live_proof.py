@@ -53,6 +53,7 @@ INDIA_READ_TOOLS = {
     "read_retirement_stack": {"household": "The Sharma Family"},
     "read_after_tax_comparison": {"household": "The Sharma Family"}, "read_tax_reviews": {},
     "read_advice_audit": {},
+    "read_agreement_file": {"household": "The Sharma Family"}, "read_fund_acceptance": {},
     "read_estate_register": {"household": "The Sharma Family"}, "read_nri_planning": {"household": "The Menon NRI Household"},
     "read_planning_measures": {"household": "The Mehta Family"},
     "read_manager_staff": {}, "read_pms_ledger": {}, "read_guardian_papers": {}, "read_kyc_review_period": {},

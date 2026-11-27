@@ -220,6 +220,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         ...(firmMarket() === "IN" ? [
           { label: "Asset register", prompt: h1 ? `Show the asset and wishes register for ${the(h1)}: what has no nomination and which wills need a check?` : "Which households have assets with no nomination, and which wills are due a check?" },
           { label: "NRI planning", prompt: "Who is abroad or moving, which tax residency certificates are missing, and what is open on their checklists?" },
+          { label: "Agreement file", prompt: h1 ? `Show the agreements and disclosures on file for ${the(h1)}.` : "Which agreements and disclosures are missing, which AIF drawdowns are unpaid, and which trust cases are held?" },
         ] : [{ label: "Life events", prompt: "Which life events were recorded recently?" }]),
       ];
     case "/studio/advice-file":
@@ -270,6 +271,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         { label: "Closed but held", prompt: "Which closed products do clients still hold, and how much?" },
         { label: "Reviews due", prompt: "Which product reviews are overdue?" },
         { label: "Dearer classes", prompt: "Where are clients in a dearer share class than the shelf offers?" },
+        ...(firmMarket() === "IN" ? [{ label: "US and Canada", prompt: "Which fund houses accept US or Canada residents, and which clients are barred from which schemes?" }] : []),
       ];
     case "/studio/exits":
       return [

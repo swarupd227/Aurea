@@ -3,6 +3,7 @@
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
 import { IndiaEstateNriSection } from "./IndiaEstateNriSection";
+import { IndiaAgreementsSection } from "./IndiaAgreementsSection";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { DiscoveryChips, EstateGaps, said } from "@/app/workspace/components/artifacts/ClientFileCard";
 import { withRef } from "@/lib/refs";
@@ -34,6 +35,8 @@ export function ClientFileView({ household = null }: { household?: string | null
           ))}
         </div>
         <Card className="mb-4"><div className="flex flex-wrap gap-1.5"><span className="chip text-ink-muted">recorded from a document or note</span><span className="chip text-ink-muted">not on file does not mean none exists</span></div></Card>
+        {/* India (B-391): the firm's agreement files and open trust cases. Hidden elsewhere. */}
+        <IndiaAgreementsSection />
         {data.households.length === 0 ? <Empty>No households.</Empty> : (
           <Card className="overflow-hidden p-0">
             <div className="overflow-x-auto">
@@ -79,6 +82,8 @@ export function ClientFileView({ household = null }: { household?: string | null
       )}
       {/* India (B-398): the asset-and-wishes register, will checks and NRI planning. */}
       {data.india && <IndiaEstateNriSection household={data.household_id} />}
+      {/* India (B-391): agreements, disclosures and the NRI intake checklist. */}
+      {data.india && <IndiaAgreementsSection household={data.household_id} />}
       <div className="mb-4 space-y-4" data-testid="file-people">
         {data.people.map((p: any) => (
           <Card key={p.person_id}>

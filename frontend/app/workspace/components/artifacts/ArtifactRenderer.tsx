@@ -33,6 +33,8 @@ import { AdviceFileCard } from "./AdviceFileCard";
 import { AdviceAuditCard } from "./AdvicePracticeCard";
 import { EstateRegisterCard } from "./EstateRegisterCard";
 import { NriPlanningCard } from "./NriPlanningCard";
+import { AgreementFileCard } from "./AgreementFileCard";
+import { FundAcceptanceCard } from "./FundAcceptanceCard";
 import { PlanRecordCard } from "./PlanRecordCard";
 import { LicenceCard } from "./LicenceCard";
 import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
@@ -561,6 +563,24 @@ export function artifactCard(artifact: Artifact) {
         if (!Array.isArray(artifact.result?.reminders) && !Array.isArray(artifact.result?.tasks) && !artifact.result?.line && !artifact.result?.case
             && !Array.isArray(artifact.result?.minors) && artifact.result?.applies !== false) return null;
         return <PolishCard result={artifact.result as any} />;
+      case "read_fund_acceptance":
+      case "record_fund_acceptance":
+        // India: which fund houses take US or Canada residents (B-391).
+        if (!Array.isArray(artifact.result?.schemes)) return null;
+        return <FundAcceptanceCard result={artifact.result as any} />;
+      case "read_agreement_file":
+      case "record_order_euin":
+      case "record_scheme_document":
+      case "record_distribution_disclosure":
+      case "record_agreement_item":
+      case "record_aif_commitment":
+      case "record_aif_drawdown":
+      case "record_aif_payment":
+      case "record_estamp":
+      case "record_trust_owners":
+        // India's agreements, disclosures and the NRI checklist, by relationship (B-391).
+        if (!artifact.result?.scope && !Array.isArray(artifact.result?.added) && !artifact.result?.household_id) return null;
+        return <AgreementFileCard result={artifact.result as any} />;
       case "read_estate_register":
       case "record_estate_wish":
       case "record_will_check":
