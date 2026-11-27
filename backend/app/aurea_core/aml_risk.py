@@ -67,7 +67,8 @@ def _country(value) -> str | None:
     return markets.code(text) if text else None
 
 
-def score(facts: dict, *, registration_type: str | None, firm_country: str | None, monitored: set[str], pep: bool, adverse: bool) -> dict:
+def score(facts: dict, *, registration_type: str | None, firm_country: str | None, monitored: set[str], pep: bool, adverse: bool,
+          pep_why: str = "Confirmed politically exposed person") -> dict:
     """The model on one set of facts. Pure."""
     factors, missing = [], [k for k in REQUIRED if not facts.get(k)]
 
@@ -94,7 +95,7 @@ def score(facts: dict, *, registration_type: str | None, firm_country: str | Non
     if wealth:
         add("wealth", WEALTH.get(wealth, WEALTH["other"]), wealth.replace("_", " ").capitalize())
     if pep:
-        add("screening", 30, "Confirmed politically exposed person")
+        add("screening", 30, pep_why)
     if adverse:
         add("screening", 15, "Confirmed adverse media")
     wires = facts.get("wires_per_year")
@@ -167,7 +168,13 @@ async def assess(session: AsyncSession, case_id: uuid.UUID, *, firm_id: uuid.UUI
         raise AmlRiskError(f"The wealth source is one of {', '.join(WEALTH)}.")
     pep, adverse = await _screening_facts(session, case.id)
     monitored = {markets.code(c) for c in ((firm.settings or {}).get("aml_monitored_countries") or [])}
-    result = score(merged, registration_type=case.registration_type, firm_country=firm.jurisdiction, monitored=monitored, pep=pep, adverse=adverse)
+    # A KYC record a person marked politically exposed floors the rating as a confirmed match does (B-390).
+    from app.aurea_core import pep as exposed
+
+    marked = await exposed.kyc_names(session, firm, case.id)
+    result = score(merged, registration_type=case.registration_type, firm_country=firm.jurisdiction, monitored=monitored,
+                   pep=pep or bool(marked), adverse=adverse,
+                   pep_why="Confirmed politically exposed person" if pep else "KYC record marked politically exposed")
     last = (await session.execute(select(AmlRiskRating).where(AmlRiskRating.case_id == case.id).order_by(AmlRiskRating.created_at.desc()).limit(1))).scalars().first()
     return {**result, "case": case, "facts": merged, "consequences": CONSEQUENCES[result["model_band"]], "last": last}
 

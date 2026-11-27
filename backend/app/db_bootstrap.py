@@ -279,6 +279,8 @@ async def bootstrap() -> None:
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sip_goal_id ON sip (goal_id)"))
         # B-386: whether a KYC record's KRA status was said on that record or carried over. Empty on every record before: read from the chain.
         await conn.execute(text("ALTER TABLE kyc_record ADD COLUMN IF NOT EXISTS kra_status_stated BOOLEAN"))
+        # B-390: a party's father's name, which screening compares beside the date of birth. Empty on every party before.
+        await conn.execute(text("ALTER TABLE onboarding_party ADD COLUMN IF NOT EXISTS father_name VARCHAR(200)"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

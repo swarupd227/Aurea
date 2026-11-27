@@ -14,6 +14,8 @@ export function AmlCard({ result }: { result: any }) {
           <span className="chip text-ink-muted">{s.open} open</span>
           {s.awaiting_confirmation > 0 && <span className="chip text-crit">{s.awaiting_confirmation} second review</span>}
           {s.edd_pending > 0 && <span className="chip text-warn">{s.edd_pending} EDD</span>}
+          {s.pep_outstanding > 0 && <span className="chip text-warn">{s.pep_outstanding} PEP approval</span>}
+          {s.rescreen_backlog > 0 && <span className="chip text-crit">{s.rescreen_backlog} to rescreen · {s.rescreen_oldest_days}d</span>}
         </div>
       </div>
       <div className="divide-y divide-border-soft">
@@ -31,7 +33,14 @@ export function AmlCard({ result }: { result: any }) {
             <span className={`chip ${TONE[e.edd_status] ?? "text-ink-muted"}`}>{String(e.edd_status).replace(/_/g, " ")}</span>
           </div>
         ))}
-        {hits.length === 0 && !(result.edd ?? []).length && <div className="px-3 py-2"><span className="chip text-ink-muted">nothing waiting</span></div>}
+        {(result.pep ?? []).filter((p: any) => p.status !== "approved").slice(0, 4).map((p: any) => (
+          <div key={p.case_id ?? p.holder_id} className="flex flex-wrap items-center gap-1.5 px-3 py-1.5">
+            <span className="text-sm text-ink">{p.case}</span>
+            <span className="text-xs text-ink-muted">PEP</span>
+            <span className={`chip ${p.status === "declined" ? "text-crit" : "text-warn"}`}>{p.status === "declined" ? "declined" : `needs ${p.needs.join(", ")}`}</span>
+          </div>
+        ))}
+        {hits.length === 0 && !(result.edd ?? []).length && !(result.pep ?? []).length && <div className="px-3 py-2"><span className="chip text-ink-muted">nothing waiting</span></div>}
       </div>
     </div>
   );

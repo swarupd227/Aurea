@@ -553,6 +553,17 @@ ALL: tuple[LawFigure, ...] = (
     LawFigure("in_ad_preapproval_rule", "A firm's marketing is approved by its own compliance before it is used, and what is used is what was approved", None, "rule",
               "SEBI Common Advertisement Code (Intermediaries Regs 16G-16P) and the IA Master Circular, as read in the L100 India edition (Nov 2026) section 13 "
               "('advertisement pre-approval under the 2023 advertisement code'); the Code is operative on 8 April 2027 and was not re-read", date(2026, 11, 25)),
+    # ── India: the PMLA programme (B-390). From the L200-1 India edition section 5.3; the Act and the Rules were not read, so every row is
+    # ASSUMED and stands "not reviewed" in the counsel tracker.
+    LawFigure("in_pml_str_working_days", "A suspicious transaction report is filed with FIU-IND within this many working days of concluding suspicion", 7, "count",
+              "ASSUMED: the L200-1 India edition (Nov 2026) section 5.3, on the PML (Maintenance of Records) Rules; the Rules were not re-read. Working "
+              "days are counted as weekdays, holidays not modelled", date(2026, 11, 27)),
+    LawFigure("in_pml_cash_threshold", "Cash transactions above this amount are reported to FIU-IND; monitoring reads deposits against the same line", 1_000_000, "INR",
+              "ASSUMED: PML (Maintenance of Records) Rules 2005, the cash transaction line of Rs 10 lakh as understood; the L200-1 India edition section 5.3 "
+              "states no amount; the Rules were not re-read, and how connected transactions add up is not modelled", date(2026, 11, 27)),
+    LawFigure("in_pml_ctr_due_day", "The monthly reports to FIU-IND are due by this day of the following month", 15, "count",
+              "ASSUMED: the L200-1 India edition (Nov 2026) section 5.3 says cash transaction and other prescribed reports run on monthly cycles and gives no "
+              "day; the 15th is as understood from the PML (Maintenance of Records) Rules, which were not re-read", date(2026, 11, 27)),
     # ── India: the consolidation workbench (B-389). From the L200-1 India edition section 6.2; no circular, Act or bye-law was re-read, so every row
     # is ASSUMED and stands "not reviewed" in the counsel tracker.
     LawFigure("in_code_change_rule", "A distributor or broker code change re-maps who services a folio at the registrar: no unit moves, nothing is sold and no tax event arises", None, "rule",

@@ -34,7 +34,7 @@ from app.models.kyc import KycRecord
 from app.models.portfolio import Holding, Instrument, TaxLot, Transaction
 from app.models.sip import Sip
 from app.models.tenant import Firm
-from seed import india_b388, india_batch_a, india_l100a, india_row10, india_row12, india_row14
+from seed import india_b388, india_batch_a, india_l100a, india_pmla, india_row10, india_row12, india_row14
 from seed.india_demo import HOUSEHOLDS, SLUG
 
 BUILT_WITHIN = timedelta(hours=1)        # a lot the build wrote was created with the firm
@@ -258,6 +258,6 @@ async def refresh(s: AsyncSession, firm: Firm) -> dict[str, int]:
     out = {"tax lots": await _lots(s, firm, today), "this tax year": await _this_year(s, firm, today),
            "complaints": await _complaints(s, firm, today), "policies": await _policies(s, firm, today),
            "KYC": await _kyc_due(s, firm, today), "certificates": await _certificates(s, firm, today), "SIPs": await _sips(s, firm, today),
-           "mandates and banks": await india_b388.redate(s, firm, today)}
+           "mandates and banks": await india_b388.redate(s, firm, today), "PMLA": await india_pmla.redate(s, firm, today)}
     await s.flush()
     return out

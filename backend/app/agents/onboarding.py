@@ -17,7 +17,7 @@ from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
 from app.aurea_core import advisers, balance_sheet, billing, firm_time, india_onboarding, ips, knowledge, markets, onboarding_household
 from app.aurea_core.document_intel import DOC_LABELS, extract
-from app.aurea_core.screening import screen_parties
+from app.aurea_core import screening_lists
 from app.core.db import utcnow
 from app.models.enums import (
     AgentKey, AutonomyTier, EntityType, MandateType, OnboardingStatus,
@@ -38,7 +38,7 @@ async def _activation_gates(session, firm, case) -> dict:
     UI and the enforcement can never disagree about what is blocking.
     """
     from app.aurea_core import (
-        consents, disclosures, document_matrix, fees as fees_core, gates as gates_core, identity_checks, kyc_india, parties as parties_core,
+        consents, disclosures, document_matrix, fees as fees_core, gates as gates_core, identity_checks, kyc_india, parties as parties_core, pep,
     )
     from app.models.onboarding import FeeSchedule
 
@@ -68,6 +68,7 @@ async def _activation_gates(session, firm, case) -> dict:
         # India: an overdue or blocked KYC refuses activation here as it does on the page (B-384).
         kyc_status=kyc_india.gate(await kyc_india.case_status(session, firm, case)),
         identity_status=identity_checks.gate(await identity_checks.case_status(session, firm, case)),
+        pep_status=await pep.gate(session, firm, case),
     )
 
 RISK_TO_MODEL = {"conservative": "Balanced", "balanced": "Balanced", "growth": "Growth", "aggressive": "Growth"}
@@ -119,7 +120,7 @@ class OnboardingAgent(BaseAgent):
         parties = [case.prospect_name]
         parties += [p for p in (case.intake or {}).get("associated_parties", [])]
         parties += trustees
-        screening = screen_parties(sorted(set(p for p in parties if p)))
+        screening = await screening_lists.screen_names(s, ctx.firm.id, sorted(set(p for p in parties if p)))
         case.screening = screening
         case.status = OnboardingStatus.SCREENING
 

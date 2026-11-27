@@ -454,6 +454,9 @@ async def build(s, *, quotes: dict | None = None) -> Firm:
     from seed import india_b387
 
     await india_b387.add(s, firm)
+    from seed import india_pmla
+
+    await india_pmla.add(s, firm)
     return firm
 
 

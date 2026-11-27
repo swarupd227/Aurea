@@ -9,7 +9,9 @@ and a new hit after a rescreen is open until someone decides it.
 
 An EDD file is signed off against a checklist for the wealth it explains: each item names the source a reviewer saw,
 and approval needs every item and a conclusion that the wealth is explicable. "We know the client well" is not a
-source. A high-risk file is approved by compliance; a medium one by compliance or operations. Approving completes EDD,
+source. A high-risk file is approved by compliance; a medium one by compliance or operations. A file on a politically
+exposed person is compliance's whatever its rating, and operations signs off no file on a client not yet rated, because
+the rating is what says who approves (B-390). Approving completes EDD,
 declining keeps the account from opening, and asking for more leaves it pending. Nothing here is told to the client.
 """
 from __future__ import annotations
@@ -37,6 +39,12 @@ CHECKLISTS: dict[str, list[tuple[str, str]]] = {
     "property_sale": [("settlement_statement", "Settlement statement"), ("title_evidence", "Title or ownership record")],
     "crypto": [("exchange_statements", "Exchange statements"), ("wallet_ownership", "Evidence the wallets are the client's"),
                ("chain_analysis", "Chain-analysis report, where the firm's policy allows")],
+    "cash_business": [("business_registration", "The business's registration or licence"),
+                      ("accounts_and_returns", "Audited accounts or tax returns of the business"),
+                      ("bank_statements", "Bank statements showing the cash banked"),
+                      ("cash_reconciliation", "Takings reconciled to what was banked")],
+    "other": [("source_account", "The client's written account of the source"), ("source_documents", "Documents showing the source"),
+              ("independent_corroboration", "Corroboration from someone other than the client")],
 }
 SETTLED = {"clear", "cleared", "true_match"}
 DISPOSERS = {UserRole.COMPLIANCE, UserRole.OPERATIONS}
@@ -215,6 +223,14 @@ async def prepare_edd(session: AsyncSession, case_id: uuid.UUID, *, firm_id: uui
     allowed = {UserRole.COMPLIANCE} if tier == "high" else DISPOSERS
     if role not in allowed:
         raise AmlReviewError("A high-risk EDD file is signed off by compliance." if tier == "high" else "Compliance or operations signs off an EDD file.")
+    if role != UserRole.COMPLIANCE:
+        from app.aurea_core import pep
+        from app.models.tenant import Firm
+
+        if await pep.for_case(session, await session.get(Firm, firm_id), case) is not None:
+            raise AmlReviewError("A politically exposed person's EDD file is signed off by compliance.")
+        if not tier:
+            raise AmlReviewError("This client is not rated: rate the risk first (rate_aml_risk), or compliance signs the file off.")
     decision = (decision or "").strip().lower()
     if decision not in ("approve", "decline", "more_info"):
         raise AmlReviewError("The decision must be approve, decline or more_info.")
@@ -274,6 +290,7 @@ async def _rows(session: AsyncSession, firm_id: uuid.UUID, case_id: uuid.UUID | 
             hits.append({"case_id": str(case.id), "case": case.prospect_name, "case_status": str(case.status), "party_id": str(p.id), "party": p.legal_name,
                          "role": p.role, "hit": h["key"], "category": h.get("category"), "matched_name": h.get("matched_name"), "score": h.get("score"),
                          "country": h.get("country"), "note": h.get("note"), "discriminators": h.get("discriminators") or {}, "state": st["state"],
+                         "source": h.get("source"), "father_name": p.father_name,
                          "decision": _decision_view(st["decision"]), "qa": _decision_view(st["qa"]),
                          "history": [_decision_view(r) for r in mine]})
     fps = [d for d in finals if d.decision == "false_positive"]
@@ -319,12 +336,17 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID) -> dict:
     data = await _rows(session, firm_id)
     order = {"awaiting_confirmation": 0, "open": 1, "needs_info": 2, "true_match": 3, "false_positive": 4}
     hits = sorted(data["hits"], key=lambda h: (order.get(h["state"], 9), not h["qa_due"], h["case"]))
-    from app.aurea_core import aml_risk, firm_time
+    from app.aurea_core import aml_risk, firm_time, pep, screening_lists
     from app.models.tenant import Firm
 
-    due = await aml_risk.reviews_due(session, firm_id, today=firm_time.today(await session.get(Firm, firm_id)))
+    firm = await session.get(Firm, firm_id)
+    due = await aml_risk.reviews_due(session, firm_id, today=firm_time.today(firm))
+    exposed, lists = await pep.register(session, firm), await screening_lists.overview(session, firm)
     return {"hits": hits, "edd": data["edd"], "checklists": {k: [{"key": a, "label": b} for a, b in v] for k, v in CHECKLISTS.items()},
-            "summary": {**_summary(data), "reviews_due": len(due)}, "reviews_due": due, "case_id": None}
+            "summary": {**_summary(data), "reviews_due": len(due), "pep_outstanding": sum(1 for e in exposed if e["status"] != "approved"),
+                        "rescreen_backlog": lists["backlog"]["count"] if lists else 0,
+                        "rescreen_oldest_days": lists["backlog"]["oldest_age_days"] if lists else None},
+            "reviews_due": due, "pep": exposed, "screening_lists": lists, "case_id": None}
 
 
 async def for_case(session: AsyncSession, case_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict:
@@ -334,8 +356,11 @@ async def for_case(session: AsyncSession, case_id: uuid.UUID, *, firm_id: uuid.U
     case = await session.get(OnboardingCase, case_id)
     if case is None or case.firm_id != firm_id:
         raise AmlReviewError("Case not found.")
-    from app.aurea_core import aml_risk
+    from app.aurea_core import aml_risk, pep
+    from app.models.tenant import Firm
 
     risk = aml_risk.view(await aml_risk.assess(session, case_id, firm_id=firm_id))
+    exposed = await pep.register(session, await session.get(Firm, firm_id), case_id=case_id)
     return {"hits": data["hits"], "edd": data["edd"], "checklists": {k: [{"key": a, "label": b} for a, b in v] for k, v in CHECKLISTS.items()},
-            "summary": _summary(data), "case_id": str(case_id), "case": case.prospect_name, "risk": risk}
+            "summary": {**_summary(data), "pep_outstanding": sum(1 for e in exposed if e["status"] != "approved")}, "pep": exposed,
+            "case_id": str(case_id), "case": case.prospect_name, "risk": risk}

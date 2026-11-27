@@ -228,6 +228,8 @@ class OnboardingParty(Base):
     )
     role: Mapped[str] = mapped_column(String(24), index=True)
     legal_name: Mapped[str] = mapped_column(String(200))
+    # What tells two people of one name apart when screening an Indian name (B-390); recorded from a document.
+    father_name: Mapped[str | None] = mapped_column(String(200))
 
     # Identity — the CIP data set (name, DOB, address, ID number).
     dob: Mapped[str | None] = mapped_column(String(16))           # ISO date YYYY-MM-DD

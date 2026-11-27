@@ -43,7 +43,8 @@ def sanctions_open(case, party_status: dict) -> list[str]:
 def evaluate(case, *, party_status: dict, disclosure_status: dict,
              fee_status: dict | None = None, held_away_count: int | None = None,
              transfer_status: dict | None = None, consent_status: dict | None = None,
-             registration_status: dict | None = None, kyc_status: dict | None = None, identity_status: dict | None = None) -> dict:
+             registration_status: dict | None = None, kyc_status: dict | None = None, identity_status: dict | None = None,
+             pep_status: dict | None = None) -> dict:
     """All activation gates for a case, and whether any of them blocks.
 
     Optional arguments degrade gracefully: a caller that has not loaded the fee schedule or
@@ -220,6 +221,11 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
         else f"EDD status: {case.edd_status}.",
         track="financial_crime",
     ))
+
+    # A politically exposed person on the account: it opens only with compliance's record of senior approval (aurea_core/pep.py).
+    if pep_status is not None:
+        gates.append(_gate("pep_senior_approval", "Senior approval for a politically exposed person", pep_status["state"], pep_status["detail"],
+                           track="financial_crime"))
 
     # India: the parties' KYC as a person recorded it (aurea_core/kyc_india.py). An overdue or blocked KYC fails; one falling
     # due or not assessed, a party with none, or none on file at all, warns, because not on file does not mean not done.

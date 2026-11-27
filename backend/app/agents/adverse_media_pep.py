@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.agents._common import firm_voice, narrate
 from app.atlas.base import AgentContext, BaseAgent, RecommendationDraft, Subject
-from app.aurea_core.screening import screen_parties
+from app.aurea_core import screening_lists
 from app.core.db import utcnow
 from app.models.enums import AgentKey, AMLRiskTier, AutonomyTier, EDDStatus, SurveillanceSeverity
 from app.models.governance import SurveillanceFlag
@@ -58,7 +58,8 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
             parties += list(intake.get("poa_holders", []))
             parties = sorted(set(p for p in parties if p))
 
-            screening = screen_parties(parties, dobs={p.legal_name: p.dob for p in party_rows if p.dob})
+            screening = await screening_lists.screen_names(s, ctx.firm.id, parties, dobs={p.legal_name: p.dob for p in party_rows if p.dob},
+                                                           fathers={p.legal_name: p.father_name for p in party_rows if p.father_name})
 
             # Stamp the outcome onto the party records here, in sense(), not in act().
             #
@@ -194,7 +195,8 @@ class AdverseMediaPEPScreenerAgent(BaseAgent):
         # screening is recorded as an observation rather than an approved effect.
 
         # Escalate EDD status if PEP found.
-        if payload.get("has_pep"):
+        # A file already signed off or declined stands: a repeat of the same match reopens neither (B-390).
+        if payload.get("has_pep") and case.edd_status not in (EDDStatus.EDD_COMPLETE.value, "edd_declined"):
             case.edd_status = EDDStatus.EDD_PENDING.value
 
         # Raise SurveillanceFlag for blocking or review hits.

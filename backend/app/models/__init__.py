@@ -105,3 +105,5 @@ from app.models import india_rem_d  # noqa: F401,E402
 from app.models import consolidation  # noqa: F401,E402
 # Health policies and a savings policy's value statements (B-397).
 from app.models import health_cover  # noqa: F401,E402
+# Screening list changes, senior approvals of politically exposed persons and reports to FIU-IND (B-390).
+from app.models import pmla  # noqa: F401,E402

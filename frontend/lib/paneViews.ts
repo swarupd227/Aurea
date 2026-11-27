@@ -389,6 +389,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_transaction_monitoring":
     case "decide_monitoring_alert":
     case "record_investigation_step":
+    case "record_fiu_report":
       return "/studio/monitoring";
     case "read_transfer_files":
     case "record_transfer_event":
@@ -407,6 +408,10 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_aml_reviews":
     case "record_screening_decision":
     case "sign_off_edd":
+    case "record_pep_approval":
+    case "record_screening_list_update":
+    case "run_delta_rescreen":
+    case "record_party_father_name":
       return "/studio/aml";
     case "read_trades":
       return onClient("/studio/trades");

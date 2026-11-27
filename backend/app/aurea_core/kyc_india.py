@@ -586,6 +586,9 @@ async def record(session: AsyncSession, firm: Firm, *, by: str, note: str | None
         "party": row.party_name, "kra_status": row.kra_status, "ckyc_recorded": bool(row.ckyc_number), "aadhaar": mask_aadhaar(row.aadhaar_last4),
         "kyc_completed_on": row.kyc_completed_on.isoformat() if row.kyc_completed_on else None, "document": row.document,
         "state": p["state"]["state"]})
+    from app.aurea_core import pep
+
+    await pep.open_edd(session, firm, row, p["before"])      # a record marked PEP opens enhanced due diligence (B-390)
     household = None
     holder = p["holder"]
     if holder is not None:

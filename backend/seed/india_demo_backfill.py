@@ -19,6 +19,8 @@ from the conversation is not reset.
 The KYC registry's answers, the on-hold client's steps and contact attempts, and a new prospect nobody has looked up (B-386,
 `seed/india_b386.py`) are added once.
 The identity and bank checks a person did by hand, one passed and one failed in the queue (B-387, `seed/india_b387.py`), are added once.
+The PMLA programme's cases, invented screening list entries, monitoring scenarios and recorded FIU-IND reports (B-390,
+`seed/india_pmla.py`) are added once.
 
 Every run also moves the dated demonstration scenarios back to their distance from today (`seed/india_redate.py`) and rewrites the
 description of an open reminder task still in the older wording.
@@ -158,6 +160,9 @@ async def main() -> None:
         from seed import india_b387
 
         check_rows = await india_b387.add(s, firm)
+        from seed import india_pmla
+
+        pmla_rows = await india_pmla.add(s, firm)
         # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
         # open reminder tasks raised in the older wording (B-372).
         from app.aurea_core import india_reminders
@@ -176,7 +181,8 @@ async def main() -> None:
           f"({len(priced['failed'])} failed), and refreshed the tax positions.\n"
           f"Re-dated for today: {', '.join(f'{n} {k}' for k, n in redated.items() if n) or 'nothing'}. "
           f"Rewrote {reworded} open reminder task description(s). Consolidation workbench: {consolidation_rows} holding(s) added or re-dated. Health cover and policy values: {protection_rows} added or re-dated. "
-          f"KYC registry: {registry_rows} answer(s), step(s) and contact attempt(s) added. Identity and bank checks done by hand: {check_rows} added.\n")
+          f"KYC registry: {registry_rows} answer(s), step(s) and contact attempt(s) added. Identity and bank checks done by hand: {check_rows} added. "
+          f"PMLA programme: {pmla_rows} row(s) added.\n")
 
 
 if __name__ == "__main__":

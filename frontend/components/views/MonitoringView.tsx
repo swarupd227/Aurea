@@ -5,6 +5,7 @@ import { useApi } from "@/lib/hooks";
 import { money } from "@/lib/format";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { ViewHeader } from "./ViewHeader";
+import { FiuSection } from "./PmlaSections";
 
 const th = "px-4 py-2 font-medium";
 const MONEY = new Set(["in", "out", "total", "amount", "threshold"]);
@@ -26,6 +27,7 @@ export function MonitoringView() {
           <Card key={label as string}><div className="text-[10px] uppercase tracking-wide text-ink-muted">{label}</div><div className="font-mono text-xl text-ink">{n as any}</div></Card>
         ))}
       </div>
+      {data.fiu && <FiuSection fiu={data.fiu} />}
       <Card className="mb-4 overflow-hidden p-0">
         <div className="border-b border-border-soft px-4 py-2 text-sm font-medium text-ink">Investigations</div>
         {data.investigations.length === 0 ? <div className="px-4 py-3"><Empty>No investigations.</Empty></div> : (

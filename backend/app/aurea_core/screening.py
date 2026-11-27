@@ -4,11 +4,17 @@ onboarding; exceptions escalated, not auto-cleared').
 Deterministic simulation of a screening provider (e.g. a World-Check-style connector): fuzzy-
 matches a name against a synthetic PEP / sanctions / adverse-media watchlist and returns hits
 with a match score and severity. Sanctions hits BLOCK (cannot be auto-cleared); PEP / adverse
-media route to enhanced due diligence. Real screening is wired via a Conduit AML connector."""
+media route to enhanced due diligence. Real screening is wired via a Conduit AML connector.
+
+A firm may also screen against the list changes it has recorded (aurea_core/screening_lists.py). Those names are
+compared as Indian names are written (aurea_core/indian_names.py), with the father's name beside the date of birth
+(B-390). Every match is a signal a person decides."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+
+from app.aurea_core import indian_names
 
 # Synthetic watchlist. Names are fictional and for demo only.
 WATCHLIST: list[dict] = [
@@ -36,6 +42,7 @@ class Hit:
     # What a reviewer compares beyond the name: the date of birth on file against the list's. A name alone
     # decides nothing, and these do not decide either: they are what a person weighs.
     discriminators: dict = field(default_factory=dict)
+    source: str | None = None       # the firm's recorded list the entry is on, where it is not the provider's
 
 
 @dataclass
@@ -72,8 +79,28 @@ def _compare(ours: str | None, theirs: str | None) -> str:
     return "match" if ours.strip()[:10] == theirs.strip()[:10] else "differs"
 
 
-def screen(name: str, *, provider: str = "World-Check (mock)", threshold: float = 0.82, dob: str | None = None) -> ScreeningResult:
-    """Screen a single name against the watchlist."""
+def _listed(name: str, entry: dict, dob: str | None, father_name: str | None, threshold: float) -> Hit | None:
+    """One entry of a firm's recorded list against one name: the name or an alias, compared with its spellings."""
+    best: tuple[str | None, float] = (None, 0.0)
+    for written in (entry["name"], *(entry.get("aliases") or [])):
+        how, _ = indian_names.compare(name, written)
+        score = _similarity(name, written)
+        if how is None and score >= threshold and indian_names.compare(name.split()[-1], written.split()[-1])[1] >= 0.8:
+            how = "close"
+        if how is not None and score >= best[1]:
+            best = (how, score)
+    if best[0] is None:
+        return None
+    category = entry["category"]
+    return Hit(matched_name=entry["name"], category=category, severity=SEVERITY[category], score=round(best[1], 3),
+               country=entry.get("country") or "", note=entry.get("note") or "", source=entry.get("source"),
+               discriminators={"dob": _compare(dob, entry.get("dob")), "name": best[0],
+                               "father_name": indian_names.father(father_name, entry.get("father_name"))})
+
+
+def screen(name: str, *, provider: str = "World-Check (mock)", threshold: float = 0.82, dob: str | None = None,
+           father_name: str | None = None, entries: list[dict] | None = None) -> ScreeningResult:
+    """Screen a single name against the provider's watchlist, and against any list entries the firm has recorded."""
     result = ScreeningResult(subject=name, provider=provider)
     for entry in WATCHLIST:
         score = _similarity(name, entry["name"])
@@ -84,6 +111,10 @@ def screen(name: str, *, provider: str = "World-Check (mock)", threshold: float 
                 country=entry["country"], note=entry["note"],
                 discriminators={"dob": _compare(dob, entry.get("dob"))},
             ))
+    for entry in entries or []:
+        hit = _listed(name, entry, dob, father_name, threshold)
+        if hit is not None:
+            result.hits.append(hit)
     if any(h.severity == "high" for h in result.hits):
         result.status = "blocked"
     elif result.hits:
@@ -91,9 +122,11 @@ def screen(name: str, *, provider: str = "World-Check (mock)", threshold: float 
     return result
 
 
-def screen_parties(parties: list[str], *, provider: str = "World-Check (mock)", dobs: dict | None = None) -> dict:
+def screen_parties(parties: list[str], *, provider: str = "World-Check (mock)", dobs: dict | None = None,
+                   fathers: dict | None = None, entries: list[dict] | None = None) -> dict:
     """Screen a set of associated parties (e.g. applicant + trustees). Returns a summary."""
-    results = [screen(p, provider=provider, dob=(dobs or {}).get(p)) for p in parties if p]
+    results = [screen(p, provider=provider, dob=(dobs or {}).get(p), father_name=(fathers or {}).get(p), entries=entries)
+               for p in parties if p]
     statuses = {r.status for r in results}
     overall = "blocked" if "blocked" in statuses else ("review" if "review" in statuses else "clear")
     return {

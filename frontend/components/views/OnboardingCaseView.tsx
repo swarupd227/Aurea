@@ -1156,7 +1156,7 @@ const SCREEN_STYLE: Record<string, string> = {
 function Parties({ caseId, status }: { caseId: string; status: string }) {
   const { data, loading, error, refetch } = useApi<any>(`/api/onboarding/cases/${caseId}/parties`, [caseId]);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ role: "owner", legal_name: "", ownership_pct: "", is_control_person: false });
+  const [form, setForm] = useState({ role: "owner", legal_name: "", father_name: "", ownership_pct: "", is_control_person: false });
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const isClosed = status === "approved" || status === "rejected";
@@ -1170,10 +1170,10 @@ function Parties({ caseId, status }: { caseId: string; status: string }) {
         body: {
           role: form.role, legal_name: form.legal_name.trim(),
           ownership_pct: form.ownership_pct ? parseFloat(form.ownership_pct) : null,
-          is_control_person: form.is_control_person,
+          is_control_person: form.is_control_person, father_name: form.father_name.trim() || null,
         },
       });
-      setForm({ role: "owner", legal_name: "", ownership_pct: "", is_control_person: false });
+      setForm({ role: "owner", legal_name: "", father_name: "", ownership_pct: "", is_control_person: false });
       setAdding(false);
       await refetch();
     } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
@@ -1224,6 +1224,7 @@ function Parties({ caseId, status }: { caseId: string; status: string }) {
                     {p.ownership_pct != null && (
                       <span className="text-[10px] text-ink-muted">{p.ownership_pct}% ownership</span>
                     )}
+                    {p.father_name && <span className="text-[10px] text-ink-muted">father {p.father_name}</span>}
                     {p.screened_at && (
                       <span className="text-[10px] text-ink-faint">{new Date(p.screened_at).toLocaleDateString(firmLocale())}</span>
                     )}
@@ -1286,6 +1287,13 @@ function Parties({ caseId, status }: { caseId: string; status: string }) {
                            onChange={(e) => setForm({ ...form, legal_name: e.target.value })} />
                   </div>
                 </div>
+                {inIndia() && (
+                  <div>
+                    <label className="label text-[10px]" htmlFor="p-father">Father&apos;s name</label>
+                    <input id="p-father" className="input text-xs" value={form.father_name}
+                           onChange={(e) => setForm({ ...form, father_name: e.target.value })} />
+                  </div>
+                )}
                 <div className="flex items-end gap-2">
                   <div className="w-24">
                     <label className="label text-[10px]" htmlFor="p-pct">Ownership %</label>

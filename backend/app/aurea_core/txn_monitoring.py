@@ -7,8 +7,10 @@ Escalation opens an investigation, or joins the household's open one.
 
 The report's clock is the market's: in the US a SAR is due 30 days from detection, 60 when no subject is identified,
 and continuing activity is reviewed at 90 days and reported again within 120; in New Zealand a SAR is due 3 working
-days after suspicion is formed; in India an STR 7 working days after. A market with none of these gets no clock, and
-says so. Whether to report is compliance's decision, and the reference is the filing's own. Deciding to exit a
+days after suspicion is formed; in India an STR 7 working days after, and India's day count and cash line are assumed
+figures in law_figures. A market with none of these gets no clock, and
+says so. Whether to report is compliance's decision, and the reference is the filing's own. In India the suspicion and
+report steps carry the firm's recorded Principal Officer, and are refused while none is recorded (B-390). Deciding to exit a
 client goes through a forum of at least two people, recorded with its minutes.
 
 None of it reaches a client: no client route or tool reads it, and a message to a client under investigation is
@@ -25,7 +27,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, markets
+from app.aurea_core import firm_time, law_figures, markets
 from app.aurea_core.billing import _mandate_households
 from app.models.aml_monitoring import AlertDecision, AmlInvestigation
 from app.models.cash_movement import CashRequest
@@ -43,12 +45,13 @@ SCENARIOS = {
     "above_baseline": "Payments out above what was declared",
     "undeclared_third_party": "A third-party payment nobody declared",
 }
-THRESHOLD = {"US": 10000, "NZ": 10000, "IN": 1000000}       # the cash reporting line, in the firm's currency
+# The cash reporting line, in the firm's currency.
+THRESHOLD = {"US": 10000, "NZ": 10000, "IN": int(law_figures.value("in_pml_cash_threshold"))}
 LOOKBACK_DAYS = 90
 REGIMES = {
     "US": {"report": "SAR", "to": "FinCEN", "from": "detection", "days": 30, "no_subject_days": 60, "review_days": 90, "again_days": 120},
     "NZ": {"report": "SAR", "to": "the NZ Police FIU", "from": "suspicion", "working_days": 3},
-    "IN": {"report": "STR", "to": "FIU-IND", "from": "suspicion", "working_days": 7},
+    "IN": {"report": "STR", "to": "FIU-IND", "from": "suspicion", "working_days": int(law_figures.value("in_pml_str_working_days"))},
 }
 _TIPPING = re.compile(r"suspicious|\bSARs?\b|\bSTRs?\b|investigat|monitoring|FinCEN|\bFIU\b|money laundering|reported (you|your)", re.I)
 
@@ -184,6 +187,7 @@ def _view_inv(inv: AmlInvestigation, name: str | None, code: str, today: date) -
             "subject_known": inv.subject_known, "suspicion_on": inv.suspicion_on.isoformat() if inv.suspicion_on else None,
             "reported_on": inv.reported_on.isoformat() if inv.reported_on else None, "report_reference": inv.report_reference,
             "steps": inv.steps or [], "clock": clock(inv, code, today),
+            "principal_officer": next((s["principal_officer"] for s in reversed(inv.steps or []) if s.get("principal_officer")), None),
             "exit": next((s for s in reversed(inv.steps or []) if s.get("step") == "exit_decision"), None)}
 
 
@@ -216,7 +220,9 @@ async def for_firm(session: AsyncSession, firm_id: uuid.UUID, *, household_id: u
     investigations = [_view_inv(i, names.get(i.household_id), code, today) for i in (await session.execute(q)).scalars().all()]
     open_alerts = [a for a in alerts if a["decision"] is None]
     scanned = len([h for h in moves if household_id is None or h == household_id])
-    return {"alerts": sorted(alerts, key=lambda a: (a["decision"] is not None, a["last_on"]), reverse=False),
+    from app.aurea_core import fiu_reports
+
+    return {"fiu": await fiu_reports.overview(session, firm), "alerts": sorted(alerts, key=lambda a: (a["decision"] is not None, a["last_on"]), reverse=False),
             "investigations": sorted(investigations, key=lambda i: (i["status"] != "open", i["clock"].get("due") or "9999")),
             "summary": {"open_alerts": len(open_alerts), "households_scanned": scanned,
                         "alert_rate_pct": round(100 * len({a["household_id"] for a in alerts}) / scanned, 1) if scanned else None,
@@ -294,6 +300,14 @@ async def prepare_step(session: AsyncSession, firm_id: uuid.UUID, *, investigati
     if inv.status == "closed":
         raise MonitoringError("This investigation is closed.")
     entry = {"step": step, "on": day.isoformat(), "note": text}
+    if markets.code(firm.jurisdiction) == "IN" and step in ("suspicion_formed", "reported", "no_report"):
+        from app.aurea_core import fiu_reports
+
+        officer = fiu_reports.officers(firm)["principal_officer"]
+        if not officer:
+            raise MonitoringError("The firm has no Principal Officer recorded, who answers for a suspicious transaction report: the admin "
+                                  "records it with the firm's registration details (record_sebi_registration).")
+        entry["principal_officer"] = officer
     if step == "reported":
         if not (reference or "").strip():
             raise MonitoringError("A report is recorded with the filing's own reference.")

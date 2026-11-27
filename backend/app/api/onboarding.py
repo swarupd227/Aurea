@@ -114,7 +114,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
         select(TransferRequest).where(TransferRequest.case_id == case.id)
     )).scalars().all())
     decided = await aml_review.decisions_for(db, [p.id for p in party_rows])
-    from app.aurea_core import consents, document_matrix, identity_checks, kyc_india
+    from app.aurea_core import consents, document_matrix, identity_checks, kyc_india, pep
     disclosure_status = disclosures.status_for(firm.jurisdiction, case.registration_type, list(disc_rows), case.engagement_type)
     fee_status = await _fee_status(db, case)
     return gates_core.evaluate(
@@ -127,6 +127,7 @@ async def _gates_for(db: AsyncSession, firm: Firm, case: OnboardingCase) -> dict
         registration_status=await document_matrix.check_case(db, case, firm),
         kyc_status=kyc_india.gate(await kyc_india.case_status(db, firm, case)),
         identity_status=identity_checks.gate(await identity_checks.case_status(db, firm, case)),
+        pep_status=await pep.gate(db, firm, case),
         held_away_count=held_away_n,
         transfer_status=transfer_controls.status_for(
             xfer_rows, party_names=[p.legal_name for p in party_rows]
@@ -903,6 +904,7 @@ class PartyIn(BaseModel):
     ownership_pct: float | None = None
     is_control_person: bool = False
     notes: str | None = None
+    father_name: str | None = None
 
 
 def _party_dict(p: OnboardingParty) -> dict:
@@ -910,7 +912,7 @@ def _party_dict(p: OnboardingParty) -> dict:
         "id": str(p.id), "role": p.role,
         "role_label": parties_core.ROLE_LABELS.get(p.role, p.role),
         "legal_name": p.legal_name, "dob": p.dob, "address": p.address,
-        "id_type": p.id_type,
+        "id_type": p.id_type, "father_name": p.father_name,
         # id_number is deliberately never returned.
         "has_id_number": bool(p.id_number),
         "ownership_pct": float(p.ownership_pct) if p.ownership_pct is not None else None,
@@ -971,14 +973,12 @@ async def add_party(
         firm_id=firm.id, case_id=case.id, role=body.role, legal_name=body.legal_name,
         dob=body.dob, address=body.address, id_number=body.id_number, id_type=body.id_type,
         ownership_pct=body.ownership_pct, is_control_person=body.is_control_person,
-        notes=body.notes, screening_status="not_screened",
+        notes=body.notes, screening_status="not_screened", father_name=body.father_name,
     )
     # A new party - a signer added after opening as much as one at intake - is screened when it is recorded,
     # not at the next daily run. Screening is an observation; what a hit means is still a person's.
-    from app.aurea_core import screening as screening_core
-    result = screening_core.screen(body.legal_name, dob=body.dob)
-    party.screening_status, party.screening_hits, party.screened_at = result.status, result.to_dict()["hits"], utcnow()
-    party.disposition_note = "Screened when recorded. Hits await a person's decision."
+    from app.aurea_core import screening_lists
+    screening_lists.stamp(party, await screening_lists.entries(db, firm.id), "Screened when recorded. Hits await a person's decision.")
     db.add(party)
     await db.flush()
     rows = await _load_parties(db, case.id)

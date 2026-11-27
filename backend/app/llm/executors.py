@@ -21,6 +21,7 @@ from app.aurea_core.graph import household_brain
 from app.llm.admin_executors import AdminToolExecutors
 from app.llm.consolidation_executors import ConsolidationExecutors
 from app.llm.health_cover_executors import HealthCoverExecutors
+from app.llm.pmla_executors import PmlaExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
@@ -94,7 +95,8 @@ _PROPOSAL_NOISE = {"the", "a", "an", "of", "for", "and", "on", "proposal", "prop
 class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors, PlanRecordExecutors, IndiaDataExecutors, IndiaExecutors,
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
-                    IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors, IdentityCheckExecutors):
+                    IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors, IdentityCheckExecutors,
+                    PmlaExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -412,6 +414,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._health_map(),
             # B-394: goals recorded and sized, and a SIP's goal: app/llm/goal_executors.py.
             **self._goal_tools_map(),
+            # The PMLA programme (B-390): app/llm/pmla_executors.py.
+            **self._pmla_map(),
             "read_kyc_review_period": self.read_kyc_review_period,
             "set_kyc_review": self.set_kyc_review,
         }
@@ -2834,8 +2838,15 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             raise ExecutorError(str(exc))
         inv, e = r["investigation"], r["entry"]
         household = await self.session.get(Household, inv.household_id)
+        # India: a report is timed against the line from the day suspicion was recorded (B-390).
+        timed = None
+        if e.get("principal_officer") and e["step"] == "reported" and inv.suspicion_on:
+            from app.aurea_core import fiu_reports
+
+            timed = f"{fiu_reports.working_days(inv.suspicion_on, r['day'])} of {txn_monitoring.REGIMES['IN']['working_days']} (assumed line)"
         return [("Household", household.name if household else None), ("Opened", firm_time.spoken(inv.detected_on)),
                 ("Step", e["step"].replace("_", " ").capitalize()), ("On", firm_time.spoken(r["day"])), ("Reference", e.get("reference")),
+                ("Principal Officer", e.get("principal_officer")), ("Working days since suspicion", timed),
                 ("Forum", ", ".join(e["attendees"]) if e.get("attendees") else None), ("Outcome", e.get("outcome")), ("Minutes", e.get("minutes")),
                 ("Note", e["note"])]
 
@@ -5721,6 +5732,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._admin_preview(tool_key, inputs))
         if tool_key in ("record_manager_affiliation", "record_pms_unit_value", "record_pms_verification", "debit_pms_fee_line"):
             return rows(*await self._india_rem_d_preview(tool_key, inputs))
+        if tool_key in ("record_pep_approval", "record_screening_list_update", "run_delta_rescreen", "record_party_father_name",
+                        "record_fiu_report"):
+            return rows(*await self._pmla_preview(tool_key, inputs))
         if tool_key == "rate_aml_risk":
             return rows(*await self._risk_rating_preview(inputs))
         if tool_key in ("record_screening_decision", "sign_off_edd"):

@@ -7,6 +7,7 @@ import { withRef } from "@/lib/refs";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { useViewNav } from "./ViewNav";
 import { ViewHeader } from "./ViewHeader";
+import { PepSection, ScreeningListsSection } from "./PmlaSections";
 
 const th = "px-4 py-2 font-medium";
 const STATE: Record<string, [string, string]> = {
@@ -73,9 +74,12 @@ export function AmlReviewsView({ caseId = null }: { caseId?: string | null }) {
         </div></Card>
       )}
 
+      <PepSection rows={data.pep ?? []} />
+      {data.screening_lists && <ScreeningListsSection data={data.screening_lists} />}
+
       {data.hits.length === 0 ? <Empty>No screening hits.</Empty> : (
         <Card className="mb-4 overflow-hidden p-0"><div className="overflow-x-auto"><table className="w-full text-sm" data-testid="aml-hits">
-          <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Party</th><th className={th}>Hit</th><th className={th}>Birth date</th><th className={th}>State</th><th className={`${th} text-right`}>Decide</th></tr></thead>
+          <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Party</th><th className={th}>Hit</th><th className={th}>Birth date</th><th className={th}>Name · father</th><th className={th}>State</th><th className={`${th} text-right`}>Decide</th></tr></thead>
           <tbody className="divide-y divide-border-soft">
             {data.hits.map((h: any) => {
               const [label, tone] = STATE[h.state] ?? [h.state, "text-ink-muted"];
@@ -88,6 +92,10 @@ export function AmlReviewsView({ caseId = null }: { caseId?: string | null }) {
                   <td className="px-4 py-2"><div className="text-ink">{h.party}</div><div className="text-xs text-ink-muted">{h.case} · {h.role.replace(/_/g, " ")}</div></td>
                   <td className="px-4 py-2"><span className="chip text-ink-muted">{h.category.replace(/_/g, " ")}</span> <span className="text-xs text-ink">{h.matched_name}</span> <span className="font-mono text-xs text-ink-muted">{h.score}</span></td>
                   <td className="px-4 py-2 font-mono text-xs text-ink-muted">{h.discriminators?.dob ?? "unknown"}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-ink-muted" title={h.source ?? undefined}>
+                    {h.discriminators?.name ? <>{h.discriminators.name} · father {h.discriminators.father_name}</> : "—"}
+                    {String(h.source ?? "").includes("invented") && <span className="chip ml-1 text-warn">invented list</span>}
+                  </td>
                   <td className="px-4 py-2"><span className={`chip ${tone}`}>{label}</span>{h.qa_due && <span className="chip ml-1 text-warn">QA due</span>}</td>
                   <td className="px-4 py-2 text-right">
                     {decidable && !mine && nav.say && <button className="btn-outline text-xs" data-testid="aml-decide" onClick={() => setOpen({ party: h.party_id, hit: h.hit, name: h.matched_name, decision: choices[0], reason: "" })}>Decide</button>}
