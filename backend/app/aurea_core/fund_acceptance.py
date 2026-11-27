@@ -195,6 +195,14 @@ async def order_notes(session: AsyncSession, firm: Firm, mandate: Mandate, order
     return notes
 
 
+async def order_refusals(session: AsyncSession, firm: Firm, mandate: Mandate, orders: list[dict]) -> list[str]:
+    """The buys in a set a recorded line refuses, as a direct order says them. It does not wait for a price: whether the
+    fund house takes this client is not a question of what the units cost."""
+    stops = await bars(session, firm, mandate)
+    return [f"{o['symbol']} is {stops[uuid.UUID(str(o['instrument_id']))]}." for o in orders
+            if o["side"] == "buy" and uuid.UUID(str(o["instrument_id"])) in stops]
+
+
 async def client_answer(session: AsyncSession, firm: Firm, countries: dict[str, str]) -> list[dict]:
     """For one client the rule reaches: each scheme on file read against each country, worst first."""
     lines = await standing(session, firm.id)

@@ -60,6 +60,7 @@ class DistributionDisclosure(Base):
     firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firm.id", ondelete="CASCADE"), index=True)
     household_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("household.id", ondelete="CASCADE"), index=True)
     instrument_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("instrument.id", ondelete="CASCADE"), nullable=True)
+    fund_house: Mapped[str | None] = mapped_column(String(120), nullable=True) # a commission stated for a house, or the scheme's house
     kind: Mapped[str] = mapped_column(String(20))                              # commission | scheme_documents
     terms: Mapped[str | None] = mapped_column(Text, nullable=True)             # the commission as the disclosure states it
     items: Mapped[list] = mapped_column(JSON, default=list)                    # ["sid", "kim"] for scheme documents

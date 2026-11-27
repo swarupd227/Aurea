@@ -101,5 +101,7 @@ api_router.include_router(kyc_registry_api.router)
 
 # India's asset register, will checks and NRI planning (B-398).
 from app.api import estate_nri as estate_nri_api  # noqa: E402
+from app.api import india_agreements as india_agreements_api  # noqa: E402
 
 api_router.include_router(estate_nri_api.router)
+api_router.include_router(india_agreements_api.router)

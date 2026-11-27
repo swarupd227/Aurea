@@ -6636,6 +6636,11 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                 "reason": reason,
             })
         if len(unpriced) == len(order_set):
+            from app.aurea_core import fund_acceptance
+
+            barred = await fund_acceptance.order_refusals(self.session, firm, mandate, order_set)      # B-391
+            if barred:
+                raise ExecutorError(f"Nothing can be placed. {' '.join(barred)}")
             raise ExecutorError(f"None of these could fill: there is no real price for {', '.join(unpriced)}.")
         review = await order_guard.review(self.session, firm=firm, mandate=mandate, account=account, orders=order_set,
                                           instruments=instruments, unpriced=unpriced)

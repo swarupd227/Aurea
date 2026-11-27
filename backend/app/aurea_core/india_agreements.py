@@ -596,7 +596,8 @@ async def prepare_disclosure(session: AsyncSession, firm: Firm, role, *, househo
     how = str(method or "").strip().lower().replace(" ", "_")
     if how not in METHODS:
         raise AgreementError(f"How it was given: one of {', '.join(METHODS)}.")
-    day = _day(given_on, "day it was given", firm_time.today(firm))
+    today = firm_time.today(firm)
+    day = _day(given_on, "day it was given", today, default=today)
     return {"household": household, "kind": k, "instrument": inst, "fund_house": house, "terms": stated, "items": listed, "method": how,
             "given_on": day, "document": _document(document)}
 
@@ -664,7 +665,8 @@ async def prepare_item(session: AsyncSession, firm: Firm, role, *, relationship:
             detail["beyond"] = extra
     if said not in answers:
         raise AgreementError(f"For {label.lower()} the answer is one of {', '.join(answers)}.")
-    day = _day(dated_on, "date on the document", firm_time.today(firm))
+    today = firm_time.today(firm)
+    day = _day(dated_on, "date on the document", today, default=today)
     return {"relationship": rel, "item": key, "label": label, "answer": said, "detail": detail, "dated_on": day, "document": _document(document),
             "note": " ".join(str(note or "").split()) or None, "household_id": household_id, "subject": subject,
             "mandate_id": mandate.id if rel == "pms" else None, "account_id": account.id if account else None,
