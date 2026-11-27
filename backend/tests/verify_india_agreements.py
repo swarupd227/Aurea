@@ -34,7 +34,7 @@ from app.core.tools import TOOLS, ToolChangeState
 from app.llm.executors import ExecutorError, ToolExecutors
 from app.models.engagement import Task
 from app.models.enums import UserRole
-from app.models.graph import Account, Goal, Household, Mandate, Person
+from app.models.graph import Account, Household, Mandate, Person
 from app.models.identity import User
 from app.models.onboarding import OnboardingCase, OnboardingParty
 from app.models.portfolio import Holding, Instrument, Price
@@ -127,8 +127,8 @@ async def main() -> int:
                 before = (await s.execute(select(func.count()).select_from(Instrument))).scalar_one()
                 real = seed._aif
 
-                async def refuses(*a, **k):
-                    a[0].add(Goal(firm_id=firm.id, household_id=uuid.uuid4(), name="half written", target_amount=1))
+                async def refuses(*a):
+                    await real(*a)                      # the commitment, its papers and drawdowns are written first
                     raise ValueError("refused (test)")
 
                 seed._aif, said = refuses, []
@@ -138,8 +138,10 @@ async def main() -> int:
                     seed._aif = real
                 await s.commit()
                 check("a refused part is reported and the rest is written", said, ["Karthik Iyer's fund commitment: skipped, refused (test)"])
-                check("and leaves nothing half written",
-                      (await s.execute(select(func.count()).select_from(Goal).where(Goal.name == "half written"))).scalar_one(), 0)
+                from app.models.india_agreements import AifCommitment, AifDrawdown
+
+                check("and leaves nothing half written", [(await s.execute(select(func.count()).select_from(m))).scalar_one()
+                                                          for m in (AifCommitment, AifDrawdown)], [0, 0])
                 said = []
                 check("a later run writes the part that was refused", (await seed.add(s, firm, said) > 0, said), (True, []))
                 await s.commit()
