@@ -35,11 +35,11 @@ TIERS = {
 SINGULAR = {"need": "needs", "want": "wants", "wish": "wishes"}
 # Rupees a year a household cannot do without.
 ESSENTIAL_SPENDING = {
-    "The Sharma Family": 2_400_000,
-    "The Iyer Family": 4_800_000,
-    "The Kapoor Family Trust": 3_000_000,
+    "The Sharma Family": 1_800_000,
+    "The Iyer Family": 3_600_000,
+    "The Kapoor Family Trust": 2_400_000,
     "The Banerjee Household": 720_000,
-    "The D'Souza Household": 1_500_000,
+    "The D'Souza Household": 1_200_000,
 }
 
 

@@ -127,10 +127,12 @@ HOUSEHOLDS = [
                              "holdings": [("BHARTIARTL.NS", [(500, -0.40, 1400)]),
                                           ("EMBASSY.NS", [(1500, -0.12, 900)]),
                                           ("RELIANCE.NS", [(300, 0.09, 340)])]}},
-     "goals": [("Retirement at 60", "retirement", 20000000, 12,
-                {"retirement_age": 60, "funding_share": 0.85, "annual_contribution": 800000}),
+     # Saving, targets and the essential spending beside them (india_planning_fixes) are set so that what each family
+     # saves is what an income of its size could save, and the likelihoods differ for reasons a person can follow (B-400).
+     "goals": [("Retirement at 60", "retirement", 48000000, 12,
+                {"retirement_age": 60, "funding_share": 0.75, "annual_contribution": 2400000}),
                ("Aarav's postgraduate study", "education", 1800000, 3,
-                {"funding_share": 0.15, "annual_contribution": 100000})]},
+                {"funding_share": 0.15, "annual_contribution": 400000})]},
 
     {"name": "The Iyer Family", "values": {}, "segment": ClientSegment.PRIVATE_WEALTH,
      "people": [
@@ -144,8 +146,8 @@ HOUSEHOLDS = [
                                     ("GOLDBEES.NS", [(1000, -0.15, 500)])]}},
          {"name": "Lakshmi Iyer", "dob": date(1982, 5, 17), "tax": {"regime": "new", "annual_income": 3600000}},
      ],
-     "goals": [("Retirement at 58", "retirement", 30000000, 11,
-                {"retirement_age": 58, "funding_share": 0.9, "annual_contribution": 1000000})]},
+     "goals": [("Retirement at 58", "retirement", 130000000, 11,
+                {"retirement_age": 58, "funding_share": 0.9, "annual_contribution": 9000000})]},
 
     {"name": "The Kapoor Family Trust", "values": {}, "segment": ClientSegment.INSTITUTIONAL,
      "people": [{"name": "Nandini Kapoor", "dob": date(1963, 2, 25), "tax": {"regime": "old", "annual_income": 9000000}}],
@@ -181,8 +183,8 @@ HOUSEHOLDS = [
                                     ("NIFTYBEES.NS", [(3000, -0.15, 380)]),
                                     ("GILT5YBEES.NS", [(5000, 0.01, 400)])]}},
      ],
-     "goals": [("Retirement at 60", "retirement", 10000000, 14,
-                {"retirement_age": 60, "funding_share": 0.8, "annual_contribution": 200000})]},
+     "goals": [("Retirement at 60", "retirement", 35000000, 14,
+                {"retirement_age": 60, "funding_share": 0.8, "annual_contribution": 1000000})]},
 ]
 
 RESEARCH = [
@@ -473,6 +475,11 @@ async def build(s, *, quotes: dict | None = None) -> Firm:
     from seed import india_tax_planning
 
     await india_tax_planning.add(s, firm)
+    # The Mehta family and the demonstration families' figures (B-400).
+    from seed import india_figures, india_mehta
+
+    await india_figures.add(s, firm)
+    await india_mehta.add(s, firm)
     return firm
 
 

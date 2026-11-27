@@ -54,6 +54,7 @@ INDIA_READ_TOOLS = {
     "read_after_tax_comparison": {"household": "The Sharma Family"}, "read_tax_reviews": {},
     "read_advice_audit": {},
     "read_estate_register": {"household": "The Sharma Family"}, "read_nri_planning": {"household": "The Menon NRI Household"},
+    "read_planning_measures": {"household": "The Mehta Family"},
     "read_manager_staff": {}, "read_pms_ledger": {}, "read_guardian_papers": {}, "read_kyc_review_period": {},
     "read_real_estate_choice": {"acquired_on": "2015-04-01", "sold_on": "2026-06-01", "cost": 5000000, "proceeds": 12000000, "resident_individual_or_huf": "yes"},
 }
@@ -354,7 +355,8 @@ async def g_pre_advice(P: Proof):
     async with P.section("Nothing advised before the paperwork", "adviser"):
         r = await P.tool("adviser", "read_pre_advice")
         gate = {h["household"]: h for h in r["households"]}
-        P.ok("The adviser's four households are gated", "adviser", sorted(gate) == ["The Banerjee Household", "The D'Souza Household", "The Menon NRI Household", "The Sharma Family"], sorted(gate))
+        P.ok("The adviser's six households are gated", "adviser", sorted(gate) == ["The Banerjee Household", "The D'Souza Household", "The Mehta Family", "The Menon NRI Household",
+                                                                             "The Sameer Mehta Household", "The Sharma Family"], sorted(gate))
         sh = gate.get("The Sharma Family", {})
         P.ok("The Sharmas have all five on file", "adviser", sh.get("met") is True and [c["state"] for c in sh["checks"] if c["key"] != "family"] == ["pass"] * 5,
              [c["state"] for c in sh.get("checks", [])])

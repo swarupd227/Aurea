@@ -30,6 +30,9 @@ The accounts opened through onboarding and a minor near eighteen that the onboar
 added once, and their own dates are moved forward on a later run. Screening and reports are B-390's.
 Basic salary and business income, stated returns for the after-tax comparison and two tax reviews (B-396,
 `seed/india_tax_planning.py`) are added where missing.
+The demonstration figures (B-400, seed/india_figures.py): a seeded essential-spending figure still as first recorded is
+replaced, a retired client's pension and two emergency funds are added where none is on file. The Mehta family and the
+brother in Dubai (B-400, seed/india_mehta.py) are added once.
 
 Every run also moves the dated demonstration scenarios back to their distance from today (`seed/india_redate.py`) and rewrites the
 description of an open reminder task still in the older wording.
@@ -188,6 +191,10 @@ async def main() -> None:
         from seed import india_tax_planning
 
         tax_planning_rows = await india_tax_planning.add(s, firm)
+        from seed import india_figures, india_mehta
+
+        figure_rows = await india_figures.add(s, firm)
+        mehta_homes = await india_mehta.add(s, firm)
         # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
         # open reminder tasks raised in the older wording (B-372).
         from app.aurea_core import india_reminders
@@ -210,7 +217,8 @@ async def main() -> None:
           f"PMLA programme: {pmla_rows} row(s) added. Retirement stack: {stack_rows} record(s) added. "
           f"Advice files and audit: {advice_rows} added. Estate and NRI records: {estate_rows} added. "
           f"Onboarding measures: {measure_rows} record(s) added or re-dated. "
-          f"Tax planning facts, stated returns and reviews: {tax_planning_rows} added.\n")
+          f"Tax planning facts, stated returns and reviews: {tax_planning_rows} added. "
+          f"Demonstration figures: {figure_rows} record(s). Mehta family: {mehta_homes} household(s) added.\n")
 
 
 if __name__ == "__main__":
