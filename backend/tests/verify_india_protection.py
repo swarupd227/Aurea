@@ -443,6 +443,8 @@ async def main() -> int:
                 check("the figure carries its source, said to be invented",
                       "invented" in health_cover.cover_figure(firm)["source"], True)
                 worth = await policy_values.for_firm(s, firm.id)
+                # The Sharmas' two; the Mehtas (B-400) bring endowments of their own.
+                worth["policies"] = [p for p in worth["policies"] if p["household"] == "The Sharma Family"]
                 check("an endowment and a unit-linked policy, the second locked in",
                       sorted((p["product"], (p["lock_in"] or {}).get("status")) for p in worth["policies"]),
                       [("endowment", None), ("unit_linked", "locked")])

@@ -448,7 +448,9 @@ async def demonstration() -> None:
             before = [await count(s, x) for x in (HeldAwayHolding, ConsolidationFacts, ConsolidationDecision, ConsolidationItem, ConsolidationStep)]
             check("a second run adds nothing", await india_consolidation.add(s, firm), 0)
             check("no row", [await count(s, x) for x in (HeldAwayHolding, ConsolidationFacts, ConsolidationDecision, ConsolidationItem, ConsolidationStep)], before)
-            exit_row = (await s.execute(select(ConsolidationDecision).where(ConsolidationDecision.decision == "exit"))).scalars().one()
+            # This seed's own exit: the Mehtas (B-400) schedule one too.
+            exit_row = (await s.execute(select(ConsolidationDecision).where(ConsolidationDecision.decision == "exit",
+                                                                             ConsolidationDecision.decided_by == india_consolidation.BY))).scalars().one()
             exit_row.planned_on = firm_time.today(firm) - timedelta(days=3)
             await s.flush()
             check("a planned exit that has come due is moved ahead", (await india_consolidation.add(s, firm), exit_row.planned_on > firm_time.today(firm)), (1, True))
