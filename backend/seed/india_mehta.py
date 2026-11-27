@@ -14,8 +14,14 @@ of birth. The days are counted back from the firm's today, Day 0 being `DAY0` da
 
 The couple stand where the planning case leaves them: protection placed, an emergency fund half built, one endowment
 surrendered and one kept, no will yet, and a plan of record delivered. Run by the seed when it builds the firm and by
-`seed.india_demo_backfill` for a firm already deployed. It is written once: where a Mehta household is on file it does
-nothing, so nothing a person has since recorded is touched.
+`seed.india_demo_backfill` for a firm already deployed. Each household is written once: where it is on file nothing of it
+is written again, so nothing a person has since recorded is touched.
+
+**A refusal skips its own part and no more.** A deployed firm may refuse what a new one accepts, and one transaction holds
+the whole backfill, so each onboarding case and each later part is written inside its own savepoint. A case that does not
+activate is rolled back and reported, the other cases go on, and what needs the missing person is left out. A household
+with no case activated is not written, so a later run tries it again; a household that was written is not added to later.
+What was skipped is returned in `report` and logged.
 """
 from __future__ import annotations
 
@@ -23,14 +29,15 @@ import uuid
 from datetime import date, timedelta
 from types import SimpleNamespace
 
-from sqlalchemy import select
+from sqlalchemy import inspect as inspect_row, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import (advice_file, agreement_contents, aml_review, aml_risk, balance_sheet, consents, consolidation, disclosures, document_matrix, financial_plan, firm_time,
-                            goal_record, health_cover, held_away, identity_checks, india_estate, india_money, india_savings, kyc_india,
+                            goal_record, health_cover, held_away, identity_checks, india_estate, india_money, india_savings, india_tax_year, kyc_india,
                             kyc_registry, markets, money_in, nri_planning, onboarding_start, plan_record, planning_measures, policy_values, protection,
                             residency, retirement_stack, risk_profile, salary_tax, screening_lists, sip, sip_mandates)
 from app.core.db import utcnow
+from app.core.logging import get_logger
 from app.models.advice_file import AdviceRecommendation
 from app.models.enums import ClientSegment, UserRole
 from app.models.graph import Account, Household, Mandate, Person
@@ -41,6 +48,7 @@ from app.models.protection import ProtectionPolicy
 from app.models.risk_assessment import RiskAssessment
 from app.models.tenant import Firm
 
+log = get_logger("aurea.seed.india.mehta")
 SOURCE = "Demonstration record, invented for the demonstration firm"
 BY = "seed: India Mehta family (demonstration)"
 HOME, BROTHER_HOME = "The Mehta Family", "The Sameer Mehta Household"
@@ -98,11 +106,14 @@ def _proof(what: str) -> str:
     return f"{what} ({SOURCE})"
 
 
-async def add(s: AsyncSession, firm: Firm) -> int:
-    """The two households, once. Returns how many households it wrote: 2, or 0 where they are on file or cannot be."""
+async def add(s: AsyncSession, firm: Firm, report: list[str] | None = None) -> int:
+    """The households not on file yet. Returns how many it wrote; what it could not write is appended to `report`."""
+    said = report if report is not None else []
     if not kyc_india.applies(firm):
         return 0
-    if (await s.execute(select(Household.id).where(Household.firm_id == firm.id, Household.name.in_((HOME, BROTHER_HOME))))).first():
+    have = set((await s.execute(select(Household.name).where(Household.firm_id == firm.id,
+                                                            Household.name.in_((HOME, BROTHER_HOME))))).scalars().all())
+    if have == {HOME, BROTHER_HOME}:
         return 0
     users = {}
     for u in (await s.execute(select(User).where(User.firm_id == firm.id, User.is_active.is_(True)).order_by(User.email))).scalars().all():
@@ -110,16 +121,48 @@ async def add(s: AsyncSession, firm: Firm) -> int:
     model_rows = {m.name: m for m in (await s.execute(select(ModelPortfolio).where(ModelPortfolio.firm_id == firm.id))).scalars().all()}
     instruments = {i.symbol: i for i in (await s.execute(select(Instrument).where(Instrument.firm_id == firm.id))).scalars().all()}
     needed = (UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS, UserRole.COMPLIANCE)
-    funds = (FLEXI_D[1], NIFTY_D[1], CORP_D[1])
-    if any(r not in users for r in needed) or "Core Growth" not in model_rows or "Core Balanced" not in model_rows \
-            or any(sym not in instruments for sym in (*funds, "NIFTYBEES.NS", "GILT5YBEES.NS", "GOLDBEES.NS", "EMBASSY.NS")):
+    symbols = (FLEXI_D[1], NIFTY_D[1], CORP_D[1], "NIFTYBEES.NS", "GILT5YBEES.NS", "GOLDBEES.NS", "EMBASSY.NS")
+    lacking = [r.value for r in needed if r not in users] + [n for n in ("Core Growth", "Core Balanced") if n not in model_rows] \
+        + [sym for sym in symbols if sym not in instruments]
+    if lacking:
+        _skip(said, "The Mehta households", f"the firm lacks {', '.join(lacking)}")
         return 0
-    c = SimpleNamespace(s=s, firm=firm, today=firm_time.today(firm), users=users, models=model_rows, instruments=instruments)
+    c = SimpleNamespace(s=s, firm=firm, today=firm_time.today(firm), users=users, models=model_rows, instruments=instruments, report=said)
     c.ago = lambda n: c.today - timedelta(days=n)
-    await _family(c)
-    await _brother(c)
+    written = 0
+    if HOME not in have:
+        written += await _family(c)
+    if BROTHER_HOME not in have:
+        written += await _brother(c)
     await s.flush()
-    return 2
+    return written
+
+
+class _Nobody(Exception):
+    """No case of this household activated, so the household is rolled back."""
+
+
+def _skip(report: list[str], part: str, why) -> None:
+    report.append(f"{part}: skipped, {why}")
+    log.warning("india_mehta_skipped", part=part, why=str(why)[:500])
+
+
+async def _reload(c) -> None:
+    """A rolled-back savepoint expires what it touched, and an expired row cannot load itself here: read them again."""
+    for row in list(c.s.sync_session.identity_map.values()):
+        if inspect_row(row).expired_attributes:
+            await c.s.refresh(row)
+
+
+async def _attempt(c, part: str, step):
+    """Run one part inside its own savepoint. A refusal or a database error undoes that part alone and is reported."""
+    try:
+        async with c.s.begin_nested():
+            return await step()
+    except Exception as exc:  # noqa: BLE001 - reported, and the rest of the backfill goes on
+        _skip(c.report, part, exc)
+        await _reload(c)
+        return None
 
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
@@ -274,54 +317,82 @@ def _answers(picks: dict) -> dict:
     return {q["key"]: q["options"][picks[q["key"]]] for q in risk_profile.QUESTIONS}
 
 
-async def _family(c) -> None:
-    s, firm, today, ago = c.s, c.firm, c.today, c.ago
+async def _family(c) -> int:
+    s, firm, today = c.s, c.firm, c.today
     adviser = c.users[UserRole.ADVISER]
-    home = Household(firm_id=firm.id, name=HOME, segment=ClientSegment.PRIVATE_WEALTH, values={"jurisdiction": "IN", "demonstration": True})
-    s.add(home)
-    await s.flush()
-    fee_v = await _fee_schedule(c, FEE_CODE + "-A", "Fixed advisory fee, family (demonstration)", 100_000)
-    fee_a = await _fee_schedule(c, FEE_CODE + "-B", "Fixed advisory fee, spouse (demonstration)", 40_000)
-    _, vivek, v_acct, v_mandate = await _onboard(
-        c, home, VIVEK, born=_born(today, 48, 4, 14), model="Core Growth", risk="growth", fee=fee_v, registry_first="validated", mode="aadhaar_ekyc",
-        band="medium", bank_last4="6120", residence="IN", channel="remote", answers=_answers(GROWTH_ANSWERS), billable=10_000_000)
-    _, anjali, a_acct, _ = await _onboard(
-        c, home, ANJALI, born=_born(today, 46, 9, 3), model="Core Balanced", risk="conservative", fee=fee_a, registry_first="registered",
-        mode="video_kyc", band="medium", bank_last4="7741", residence="IN", channel="remote", answers=_answers(CAUTIOUS_ANSWERS),
-        billable=8_000_000)
-    children = []
-    for name, age, month, day in ((RHEA, 16, 2, 20), (DEV, 14, 7, 8)):
-        child = Person(firm_id=firm.id, household_id=home.id, full_name=name, preferred_name=name.split()[0], date_of_birth=_born(today, age, month, day),
-                       segment=ClientSegment.PRIVATE_WEALTH, is_next_gen=True, kyc={}, profile={})
-        s.add(child)
-        children.append(child)
-    await s.flush()
+    cases = [
+        (VIVEK, (FEE_CODE + "-A", "Fixed advisory fee, family (demonstration)", 100_000),
+         dict(born=_born(today, 48, 4, 14), model="Core Growth", risk="growth", registry_first="validated", mode="aadhaar_ekyc", band="medium",
+              bank_last4="6120", residence="IN", channel="remote", answers=_answers(GROWTH_ANSWERS), billable=10_000_000)),
+        (ANJALI, (FEE_CODE + "-B", "Fixed advisory fee, spouse (demonstration)", 40_000),
+         dict(born=_born(today, 46, 9, 3), model="Core Balanced", risk="conservative", registry_first="registered", mode="video_kyc",
+              band="medium", bank_last4="7741", residence="IN", channel="remote", answers=_answers(CAUTIOUS_ANSWERS), billable=8_000_000)),
+    ]
+    people, accounts, mandates = {}, {}, {}
 
-    # The joint demat, anyone or survivor, chosen and recorded; then what each custodian holds.
-    joint = Account(firm_id=firm.id, mandate_id=v_mandate.id, name=JOINT, custodian="CDSL", currency="INR", cash_balance=0,
-                    registration_type="joint_anyone", lineage={"source": "demonstration", "as_of": today.isoformat()})
-    s.add(joint)
-    await s.flush()
-    for account, who in ((v_acct, VIVEK), (a_acct, ANJALI)):
-        cash, lines = BOOK[who]
-        account.cash_balance = cash
-        await _holdings(c, account, lines)
-    for account in (v_acct, a_acct, joint):
-        await _beneficiaries(c, account, [(RHEA, "daughter", 50), (DEV, "son", 50)])
+    async def open_household():
+        home = Household(firm_id=firm.id, name=HOME, segment=ClientSegment.PRIVATE_WEALTH, values={"jurisdiction": "IN", "demonstration": True})
+        s.add(home)
+        await s.flush()
+        for name, fee, terms in cases:
+            async def case(name=name, fee=fee, terms=terms):
+                return await _onboard(c, home, name, fee=await _fee_schedule(c, *fee), **terms)
 
-    await _agreement(c, home)
-    await _statements(c, home, vivek, anjali, v_acct, joint)
-    await _protection(c, home, vivek, anjali)
-    await _money(c, vivek, anjali, v_acct, a_acct)
-    await _goals(c, home, vivek, anjali, v_acct, a_acct)
-    await _advice_and_plan(c, home, adviser)
+            done = await _attempt(c, f"The onboarding case for {name}", case)
+            if done is not None:
+                _, people[name], accounts[name], mandates[name] = done
+        if not people:
+            raise _Nobody("no onboarding case of the household activated; a later run tries again")
+        return home
+
+    home = await _attempt(c, HOME, open_household)
+    if home is None:
+        return 0
+    both = VIVEK in people and ANJALI in people
+    joint = None
+
+    async def book():
+        nonlocal joint
+        for name, age, month, day in ((RHEA, 16, 2, 20), (DEV, 14, 7, 8)):
+            s.add(Person(firm_id=firm.id, household_id=home.id, full_name=name, preferred_name=name.split()[0],
+                         date_of_birth=_born(today, age, month, day), segment=ClientSegment.PRIVATE_WEALTH, is_next_gen=True, kyc={}, profile={}))
+        await s.flush()
+        # The joint demat, anyone or survivor, chosen and recorded; then what each custodian holds.
+        shared = None
+        if both:
+            shared = Account(firm_id=firm.id, mandate_id=mandates[VIVEK].id, name=JOINT, custodian="CDSL", currency="INR", cash_balance=0,
+                             registration_type="joint_anyone", lineage={"source": "demonstration", "as_of": today.isoformat()})
+            s.add(shared)
+            await s.flush()
+        for who, account in accounts.items():
+            cash, lines = BOOK[who]
+            account.cash_balance = cash
+            await _holdings(c, account, lines)
+        for account in [*accounts.values(), *([shared] if shared else [])]:
+            await _beneficiaries(c, account, [(RHEA, "daughter", 50), (DEV, "son", 50)])
+        joint = shared
+        return True
+
+    if await _attempt(c, "The family's accounts, holdings and nominees", book) is None:
+        joint = None
+    await _attempt(c, "The agreement's contents", lambda: _agreement(c, home))
+    await _attempt(c, "The statements, consolidation, balance sheet and nominations", lambda: _statements(c, home, people, joint))
+    await _attempt(c, "The policies", lambda: _protection(c, home, people))
+    await _attempt(c, "The verified banks", lambda: _money(c, people, accounts))
+    await _attempt(c, "The goals, SIPs and mandates", lambda: _goals(c, home, accounts))
+    await _attempt(c, "The tax reviews", lambda: _reviews(c, people))
+    if both:
+        await _attempt(c, "The advice file and the plan of record", lambda: _advice_and_plan(c, home, adviser))
+    else:
+        _skip(c.report, "The advice file and the plan of record", "they speak for both of the couple and one case did not activate")
+    return 1
 
 
-async def _statements(c, home, vivek, anjali, v_acct, joint) -> None:
+async def _statements(c, home, people: dict, joint) -> None:
     """Folios and the legacy demat from their statements, the consolidation, the balance sheet, the retirement accounts
     and the nominations."""
     s, firm, today, ago = c.s, c.firm, c.today, c.ago
-    people = {VIVEK: vivek, ANJALI: anjali}
+    vivek = people.get(VIVEK)
     adviser, ops = UserRole.ADVISER, UserRole.OPERATIONS
     stated = ago(DAY0 + 5)
 
@@ -332,7 +403,7 @@ async def _statements(c, home, vivek, anjali, v_acct, joint) -> None:
         return uuid.UUID(out["holding_id"])
 
     folios = []
-    for who, house, folio, (name, symbol, isin), units, price, klass, what in FOLIOS:
+    for who, house, folio, (name, symbol, isin), units, price, klass, what in (f for f in FOLIOS if f[0] in people):
         lid = await line(people[who], house, folio, name, symbol, isin, units, price,
                          f"Consolidated account statement, {stated.isoformat()}, from the legacy distributor's file")
         lots = [{"units": units, "cost_per_unit": round(price * 0.78, 2), "acquired_on": ago(900 + len(folios) * 40).isoformat()}]
@@ -342,7 +413,8 @@ async def _statements(c, home, vivek, anjali, v_acct, joint) -> None:
                                          document=_proof(f"Capital gains statement for {folio}"))
         folios.append((lid, who, folio, what))
     etfs = []
-    for symbol, name, units, cost_pct, days in ETFS:
+    # The two ETFs move from Vivek's legacy demat into the joint one, so they need both.
+    for symbol, name, units, cost_pct, days in (ETFS if vivek is not None and joint is not None else []):
         price = float((await s.execute(select(Price.close).where(Price.instrument_id == c.instruments[symbol].id)
                                        .order_by(Price.as_of.desc()))).scalars().first())
         lid = await line(vivek, LEGACY, LEGACY_LABEL, name, symbol, None, units, price, f"Depository statement, {stated.isoformat()}")
@@ -354,11 +426,14 @@ async def _statements(c, home, vivek, anjali, v_acct, joint) -> None:
 
     await consolidation.record_classification(s, firm, adviser, by=BY, line_ids=[f[0] for f in folios if f[3] != "exit"], decision="keep_remap",
                                               reason=_proof("The scheme still fits; only who services the folio changes"))
-    await consolidation.record_classification(s, firm, adviser, by=BY, line_ids=[e[0] for e in etfs], decision="transfer",
-                                              reason=_proof("Held for the long term; moves in kind to the joint demat"))
-    await consolidation.record_classification(
-        s, firm, adviser, by=BY, line_ids=[f[0] for f in folios if f[3] == "exit"], decision="exit", product_reason="unsuitable",
-        reason=_proof("A sector fund that no longer fits the plan; sold against the gain budget"), planned_on=today + timedelta(days=EXIT_IN))
+    if etfs:
+        await consolidation.record_classification(s, firm, adviser, by=BY, line_ids=[e[0] for e in etfs], decision="transfer",
+                                                  reason=_proof("Held for the long term; moves in kind to the joint demat"))
+    leaving = [f[0] for f in folios if f[3] == "exit"]
+    if leaving:
+        await consolidation.record_classification(
+            s, firm, adviser, by=BY, line_ids=leaving, decision="exit", product_reason="unsuitable",
+            reason=_proof("A sector fund that no longer fits the plan; sold against the gain budget"), planned_on=today + timedelta(days=EXIT_IN))
 
     # Day 1 to 3: the code changes go in. Day 5 to 7: the registrars confirm all eleven, none rejected.
     for n, (lid, who, folio, _) in enumerate(f for f in folios if f[3] == "code"):
@@ -388,59 +463,74 @@ async def _statements(c, home, vivek, anjali, v_acct, joint) -> None:
              {"annual_payment": 600_000, "interest_rate": 0.085, "ends_on": today + timedelta(days=9 * 365)}),
             ("cash", "Fixed deposits, a demonstration bank (invented)", 2_500_000, vivek, {}),
             ("essential_spending", "Essential household spending", 1_800_000, None, {})):
+        if kind in ("mortgage", "cash") and person is None:
+            continue          # his loan and his deposits: not put on anyone else
         await balance_sheet.record_item(s, home.id, firm_id=firm.id, by=BY, kind=kind, name=name, amount=amount, as_of=stated,
                                         source_document=_proof("Statement or schedule on file"), person_id=person.id if person else None, **extra)
-    for person, salary, deductions in ((vivek, 4_000_000, 650_000), (anjali, 2_000_000, 500_000)):
-        await protection.record_income(s, firm.id, person_id=person.id, annual_income=salary, source_document=_proof("Form 16"), recorded_by=BY)
-        await salary_tax.record(s, firm, adviser, by=BY, person_id=person.id, document=_proof("Form 16 and the investment declaration"),
-                                salary_income=salary, old_regime_deductions=deductions, regime="new", marginal_rate=0.30)
+    # One tax record a person: basic salary is what the employer's NPS contribution is held against (B-396).
+    for who, salary, basic, deductions in ((VIVEK, 4_000_000, 2_000_000, 650_000), (ANJALI, 2_000_000, 1_000_000, 475_000)):
+        if who not in people:
+            continue
+        await protection.record_income(s, firm.id, person_id=people[who].id, annual_income=salary, source_document=_proof("Form 16"), recorded_by=BY)
+        await salary_tax.record(s, firm, adviser, by=BY, person_id=people[who].id, document=_proof("Form 16 and the investment declaration"),
+                                salary_income=salary, basic_salary=basic, old_regime_deductions=deductions, regime="new", marginal_rate=0.30)
 
     # EPF passbooks, NPS statements and PPF, and what goes into them each month, the employer's NPS among it (80CCD(2)).
-    for person, kind, institution, value, extra in (
-            (vivek, "epf", "Provident fund office (demonstration)", 1_800_000, {"rate": 8.25}),
-            (anjali, "epf", "Provident fund office (demonstration)", 900_000, {"rate": 8.25}),
-            (vivek, "nps", "A demonstration pension fund manager (invented)", 600_000, {"details": {"tier": "Tier I", "equity_share_percent": 50}}),
-            (anjali, "nps", "A demonstration pension fund manager (invented)", 300_000, {"details": {"tier": "Tier I", "equity_share_percent": 25}})):
-        await india_savings.record(s, firm, adviser, by=BY, household_id=home.id, person_id=person.id, kind=kind, institution=institution,
+    for who, kind, institution, value, extra in (
+            (VIVEK, "epf", "Provident fund office (demonstration)", 1_800_000, {"rate": 8.25}),
+            (ANJALI, "epf", "Provident fund office (demonstration)", 900_000, {"rate": 8.25}),
+            (VIVEK, "nps", "A demonstration pension fund manager (invented)", 600_000, {"details": {"tier": "Tier I", "equity_share_percent": 50}}),
+            (ANJALI, "nps", "A demonstration pension fund manager (invented)", 300_000, {"details": {"tier": "Tier I", "equity_share_percent": 25}})):
+        if who not in people:
+            continue
+        await india_savings.record(s, firm, adviser, by=BY, household_id=home.id, person_id=people[who].id, kind=kind, institution=institution,
                                    value=value, value_on=stated, document=_proof("Passbook or statement"), **extra)
-    for person, scheme, payer, monthly in ((vivek, "epf", "own", 20_000), (vivek, "epf", "employer", 18_000), (anjali, "epf", "own", 10_000),
-                                           (anjali, "epf", "employer", 9_000), (vivek, "nps", "employer", 16_000), (anjali, "nps", "employer", 8_000)):
-        await retirement_stack.record_contribution(s, firm, adviser, by=BY, person_id=person.id, scheme=scheme, payer=payer, monthly_amount=monthly,
+    for who, scheme, payer, monthly in ((VIVEK, "epf", "own", 20_000), (VIVEK, "epf", "employer", 18_000), (ANJALI, "epf", "own", 10_000),
+                                        (ANJALI, "epf", "employer", 9_000), (VIVEK, "nps", "employer", 16_000), (ANJALI, "nps", "employer", 8_000)):
+        if who not in people:
+            continue
+        await retirement_stack.record_contribution(s, firm, adviser, by=BY, person_id=people[who].id, scheme=scheme, payer=payer, monthly_amount=monthly,
                                                    statement_date=stated, document=_proof("Payslip"))
 
     # The emergency fund, a liquid fund half way through its six-month build.
-    await held_away.record_holding(s, home.id, firm_id=firm.id, by=BY, institution=LIQUID[0], instrument_name=LIQUID[2], value=EMERGENCY_HELD,
-                                   value_on=ago(5), source_document=_proof("Account statement"), account_label=LIQUID[1], person_id=vivek.id)
-    await planning_measures.record_fund(s, firm, UserRole.ADVISER, by=BY, household_id=home.id, target_amount=EMERGENCY_TARGET,
-                                        held_amount=EMERGENCY_HELD, held_in=f"{LIQUID[2]}, {LIQUID[1]}", statement_date=ago(5),
-                                        document=_proof("Account statement and the signed build plan"), build_months=6,
-                                        complete_by=today + timedelta(days=92))
+    if vivek is not None:
+        await held_away.record_holding(s, home.id, firm_id=firm.id, by=BY, institution=LIQUID[0], instrument_name=LIQUID[2], value=EMERGENCY_HELD,
+                                       value_on=ago(5), source_document=_proof("Account statement"), account_label=LIQUID[1], person_id=vivek.id)
+        await planning_measures.record_fund(s, firm, UserRole.ADVISER, by=BY, household_id=home.id, target_amount=EMERGENCY_TARGET,
+                                            held_amount=EMERGENCY_HELD, held_in=f"{LIQUID[2]}, {LIQUID[1]}", statement_date=ago(5),
+                                            document=_proof("Account statement and the signed build plan"), build_months=6,
+                                            complete_by=today + timedelta(days=92))
 
     # Nominations on every folio, the provident fund and the deposits: two children, equally.
-    wanted = [(people[who], "mutual_fund", folio) for _, who, folio, what in folios] + [(vivek, "mutual_fund", LIQUID[1]),
-              (vivek, "epf", "Provident fund (demonstration)"), (anjali, "epf", "Provident fund (demonstration)"),
-              (vivek, "nps", "National Pension System account (demonstration)"), (anjali, "nps", "National Pension System account (demonstration)"),
-              (vivek, "bank_account", "Fixed deposits, a demonstration bank (invented)")]
-    for person, kind, label in wanted:
-        await india_estate.record_nomination(s, firm, by=BY, person_id=person.id, asset_kind=kind, label=label, status="nominated",
+    wanted = [(who, "mutual_fund", folio) for _, who, folio, what in folios] + [(VIVEK, "mutual_fund", LIQUID[1]),
+              (VIVEK, "epf", "Provident fund (demonstration)"), (ANJALI, "epf", "Provident fund (demonstration)"),
+              (VIVEK, "nps", "National Pension System account (demonstration)"), (ANJALI, "nps", "National Pension System account (demonstration)"),
+              (VIVEK, "bank_account", "Fixed deposits, a demonstration bank (invented)")]
+    for who, kind, label in wanted:
+        if who not in people:
+            continue
+        await india_estate.record_nomination(s, firm, by=BY, person_id=people[who].id, asset_kind=kind, label=label, status="nominated",
                                              nominees=CHILDREN, document=_proof("Nomination form, acknowledged"))
 
 
-def _spouse(person, vivek, anjali) -> dict:
+def _spouse(who: str, people: dict) -> dict:
     """Each of the couple names the other on their own policies."""
-    return {"nominee": (anjali if person.id == vivek.id else vivek).full_name, "nominee_relationship": "spouse"}
+    other = ANJALI if who == VIVEK else VIVEK
+    return {"nominee": people[other].full_name, "nominee_relationship": "spouse"} if other in people else {}
 
 
-async def _protection(c, home, vivek, anjali) -> None:
+async def _protection(c, home, people: dict) -> None:
     """What the family brought and what week 2 placed: term cover, health cover and two old endowments."""
     s, firm, ago = c.s, c.firm, c.ago
     ops = "operations"
     placed = ago(DAY0 - 12)
-    for person, number, cover, premium, when in ((vivek, "DEMO-MEH-TERM-01", 5_000_000, 14_000, "held"),
-                                                 (vivek, "DEMO-MEH-TERM-02", 30_000_000, 52_000, "placed"),
-                                                 (anjali, "DEMO-MEH-TERM-03", 15_000_000, 22_000, "placed")):
-        await protection.record_policy(s, firm.id, recorded_by=BY, person_id=person.id, kind="life", provider="Life insurer, term (demonstration)",
-                                       sum_insured=cover, annual_premium=premium, policy_number=number, **_spouse(person, vivek, anjali),
+    for who, number, cover, premium, when in ((VIVEK, "DEMO-MEH-TERM-01", 5_000_000, 14_000, "held"),
+                                              (VIVEK, "DEMO-MEH-TERM-02", 30_000_000, 52_000, "placed"),
+                                              (ANJALI, "DEMO-MEH-TERM-03", 15_000_000, 22_000, "placed")):
+        if who not in people:
+            continue
+        await protection.record_policy(s, firm.id, recorded_by=BY, person_id=people[who].id, kind="life", provider="Life insurer, term (demonstration)",
+                                       sum_insured=cover, annual_premium=premium, policy_number=number, **_spouse(who, people),
                                        expires_on=c.today + timedelta(days=14 * 365),
                                        source_document=_proof("Policy schedule" if when == "held" else f"Policy schedule, issued {placed.isoformat()}"))
     everyone = f"{VIVEK}: self; {ANJALI}: spouse; {RHEA}: daughter; {DEV}: son"
@@ -452,33 +542,39 @@ async def _protection(c, home, vivek, anjali) -> None:
                                          members=everyone, annual_premium=12_500)),
             ("DEMO-MEH-SNR-4", 250, dict(kind="individual", provider="Senior health insurer (demonstration)", sum_insured=500_000,
                                          members=f"{MOTHER}: mother", annual_premium=46_000, co_payment_percent=20, co_payment_terms="on every claim"))):
+        if len(people) < 2:
+            break          # the family's schedules name both of them
         await health_cover.record_policy(s, firm.id, recorded_by=BY, role=ops, household_id=home.id, policy_number=number,
                                          source_document=f"{SOURCE} (schedule {number})", renewal_on=c.today + timedelta(days=renews), **terms)
     stated = ago(DAY0 + 5)
-    for number, person, sum_assured, paid, premium, left, surrender, paid_up, years_to, maturity in (
-            ("DEMO-MEH-END-1", vivek, 500_000, 360_000, 30_000, 6, 262_000, 330_000, 6, 590_000),
-            ("DEMO-MEH-END-2", anjali, 400_000, 220_000, 22_000, 9, 158_000, 205_000, 9, 480_000)):
-        made = await protection.record_policy(s, firm.id, recorded_by=BY, person_id=person.id, kind="life", provider="Life insurer, endowment (demonstration)",
-                                       sum_insured=sum_assured, policy_number=number, source_document=f"{SOURCE} (policy bond {number})",
-                                       **_spouse(person, vivek, anjali))
+    for number, who, sum_assured, paid, premium, left, surrender, paid_up, years_to, maturity in (
+            ("DEMO-MEH-END-1", VIVEK, 500_000, 360_000, 30_000, 6, 262_000, 330_000, 6, 590_000),
+            ("DEMO-MEH-END-2", ANJALI, 400_000, 220_000, 22_000, 9, 158_000, 205_000, 9, 480_000)):
+        if who not in people:
+            continue
+        made = await protection.record_policy(
+            s, firm.id, recorded_by=BY, person_id=people[who].id, kind="life", provider="Life insurer, endowment (demonstration)",
+            sum_insured=sum_assured, policy_number=number, source_document=f"{SOURCE} (policy bond {number})", **_spouse(who, people))
         await policy_values.record_statement(
-            s, firm.id, recorded_by=BY, role=ops, policy_id=uuid.UUID(made["policy_id"]), statement_date=stated, product="endowment", premiums_paid=paid, annual_premium=premium,
-            premium_years_left=left, surrender_value=surrender, paid_up_value=paid_up, maturity_on=stated + timedelta(days=years_to * 365 + 2),
-            maturity_value=maturity, maturity_basis="guaranteed", commenced_on=stated - timedelta(days=12 * 365),
-            source_document=f"{SOURCE} (statement {number})")
-    old = (await s.execute(select(ProtectionPolicy).where(ProtectionPolicy.firm_id == firm.id,
-                                                          ProtectionPolicy.policy_number == "DEMO-MEH-END-1"))).scalars().first()
-    await protection.end_policy(s, firm.id, old.id, reason="Surrendered after the surrender-or-continue layout: the analysis is on file", by=BY)
+            s, firm.id, recorded_by=BY, role=ops, policy_id=uuid.UUID(made["policy_id"]), statement_date=stated, product="endowment",
+            premiums_paid=paid, annual_premium=premium, premium_years_left=left, surrender_value=surrender, paid_up_value=paid_up,
+            maturity_on=stated + timedelta(days=years_to * 365 + 2), maturity_value=maturity, maturity_basis="guaranteed",
+            commenced_on=stated - timedelta(days=12 * 365), source_document=f"{SOURCE} (statement {number})")
+        if number == "DEMO-MEH-END-1":
+            await protection.end_policy(s, firm.id, uuid.UUID(made["policy_id"]), by=BY,
+                                        reason="Surrendered after the surrender-or-continue layout: the analysis is on file")
 
 
-async def _money(c, vivek, anjali, v_acct, a_acct) -> None:
+async def _money(c, people: dict, accounts: dict) -> None:
     """Verified banks: what the SIPs and their mandates are paid from."""
-    for account, person, last4 in ((v_acct, vivek, "6120"), (a_acct, anjali, "7741")):
-        await money_in.record_link(c.s, c.firm.id, by=BY, account_id=account.id, bank=BANK, last4=last4, owner_name=person.full_name,
+    for who, last4 in ((VIVEK, "6120"), (ANJALI, "7741")):
+        if who not in people:
+            continue
+        await money_in.record_link(c.s, c.firm.id, by=BY, account_id=accounts[who].id, bank=BANK, last4=last4, owner_name=people[who].full_name,
                                    method="voided_cheque", evidence=_proof("Cancelled cheque, filed"), verified_on=c.ago(DAY0 - 1))
 
 
-async def _goals(c, home, vivek, anjali, v_acct, a_acct) -> None:
+async def _goals(c, home, accounts: dict) -> None:
     """Goals with their tiers, then the SIPs that save towards them, their mandates and first debits."""
     from app.llm.executors import ToolExecutors
 
@@ -503,10 +599,13 @@ async def _goals(c, home, vivek, anjali, v_acct, a_acct) -> None:
 
     day = min(ago(DAY0 - 12).day, 28)
     starts = ago(DAY0 - 8)
-    plan = [(v_acct, "6120", NIFTY_D[1], 40_000, retire, "nach", "UMRN-DEMO-MEHTA-0001", {"step_up_percent": 10, "step_up_every_months": 12, "step_up_cap": 80_000}),
-            (v_acct, "6120", FLEXI_D[1], 10_000, education[RHEA], "upi_autopay", "UPI-DEMO-MEHTA-0002", {}),
-            (a_acct, "7741", CORP_D[1], 10_000, education[DEV], "upi_autopay", "UPI-DEMO-MEHTA-0003", {})]
-    for account, last4, symbol, amount, goal, rail, reference, step in plan:
+    plan = [(VIVEK, "6120", NIFTY_D[1], 40_000, retire, "nach", "UMRN-DEMO-MEHTA-0001", {"step_up_percent": 10, "step_up_every_months": 12, "step_up_cap": 80_000}),
+            (VIVEK, "6120", FLEXI_D[1], 10_000, education[RHEA], "upi_autopay", "UPI-DEMO-MEHTA-0002", {}),
+            (ANJALI, "7741", CORP_D[1], 10_000, education[DEV], "upi_autopay", "UPI-DEMO-MEHTA-0003", {})]
+    for who, last4, symbol, amount, goal, rail, reference, step in plan:
+        account = accounts.get(who)
+        if account is None:
+            continue
         limit = step.get("step_up_cap", amount)
         await sip_mandates.record(s, firm, UserRole.OPERATIONS, by=BY, account_id=account.id, reference=reference, mandate_type=rail,
                                   per_debit_limit=limit, starts_on=starts, last4=last4, document=_proof("Mandate registration, filed"))
@@ -516,6 +615,17 @@ async def _goals(c, home, vivek, anjali, v_acct, a_acct) -> None:
         if debited <= today:
             await india_money.record_first_debit(s, firm, UserRole.OPERATIONS, by=BY, account_id=account.id, reference=reference, outcome="confirmed",
                                                  debited_on=debited, amount=amount, document=_proof("Bank's debit confirmation"))
+
+
+async def _reviews(c, people: dict) -> None:
+    """The regime comparison run in week 3, recorded as a review held for each (B-396). No harvest review is recorded: the
+    year-end task is raised from January."""
+    began = markets.tax_year(markets.MARKETS["IN"], c.today)["start"]
+    for who, person in people.items():
+        await india_tax_year.record_review(
+            c.s, c.firm, UserRole.ADVISER, by=BY, person_id=person.id, kind="regime",
+            covered="Both regimes read with the employer's NPS contribution; the choice stays theirs",
+            reviewed_on=max(began, c.ago(DAY0 - 18)), document=_proof("Meeting note"))
 
 
 ADVICE = [
@@ -567,42 +677,65 @@ async def _advice_and_plan(c, home, adviser) -> None:
 
 # ── The brother in Dubai ──────────────────────────────────────────────────────
 
-async def _brother(c) -> None:
+async def _brother(c) -> int:
     """Sameer, non-resident, in a household of his own: the NRI facts first, then the account, the remittance and his goal."""
     s, firm, today, ago = c.s, c.firm, c.today, c.ago
-    home = Household(firm_id=firm.id, name=BROTHER_HOME, segment=ClientSegment.PRIVATE_WEALTH, values={"jurisdiction": "IN", "demonstration": True})
-    s.add(home)
-    await s.flush()
-    fee = await _fee_schedule(c, FEE_CODE + "-N", "Fixed advisory fee, non-resident (demonstration)", 60_000)
-    _, sameer, account, _ = await _onboard(
-        c, home, SAMEER, registration="nri_nre", born=_born(today, 52, 1, 19), model="Core Balanced", risk="balanced", fee=fee,
-        registry_first="registered", mode="video_kyc", band="medium", bank_last4="5588", residence="AE", channel="remote",
-        answers=_answers({"investment_horizon": 2, "loss_tolerance": 1, "income_stability": 1, "liquidity_needs": 2, "esg_priority": 0,
-                          "experience": 1}), billable=2_500_000)
-    await _agreement(c, home)
-    year = markets.tax_year(markets.MARKETS["IN"], today)["label"]
-    await residency.record(
-        s, firm, by=BY, person_id=sameer.id, tax_year=year, document=_proof("Passport and residence visa scans, travel record"),
-        indian_citizen_or_pio=True, fema_status="nri", country_of_residence="United Arab Emirates", tax_residencies=["United Arab Emirates"],
-        days_in_india=34, days_prior_four_years=150, days_prior_seven_years=280, nonresident_years_of_prior_ten=10, left_for_employment_abroad=True,
-        india_income=210_000, taxed_elsewhere=False, accounts=["NRE"], us_person=False, self_certified_on=ago(DAY0 - 2))
-    account.cash_balance = BOOK[SAMEER][0]
-    await money_in.record_link(s, firm.id, by=BY, account_id=account.id, bank=BANK, last4="5588", owner_name=SAMEER, method="voided_cheque",
-                               evidence=_proof("NRE cheque leaf, filed"), verified_on=ago(DAY0 - 2))
-    link = (await money_in_link(s, firm, account))
-    await india_money.record_remittance(
-        s, firm, UserRole.OPERATIONS, by=BY, account_id=account.id, bank_link_id=link, account_kind="nre", received_on=ago(DAY0 - 7),
-        amount_inr=2_500_000, certificate_reference="FIRC-DEMO-000071", remitter_name=SAMEER, foreign_amount=108_000, foreign_currency="AED",
-        document=_proof("Bank's inward remittance certificate"))
-    await _beneficiaries(c, account, [("Meher Mehta", "wife", 100)])
-    # The paper a treaty claim needs (B-398): his tax residency certificate for this tax year.
-    from_year = date(today.year if today.month >= 4 else today.year - 1, 4, 1)
-    await nri_planning.record_certificate(s, firm, by=BY, person_id=sameer.id, kind="trc", country="United Arab Emirates",
-                                          reference="DEMO-TRC-MEH-0001", valid_from=from_year, valid_to=date(from_year.year + 1, 3, 31),
-                                          document=_proof("Certificate from the foreign tax authority"))
-    await goal_record.add(s, firm, home.id, {"name": "Return to India", "kind": "other", "target": 3_000_000, "target_basis": "today",
-                                             "target_date": str(today.year + 8), "tier": "wants", "priority": "medium",
-                                             "monthly_contribution": 25_000, "funding_share_percent": 100}, by=BY)
+
+    async def open_household():
+        home = Household(firm_id=firm.id, name=BROTHER_HOME, segment=ClientSegment.PRIVATE_WEALTH,
+                         values={"jurisdiction": "IN", "demonstration": True})
+        s.add(home)
+        await s.flush()
+        fee = await _fee_schedule(c, FEE_CODE + "-N", "Fixed advisory fee, non-resident (demonstration)", 60_000)
+        _, sameer, account, _ = await _onboard(
+            c, home, SAMEER, registration="nri_nre", born=_born(today, 52, 1, 19), model="Core Balanced", risk="balanced", fee=fee,
+            registry_first="registered", mode="video_kyc", band="medium", bank_last4="5588", residence="AE", channel="remote",
+            answers=_answers({"investment_horizon": 2, "loss_tolerance": 1, "income_stability": 1, "liquidity_needs": 2, "esg_priority": 0,
+                              "experience": 1}), billable=2_500_000)
+        return home, sameer, account
+
+    opened = await _attempt(c, f"The onboarding case for {SAMEER} (a later run tries again)", open_household)
+    if opened is None:
+        return 0
+    home, sameer, account = opened
+
+    async def non_resident():
+        await _agreement(c, home)
+        year = markets.tax_year(markets.MARKETS["IN"], today)["label"]
+        await residency.record(
+            s, firm, by=BY, person_id=sameer.id, tax_year=year, document=_proof("Passport and residence visa scans, travel record"),
+            indian_citizen_or_pio=True, fema_status="nri", country_of_residence="United Arab Emirates", tax_residencies=["United Arab Emirates"],
+            days_in_india=34, days_prior_four_years=150, days_prior_seven_years=280, nonresident_years_of_prior_ten=10, left_for_employment_abroad=True,
+            india_income=210_000, taxed_elsewhere=False, accounts=["NRE"], us_person=False, self_certified_on=ago(DAY0 - 2))
+        account.cash_balance = BOOK[SAMEER][0]
+        await _beneficiaries(c, account, [("Meher Mehta", "wife", 100)])
+        # The paper a treaty claim needs (B-398): his tax residency certificate for this tax year.
+        from_year = date(today.year if today.month >= 4 else today.year - 1, 4, 1)
+        await nri_planning.record_certificate(s, firm, by=BY, person_id=sameer.id, kind="trc", country="United Arab Emirates",
+                                              reference="DEMO-TRC-MEH-0001", valid_from=from_year, valid_to=date(from_year.year + 1, 3, 31),
+                                              document=_proof("Certificate from the foreign tax authority"))
+        return True
+
+    async def money():
+        await money_in.record_link(s, firm.id, by=BY, account_id=account.id, bank=BANK, last4="5588", owner_name=SAMEER, method="voided_cheque",
+                                   evidence=_proof("NRE cheque leaf, filed"), verified_on=ago(DAY0 - 2))
+        link = await money_in_link(s, firm, account)
+        await india_money.record_remittance(
+            s, firm, UserRole.OPERATIONS, by=BY, account_id=account.id, bank_link_id=link, account_kind="nre", received_on=ago(DAY0 - 7),
+            amount_inr=2_500_000, certificate_reference="FIRC-DEMO-000071", remitter_name=SAMEER, foreign_amount=108_000, foreign_currency="AED",
+            document=_proof("Bank's inward remittance certificate"))
+        return True
+
+    async def goal():
+        await goal_record.add(s, firm, home.id, {"name": "Return to India", "kind": "other", "target": 3_000_000, "target_basis": "today",
+                                                 "target_date": str(today.year + 8), "tier": "wants", "priority": "medium",
+                                                 "monthly_contribution": 25_000, "funding_share_percent": 100}, by=BY)
+        return True
+
+    await _attempt(c, "The brother's agreement, residence, nominee and certificate", non_resident)
+    await _attempt(c, "The brother's bank and remittance", money)
+    await _attempt(c, "The brother's goal", goal)
+    return 1
 
 
 async def money_in_link(s, firm, account) -> uuid.UUID:

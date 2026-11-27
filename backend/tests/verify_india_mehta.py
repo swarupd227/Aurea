@@ -83,10 +83,89 @@ async def main() -> int:
             await run(s)
     finally:
         await db.dispose()
+    await section("7. A refused case is skipped and the rest is written", skipping)
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed, {len(NOT_SHOWN)} step(s) named as not shown")
     for f in FAIL:
         print(f"  failed: {f}")
     return 1 if FAIL else 0
+
+
+async def skipping() -> None:
+    """A deployed firm that refuses a case: that case is skipped and reported, and everything else is written."""
+    from app.agents.onboarding import OnboardingAgent
+    from app.models.consent_registry import ConsentRecord
+    from app.models.onboarding import OnboardingCase
+    from app.provenance import ledger
+    from seed import india_demo, india_mehta
+
+    db = create_async_engine("sqlite+aiosqlite:///:memory:")
+    real_add, real_act = india_mehta.add, OnboardingAgent.act
+    try:
+        async with db.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with async_sessionmaker(db, expire_on_commit=False)() as s:
+            async def later(session, firm, report=None):
+                return 0
+
+            india_mehta.add = later
+            firm = await india_demo.build(s, quotes=None)
+            india_mehta.add = real_add
+            await s.commit()
+
+            def refusing(names, *, raises=False):
+                async def act(self, ctx, rec):
+                    if ctx.subject.label in names:
+                        if raises:
+                            raise RuntimeError("a database error, as Postgres would raise it")
+                        return {"executed": False, "note": "Activation blocked by a check this firm added"}
+                    return await real_act(self, ctx, rec)
+
+                return act
+
+            async def count(model, *where):
+                return (await s.execute(select(func.count()).select_from(model).where(*where))).scalar_one()
+
+            async def names_of():
+                return sorted((await s.execute(select(Household.name).where(
+                    Household.firm_id == firm.id, Household.name.like("%Mehta%")))).scalars().all())
+
+            couple = (india_mehta.VIVEK, india_mehta.ANJALI)
+            before = await count(Household, Household.firm_id == firm.id)
+            OnboardingAgent.act = refusing(couple)
+            report: list[str] = []
+            wrote = await india_mehta.add(s, firm, report)
+            await s.commit()
+            check("with neither spouse activating, the brother is still written", (wrote, await names_of()), (1, [india_mehta.BROTHER_HOME]))
+            check("each skipped case is reported with why",
+                  [sum(1 for line in report if n in line and "Activation blocked" in line) for n in couple], [1, 1])
+            check("and leaves no case or consent behind",
+                  (await count(OnboardingCase, OnboardingCase.prospect_name.in_(couple)),
+                   await count(ConsentRecord, ConsentRecord.given_by.in_(couple))), (0, 0))
+            check("only one household more than before", await count(Household, Household.firm_id == firm.id) - before, 1)
+
+            OnboardingAgent.act = refusing((india_mehta.ANJALI,), raises=True)
+            report = []
+            wrote = await india_mehta.add(s, firm, report)
+            await s.commit()
+            check("a later run writes the family, skipping the case that fails", (wrote, await names_of()),
+                  (1, [india_mehta.HOME, india_mehta.BROTHER_HOME]))
+            statuses = {c.prospect_name: str(c.status) for c in (await s.execute(select(OnboardingCase).where(
+                OnboardingCase.prospect_name.in_(couple)))).scalars().all()}
+            check("the other spouse is onboarded", statuses, {india_mehta.VIVEK: "approved"})
+            family = (await s.execute(select(Household).where(Household.firm_id == firm.id, Household.name == india_mehta.HOME))).scalar_one()
+            check("his records and the children are written",
+                  (sorted((await s.execute(select(Person.full_name).where(Person.household_id == family.id))).scalars().all()),
+                   await count(Goal, Goal.household_id == family.id)),
+                  ([india_mehta.DEV, india_mehta.RHEA, india_mehta.VIVEK], 4))
+            print("  reported:", [line[:110] for line in report])
+            check("what needed both is reported as left out, and nothing else failed",
+                  sorted(line.split(":")[0] for line in report),
+                  sorted([f"The onboarding case for {india_mehta.ANJALI}", "The advice file and the plan of record"]))
+            check("the decision ledger still verifies", (await ledger.verify_chain(s, firm.id))["valid"], True)
+            check("and a third run writes nothing", await india_mehta.add(s, firm, []), 0)
+    finally:
+        india_mehta.add, OnboardingAgent.act = real_add, real_act
+        await db.dispose()
 
 
 async def run(s) -> None:
@@ -109,7 +188,7 @@ async def run(s) -> None:
     # The firm as it stood before this item: built with the Mehtas left out, so the backfill's path is the one that adds them.
     real_add = india_mehta.add
 
-    async def later(session, firm):
+    async def later(session, firm, report=None):
         return 0
 
     india_mehta.add = later
@@ -235,6 +314,23 @@ async def run(s) -> None:
         check("every seeded string fits its column", long, [])
 
     await section("2b. The seeded firm against Postgres's column lengths", lengths)
+
+    async def once_each():
+        from collections import Counter
+
+        from app.models.governance import LedgerEntry
+        from app.models.india_tax_planning import TaxReview
+        from seed import india_tax_planning
+
+        records = Counter((e.content or {}).get("person_id") for e in (await s.execute(select(LedgerEntry).where(
+            LedgerEntry.firm_id == firm.id, LedgerEntry.event_type == "tax_inputs_recorded"))).scalars().all())
+        check("no person has two salary records", [n for n in records.values() if n > 1], [])
+        held = Counter((str(r.person_id or r.entity_id), r.kind, r.tax_year) for r in (await s.execute(select(TaxReview).where(
+            TaxReview.firm_id == firm.id))).scalars().all())
+        check("nor two reviews of one kind in a year", ([n for n in held.values() if n > 1], len(held)), ([], 4))
+        check("and the tax planning seed adds nothing more", await india_tax_planning.add(s, firm), 0)
+
+    await section("2c. One salary record and one review a person", once_each)
 
     mehta, brother = await home(india_mehta.HOME), await home(india_mehta.BROTHER_HOME)
     vivek, anjali, sameer = [await person(n) for n in (india_mehta.VIVEK, india_mehta.ANJALI, india_mehta.SAMEER)]
@@ -401,11 +497,16 @@ async def run(s) -> None:
         not_shown("the premiums shown to fit the cash flow before any SIP increase", "not built: cash flow is before tax and no premium test is made")
 
         print("  Week 3")
-        compare = {}
+        from app.aurea_core import india_regime, india_tax_year
+
+        compare, nps_states = {}, []
         for p in (vivek, anjali):
             tax = p.profile["tax"]
-            compare[p.full_name] = tax_india_full.regime_comparison(income=tax["annual_income"], salary=tax["salary_income"],
-                                                                    deductions=tax["old_regime_deductions"], age=48, gains=0, is_individual=True)
+            facts = await india_regime.facts(s, firm, p, tax)
+            nps_states.append(facts["employer_nps"]["state"])
+            compare[p.full_name] = tax_india_full.regime_comparison(
+                income=tax["annual_income"], salary=tax["salary_income"], deductions=tax["old_regime_deductions"], age=48, gains=0,
+                is_individual=True, facts=facts)
         saving = sum(c["old"]["tax"] - c["new"]["tax"] for c in compare.values())
         print(f"  the new regime is lower by {saving:,.0f} across the two")
         check("the regime comparison is run and the new regime wins for both, by about Rs 1.1 lakh together",
@@ -413,10 +514,17 @@ async def run(s) -> None:
         from app.aurea_core import retirement_stack
 
         check("employer NPS is recorded for both", len(await retirement_stack.employer_nps(s, firm.id, mehta.id)), 2)
-        not_shown("the employer NPS deduction (80CCD(2)) inside the regime comparison", "not built (B-396)")
+        check("the employer's NPS is inside both comparisons, within its limit on the basic salary on file", nps_states,
+              ["within_limit", "within_limit"])
         harvest = await tax_habits.gain_harvest(s, firm, vivek, today)
         check("the yearly gain-harvest position is read from the book", isinstance(harvest, dict) and bool(harvest), True)
-        not_shown("a gain-harvest calendar and a record that the reviews happened", "not built (B-396)")
+        reviews = await india_tax_year._reviews(s, firm.id, None, mehta.id)
+        check("each of the couple has the regime review recorded, once", sorted((r.person_id == vivek.id, r.kind) for r in reviews),
+              [(False, "regime"), (True, "regime")])
+        queue = await india_tax_year.harvest_queue(s, firm, household_id=mehta.id)
+        check("the gain-harvest queue lists the family's lots, waiting for the year-end task",
+              (bool(queue), {q["state"] for q in queue}), (True, {"to_raise"}))
+        not_shown("a harvest review held, and the year-end task raised", "none held yet: the worker raises the task from January (B-396)")
         h = m["sip_health"]
         check("Rs 60,000 a month of SIPs registered against Rs 60,000 planned on goals", (h["registered_monthly"], h["planned_monthly"], h["share"]),
               (60_000.0, 60_000.0, 1.0))

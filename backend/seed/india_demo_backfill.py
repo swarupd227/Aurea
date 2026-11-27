@@ -32,7 +32,8 @@ Basic salary and business income, stated returns for the after-tax comparison an
 `seed/india_tax_planning.py`) are added where missing.
 The demonstration figures (B-400, seed/india_figures.py): a seeded essential-spending figure still as first recorded is
 replaced, a retired client's pension and two emergency funds are added where none is on file. The Mehta family and the
-brother in Dubai (B-400, seed/india_mehta.py) are added once.
+brother in Dubai (B-400, seed/india_mehta.py) are added once. A case of theirs that does not activate, or a part that is
+refused, is skipped alone and printed as SKIPPED; everything else is still written.
 
 Every run also moves the dated demonstration scenarios back to their distance from today (`seed/india_redate.py`) and rewrites the
 description of an open reminder task still in the older wording.
@@ -194,7 +195,8 @@ async def main() -> None:
         from seed import india_figures, india_mehta
 
         figure_rows = await india_figures.add(s, firm)
-        mehta_homes = await india_mehta.add(s, firm)
+        mehta_skipped: list[str] = []
+        mehta_homes = await india_mehta.add(s, firm, mehta_skipped)
         # Last, so what the steps above added is read too: the dated scenarios back to their distance from today (B-374), and the
         # open reminder tasks raised in the older wording (B-372).
         from app.aurea_core import india_reminders
@@ -218,7 +220,8 @@ async def main() -> None:
           f"Advice files and audit: {advice_rows} added. Estate and NRI records: {estate_rows} added. "
           f"Onboarding measures: {measure_rows} record(s) added or re-dated. "
           f"Tax planning facts, stated returns and reviews: {tax_planning_rows} added. "
-          f"Demonstration figures: {figure_rows} record(s). Mehta family: {mehta_homes} household(s) added.\n")
+          f"Demonstration figures: {figure_rows} record(s). Mehta family: {mehta_homes} household(s) added.\n"
+          + "".join(f"SKIPPED. {line}\n" for line in mehta_skipped))
 
 
 if __name__ == "__main__":
