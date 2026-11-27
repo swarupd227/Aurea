@@ -13,7 +13,8 @@ INDIA_FAMILY_TOOLS = ("read_sebi_family", "record_sebi_family", "read_india_esta
                       "record_huf", "record_gratuity")
 FAMILY_TERMS = ("person_id", "of_person_id", "relation", "dependent", "document")
 NOMINATION_TERMS = ("person_id", "asset_kind", "label", "status", "nominees", "declaration_on", "document")
-WILL_TERMS = ("person_id", "personal_law", "registered", "registration_ref", "probate", "probate_ref", "executor", "as_of", "document")
+WILL_TERMS = ("person_id", "personal_law", "registered", "registration_ref", "probate", "probate_ref", "executor", "as_of", "document",
+              "witnesses", "executor_told", "executor_told_on")
 HUF_TERMS = ("entity_id", "karta_name", "karta_person_id", "coparceners", "as_of", "document")
 GRATUITY_TERMS = ("person_id", "employer", "amount", "as_of", "payable_on", "years_of_service", "document")
 
@@ -163,6 +164,9 @@ class IndiaFamilyExecutors:
                 return [("Person", p["person"].full_name), ("Personal law", india_estate.LAWS.get(p["personal_law"] or "")),
                         ("Registered", {True: "Yes", False: "No", None: None}[p["registered"]]), ("Registration number", p["registration_ref"]),
                         ("Probate", india_estate.PROBATE.get(p["probate"] or "")), ("Court number", p["probate_ref"]), ("Executor", p["executor"]),
+                        ("Witnesses", "; ".join(p["witnesses"]) if p["witnesses"] else None),
+                        ("Executor told", {True: "Yes" + (f", {spoken(p['executor_told_on'])}" if p["executor_told_on"] else ""),
+                                           False: "No", None: None}[p["executor_told"]]),
                         ("Dated", spoken(p["as_of"])), ("Evidence", p["document"]),
                         ("Note", "What is not restated carries over from the earlier record; no nominee or account changes")]
             if tool_key == "record_huf":

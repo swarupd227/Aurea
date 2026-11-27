@@ -31,6 +31,8 @@ import { CareFundingChips, ProtectionCard } from "./ProtectionCard";
 import { HealthCoverCard, PolicyValuesCard } from "./HealthCoverCard";
 import { AdviceFileCard } from "./AdviceFileCard";
 import { AdviceAuditCard } from "./AdvicePracticeCard";
+import { EstateRegisterCard } from "./EstateRegisterCard";
+import { NriPlanningCard } from "./NriPlanningCard";
 import { PlanRecordCard } from "./PlanRecordCard";
 import { LicenceCard } from "./LicenceCard";
 import { ComplianceCalendarCard, PreAdviceCard } from "./SebiCard";
@@ -541,6 +543,17 @@ export function artifactCard(artifact: Artifact) {
         if (!Array.isArray(artifact.result?.reminders) && !Array.isArray(artifact.result?.tasks) && !artifact.result?.line && !artifact.result?.case
             && !Array.isArray(artifact.result?.minors) && artifact.result?.applies !== false) return null;
         return <PolishCard result={artifact.result as any} />;
+      case "read_estate_register":
+      case "record_estate_wish":
+      case "record_will_check":
+        // India's asset-and-wishes register and the will check (B-398).
+        if (!Array.isArray(artifact.result?.assets) && !Array.isArray(artifact.result?.households)) return null;
+        return <EstateRegisterCard result={artifact.result as any} />;
+      case "read_nri_planning":
+      case "record_treaty_certificate":
+      case "record_residence_move":
+        if (!Array.isArray(artifact.result?.people) && !Array.isArray(artifact.result?.households)) return null;
+        return <NriPlanningCard result={artifact.result as any} />;
       case "read_sebi_family":
       case "record_sebi_family":
       case "read_india_estate":

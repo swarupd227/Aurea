@@ -59,6 +59,10 @@ class WillStatus(Base):
     probate: Mapped[str | None] = mapped_column(String(16), nullable=True)         # not_sought | applied | granted | not_required
     probate_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
     executor: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # B-398: who attested the will, and whether the executor has been told, as a person recorded them. Null: not recorded.
+    witnesses: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    executor_told: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    executor_told_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     as_of: Mapped[date] = mapped_column(Date)
     source_document: Mapped[str] = mapped_column(String(300))
     recorded_by: Mapped[str] = mapped_column(String(200))

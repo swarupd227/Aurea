@@ -231,10 +231,11 @@ async def main() -> int:
             await E.record_will_status(s, firm, by="test", person_id=meera.id, personal_law="muslim", document="A declaration of personal law, filed")
             mee = next(p for p in (await E.household_view(s, firm, sharma.id))["people"] if p["name"] == "Meera Sharma")
             check("Muslim succession is named as not laid out, and nothing is invented", (mee["succession"]["state"], mee["succession"]["orders"]), ("not_laid_out", []))
+            wills_before = (await s.execute(select(func.count()).select_from(WillStatus).where(WillStatus.person_id == rajesh.id))).scalar_one()
             await E.record_will_status(s, firm, by="test", person_id=rajesh.id, executor="Aarav Sharma", document="The executor's letter, filed")
             raj = next(p for p in (await E.household_view(s, firm, sharma.id))["people"] if p["name"] == "Rajesh Sharma")
             check("what a new record does not restate carries over", (raj["status"]["executor"], raj["status"]["registered"], raj["status"]["personal_law"]), ("Aarav Sharma", True, "hindu"))
-            check("every record is kept, added and never edited", (await s.execute(select(func.count()).select_from(WillStatus).where(WillStatus.person_id == rajesh.id))).scalar_one(), 2)
+            check("every record is kept, added and never edited", (await s.execute(select(func.count()).select_from(WillStatus).where(WillStatus.person_id == rajesh.id))).scalar_one(), wills_before + 1)
 
             print("\n=== An HUF ===")
             hv = await E.household_view(s, firm, sharma.id)

@@ -457,6 +457,30 @@ ALL: tuple[LawFigure, ...] = (
               "ASSUMED: SEBI (Investment Advisers) (Second Amendment) Regulations 2024 and the guidelines of January 2025, as understood (300 clients, "
               "or Rs 3 crore of fees in a year, which is not counted here); the L200-2 India edition (section 9) says to verify the current thresholds; "
               "not re-read", date(2026, 11, 27)),
+    LawFigure("in_will_witnesses", "A will is attested by at least this many witnesses", 2, "count",
+              "ASSUMED: Indian Succession Act 1925, section 63, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_will_stamp_registration", "A will needs no stamp duty, and registering it is optional", None, "rule",
+              "ASSUMED: Registration Act 1908, section 18, and the Indian Stamp Act 1899, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_witness_legatee", "Where it applies, a bequest to a witness of the will (or the spouse of a witness) fails, though the will stands; it is not applied to Hindu wills", None, "rule",
+              "ASSUMED: Indian Succession Act 1925, section 67 and Schedule III, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_no_inheritance_tax", "India levies no inheritance or estate duty today", None, "rule",
+              "ASSUMED: the Estate Duty Act 1953 as discontinued in 1985, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_trc_rule", "A non-resident claims relief under a tax treaty with a tax residency certificate from the other country, and Form 10F where the certificate lacks the particulars asked", None, "rule",
+              "ASSUMED: Income-tax Act 1961 section 90(4) and (5) and rule 21AB, as understood; the Income-tax Act 2025 renumbering was not read; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_move_leaving_bank", "A person who becomes a non-resident under FEMA has resident rupee accounts redesignated as NRO accounts", None, "rule",
+              "ASSUMED: FEMA (Deposit) Regulations 2016, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_move_leaving_demat", "A non-resident holds securities through non-resident demat and trading accounts, not resident ones", None, "rule",
+              "ASSUMED: FEMA rules and depository directions on a change of residential status, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_move_leaving_folios", "A change of residential status is updated on mutual fund folios and KYC records, and some fund houses restrict residents of some countries", None, "rule",
+              "ASSUMED: SEBI KYC rules and fund house terms, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_move_leaving_savings", "A PPF account opened while resident may run to maturity and is not extended by a non-resident; EPF and NPS follow their own non-resident rules", None, "rule",
+              "ASSUMED: the Public Provident Fund Scheme 2019, the EPF Scheme 1952 and PFRDA rules, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_move_return_accounts", "On return to live in India, NRE and NRO accounts are redesignated as resident accounts or moved to an RFC account; FCNR deposits may run to maturity", None, "rule",
+              "ASSUMED: FEMA (Deposit) Regulations 2016 and the foreign currency account rules, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_move_return_demat", "On return, non-resident demat and trading accounts and fund folios are changed to resident status", None, "rule",
+              "ASSUMED: depository and SEBI KYC rules on a change of residential status, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
+    LawFigure("in_move_return_foreign", "A person who becomes ordinarily resident reports foreign assets and income in the return", None, "rule",
+              "ASSUMED: the Income-tax return's foreign asset schedule and the Black Money Act 2015, as understood; the L200-2 India edition (Nov 2026) sections 7 and 8; not re-read, for counsel", date(2026, 11, 27)),
     # ── India: the L100 batch A items (B-293, B-295, B-296, B-299). The L100 edition states the LRS limit and says to verify the tax
     # collected at source, so those are ASSUMED here from the Finance Act 2025 as understood and stand "not reviewed" in the counsel
     # tracker until compliance records counsel's reading. None was re-read against its source on 25 Nov 2026.

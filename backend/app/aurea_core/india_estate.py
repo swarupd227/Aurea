@@ -35,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import firm_time, law_figures, markets, nominations, sebi_family
+from app.core.db import utcnow
 from app.core.security import UserRole
 from app.models.client_file import EstateDocument
 from app.models.enums import EntityType
@@ -208,7 +209,8 @@ def _nomination_view(r: AssetNomination, names: dict) -> dict:
 
 async def prepare_will_status(session: AsyncSession, firm: Firm, *, person_id, personal_law: str | None = None, registered: bool | None = None,
                               registration_ref: str | None = None, probate: str | None = None, probate_ref: str | None = None,
-                              executor: str | None = None, as_of=None, document: str | None) -> dict:
+                              executor: str | None = None, as_of=None, document: str | None, witnesses=None, executor_told=None,
+                              executor_told_on=None) -> dict:
     _need(firm)
     person = await _person(session, firm, person_id)
     today = firm_time.today(firm)
@@ -222,17 +224,60 @@ async def prepare_will_status(session: AsyncSession, firm: Firm, *, person_id, p
         raise EstateError("A registered will has its registration number, from the sub-registrar's endorsement.")
     if pr in ("applied", "granted") and len((probate_ref or "").strip()) < 3:
         raise EstateError("Probate applied for or granted has the court's case or grant number.")
-    if law is None and registered is None and pr is None and not (executor or "").strip():
-        raise EstateError("Record at least the personal law, whether the will is registered, probate or the executor.")
+    attested = _witnesses(witnesses)
+    told = _yes(executor_told, "Whether the executor has been told")
+    told_on = _day(executor_told_on, "day the executor was told")
+    if told_on is not None:
+        if told is False:
+            raise EstateError("An executor not yet told has no day they were told.")
+        told = True
+        if told_on > today:
+            raise EstateError("The executor was told today or earlier.")
+    if law is None and registered is None and pr is None and not (executor or "").strip() and attested is None and told is None:
+        raise EstateError("Record at least the personal law, whether the will is registered, probate, the executor, the witnesses "
+                          "or whether the executor has been told.")
     day = _day(as_of, "date of the document") or today
     if day > today:
         raise EstateError("A document cannot be dated in the future.")
     will = (await session.execute(select(EstateDocument).where(EstateDocument.person_id == person.id, EstateDocument.kind == "will"))).scalars().first()
-    if (registered is not None or pr in ("applied", "granted") or (executor or "").strip()) and will is None:
+    if (registered is not None or pr in ("applied", "granted") or (executor or "").strip() or attested is not None or told is not None) \
+            and will is None:
         raise EstateError(f"{person.full_name} has no will on file: record the will as an estate document first, then its registration and probate.")
+    if attested and any(w.lower() == person.full_name.lower() for w in attested):
+        raise EstateError("The person making a will does not witness it.")
+    if told is not None and not (executor or "").strip():
+        standing = await _standing_will(session, firm.id, person.id)
+        if standing is None or not standing.executor:
+            raise EstateError("Name the executor first: nobody is recorded to have been told.")
     return {"person": person, "personal_law": law, "registered": registered, "registration_ref": (registration_ref or "").strip() or None,
             "probate": pr, "probate_ref": (probate_ref or "").strip() or None, "executor": " ".join((executor or "").split()) or None,
-            "as_of": day, "document": _document(document)}
+            "as_of": day, "document": _document(document), "witnesses": attested, "executor_told": told, "executor_told_on": told_on}
+
+
+def _witnesses(value) -> list[str] | None:
+    """The witnesses' names, as a list or "Name; Name". None when none are given."""
+    if value in (None, "", []):
+        return None
+    items = value if isinstance(value, list) else str(value).replace("\n", ";").replace(",", ";").split(";")
+    names = [" ".join(str(x.get("name") if isinstance(x, dict) else x).split()) for x in items]
+    names = [n for n in names if n]
+    if not names or any(len(n) < 3 for n in names):
+        raise EstateError("Name each witness as the will does.")
+    if len({n.lower() for n in names}) != len(names):
+        raise EstateError("Each witness is named once.")
+    return names[:6]
+
+
+def _yes(value, label: str) -> bool | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return value
+    if str(value).strip().lower() in ("true", "yes", "y", "1"):
+        return True
+    if str(value).strip().lower() in ("false", "no", "n", "0"):
+        return False
+    raise EstateError(f"{label} is yes or no.")
 
 
 async def record_will_status(session: AsyncSession, firm: Firm, *, by: str, **terms) -> dict:
@@ -240,12 +285,21 @@ async def record_will_status(session: AsyncSession, firm: Firm, *, by: str, **te
     before = await _standing_will(session, firm.id, p["person"].id)
     # What is not restated stands: a new row carries forward what the earlier one said.
     merged = {k: (p[k] if p[k] is not None else getattr(before, k, None) if before else p[k])
-              for k in ("personal_law", "registered", "registration_ref", "probate", "probate_ref", "executor")}
-    row = WillStatus(firm_id=firm.id, person_id=p["person"].id, as_of=p["as_of"], source_document=p["document"], recorded_by=by, **merged)
+              for k in ("personal_law", "registered", "registration_ref", "probate", "probate_ref", "executor", "witnesses",
+                        "executor_told", "executor_told_on")}
+    # Another executor has not been told what the last one was; an executor now said not to know has no day.
+    if p["executor"] and before is not None and (before.executor or "").lower() != p["executor"].lower():
+        merged["executor_told"], merged["executor_told_on"] = p["executor_told"], p["executor_told_on"]
+    if merged["executor_told"] is False:
+        merged["executor_told_on"] = None
+    # Stamped here, not by the database: two rows written in one transaction would otherwise tie on which stands.
+    row = WillStatus(firm_id=firm.id, person_id=p["person"].id, as_of=p["as_of"], source_document=p["document"], recorded_by=by,
+                     created_at=utcnow(), **merged)
     session.add(row)
     await session.flush()
     await ledger.append_entry(session, firm_id=firm.id, event_type="will_status_recorded", actor=by, content={
-        "person_id": str(p["person"].id), **{k: v for k, v in merged.items()}, "document": row.source_document})
+        "person_id": str(p["person"].id), **{k: (v.isoformat() if isinstance(v, date) else v) for k, v in merged.items()},
+        "document": row.source_document})
     return await household_view(session, firm, p["person"].household_id)
 
 
@@ -471,7 +525,8 @@ async def household_view(session: AsyncSession, firm: Firm, household_id: uuid.U
             "status": None if w is None else {
                 "personal_law": w.personal_law, "personal_law_label": LAWS.get(w.personal_law or ""), "registered": w.registered,
                 "registration_ref": w.registration_ref, "probate": w.probate, "probate_label": PROBATE.get(w.probate or ""), "probate_ref": w.probate_ref,
-                "executor": w.executor, "as_of": w.as_of.isoformat(), "document": w.source_document},
+                "executor": w.executor, "as_of": w.as_of.isoformat(), "document": w.source_document, "witnesses": w.witnesses,
+                "executor_told": w.executor_told, "executor_told_on": w.executor_told_on.isoformat() if w.executor_told_on else None},
             "flags": flags,
             "succession": intestacy(w.personal_law if w else None, today=today, family=fam, will=d is not None),
             "family_on_file": fam})

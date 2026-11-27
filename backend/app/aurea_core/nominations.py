@@ -55,7 +55,8 @@ def will_issues(account_name: str, nominees: list[str], heirs: list[str] | None)
 # A demat account or a folio is an account here, with its nominees on AccountBeneficiary. A bank account's nominees, EPF's and a
 # signed opt-out are recorded by a person from the document (`india_estate.record_nomination`) and read here. Everything below
 # reports and changes nothing: a nominee is the client's choice and a form signed with the bank, the depository or the PF office.
-KINDS = {"demat": "Demat account", "mutual_fund": "Mutual fund folio", "bank_account": "Bank account", "epf": "EPF"}
+KINDS = {"demat": "Demat account", "mutual_fund": "Mutual fund folio", "bank_account": "Bank account", "epf": "EPF",
+         "ppf": "PPF", "nps": "NPS"}      # PPF and NPS (B-398): recorded from their forms; no cap is encoded for them
 OPT_OUT_KINDS = ("demat", "mutual_fund")        # a signed opt-out is a SEBI choice for these two
 FAMILY_RELATIONS = frozenset({"spouse", "wife", "husband", "son", "daughter", "child", "father", "mother", "parent", "brother", "sister",
                               "widow", "grandchild", "dependent parent", "dependent child"})

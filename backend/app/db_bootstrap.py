@@ -283,6 +283,10 @@ async def bootstrap() -> None:
         await conn.execute(text("ALTER TABLE onboarding_party ADD COLUMN IF NOT EXISTS father_name VARCHAR(200)"))
         # B-399: the risk profile a recorded recommendation rests on, frozen when made. Empty on every record before: "not kept".
         await conn.execute(text("ALTER TABLE advice_recommendation ADD COLUMN IF NOT EXISTS risk_basis JSON"))
+        # B-398: a will's witnesses and whether its executor has been told. Empty on every record before: not recorded.
+        await conn.execute(text("ALTER TABLE will_status ADD COLUMN IF NOT EXISTS witnesses JSON"))
+        await conn.execute(text("ALTER TABLE will_status ADD COLUMN IF NOT EXISTS executor_told BOOLEAN"))
+        await conn.execute(text("ALTER TABLE will_status ADD COLUMN IF NOT EXISTS executor_told_on DATE"))
 
         # Seed default segments and mandate type configs for each firm (idempotent).
         firms = (await conn.execute(text("SELECT id FROM firm"))).fetchall()

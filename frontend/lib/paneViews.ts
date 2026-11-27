@@ -426,6 +426,14 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "record_life_event":
     case "raise_estate_review":
       return onClient("/studio/client-file");
+    // India's asset register, will checks and NRI planning sit on the client file (B-398).
+    case "read_estate_register":
+    case "record_estate_wish":
+    case "record_will_check":
+    case "read_nri_planning":
+    case "record_treaty_certificate":
+    case "record_residence_move":
+      return onClient("/studio/client-file");
     // The advice file (B-175): one recommendation or one client's opens on that client.
     case "read_advice_file":
     case "record_recommendation":

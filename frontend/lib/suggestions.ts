@@ -211,6 +211,14 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
         h1 ? { label: `${short(h1)}'s exits`, prompt: `Which of ${the(h1)}'s holdings are marked to exit, and how do they sit against the gain budget?` }
           : { label: "Redeem instead", prompt: "What would redeeming instead of transferring crystallise, household by household?" },
       ];
+    case "/studio/client-file":
+      return [
+        h1 ? { label: `${short(h1)}'s file`, prompt: `What is on file for ${the(h1)}, and what is out of date?` } : { label: "Out of date", prompt: "Which estate documents are out of date?" },
+        ...(firmMarket() === "IN" ? [
+          { label: "Asset register", prompt: h1 ? `Show the asset and wishes register for ${the(h1)}: what has no nomination and which wills need a check?` : "Which households have assets with no nomination, and which wills are due a check?" },
+          { label: "NRI planning", prompt: "Who is abroad or moving, which tax residency certificates are missing, and what is open on their checklists?" },
+        ] : [{ label: "Life events", prompt: "Which life events were recorded recently?" }]),
+      ];
     case "/studio/advice-file":
       return [
         { label: "Overdue advice", prompt: "Which recommendations on the advice file are overdue or due a revisit?" },

@@ -25,6 +25,7 @@ from app.llm.pmla_executors import PmlaExecutors
 from app.llm.retirement_stack_executors import RetirementStackExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.advice_practice_executors import AdvicePracticeExecutors
+from app.llm.estate_nri_executors import EstateNriExecutors
 from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
 from app.llm.goal_executors import GoalExecutors
@@ -99,7 +100,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
                     IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors, IdentityCheckExecutors,
                     PmlaExecutors, RetirementStackExecutors,
-                    AdvicePracticeExecutors):
+                    AdvicePracticeExecutors, EstateNriExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -382,6 +383,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._advice_file_map(),
             # India's adviser operating model and the sample audit of advice files (B-399): app/llm/advice_practice_executors.py.
             **self._advice_practice_map(),
+            # India's asset register, will checks, treaty certificates and moves (B-398): app/llm/estate_nri_executors.py.
+            **self._estate_nri_map(),
             # India's tax records and KYC (rows 11 and 12): app/llm/india_executors.py.
             **self._india_map(),
             # The plan of record (B-181): app/llm/plan_record_executors.py.
@@ -5627,6 +5630,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._estate_care_preview(tool_key, inputs))
         if tool_key in ("record_recommendation", "record_advice_outcome"):
             return rows(*await self._advice_preview(tool_key, inputs))
+        if tool_key in ("record_estate_wish", "record_will_check", "record_treaty_certificate", "record_residence_move"):
+            return rows(*await self._estate_nri_preview(tool_key, inputs))
         if tool_key in ("draw_advice_audit", "record_advice_audit"):
             return rows(*await self._advice_audit_preview(tool_key, inputs))
         if tool_key == "record_tax_inputs":

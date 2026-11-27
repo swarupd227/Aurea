@@ -111,3 +111,5 @@ from app.models import pmla  # noqa: F401,E402
 from app.models import retirement_stack  # noqa: F401,E402
 # The sample audit of advice files (B-399).
 from app.models import advice_audit  # noqa: F401,E402
+# Wishes, will checks, treaty certificates and moves in and out of India (B-398).
+from app.models import estate_nri  # noqa: F401,E402

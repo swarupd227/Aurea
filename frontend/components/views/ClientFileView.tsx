@@ -2,6 +2,7 @@
 
 import { Card, Empty, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
+import { IndiaEstateNriSection } from "./IndiaEstateNriSection";
 import { reviewDay } from "@/app/workspace/components/artifacts/ReviewsCard";
 import { DiscoveryChips, EstateGaps, said } from "@/app/workspace/components/artifacts/ClientFileCard";
 import { withRef } from "@/lib/refs";
@@ -76,6 +77,8 @@ export function ClientFileView({ household = null }: { household?: string | null
           <EstateGaps gaps={data.estate_gaps} />
         </Card>
       )}
+      {/* India (B-398): the asset-and-wishes register, will checks and NRI planning. */}
+      {data.india && <IndiaEstateNriSection household={data.household_id} />}
       <div className="mb-4 space-y-4" data-testid="file-people">
         {data.people.map((p: any) => (
           <Card key={p.person_id}>

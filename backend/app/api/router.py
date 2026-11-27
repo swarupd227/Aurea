@@ -95,3 +95,8 @@ api_router.include_router(health_cover_api.router)
 from app.api import kyc_registry as kyc_registry_api  # noqa: E402
 
 api_router.include_router(kyc_registry_api.router)
+
+# India's asset register, will checks and NRI planning (B-398).
+from app.api import estate_nri as estate_nri_api  # noqa: E402
+
+api_router.include_router(estate_nri_api.router)

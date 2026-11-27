@@ -67,6 +67,8 @@ export function EstateHousehold({ view, currency }: { view: any; currency: strin
           {p.status?.registered != null && <span className={`chip ${p.status.registered ? "text-ok" : "text-warn"}`} title={p.status.registration_ref ?? ""}>{p.status.registered ? "Registered" : "Not registered"}</span>}
           {p.status?.probate_label && <span className="chip text-ink-muted" title={p.status.probate_ref ?? ""}>Probate: {p.status.probate_label}</span>}
           {p.status?.executor && <span className="chip text-ink-muted">Executor {p.status.executor}</span>}
+          {p.status?.executor_told != null && <span className={`chip ${p.status.executor_told ? "text-ok" : "text-warn"}`}>Executor {p.status.executor_told ? "told" : "not told"}</span>}
+          {p.status?.witnesses?.length ? <span className={`chip ${p.status.witnesses.length >= 2 ? "text-ok" : "text-warn"}`} title={p.status.witnesses.join(", ")}>{p.status.witnesses.length} witness{p.status.witnesses.length === 1 ? "" : "es"}</span> : null}
           {p.succession?.state === "not_assessed" && <span className="chip text-ink-muted">Succession not assessed</span>}
           {p.succession?.state === "laid_out" && (
             <span className="chip text-ink-muted" title={(p.succession.orders ?? []).map((o: any) => `${o.title}: ${o.figure.source}`).join("\n")}>Intestacy laid out, for counsel</span>
