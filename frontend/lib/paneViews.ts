@@ -233,6 +233,7 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_my_fees":
     case "read_my_report":
     case "read_my_kyc_status":
+    case "read_my_onboarding_status":
       return "/canvas";
     case "read_my_retirement":
       return "/canvas/retirement";

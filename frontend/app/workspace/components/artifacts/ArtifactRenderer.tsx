@@ -42,6 +42,7 @@ import { ConsolidationCard } from "./ConsolidationCard";
 import { AdvertisingCard, ComplaintsCard } from "./ComplaintsCard";
 import { KycCard, TaxRecordsCard } from "./IndiaKycCard";
 import { KycRegistryCard, MyKycCard } from "./IndiaKycRegistryCard";
+import { MyOnboardingCard } from "./MyOnboardingCard";
 import { IdentityChecksCard } from "./IdentityChecksCard";
 import { FamilyEstateCard } from "./FamilyEstateCard";
 import { PolishCard } from "./PolishCard";
@@ -659,6 +660,9 @@ export function artifactCard(artifact: Artifact) {
       case "read_my_kyc_status":
         if (!Array.isArray(artifact.result?.people)) return null;
         return <MyKycCard result={artifact.result as any} />;
+      case "read_my_onboarding_status":
+        if (!Array.isArray(artifact.result?.accounts)) return null;
+        return <MyOnboardingCard result={artifact.result as any} />;
       case "read_kyc":
       case "record_kyc":
         if (!Array.isArray(artifact.result?.parties) && artifact.result?.applies !== false) return null;

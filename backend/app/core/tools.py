@@ -2739,7 +2739,7 @@ TOOLS: dict[str, Tool] = {
         key="read_onboarding_scoreboard",
         name="Read Onboarding Scoreboard",
         speaking_agent="astra",
-        description="The onboarding scoreboard, counted from the record: days from a case starting to its first purchase filling, and the paperwork, money and invested clocks; where accounts stall, by the step they sit at, and how many were rejected; the screening alert rate; net promoter score from survey answers recorded (not measured when there are none); transfer rejects by code; accounts opened in 90 days per operations person; and who is responsible, accountable, consulted and informed at each step.",
+        description="The onboarding scoreboard, counted from the record: days from a case starting to its first purchase filling, and the paperwork, money and invested clocks; where accounts stall, by the step they sit at, and how many were rejected; the screening alert rate; net promoter score from survey answers recorded (not measured when there are none); transfer rejects by code; accounts opened in 90 days per operations person; and who is responsible, accountable, consulted and informed at each step. For an Indian firm it also gives the onboarding measures, each with its definition, count and not assessed where nothing is recorded: cycle time P50 and P90 by cohort (resident, non-resident, entity); the straight-through rate with the manual exceptions counted; the book's KYC registry mix and re-KYC backlog by age; first-attempt verification success and failures by cause; mandate registration and first-debit success; transaction and registrar rejects by the cause recorded; nomination completeness across the book; screening disposition time; and, in compliance's reading only, suspicious-report timeliness. Its RACI is then the Indian one. It changes nothing, and does not say the firm meets any rule.",
         change_state=ToolChangeState.NO,
         confirmation=None,
         inputs=[],
@@ -6656,6 +6656,19 @@ TOOLS: dict[str, Tool] = {
         confirmation=None,
         inputs=[],
         output=ToolOutput("object", "The household's KYC status and steps"),
+        roles_required={UserRole.CLIENT},
+    ),
+
+    # India onboarding, the client's view (B-392).
+    "read_my_onboarding_status": Tool(
+        key="read_my_onboarding_status",
+        name="Read My Onboarding Status",
+        speaking_agent="astra",
+        description="India: where each of the client's own household's accounts stands in opening: the step it has reached (details and documents, their signature, with the firm, being opened, open, money on the way, money received, invested), since when, whose move it is, and anything waiting on the client. It changes nothing and sends nothing. It does not say why a step takes as long as it does: give no reason, promise no date, and send the client to their adviser.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[],
+        output=ToolOutput("object", "The household's accounts and the step each has reached"),
         roles_required={UserRole.CLIENT},
     ),
 

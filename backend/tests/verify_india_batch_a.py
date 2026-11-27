@@ -420,7 +420,7 @@ async def main() -> int:
             check("confirmed, it is recorded", (done["people"][0]["remitted_usd"], done["message"].startswith("Recorded")), (20_000.0, True))
             read = await comp.execute("read_lrs", {"household_id": str(homes["The Iyer Family"].id)})
             check("compliance reads the household's remittances, and the message says not-assessed is not nothing", ([p["person"] for p in read["people"]], "does not mean" in read["message"]),
-                  (["Karthik Iyer", "Lakshmi Iyer"], True))
+                  (["Diya Iyer", "Karthik Iyer", "Lakshmi Iyer"], True))
             card = await adv.preview_change("record_sip_mandate", {"account_id": str(k_account.id), "reference": "UMRN-DEMO-IYER-0003", "mandate_type": "nach", "per_debit_limit": 30_000,
                                                                     "starts_on": today.isoformat(), "last4": "4821", "document": "Registration, filed"})
             check("the mandate card shows the verified bank account and says it registers nothing", ([r["value"] for r in card["rows"] if r["label"] == "Bank account"][0].startswith("A demonstration bank"),

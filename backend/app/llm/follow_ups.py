@@ -179,6 +179,7 @@ FOLLOWS: dict[str, Callable[[dict, dict], list[Candidate]]] = {
     "read_my_fees": lambda i, r: [MY_WEALTH],
     "read_my_report": lambda i, r: [MY_WEALTH, MY_GOALS],
     "read_my_kyc_status": lambda i, r: [MY_WEALTH],
+    "read_my_onboarding_status": lambda i, r: [MY_WEALTH],
 }
 
 

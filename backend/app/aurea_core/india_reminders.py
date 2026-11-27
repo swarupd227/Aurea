@@ -11,8 +11,9 @@ The compliance calendar and the countdown only showed dates. This reads the same
                 minor who is now an adult go to the household's recorded adviser (`advisers.adviser_of`), never someone
                 worked out; a household with none gets an unassigned task that says so
 
-It acts when an item is overdue or falls due within 14 days. An item with no day is not raised, and advance tax and the return
-are not raised, because whether either applies to a client is not assessed here. One task per obligation and period: the title
+It acts when an item is overdue or falls due within 14 days (a minor's coming majority a year ahead, B-392, and an adviser's
+certificate 90 days). An item with no day is not raised, and advance tax and the return are not raised, because whether either
+applies to a client is not assessed here. One task per obligation and period: the title
 carries both, so the task is found again by its title whatever its state, and a task a person closed is not raised a second time.
 It changes no filing, KYC or guardianship record, tells no client, and does not say the firm is compliant.
 """
@@ -75,6 +76,8 @@ def _detail(item: dict) -> str:
     out = f"Due {item['due_on']}. Source: {_sentence(item['source'])}"
     if item.get("assumed"):
         out += f" Assumed: {_sentence(item['assumed'])}"
+    if item.get("checklist"):       # what the task takes: a minor's conversion (B-392)
+        out += f" {_sentence(item['checklist'])}"
     return out
 
 

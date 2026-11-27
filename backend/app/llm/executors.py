@@ -38,6 +38,7 @@ from app.llm.india_batch_a_executors import IndiaBatchAExecutors
 from app.llm.india_money_executors import IndiaMoneyExecutors
 from app.llm.identity_check_executors import IdentityCheckExecutors
 from app.llm.kyc_registry_executors import KycRegistryExecutors
+from app.llm.client_onboarding_executors import ClientOnboardingExecutors
 from app.llm.india_batch_c_executors import IndiaBatchCExecutors
 from app.llm.india_rem_e_executors import IndiaRemEExecutors
 from app.llm.india_rem_d_executors import IndiaRemDExecutors
@@ -100,7 +101,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
                     IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors, IdentityCheckExecutors,
                     PmlaExecutors, RetirementStackExecutors,
-                    AdvicePracticeExecutors, EstateNriExecutors):
+                    AdvicePracticeExecutors, EstateNriExecutors, ClientOnboardingExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -406,6 +407,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._india_money_map(),
             # India, the KYC registry status (B-386): app/llm/kyc_registry_executors.py.
             **self._kyc_registry_map(),
+            # India onboarding, a client's own reading (B-392): app/llm/client_onboarding_executors.py.
+            **self._client_onboarding_map(),
             # India, identity and bank checks (B-387): app/llm/identity_check_executors.py.
             **self._identity_check_map(),
             # India, batch C (B-294, B-297, B-298): app/llm/india_batch_c_executors.py.
@@ -3090,10 +3093,15 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
     async def read_onboarding_scoreboard(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from app.api.onboarding_scoreboard import scoreboard
 
-        result = await scoreboard(self.session, await self._firm())
+        result = await scoreboard(self.session, await self._firm(), self.role)
         d, n = result["days_to_invest"], result["nps"]
-        result["message"] = (f"Days to invest: median {d['p50']} across {d['n']} account(s). {result['abandonment']['stalled']} stalled. "
+        result["message"] = ((f"Days to invest: median {d['p50']} across {d['n']} account(s). " if d["n"] else "Days to invest: not measured. ")
+                             + f"{result['abandonment']['stalled']} stalled. "
                              + (f"NPS {n['nps']} from {n['responses']} answer(s)." if n["nps"] is not None else "NPS not measured."))
+        if result.get("india"):
+            from app.aurea_core import india_scoreboard
+
+            result["message"] += " " + india_scoreboard.said(result["india"])
         return result
 
     async def record_onboarding_feedback(self, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -3104,7 +3112,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             await onboarding_scoreboard.record_feedback(self.session, self.firm_id, by=await self._shelf_user(), **self._feedback_args(inputs))
         except onboarding_scoreboard.ScoreboardError as exc:
             raise ExecutorError(str(exc))
-        result = await scoreboard(self.session, await self._firm())
+        result = await scoreboard(self.session, await self._firm(), self.role)
         result["message"] = "Recorded."
         return result
 

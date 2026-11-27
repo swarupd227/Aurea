@@ -2,7 +2,11 @@
 
 import { Card, ErrorState, SkeletonList } from "@/components/ui";
 import { useApi } from "@/lib/hooks";
+import { MeasureBlock, OfficerChips } from "@/app/workspace/components/artifacts/IndiaOnboardingMeasures";
 import { ViewHeader } from "./ViewHeader";
+import { ViewLink } from "./ViewNav";
+
+const US_RACI = [{ key: "R", label: "Responsible" }, { key: "A", label: "Accountable" }, { key: "C", label: "Consulted" }, { key: "I", label: "Informed" }];
 
 const th = "px-4 py-2 font-medium";
 const days = (x: number | null | undefined) => (x == null ? "—" : `${x}d`);
@@ -17,9 +21,22 @@ export function OnboardingScoreboardView() {
     ["Days to invest, median", d.n ? days(d.p50) : "—"], ["NPS", n.nps != null ? `${n.nps} (${n.responses})` : "not measured"],
     ["Screening alert rate", sc.alert_rate_pct != null ? `${sc.alert_rate_pct}%` : "—"], ["Accounts per ops person, 90d", cap.accounts_per_operations_person != null ? String(cap.accounts_per_operations_person) : "—"],
   ];
+  const india = data.india;
+  // India has its own matrix (the module's columns); elsewhere it is responsible, accountable, consulted, informed.
+  const columns: { key: string; label: string }[] = data.raci_columns ?? US_RACI;
   return (
     <div className="view-container">
-      <ViewHeader title="Onboarding scoreboard" />
+      <ViewHeader title="Onboarding scoreboard" meta={india ? <>
+        <span className="chip text-ink-muted">as of {india.as_of}</span>
+        <span className="chip text-ink-muted tabular-nums">{india.assessed} of {india.metrics.length} assessed</span>
+      </> : undefined} />
+      {india && (
+        <div className="mb-4 grid grid-cols-1 gap-3 cq-lg:grid-cols-2" data-testid="india-measures">
+          {india.metrics.map((m: any) => (
+            <MeasureBlock key={m.key} m={m} link={m.view ? <ViewLink href={m.view} className="chip text-ink-muted underline-offset-2 hover:underline">Open</ViewLink> : undefined} />
+          ))}
+        </div>
+      )}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="scoreboard-tiles">
         {tiles.map(([label, v]) => <Card key={label}><div className="text-[10px] uppercase tracking-wide text-ink-muted">{label}</div><div className="font-mono text-xl text-ink">{v}</div></Card>)}
       </div>
@@ -48,13 +65,16 @@ export function OnboardingScoreboardView() {
         </table></div>
       </Card>
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-border-soft px-4 py-2 text-sm font-medium text-ink">Who does what</div>
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border-soft px-4 py-2">
+          <span className="mr-auto text-sm font-medium text-ink">Who does what</span>
+          {india && <OfficerChips officers={india.officers} />}
+        </div>
         <div className="overflow-x-auto"><table className="w-full text-sm" data-testid="scoreboard-raci">
-          <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Activity</th><th className={th}>Responsible</th><th className={th}>Accountable</th><th className={th}>Consulted</th><th className={th}>Informed</th></tr></thead>
+          <thead><tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted"><th className={th}>Activity</th>{columns.map((c) => <th key={c.key} className={th}>{c.label}</th>)}</tr></thead>
           <tbody className="divide-y divide-border-soft">
             {data.raci.map((r: any) => (
-              <tr key={r.activity}><td className="px-4 py-2 text-ink">{r.activity}</td><td className="px-4 py-2 text-xs">{r.R}</td><td className="px-4 py-2 text-xs">{r.A}</td>
-                <td className="px-4 py-2 text-xs text-ink-muted">{r.C}</td><td className="px-4 py-2 text-xs text-ink-muted">{r.I}</td></tr>
+              <tr key={r.activity}><td className="px-4 py-2 text-ink">{r.activity}</td>
+                {columns.map((c, i) => <td key={c.key} className={`px-4 py-2 text-xs ${i > 1 ? "text-ink-muted" : ""}`}>{r[c.key]}</td>)}</tr>
             ))}
           </tbody>
         </table></div>

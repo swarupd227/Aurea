@@ -15,6 +15,7 @@ import { ViewLink } from "./ViewNav";
 import { AllClients, ViewHeader } from "./ViewHeader";
 import { ChannelRequests } from "@/app/workspace/components/artifacts/IndiaRemECard";
 import { MyKycPeople } from "@/app/workspace/components/artifacts/IndiaKycRegistryCard";
+import { MyOnboardingAccounts } from "@/app/workspace/components/artifacts/MyOnboardingCard";
 
 const ROUTE = "/canvas";
 
@@ -93,6 +94,8 @@ function Page({ householdId }: { householdId: string | null }) {
   const channels = useApi<any>(householdId === null ? "/api/canvas/channels" : null, [householdId]);
   // India: the household's own KYC registry status, reasons and steps. Absent elsewhere.
   const kyc = useApi<any>(`/api/canvas/kyc${qs}`, [qs]);
+  // India: the step each of the household's accounts has reached (B-392). Absent elsewhere, and where none is on file.
+  const opening = useApi<any>(`/api/canvas/onboarding${qs}`, [qs]);
   const [channelBusy, setChannelBusy] = useState(false);
   const [channelSent, setChannelSent] = useState<string | null>(null);
   const [requestBusy, setRequestBusy] = useState(false);
@@ -258,6 +261,13 @@ function Page({ householdId }: { householdId: string | null }) {
           )}
         </Card>
       </div>
+
+      {opening.data?.applies && opening.data.accounts?.length > 0 && (!householdId || opening.data.household_id === householdId) && (
+        <Card className="mb-4 overflow-hidden p-0" data-testid="canvas-onboarding">
+          <div className="border-b border-border-soft px-3 py-2 text-sm font-medium text-ink">{client ? "Your accounts" : "Accounts opening"}</div>
+          <MyOnboardingAccounts accounts={opening.data.accounts} />
+        </Card>
+      )}
 
       {kyc.data?.applies && (!householdId || kyc.data.household_id === householdId) && (
         <Card className="mb-4 overflow-hidden p-0" data-testid="canvas-kyc">

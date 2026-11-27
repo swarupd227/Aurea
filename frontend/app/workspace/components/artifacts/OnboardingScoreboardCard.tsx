@@ -1,3 +1,5 @@
+import { MeasureSummary } from "./IndiaOnboardingMeasures";
+
 export function OnboardingScoreboardCard({ result }: { result: any }) {
   const d = result.days_to_invest, n = result.nps, sc = result.screening, ab = result.abandonment;
   return (
@@ -10,6 +12,7 @@ export function OnboardingScoreboardCard({ result }: { result: any }) {
         <span className="chip">Alert rate {sc.alert_rate_pct != null ? `${sc.alert_rate_pct}%` : "—"}</span>
         <span className={`chip ${n.nps == null ? "text-ink-muted" : ""}`}>NPS {n.nps != null ? n.nps : "not measured"}</span>
       </div>
+      {result.india && <div className="border-t border-border-soft"><MeasureSummary india={result.india} /></div>}
     </div>
   );
 }

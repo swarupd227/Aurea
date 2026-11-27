@@ -30,6 +30,18 @@ from app.models.onboarding import OnboardingCase
 from app.models.tenant import Firm
 
 DUE_SOON = 30
+# A minor's conversion is raised a year before the birthday (B-392, L200-1 India section 10), with what it takes.
+MAJORITY_CHECKLIST = ("Before the birthday: a fresh KYC in the young adult's own name and a bank account in their own name; the conversion "
+                      "is then recorded from the signed form")
+
+
+def year_before(day: date) -> date:
+    try:
+        return day.replace(year=day.year - 1)
+    except ValueError:      # 29 February
+        return date(day.year - 1, 3, 1)
+
+
 ADVANCE_TAX = ((6, 15, "15%"), (9, 15, "45%"), (12, 15, "75%"), (3, 15, "100%"))
 STATE_ORDER = {"overdue": 0, "due_soon": 1, "upcoming": 2, "in_force": 3, "not_dated": 4}
 RULE_CHANGES = (("in_pm_regs_2026_start", "Portfolio Managers Regulations 2026 apply", ("pms_discretionary", "pms_non_discretionary", "pms_advisory")),
@@ -158,8 +170,10 @@ async def household_items(session: AsyncSession, firm: Firm, household_id: uuid.
         g = await guardianship.standing(session, firm.id, p.id)
         s = guardianship.status_of(p, g, today, await guardianship.conversion_of(session, firm.id, p.id))
         if s.get("minor") and s.get("majority_on"):
-            items.append(_item("majority", f"{p.full_name} reaches majority: the account is converted", date.fromisoformat(s["majority_on"]), today,
-                               source=guardianship.CITATION, detail="Nothing converts the account here; the guardian's authority ends"))
+            turns = date.fromisoformat(s["majority_on"])
+            items.append(_item("majority", f"{p.full_name} reaches majority: the account is converted", turns, today,
+                               source=guardianship.CITATION, detail="Nothing converts the account here; the guardian's authority ends",
+                               extra={"remind_within": (turns - year_before(turns)).days, "checklist": MAJORITY_CHECKLIST}))
         elif s.get("state") == "attained_majority":
             items.append(_item("majority", f"{p.full_name} is now an adult: convert the account", date.fromisoformat(s["majority_on"]), today,
                                source=guardianship.CITATION, state="overdue",

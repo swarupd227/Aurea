@@ -104,6 +104,18 @@ async def canvas_kyc(
     return await kyc_registry.for_client(db, firm, hid)
 
 
+@router.get("/onboarding")
+async def canvas_onboarding(
+    household_id: uuid.UUID | None = None,
+    user: User = Depends(get_current_user), firm: Firm = Depends(current_firm), db: AsyncSession = Depends(get_db),
+):
+    """India: the step each of this household's accounts has reached, in plain words (B-392)."""
+    from app.aurea_core import client_onboarding
+
+    hid = await _resolve_household(db, user, household_id)
+    return await client_onboarding.for_client(db, firm, hid)
+
+
 # The client's questions go to the conversation (POST /api/threads), with the client's own tools in
 # app.core.tools (CLIENT_TOOLS): the one-shot assistant that answered from a snapshot in its prompt is retired.
 
