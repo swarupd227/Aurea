@@ -60,7 +60,7 @@ async def measures_route(household: uuid.UUID | None = None, user: User = Reader
     if household is None:
         out = await planning_measures.for_firm(session, firm)
     else:
-        out = await planning_measures.for_household(session, firm, household)
+        out = await planning_measures.for_household(session, household, firm_id=firm.id)
         if out is None:
             raise HTTPException(status_code=404, detail="Household not found.")
     return {**out, "can_record": user.role in planning_measures.RECORDERS}

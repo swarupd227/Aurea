@@ -319,9 +319,11 @@ def _chip(state: str) -> str:
     return STATE_LABELS[state]
 
 
-async def for_household(session: AsyncSession, firm: Firm, household_id: uuid.UUID) -> dict | None:
+async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_id: uuid.UUID) -> dict | None:
+    """One household's four steps and each measure's figures, or None where it is not this firm's."""
+    firm = await session.get(Firm, firm_id)
     household = await session.get(Household, household_id)
-    if household is None or household.firm_id != firm.id:
+    if firm is None or household is None or household.firm_id != firm_id:
         return None
     if not applies(firm) or not _indian(firm, household):
         return {"applies": False, "scope": "household", "household_id": str(household_id), "household": household.name,
@@ -351,7 +353,7 @@ async def for_firm(session: AsyncSession, firm: Firm) -> dict:
         return {"applies": False, "scope": "firm", "why": "These measures are India's: they are read for an Indian firm."}
     homes = (await session.execute(select(Household).where(Household.firm_id == firm.id, Household.left_on.is_(None))
                                    .order_by(Household.name))).scalars().all()
-    views = [await for_household(session, firm, h.id) for h in homes]
+    views = [await for_household(session, h.id, firm_id=firm.id) for h in homes]
     views = [v for v in views if v and v["applies"]]
     n = len(views)
 

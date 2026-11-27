@@ -50,7 +50,7 @@ class PlanningMeasureExecutors:
 
         firm = await self._firm()
         if inputs.get("household_id"):
-            result = await planning_measures.for_household(self.session, firm, _parse_uuid(inputs["household_id"], "household_id"))
+            result = await planning_measures.for_household(self.session, _parse_uuid(inputs["household_id"], "household_id"), firm_id=self.firm_id)
             if result is None:
                 raise ExecutorError("Household not found or access denied")
         else:
@@ -84,7 +84,7 @@ class PlanningMeasureExecutors:
             row = await planning_measures.record_fund(self.session, firm, self.role, by=await self._shelf_user(), **_terms(inputs))
         except planning_measures.MeasureError as exc:
             raise ExecutorError(str(exc))
-        result = await planning_measures.for_household(self.session, firm, row.household_id)
+        result = await planning_measures.for_household(self.session, row.household_id, firm_id=self.firm_id)
         say = markets.money_for(firm)
         result["message"] = (f"Recorded the emergency fund: {say(float(row.held_amount))} set aside against a {say(float(row.target_amount))} "
                              "target. It moves no money.")

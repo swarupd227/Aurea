@@ -374,7 +374,7 @@ async def run(s) -> None:
         covers = sorted((p["person"], p["sum_insured"]) for p in life["policies"] if p["kind"] == "life" and p["status"] == "in_force"
                         and p["sum_insured"] >= 10_000_000)
         check("term cover of Rs 3 crore and Rs 1.5 crore placed", covers, [("Anjali Mehta", 15_000_000.0), ("Vivek Mehta", 30_000_000.0)])
-        m = await pm.for_household(s, firm, mehta.id)
+        m = await pm.for_household(s, mehta.id, firm_id=firm.id)
         check("the family has cover of its own, and a parent is read apart",
               (m["protection"]["health"]["own"], m["protection"]["health"]["members"]), (4, 4))
         e = m["emergency_fund"]
@@ -461,7 +461,7 @@ async def run(s) -> None:
 
     # ── 5 ────────────────────────────────────────────────────────────────────
     async def measures():
-        m = await pm.for_household(s, firm, mehta.id)
+        m = await pm.for_household(s, mehta.id, firm_id=firm.id)
         check("the order is protection, emergency fund, documents, investing", [x["key"] for x in m["order"]],
               ["protection", "emergency_fund", "documents", "investing"])
         states = {x["key"]: x["state"] for x in m["order"]}
@@ -471,7 +471,7 @@ async def run(s) -> None:
         check("the step-up share is one of three, and the mandates are in force",
               (m["sip_health"]["step_up_registered"], m["sip_health"]["active"], m["sip_health"]["mandate_in_force"]), (1, 3, 3))
         sharma = await home("The Sharma Family")
-        sm = await pm.for_household(s, firm, sharma.id)
+        sm = await pm.for_household(s, sharma.id, firm_id=firm.id)
         fails = sm["sip_health"]["failures"]
         check("a failed mandate is counted open until put right", (fails["ever"] >= 1, fails["open"] >= 1, fails["recovered"] <= fails["ever"]),
               (True, True, True))
@@ -482,11 +482,11 @@ async def run(s) -> None:
         failed = (await s.execute(select(DebitMandate).where(DebitMandate.reference == "UPI-REQ-DEMO-SHARMA-1", DebitMandate.kind == "failed"))).scalars().one()
         await sip_mandates.record(s, firm, UserRole.OPERATIONS, by="ops", account_id=failed.account_id, reference="UPI-DEMO-RETRY-1",
                                   mandate_type="upi_autopay", per_debit_limit=15_000, starts_on=today, last4="2204", document="Mandate registration, filed")
-        again = (await pm.for_household(s, firm, sharma.id))["sip_health"]["failures"]
+        again = (await pm.for_household(s, sharma.id, firm_id=firm.id))["sip_health"]["failures"]
         check("and counted recovered once a later registration stands", (again["open"], again["recovered"]), (fails["open"] - 1, fails["recovered"] + 1))
-        iyer = await pm.for_household(s, firm, (await home("The Iyer Family")).id)
+        iyer = await pm.for_household(s, (await home("The Iyer Family")).id, firm_id=firm.id)
         check("a complete fund is done", (iyer["emergency_fund"]["state"], iyer["emergency_fund"]["share"]), ("done", 1.0))
-        banerjee = await pm.for_household(s, firm, (await home("The Banerjee Household")).id)
+        banerjee = await pm.for_household(s, (await home("The Banerjee Household")).id, firm_id=firm.id)
         check("none on file is not assessed, never zero", (banerjee["emergency_fund"]["state"], banerjee["emergency_fund"]["share"],
                                                           banerjee["emergency_fund"]["held"]), ("not_assessed", None, None))
         check("a fund with nothing set aside is building at 0%",
@@ -507,16 +507,16 @@ async def run(s) -> None:
         for p in (vivek, anjali):
             await client_file.record_estate_document(s, p.id, firm_id=firm.id, by="a", kind="will", signed_on=today - timedelta(days=10),
                                                      source_document="Signed will, filed", held_by=None)
-        wills = (await pm.for_household(s, firm, mehta.id))["documents"]["wills"]
+        wills = (await pm.for_household(s, mehta.id, firm_id=firm.id))["documents"]["wills"]
         check("a will never checked is on file and not current", (wills["on_file"], wills["current"], wills["share"]), (2, 0, 0.0))
         await estate_register.record_check(s, firm, by="a", person_id=vivek.id, outcome="matches", document="Adviser's note of the check")
-        docs = (await pm.for_household(s, firm, mehta.id))["documents"]
+        docs = (await pm.for_household(s, mehta.id, firm_id=firm.id))["documents"]
         check("a checked will counts", (docs["wills"]["current"], docs["wills"]["share"], docs["state"]), (1, 0.5, "short"))
         await estate_register.record_check(s, firm, by="a", person_id=anjali.id, outcome="matches", document="Adviser's note of the check")
-        docs = (await pm.for_household(s, firm, mehta.id))["documents"]
+        docs = (await pm.for_household(s, mehta.id, firm_id=firm.id))["documents"]
         check("both checked and every nomination on file puts the step in place", (docs["state"], docs["nominations"]["share"]), ("done", 1.0))
         reg = await estate_register.household_register(s, firm, sharma.id)
-        theirs = (await pm.for_household(s, firm, sharma.id))["documents"]["nominations"]
+        theirs = (await pm.for_household(s, sharma.id, firm_id=firm.id))["documents"]["nominations"]
         check("the measure and the register agree on what is missing", theirs["assets"] - theirs["covered"], reg["counts"]["missing_nominations"])
 
         tools = {r: ToolExecutors(s, users[r].id, r, firm.id) for r in (UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.OPERATIONS)}
@@ -580,7 +580,7 @@ async def run(s) -> None:
         from app.api import financial_plan as api
 
         got = await api.measures_route(household=mehta.id, user=users[UserRole.ADVISER], firm=firm, session=s)
-        check("the page's route reads the same", (got["next"], got["can_record"]), ((await pm.for_household(s, firm, mehta.id))["next"], True))
+        check("the page's route reads the same", (got["next"], got["can_record"]), ((await pm.for_household(s, mehta.id, firm_id=firm.id))["next"], True))
 
     await section("6. The tools, the pane and the page", tools_and_views)
 
