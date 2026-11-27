@@ -41,7 +41,7 @@ KINDS: dict[str, dict] = {
     "ssy": {"label": "Sukanya Samriddhi Account", "asset_class": "fixed_income", "rules": ["in_ssy_rule"], "administered": True, "details": ["opened_on"]},
     "scss": {"label": "Senior Citizens' Savings Scheme", "asset_class": "fixed_income", "rules": ["in_scss_rule"], "administered": True, "details": ["opened_on"]},
     "nsc": {"label": "National Savings Certificate", "asset_class": "fixed_income", "rules": ["in_nsc_rule"], "administered": True, "details": ["opened_on"]},
-    "nps": {"label": "National Pension System account", "asset_class": "multi_asset", "rules": ["in_nps_rule"], "administered": False, "details": ["tier"]},
+    "nps": {"label": "National Pension System account", "asset_class": "multi_asset", "rules": ["in_nps_rule"], "administered": False, "details": ["tier", "equity_share_percent"]},
     "epf": {"label": "Employees' Provident Fund", "asset_class": "fixed_income", "rules": ["in_epf_rule"], "administered": True, "details": ["employer"]},
     "g_sec": {"label": "Government security (RBI Retail Direct)", "asset_class": "fixed_income", "rules": ["in_gsec_rule"], "administered": False, "details": []},
     "listed_bond": {"label": "Listed bond", "asset_class": "fixed_income", "rules": [], "administered": False, "details": ["issuer"]},
@@ -134,6 +134,14 @@ async def prepare(session: AsyncSession, firm: Firm, role, *, household_id, kind
             extra["fund_management_charge"] = float(str(extra["fund_management_charge"]).replace("%", ""))
         except ValueError:
             raise SavingsError("The fund management charge is a percentage a year, as the policy states it.")
+    if "equity_share_percent" in extra:
+        try:
+            share = float(str(extra["equity_share_percent"]).replace("%", ""))
+        except ValueError:
+            raise SavingsError("The equity share is a percentage, as the statement shows it.")
+        if not 0 <= share <= 100:
+            raise SavingsError("The equity share is a percentage between 0 and 100, as the statement shows it.")
+        extra["equity_share_percent"] = share
     existing = (await session.execute(select(HeldAwayHolding).where(
         HeldAwayHolding.household_id == hid, HeldAwayHolding.firm_id == firm.id, HeldAwayHolding.status == "current",
         HeldAwayHolding.institution == (institution or "").strip(),

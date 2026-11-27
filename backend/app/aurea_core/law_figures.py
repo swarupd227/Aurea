@@ -571,6 +571,34 @@ ALL: tuple[LawFigure, ...] = (
               date(2026, 11, 27)),
     LawFigure("in_same_owner_transfer_rule", "An off-market transfer between one person's own demat accounts is not a sale: the cost and the holding period carry; a gift is a transfer with its own tax treatment",
               None, "rule", "ASSUMED: the L200-1 India edition (Nov 2026) section 6.2; the Income-tax Act's provision on what is a transfer was not re-read", date(2026, 11, 27)),
+    # ── India: the retirement stack inside the projection (B-395). From the L200-2 India edition section 4; no regulation or Act was
+    # re-read, so every row is ASSUMED and stands "not reviewed" in the counsel tracker.
+    LawFigure("in_nps_exit_age", "NPS Tier I: the age at which the account is taken to exit", 60, "years",
+              "ASSUMED: PFRDA exit regulations as stated in the L200-2 India edition (Nov 2026) section 4 (locked to 60); the regulations were not re-read, "
+              "and a premature or deferred exit has its own rules, not encoded", date(2026, 11, 27)),
+    LawFigure("in_nps_lump_share", "NPS Tier I at exit: the share of the corpus taken as a lump sum", 0.60, "rate",
+              "ASSUMED: PFRDA exit regulations as stated in the L200-2 India edition (Nov 2026) section 4 (60% withdraws); not re-read. A later PFRDA "
+              "amendment is believed to let some subscribers take more and buy a smaller annuity: it was not read and is not encoded, so verify before "
+              "client use", date(2026, 11, 27)),
+    LawFigure("in_nps_annuity_share", "NPS Tier I at exit: the share of the corpus that buys an annuity", 0.40, "rate",
+              "ASSUMED: PFRDA exit regulations as stated in the L200-2 India edition (Nov 2026) section 4 (40% must buy an annuity); not re-read. The "
+              "smaller shares for a small corpus or under a later amendment were not read and are not encoded, so verify before client use",
+              date(2026, 11, 27)),
+    LawFigure("in_nps_lump_tax_rule", "NPS at exit: the lump sum of up to 60% of the corpus is exempt from income tax; what is taken above that is not "
+              "worked out here", None, "rule",
+              "ASSUMED: Income-tax Act 1961 s.10(12A) as understood, and the L200-2 India edition (Nov 2026) section 4 ('60 percent withdraws tax-free'); "
+              "the Income-tax Act 2025's renumbered provision was not read", date(2026, 11, 27)),
+    LawFigure("in_nps_annuity_tax_rule", "NPS annuity: the amount that buys it is not taxed at exit; the annuity paid is income taxed at slab in the year "
+              "it is received", None, "rule",
+              "ASSUMED: Income-tax Act 1961 s.80CCD(3) and (5) as understood, and the L200-2 India edition (Nov 2026) section 4 (annuity income taxable at "
+              "slab); the Income-tax Act 2025's renumbered provisions were not read", date(2026, 11, 27)),
+    LawFigure("in_ppf_annual_cap", "Public Provident Fund: the most one person deposits in a financial year", 150_000, "INR",
+              "ASSUMED: Public Provident Fund Scheme 2019 as stated in the L200-2 India edition (Nov 2026) section 4; the Scheme was not re-read",
+              date(2026, 11, 27)),
+    LawFigure("in_ups_rule", "Unified Pension Scheme: an assured-pension option beside NPS for central government staff, recorded here as a "
+              "membership; its pension is not worked out", None, "rule",
+              "ASSUMED: the L200-2 India edition (Nov 2026) section 4.2, which says to verify current terms; the notification was not read",
+              date(2026, 11, 27)),
     LawFigure("in_stamp_duty_securities_transfer", "Stamp duty on a transfer of securities other than debentures on a delivery basis, share of the consideration", 0.00015, "rate",
               "ASSUMED: Indian Stamp Act 1899, Schedule I, as amended with effect from 1 July 2020, as understood; the L200-1 India edition (section 6.2) says duty "
               "'where applicable' and gives no rate; the Act was not re-read", date(2026, 11, 27), applies_from=date(2020, 7, 1)),

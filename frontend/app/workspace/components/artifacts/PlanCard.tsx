@@ -50,13 +50,20 @@ export function PlanCard({ result }: { result: any }) {
           {r?.band && bandChip[r.band] && <span className={`chip ${bandChip[r.band][1]}`}>{bandChip[r.band][0]}</span>}
           {f?.ratio != null && (
             <span className="chip tabular-nums text-ink-muted">
-              {money(f.assets)} / {money(f.pv_needs)} · {pct1(f.discount_rate)} {f.discount_whose === "firm" ? "firm rate" : "cash return"}
+              {money(f.assets)}{f.stack_assets != null ? ` book + ${money(f.stack_assets)} retirement stack` : ""} / {money(f.pv_needs)} · {pct1(f.discount_rate)} {f.discount_whose === "firm" ? "firm rate" : "cash return"}
             </span>
           )}
           {f?.tiers === "not_on_file" && <span className="chip text-ink-muted">no goal tiers · every goal counted</span>}
           {r?.failed_shortfall_today ? (
             <span className="chip tabular-nums text-warn">failed paths · out at {r.median_depletion_age} · {money(r.failed_shortfall_today)} unpaid</span>
           ) : null}
+        </div>
+      )}
+      {r?.stack && (
+        <div className="flex flex-wrap gap-1.5 border-t border-border-soft px-3 py-2" data-testid="plan-card-stack">
+          <span className="chip tabular-nums text-ink-muted">retirement stack {money(r.stack.value_on_file)} held elsewhere</span>
+          <span className="chip tabular-nums text-ink">success {Math.round(r.stack.with.success_probability * 100)}% with · {Math.round(r.stack.without.success_probability * 100)}% without</span>
+          {f?.ratio_without_stack != null && <span className="chip tabular-nums text-ink-muted">funded {f.ratio_without_stack.toFixed(2)} without</span>}
         </div>
       )}
       {result.inputs && (

@@ -188,6 +188,7 @@ export function GoalSizingChips({ result }: { result: any }) {
       <span className="chip text-ink-muted" title={result.basis}>about an even chance</span>
       {result.step_up_percent == null && <span className="chip text-ink-muted">step-up not stated</span>}
       <span className="chip tabular-nums text-ink" data-testid="goal-sizing-household-funded">household funded {f.ratio != null ? f.ratio.toFixed(2) : "not assessed"}</span>
+      {f.ratio_without_stack != null && <span className="chip tabular-nums text-ink-muted">{f.ratio_without_stack.toFixed(2)} without the retirement stack</span>}
     </>
   );
 }

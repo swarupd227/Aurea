@@ -56,40 +56,110 @@ def _added(annual_contribution: float | list[float], year: int) -> float:
     return annual_contribution
 
 
+class _Sleeves:
+    """Accounts kept apart from the portfolio until they can be drawn (India's retirement stack, B-395). Each is a pot on
+    its own return, moving with the portfolio's good and bad years (the same standard normal draw, so the portfolio's own
+    returns are what they are without them). When one unlocks, its capital share joins the portfolio and its annuity share
+    pays a level yearly amount from then on; an annuity share with no rate is not counted.
+
+    A sleeve is {value, mu, sigma, crash, add (saved into it in each working year), unlock_after (years from today before
+    it can be drawn; never before retirement), capital (share that joins the portfolio), annuity_per_unit (yearly income
+    for each unit of the pot at unlock)}."""
+
+    def __init__(self, sleeves: list[dict], *, sims: int, acc_years: int):
+        self.sleeves, self.acc, self.sims = sleeves, acc_years, sims
+        self.pots = [np.full(sims, float(s["value"])) for s in sleeves]
+        self.annuity = np.zeros(sims)
+        self.unlock = [max(int(s["unlock_after"]) - acc_years, 0) for s in sleeves]   # the retirement year, from 0
+        self.released: dict[int, float] = {}
+
+    def grow(self, z, year: int | None = None, crash: bool = False) -> None:
+        """One year on every account still apart; `year` is the working year whose saving goes in (none in retirement)."""
+        for i, s in enumerate(self.sleeves):
+            if i in self.released:
+                continue
+            r = s["crash"] if crash else s["mu"] + s["sigma"] * z
+            saved = _added(s["add"], year) if year is not None else 0.0
+            self.pots[i] = np.maximum(self.pots[i] * (1 + r) + saved, 0.0)
+
+    def release(self, y: int):
+        """What joins the portfolio at the start of retirement year `y`; the annuity it starts is added to `annuity`."""
+        joined = np.zeros(self.sims)
+        for i, s in enumerate(self.sleeves):
+            if i in self.released or self.unlock[i] != y:
+                continue
+            self.released[i] = float(np.median(self.pots[i]))
+            joined = joined + self.pots[i] * s["capital"]
+            self.annuity = self.annuity + self.pots[i] * s["annuity_per_unit"]
+            self.pots[i] = np.zeros(self.sims)
+        return joined
+
+    def accounts(self) -> list[dict]:
+        return [{"median": self.released.get(i), "release_in_years": self.acc + self.unlock[i] if i in self.released else None}
+                for i in range(len(self.sleeves))]
+
+
 def _simulate(
     current_value: float, mu: float, sigma: float, *, acc_years: int, draws: list[float],
     annual_contribution: float | list[float], sims: int, seed: int, first_year_shock: float | None = None,
+    sleeves: list[dict] | None = None,
 ) -> dict:
     rng = np.random.default_rng(seed)
     paths = np.full(sims, float(current_value))
+    stack = _Sleeves(sleeves, sims=sims, acc_years=acc_years) if sleeves else None
     for year in range(acc_years):
         shocks = rng.normal(mu, sigma, sims)
         paths = np.maximum(paths * (1 + shocks) + _added(annual_contribution, year), 0.0)
+        if stack:
+            stack.grow((shocks - mu) / sigma, year)
+    at_start = 0.0
+    if stack:
+        joined = stack.release(0)
+        paths = paths + joined
+        at_start = float(np.median(joined))
     at_retirement = paths.copy()
 
     depletion = np.full(sims, -1)  # year index of depletion in retirement; -1 = survived
     balance: list[tuple[int, float, float, float]] = []
+    path: list[dict] = []
     for y, withdrawal in enumerate(draws):
-        if first_year_shock is not None and y == 0:
+        released = at_start if y == 0 else 0.0
+        if stack and y:
+            joined = stack.release(y)
+            paths = paths + joined
+            released = float(np.median(joined))
+        crash = first_year_shock is not None and y == 0
+        if crash:
             shocks = np.full(sims, first_year_shock)
         else:
             shocks = rng.normal(mu, sigma, sims)
-        paths = paths * (1 + shocks) - withdrawal
-        newly = (paths <= 0) & (depletion < 0)
+        if stack:
+            # The annuity pays what it can of the year's draw and the portfolio the rest. A year goes unpaid only where
+            # something was still to be paid.
+            net = np.maximum(withdrawal - stack.annuity, 0.0)
+            path.append({"year": y, "draw": float(withdrawal), "annuity": float(np.median(stack.annuity)), "released": released})
+            paths = paths * (1 + shocks) - net
+            newly = ((paths < -1e-6) | ((paths <= 0) & (net > 0))) & (depletion < 0)
+            stack.grow((shocks - mu) / sigma, crash=crash)
+        else:
+            paths = paths * (1 + shocks) - withdrawal
+            newly = (paths <= 0) & (depletion < 0)
         depletion = np.where(newly, y, depletion)
         paths = np.maximum(paths, 0.0)
         p10, med, p90 = np.percentile(paths, [10, 50, 90])
         balance.append((y, float(p10), float(med), float(p90)))
 
     return {
-        "success": float(np.mean(paths > 0)),
+        # With accounts still apart the portfolio may be empty and refill, so success is never having gone unpaid.
+        "success": float(np.mean(depletion < 0)) if stack else float(np.mean(paths > 0)),
         "end": paths, "at_retirement": at_retirement, "depletion": depletion, "balance": balance,
+        **({"accounts": stack.accounts(), "stack_at_retirement": at_start, "path": path} if stack else {}),
     }
 
 
 def simulate_guardrails(
     current_value: float, mu: float, sigma: float, *, acc_years: int, dec_years: int, annual_contribution: float | list[float], sims: int,
-    seed: int, inflation: float, terms: dict, start_rate: float,
+    seed: int, inflation: float, terms: dict, start_rate: float, sleeves: list[dict] | None = None,
 ) -> dict:
     """Spending that follows guardrails on the withdrawal rate (B-180), on the same random returns as `_simulate`.
 
@@ -100,9 +170,14 @@ def simulate_guardrails(
     is not governed here. Nothing changes spending by itself: this is a run, beside fixed spending, for the client to see."""
     rng = np.random.default_rng(seed)
     paths = np.full(sims, float(current_value))
+    stack = _Sleeves(sleeves, sims=sims, acc_years=acc_years) if sleeves else None
     for year in range(acc_years):
         shocks = rng.normal(mu, sigma, sims)
         paths = np.maximum(paths * (1 + shocks) + _added(annual_contribution, year), 0.0)
+        if stack:
+            stack.grow((shocks - mu) / sigma, year)
+    if stack:
+        paths = paths + stack.release(0)
     at_retirement = paths.copy()
     upper, lower = start_rate * (1 + terms["upper_band"]), start_rate * (1 - terms["lower_band"])
     draw = np.zeros(sims)
@@ -115,6 +190,8 @@ def simulate_guardrails(
     lowest = np.ones(sims)
     depleted = np.full(sims, -1)
     for y in range(dec_years):
+        if stack and y:
+            paths = paths + stack.release(y)
         pot = paths
         alive = pot > 0
         if y == 0:
@@ -134,22 +211,26 @@ def simulate_guardrails(
         lowest = np.where(alive, np.minimum(lowest, real_ratio), lowest)
         shocks = rng.normal(mu, sigma, sims)
         prev_return = shocks
-        paths = pot * (1 + shocks) - draw
-        newly = (paths <= 0) & (depleted < 0)
+        # An annuity from the stack pays part of the draw.
+        net = np.maximum(draw - stack.annuity, 0.0) if stack else draw
+        paths = pot * (1 + shocks) - net
+        newly = (((paths < -1e-6) | ((paths <= 0) & (net > 0))) if stack else (paths <= 0)) & (depleted < 0)
+        if stack:
+            stack.grow((shocks - mu) / sigma)
         depleted = np.where(newly, y, depleted)
         paths = np.maximum(paths, 0.0)
-    return {"success": float(np.mean(paths > 0)), "at_retirement": at_retirement, "first_draw": first, "cuts": cuts, "raises": raises,
+    return {"success": float(np.mean(depleted < 0)) if stack else float(np.mean(paths > 0)), "at_retirement": at_retirement, "first_draw": first, "cuts": cuts, "raises": raises,
             "alive_years": alive_years, "cut_years": cut_years, "lowest": lowest, "depleted": depleted, "end": paths}
 
 
 def guardrail_block(*, current_value: float, mu: float, sigma: float, acc: int, dec: int, annual_contribution: float, sims: int, seed: int,
-                    inflation: float, terms: dict, fixed: dict, retirement_age: int) -> dict:
+                    inflation: float, terms: dict, fixed: dict, retirement_age: int, sleeves: list[dict] | None = None) -> dict:
     """The guardrail run beside the plan's fixed spending: starting income, success, and how often and how deep cuts come."""
     median_pot = float(np.median(fixed["at_retirement"]))
     derived = terms.get("start_rate") is None
     rate = float(terms["start_rate"]) if not derived else (fixed["first_draw"] / median_pot if median_pot > 0 else 0.0)
     run = simulate_guardrails(current_value, mu, sigma, acc_years=acc, dec_years=dec, annual_contribution=annual_contribution, sims=sims, seed=seed,
-                              inflation=inflation, terms=terms, start_rate=rate)
+                              inflation=inflation, terms=terms, start_rate=rate, sleeves=sleeves)
     infl_to_ret = (1 + inflation) ** acc
     n = max(len(run["cuts"]), 1)
     failed = run["depleted"][run["depleted"] >= 0]
@@ -232,6 +313,7 @@ def retirement_plan(
     success_ceiling: float | None = None,
     costs_by_t: dict | None = None,
     guardrails: dict | None = None,
+    sleeves: list[dict] | None = None,
 ) -> dict:
     """Full retirement projection + sustainable income + sequence risk + levers.
 
@@ -257,13 +339,15 @@ def retirement_plan(
     income_at_ret = draws[0]
 
     base = _simulate(current_value, mu, sigma, acc_years=acc, draws=draws,
-                     annual_contribution=annual_contribution, sims=sims, seed=seed)
+                     annual_contribution=annual_contribution, sims=sims, seed=seed, sleeves=sleeves)
+    # What an annuity out of the stack pays at the median in each retirement year: nothing without one.
+    annuity = [p["annuity"] for p in base["path"]] if sleeves else [0.0] * len(draws)
 
     failed = base["depletion"][base["depletion"] >= 0]
     median_depletion_age = int(retirement_age + np.median(failed) + 1) if failed.size else None
     # How bad a failure is (B-177): on the paths that run out, what is left unpaid from that year to the end, in
     # today's money, and its median. The age it starts is the median depletion age.
-    deflated = np.array([d / (1 + inflation) ** (acc + k + 1) for k, d in enumerate(draws)])
+    deflated = np.array([max(d - annuity[k], 0.0) / (1 + inflation) ** (acc + k + 1) for k, d in enumerate(draws)])
     unpaid_from = np.cumsum(deflated[::-1])[::-1]
     failed_shortfall_today = round(float(np.median(unpaid_from[failed.astype(int)]))) if failed.size else None
     # What the portfolio must pay over retirement, discounted to today at the assumption set's rate.
@@ -274,7 +358,7 @@ def retirement_plan(
     # the first year's draw on the portfolio so it reads beside `income_target`.
     def success_for_income(need_today: float, alloc_mu=mu, alloc_sigma=sigma) -> float:
         return _simulate(current_value, alloc_mu, alloc_sigma, acc_years=acc, draws=draws_for(need_today),
-                         annual_contribution=annual_contribution, sims=1200, seed=seed)["success"]
+                         annual_contribution=annual_contribution, sims=1200, seed=seed, sleeves=sleeves)["success"]
 
     lo, hi = 0.0, max(annual_income * 2.5, proj_at_ret * 0.09, 1.0) + sum(s["annual"] for s in streams)
     for _ in range(16):
@@ -291,8 +375,9 @@ def retirement_plan(
     crash_return = sum((v / tot) * gfc.get(c, 0.0) for c, v in allocation.items())
     seq = _simulate(current_value, mu, sigma, acc_years=acc, draws=draws,
                     annual_contribution=annual_contribution, sims=sims, seed=seed,
-                    first_year_shock=crash_return)
-    illustration = sequence_illustration(proj_at_ret, draws, mu=mu, sigma=sigma, retirement_age=retirement_age,
+                    first_year_shock=crash_return, sleeves=sleeves)
+    illustration = sequence_illustration(proj_at_ret, [max(d - annuity[k], 0.0) for k, d in enumerate(draws)], mu=mu, sigma=sigma,
+                                         retirement_age=retirement_age,
                                          deflator=(1 + inflation) ** (acc + dec))
 
     # Guardrail spending run beside fixed spending (B-180), only when terms are given: it is a what-if and changes nothing.
@@ -300,6 +385,7 @@ def retirement_plan(
     if guardrails is not None:
         guardrail = guardrail_block(current_value=current_value, mu=mu, sigma=sigma, acc=acc, dec=dec, annual_contribution=annual_contribution,
                                     sims=sims, seed=seed, inflation=inflation, terms=guardrails, retirement_age=retirement_age,
+                                    sleeves=sleeves,
                                     fixed={"at_retirement": base["at_retirement"], "first_draw": draws[0], "success": base["success"]})
 
     # Levers the adviser can pull.
@@ -309,7 +395,7 @@ def retirement_plan(
         late_acc = max(0, late - current_age)
         s_late = _simulate(current_value, mu, sigma, acc_years=late_acc,
                            draws=draws_for(annual_income, late_acc, max(1, longevity_age - late)),
-                           annual_contribution=annual_contribution, sims=1500, seed=seed)["success"]
+                           annual_contribution=annual_contribution, sims=1500, seed=seed, sleeves=sleeves)["success"]
         levers.append({"key": "retire_later", "label": f"Retire at {late} (+{late - retirement_age}y)",
                        "success": round(s_late, 3)})
     levers.append({"key": "trim_income", "label": "Reduce income 10%",
@@ -323,6 +409,7 @@ def retirement_plan(
                        "p90": round(p90)} for (y, p10, med, p90) in base["balance"]]
 
     return {
+        **({"stack_run": {k: base[k] for k in ("accounts", "stack_at_retirement", "path")}} if sleeves else {}),
         "current_age": current_age, "retirement_age": retirement_age, "longevity_age": longevity_age,
         "years_to_retirement": acc, "years_in_retirement": dec,
         "income_target": round(income_target), "income_at_retirement": round(income_at_ret),
@@ -449,6 +536,11 @@ async def for_household(
         annual_contribution = [v + extra for v in schedule]
 
     retire_at = max(retirement_age, current_age + 1)
+    # India's retirement stack (B-395): EPF, PPF, NPS and SCSS as recorded, with what goes into them, each a named input
+    # kept apart from the managed book. None outside India or with nothing on file, and the plan is then exactly as before.
+    from app.aurea_core import retirement_stack
+
+    stack = await retirement_stack.inputs(session, await session.get(Firm, firm_id), brain, annuity_rate=overrides.get("annuity_rate"))
     # Healthcare the plan funds on top of the income (B-191): only a US household, only what the firm has stated. With
     # nothing stated this is None and the plan is exactly what it was.
     from app.aurea_core import healthcare, markets
@@ -460,7 +552,7 @@ async def for_household(
         first = today.year + (retire_at - current_age)
         last = first + max(1, max(end_age, retire_at + 1) - retire_at) - 1
         care_years = await healthcare.for_household(session, household_id, firm_id=firm_id, from_year=first, to_year=last, brain=brain)
-    plan = retirement_plan(
+    terms = dict(
         current_value=current_value, allocation=allocation, current_age=current_age,
         retirement_age=retire_at, longevity_age=max(end_age, retire_at + 1),
         annual_income=income_need, annual_contribution=annual_contribution,
@@ -471,8 +563,19 @@ async def for_household(
         target_success=planning.target_of(brain, "retirement"),
         success_ceiling=planning.ceiling_of(brain), discount_rate=planning.discount_of(brain)[0],
         costs_by_t=(care_years or {}).get("by_t"),
-        guardrails=overrides.get("guardrails"),
     )
+    plan = retirement_plan(**terms, guardrails=overrides.get("guardrails"), sleeves=(stack or {}).get("sleeves") or None)
+    run = plan.pop("stack_run", None)
+    bare = None
+    if stack is not None:
+        # The same plan without the stack: no account of it, and neither the EPS pension nor an NPS annuity.
+        bare = retirement_plan(**{**terms, "streams": [s for s in on_file["streams"]
+                                                       if s["kind"] not in retirement_stack.STREAM_KINDS]})
+        if run is None:    # pensions only: no account to keep apart
+            draws = _draws(income_need, on_file["streams"], acc=plan["years_to_retirement"], dec=plan["years_in_retirement"],
+                           inflation=terms["inflation"], costs_by_t=terms["costs_by_t"])
+            run = {"accounts": [], "stack_at_retirement": 0.0,
+                   "path": [{"year": y, "draw": d, "annuity": 0.0, "released": 0.0} for y, d in enumerate(draws)]}
     plan["healthcare"] = ({k: v for k, v in care_years.items() if k != "by_t"} if care_years else
                           {"status": "not_assessed", "reason": "The firm has stated no healthcare cost in its planning assumptions."
                            if us else "Healthcare costs are laid out for a household taxed in the US.", "years": []})
@@ -506,6 +609,10 @@ async def for_household(
     # retirement pay the income wanted until the longevity age, not whether the goal's target sum is reached.
     plan["measures"] = "retirement_income"
     plan["estimate"] = True
+    if stack is not None:
+        # The answer with the stack is the plan above; the one without it sits beside it.
+        ages = {str(p["id"]): goal_tradeoff.age_of(p.get("date_of_birth"), today) for p in brain.get("persons", [])}
+        plan["stack"] = retirement_stack.block(stack, plan, bare, run, ages)
     # How old what it works from is, and what it reads that is not on file (B-182).
     from app.aurea_core import plan_inputs  # local import avoids a cycle
 

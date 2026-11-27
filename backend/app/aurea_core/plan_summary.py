@@ -124,7 +124,9 @@ def sections(record: dict, ccy: str | None) -> list[dict]:
     f = fig.get("funded") or {}
     if f.get("ratio") is not None and f.get("assets") is not None and f.get("pv_needs") is not None:
         out.append({"heading": "How well funded the plan is",
-                    "body": f"Your assets of {money(f['assets'])} stand against needs worth {money(f['pv_needs'])} today"
+                    "body": (f"Your assets of {money(f['assets'])}" if not f.get("stack_assets") else
+                             f"Your managed assets of {money(f['assets'])} and {money(f['stack_assets'])} in provident, pension and savings "
+                             "accounts held elsewhere") + f" stand against needs worth {money(f['pv_needs'])} today"
                             + (f", valued at {float(f['discount_rate']):.1%} a year" if f.get("discount_rate") is not None else "")
                             + f": a funded ratio of {float(f['ratio']):.2f}, where 1.00 means the needs are covered."})
 

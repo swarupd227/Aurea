@@ -130,7 +130,10 @@ async def canvas_retirement(
     plan = await retirement.for_household(db, hid, firm_id=firm.id, overrides=overrides)
     if not plan:
         raise HTTPException(status_code=404, detail="No plan available")
-    return plan
+    from app.aurea_core import retirement_stack
+
+    # A client reads totals only of what is held elsewhere: no holding, statement or record (B-395).
+    return retirement_stack.for_client(plan) if user.role == UserRole.CLIENT else plan
 
 
 @router.post("/goals")

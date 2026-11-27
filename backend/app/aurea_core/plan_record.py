@@ -221,7 +221,9 @@ async def figures_of(session: AsyncSession, household_id: uuid.UUID, *, firm_id:
                   for g in likely.get("goals") or []],
         "tiers": {"success": t.get("success"), "success_basis": t.get("success_basis"), "failed_tier": t.get("failed_tier"),
                   "by_tier": {k: v.get("all_met") for k, v in (t.get("by_tier") or {}).items()}},
-        "funded": {k: f.get(k) for k in ("ratio", "assets", "pv_needs", "discount_rate", "tiers")},
+        "funded": {**{k: f.get(k) for k in ("ratio", "assets", "pv_needs", "discount_rate", "tiers")},
+                   # India's retirement stack as it stood, and the ratio without it (B-395); absent where there is none.
+                   **{k: f[k] for k in ("stack_assets", "ratio_without_stack") if k in f}},
         "inputs": {"inputs": i.get("inputs"), "dated": i.get("dated"), "undated": i.get("undated"),
                    "older_than_line": i.get("older_than_line"), "line_days": i.get("line_days"),
                    "oldest_days": (i.get("oldest") or {}).get("days"), "completeness": i.get("completeness")},

@@ -238,13 +238,14 @@ async def main() -> int:
                   (12, "12.5%", True))
             check("a bond sold on the exchange follows other listed: long-term after 12 months", tax_india.bucket("sgb", date(2024, 1, 1), today), tax_india.LT_OTHER)
             sv = await india_savings.household_view(s, firm, homes["The Sharma Family"].id)
-            ppf = next(h for h in sv["holdings"] if h["kind"] == "ppf")
+            # The Sharmas hold a PPF and an NPS account each for Rajesh and Meera since the retirement stack's rows (B-395).
+            ppf = next(h for h in sv["holdings"] if h["kind"] == "ppf" and h["owner"] == "Rajesh Sharma")
             check("Rajesh's PPF is the statement's value and rate", (ppf["value"], ppf["rate"], ppf["administered"], ppf["owner"]), (1_850_000.0, 7.1, True, "Rajesh Sharma"))
-            nps = next(h for h in sv["holdings"] if h["kind"] == "nps")
+            nps = next(h for h in sv["holdings"] if h["kind"] == "nps" and h["owner"] == "Meera Sharma")
             check("Meera's NPS: locked in to 60 (her birthday), the split is 60/40 of the corpus as stated",
                   (nps["locked_in"], nps["locked_in_to"], nps["exit_split"]["lump_sum"], nps["exit_split"]["annuity"]), (True, str(meera.date_of_birth.replace(year=meera.date_of_birth.year + 60)), 1_440_000.0, 960_000.0))
             check("the split says it is on the corpus as stated, before growth", "before any growth" in nps["exit_split"]["basis"], True)
-            check("the Sharma view carries only its own classes' rules", sorted(t["kind"] for t in sv["rules"]), ["nps", "ppf"])
+            check("the Sharma view carries only its own classes' rules", sorted(t["kind"] for t in sv["rules"]), ["epf", "nps", "ppf"])
             iv = await india_savings.household_view(s, firm, homes["The D'Souza Household"].id)
             ulip = next(h for h in iv["holdings"] if h["kind"] == "ulip")
             check("the ULIP is locked in for five years from its start, and its charge is at the cap and not over",
@@ -283,7 +284,8 @@ async def main() -> int:
             await refused("a client's role does not record one", india_savings.prepare(s, firm, UserRole.COMPLIANCE, household_id=homes["The Sharma Family"].id, kind="ppf", institution="X Bank", value=1,
                                                                                         value_on=today, document="Statement, filed"), "records a holding")
             hv = await held_away.for_household(s, homes["The Sharma Family"].id, firm_id=firm.id)
-            check("net worth counts a savings line once, as held away", [h.get("name") for h in hv["holdings"]].count("Public Provident Fund"), 1)
+            owners = [h.get("owner") for h in hv["holdings"] if h.get("name") == "Public Provident Fund"]
+            check("net worth counts a savings line once, as held away: one an account", (len(owners), len(set(owners))), (2, 2))
 
             print("\n=== B-296: a pledge keeps units from being sold ===")
             nifty = inst["NIFTYBEES.NS"]

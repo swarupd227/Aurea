@@ -107,3 +107,5 @@ from app.models import consolidation  # noqa: F401,E402
 from app.models import health_cover  # noqa: F401,E402
 # Screening list changes, senior approvals of politically exposed persons and reports to FIU-IND (B-390).
 from app.models import pmla  # noqa: F401,E402
+# India: monthly contributions, an annuity rate and a pension scheme membership, beside the retirement holdings (B-395).
+from app.models import retirement_stack  # noqa: F401,E402

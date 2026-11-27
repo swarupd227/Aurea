@@ -15,7 +15,7 @@ LRS_TERMS = ("person_id", "remitted_on", "amount_usd", "amount_inr", "purpose", 
 MANDATE_TERMS = ("account_id", "reference", "mandate_type", "per_debit_limit", "starts_on", "expires_on", "last4", "status", "document", "cancel", "reason",
                  "stage", "request_reference", "on")
 SAVINGS_TERMS = ("household_id", "kind", "institution", "value", "value_on", "document", "person_id", "rate", "maturity_on", "account_label")
-SAVINGS_DETAILS = ("started_on", "annual_premium", "fund_management_charge", "charges_note", "grams", "series", "tier", "opened_on", "employer", "issuer")
+SAVINGS_DETAILS = ("started_on", "annual_premium", "fund_management_charge", "charges_note", "grams", "series", "tier", "opened_on", "employer", "issuer", "equity_share_percent")
 PLEDGE_TERMS = ("account_id", "instrument", "lender", "units", "marked_on", "document", "release_of")
 GIFT_TERMS = ("giver_id", "receiver_id", "relationship", "gifted_on", "value", "description", "document", "consideration", "instrument", "quantity")
 
@@ -210,7 +210,8 @@ class IndiaBatchAExecutors:
                 p = await india_savings.prepare(self.session, firm, self.role, **_savings_terms(inputs))
                 return [("Household", p["household"].name), ("Class", p["label"]), ("Held at", p["institution"]), ("Owner", p["person"].full_name if p["person"] else "Joint"),
                         ("Value", money(p["value"])), ("As at", spoken(p["value_on"])), ("Rate on the statement", f"{p['rate']:g}% a year" if p["rate"] is not None else "Not stated"),
-                        ("Matures", spoken(p["maturity_on"]) if p["maturity_on"] else None), ("Replaces", "An earlier statement for the same holding" if p["replacing"] else "Nothing on file"),
+                        ("Matures", spoken(p["maturity_on"]) if p["maturity_on"] else None),
+                        ("Tier", p["details"].get("tier")), ("In equity", f"{p['details']['equity_share_percent']:g}%" if p["details"].get("equity_share_percent") is not None else None), ("Replaces", "An earlier statement for the same holding" if p["replacing"] else "Nothing on file"),
                         ("Statement", p["source"]), ("Note", "Counted once in net worth; nothing is estimated or recommended")]
             if tool_key == "record_pledge":
                 p = await pledges.prepare(self.session, firm, self.role, **_terms(inputs, PLEDGE_TERMS))

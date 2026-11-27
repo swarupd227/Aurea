@@ -268,7 +268,7 @@ async def retirement_inputs(session: AsyncSession, household_id: uuid.UUID, *, f
         streams = [_claimed_at(s, int(claim_ages[s["person_id"]])) if s["person_id"] in claim_ages else s for s in streams]
     acc = max(retirement_age - current_age, 0)
     # When each is paid, from today, on its own person's age; with no date of birth on file, on the plan's.
-    timed = [{"annual": s["planned_annual"], "inflation_linked": bool(s["inflation_linked"]), "name": s["name"], "person": s["person"],
+    timed = [{"annual": s["planned_annual"], "inflation_linked": bool(s["inflation_linked"]), "name": s["name"], "person": s["person"], "kind": s["kind"],
               "starts_in": s["starts_in"] if s["starts_in"] is not None else max(s["start_age"] - current_age, 0),
               "ends_in": s["ends_in"] if s.get("ends_in") is not None else (max(s["end_age"] - current_age, 0) if s.get("end_age") else None)} for s in streams]
     still = lambda s: s["ends_in"] is None or s["ends_in"] > acc  # noqa: E731 - a stream over before retirement counts for nothing
@@ -323,6 +323,9 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
                                     "success_probability", "on_track", "target_success", "median_depletion_age", "failed_shortfall_today", "band",
                                     "success_ceiling", "pv_spending", "sustainable_income", "income_gap", "sequence_risk",
                                     "levers", "years_to_retirement", "years_in_retirement", "end_age", "ages_of", "plan_to", "assumptions_source", "assumed")},
+            # India's retirement stack as a named input, with the answer without it beside (B-395); absent where there is none.
+            **({"stack": {k: plan["stack"][k] for k in ("value_on_file", "capital_counted", "monthly_contributions", "available_at_retirement_today",
+                                                        "with", "without", "change_points", "check")}} if plan.get("stack") else {}),
             # Healthcare the plan funds on top of the income, from what the firm stated (B-191).
             "healthcare": plan.get("healthcare"),
             "money_basis": "today",

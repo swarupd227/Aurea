@@ -22,6 +22,7 @@ from app.llm.admin_executors import AdminToolExecutors
 from app.llm.consolidation_executors import ConsolidationExecutors
 from app.llm.health_cover_executors import HealthCoverExecutors
 from app.llm.pmla_executors import PmlaExecutors
+from app.llm.retirement_stack_executors import RetirementStackExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
@@ -96,7 +97,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                     IndiaFamilyExecutors, IndiaGovernanceExecutors, IndiaPolishExecutors, IndiaGatesExecutors, IndiaBatchBExecutors, IndiaBatchAExecutors, IndiaBatchCExecutors,
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
                     IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors, IdentityCheckExecutors,
-                    PmlaExecutors):
+                    PmlaExecutors, RetirementStackExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -416,6 +417,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._goal_tools_map(),
             # The PMLA programme (B-390): app/llm/pmla_executors.py.
             **self._pmla_map(),
+            # India's retirement stack (B-395): app/llm/retirement_stack_executors.py.
+            **self._retirement_stack_map(),
             "read_kyc_review_period": self.read_kyc_review_period,
             "set_kyc_review": self.set_kyc_review,
         }
@@ -2041,9 +2044,19 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         f, r, said = result.get("funded") or {}, result.get("retirement") or {}, []
         if f.get("ratio") is not None:
             rate = f"{f['discount_rate']:.2%}" + (" (the firm's rate)" if f["discount_whose"] == "firm" else " (the cash return in the assumption set)")
-            said.append(f"Funded ratio {f['ratio']:.2f}: the managed book of {say(f['assets'])} over needs worth {say(f['pv_needs'])} today, "
-                        f"discounted at {rate}; contributions, future earnings and money held elsewhere are not counted"
+            held = f.get("stack_assets") is not None     # India's retirement stack, a named input (B-395)
+            counted = (f"the managed book of {say(f['assets'])} and {say(f['stack_assets'])} in retirement accounts held elsewhere" if held
+                       else f"the managed book of {say(f['assets'])}")
+            left_out = "contributions, future earnings and other money held elsewhere" if held else "contributions, future earnings and money held elsewhere"
+            said.append(f"Funded ratio {f['ratio']:.2f}: {counted} over needs worth {say(f['pv_needs'])} today, "
+                        f"discounted at {rate}; {left_out} are not counted"
                         + ("; goal tiers are not on file, so every goal counts." if f["tiers"] == "not_on_file" else "."))
+            if held and f.get("ratio_without_stack") is not None:
+                said.append(f"On the managed book alone it is {f['ratio_without_stack']:.2f}.")
+        if r.get("stack"):
+            s = r["stack"]
+            said.append(f"The likelihood counts the retirement accounts and pensions on file: without them it is "
+                        f"{s['without']['success_probability']:.0%}.")
         if r.get("band") == "above":
             said.append(f"Retirement success is above the firm's band ({r['success_ceiling']:.0%}): possibly over-saving.")
         if r.get("failed_shortfall_today"):
@@ -5584,6 +5597,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._protection_preview(tool_key, inputs))
         if tool_key in ("record_health_policy", "end_health_policy", "set_health_cover_figure", "record_policy_values"):
             return rows(*await self._health_preview(tool_key, inputs))
+        if tool_key in ("record_retirement_contribution", "record_annuity_rate", "record_ups_membership", "end_retirement_record"):
+            return rows(*await self._retirement_stack_preview(tool_key, inputs))
         if tool_key == "decide_risk_profile":
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):
@@ -6333,6 +6348,12 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
         if not plan:
             raise ExecutorError("No retirement plan is on file for you yet.")
         what_if = " A what-if: nothing on file changed." if overrides else ""
+        from app.aurea_core import retirement_stack
+
+        plan = retirement_stack.for_client(plan)
+        if plan.get("stack"):
+            what_if += (f" It counts the provident, pension and savings accounts on file; without them the likelihood is "
+                        f"{plan['stack']['without']['success_probability']:.0%}.")
         return {**plan, "household_id": str(hid), "what_if": overrides or None,
                 "message": f"The retirement projection, an estimate.{what_if} " + self._retirement_basis(plan)}
 

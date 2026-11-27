@@ -642,9 +642,11 @@ async def main() -> int:
             check("one CAMS and KFintech statement for the Iyers, two lines, from a document",
                   [(x["household"], x["kind"], x["lines"], x["added"]) for x in statements], [("The Iyer Family", "cams_kfintech", 2, 2)])
             held = await held_away.for_household(s, iyer.id, firm_id=firm.id)
+            # Karthik Iyer's NPS is also a held-away line, from his own statement (B-395): it has no symbol and is apart from these.
+            funds = [h for h in held["holdings"] if h["symbol"]]
             check("its lines are held-away lines a person recorded, in rupees, and the funds resolve to the firm's own by ISIN",
-                  (held["summary"]["holdings"], sorted(h["symbol"] for h in held["holdings"]), {h["institution"] for h in held["holdings"]}),
-                  (2, ["HDFC-CORPBOND-REGULAR", "UTI-NIFTY50-REGULAR"], {"HDFC Mutual Fund", "UTI Mutual Fund"}))
+                  (len(funds), sorted(h["symbol"] for h in funds), {h["institution"] for h in funds}, held["summary"]["holdings"]),
+                  (2, ["HDFC-CORPBOND-REGULAR", "UTI-NIFTY50-REGULAR"], {"HDFC Mutual Fund", "UTI Mutual Fund"}, 3))
             check("no aggregator consent is written by the seed: it is opt-in", (await account_aggregator.overview(s, firm))["consents"], [])
             reg = await complaints.overview(s, firm)
             check("the register carries every state", {k: reg["counts"][k] for k in ("overdue", "at_risk", "open", "resolved", "withdrawn")},

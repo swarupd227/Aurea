@@ -168,7 +168,9 @@ def lay_out(brain: dict, today: date, retirement_plan: dict | None, *, market, g
         "assumptions_source": planning.source_of(brain), "assumptions_version": planning.version_of(brain),
         "expected": expected, "step_up_percent": pct, "basis": BASIS, "not_counted": NOT_COUNTED,
         "managed_book": round(book, 2),
-        "household_funded": {k: ratios[k] for k in ("ratio", "assets", "pv_needs", "discount_rate", "discount_whose", "tiers", "goals_counted", "not_counted")},
+        "household_funded": {**{k: ratios[k] for k in ("ratio", "assets", "pv_needs", "discount_rate", "discount_whose", "tiers", "goals_counted", "not_counted")},
+                             # India's retirement stack, a named input of the ratio, and the ratio without it (B-395).
+                             **{k: ratios[k] for k in ("stack_assets", "ratio_without_stack") if k in ratios}},
         "not_counted_by_goal": ratios["not_counted_by_goal"], "shares_scaled": ratios["shares_scaled"],
         "total_level_monthly": round(sum(r["sizing"]["level_monthly"] for r in sized), 2) if sized else None,
         "total_step_up_monthly": round(sum(r["sizing"]["step_up"]["first_monthly"] for r in sized), 2) if sized and pct is not None else None,

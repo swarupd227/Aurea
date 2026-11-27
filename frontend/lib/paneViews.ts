@@ -450,6 +450,12 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_goal_sizing":
     case "add_goal":
     case "update_goal":
+    // India's retirement stack (B-395) is a section of the client's plan.
+    case "read_retirement_stack":
+    case "record_retirement_contribution":
+    case "record_annuity_rate":
+    case "record_ups_membership":
+    case "end_retirement_record":
       return onClient("/studio/plan");
     case "link_sip_goal":
       return "/studio/plan";

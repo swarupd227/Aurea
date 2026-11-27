@@ -169,6 +169,7 @@ export function pageSuggestions(pathname: string, role: string, ctx: SuggestionC
       { label: "Cash movements", prompt: withRef(india ? "Are any payments waiting for this household?" : "Are any payments waiting for this household, and how much of their required distribution is left this year?", "household", household) },
       { label: "Client file", prompt: withRef("What is on file for this household: trusted contact, estate documents, recent life events, and is anything out of date?", "household", household) },
       { label: "Financial plan", prompt: withRef("Will this household's money last, how much cash do they have in reserve, and what do their debts cost?", "household", household) },
+      ...(india ? [{ label: "Retirement stack", prompt: withRef("Lay out this household's EPF, PPF and NPS inside the retirement projection, with and without them.", "household", household) }] : []),
       { label: "Concentration", prompt: withRef(india ? "Does this household have a concentrated position, and what is the plan?" : "Does this household have a concentrated position or equity grants, and what is the plan?", "household", household) },
       { label: "Leaving or estate", prompt: withRef("Is a departure or an estate open for this household, and what is left to do?", "household", household) },
       { label: "Net worth", prompt: withRef("What is this household's net worth, and what is on file for it?", "household", household) },

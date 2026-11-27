@@ -8,6 +8,7 @@ import { useApi } from "@/lib/hooks";
 import { bandChip, pct1 } from "@/app/workspace/components/artifacts/PlanCard";
 import { ScenariosTable } from "@/app/workspace/components/artifacts/ScenarioCard";
 import { GoalSizingBody, GoalSizingChips } from "@/app/workspace/components/artifacts/GoalSizingCard";
+import { RetirementStackBody, RetirementStackChips } from "@/app/workspace/components/artifacts/RetirementStackCard";
 import { SocialSecurityTable } from "@/app/workspace/components/artifacts/SocialSecurityCard";
 import { HealthcareChips, HealthcareTable } from "@/app/workspace/components/artifacts/HealthcareCard";
 import { TriggerChips, TriggersTable } from "@/app/workspace/components/artifacts/PlanTriggersCard";
@@ -62,6 +63,49 @@ function PlanGoals({ household, name, canRecord }: { household: string; name: st
         </div>
       </div>
       <GoalSizingBody result={data} />
+    </Card>
+  );
+}
+
+/** India's retirement stack inside the projection (B-395). It shows only for an Indian household. An annuity rate or a
+ * drawing typed here is only tried out; a contribution or a quote is recorded through the conversation, and these buttons
+ * are sentences handed to it. */
+function PlanRetirementStack({ household, name }: { household: string; name: string }) {
+  const [typed, setTyped] = useState({ rate: "", monthly: "" });
+  const [tried, setTried] = useState({ rate: 0, monthly: 0 });
+  const nav = useViewNav();
+  const query = `${tried.rate ? `&annuity_rate=${tried.rate}` : ""}${tried.monthly ? `&monthly_withdrawal=${tried.monthly}` : ""}`;
+  const { data, error } = useApi<any>(`/api/plan/retirement-stack?household=${household}${query}`, [household, query]);
+  if (error || !data || data.household_id !== household || data.applies === false) return null;
+  const say = nav.say;
+  const apply = () => {
+    const rate = Number(typed.rate);
+    const monthly = Number(typed.monthly.replace(/,/g, ""));
+    setTried({ rate: rate > 0 && rate <= 20 ? rate : 0, monthly: monthly > 0 ? monthly : 0 });
+  };
+  const ask = (sentence: string) => say?.(withRef(sentence, "household", household));
+  const field = (key: "rate" | "monthly", label: string, testid: string) => (
+    <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+      {label}
+      <input className="input w-24 text-xs" inputMode="decimal" value={typed[key]} onChange={(e) => setTyped({ ...typed, [key]: e.target.value })}
+        onKeyDown={(e) => e.key === "Enter" && apply()} onBlur={apply} data-testid={testid} />
+    </label>
+  );
+  return (
+    <Card className="mb-4 overflow-hidden p-0" data-testid="plan-retirement-stack">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="mr-1 text-sm font-medium text-ink">Retirement stack</div>
+          <RetirementStackChips result={data} />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {data.status === "on_file" && field("rate", "Try annuity %", "plan-stack-annuity")}
+          {data.status === "on_file" && field("monthly", "Try a month", "plan-stack-monthly")}
+          {say && data.can_record && <button className="btn-outline text-xs" data-testid="plan-stack-contribution" onClick={() => ask(`Record a monthly provident fund or pension contribution for ${name}.`)}>Record contribution</button>}
+          {say && data.can_record && <button className="btn-outline text-xs" data-testid="plan-stack-quote" onClick={() => ask(`Record a quoted annuity rate for ${name}.`)}>Record annuity quote</button>}
+        </div>
+      </div>
+      <RetirementStackBody result={data} />
     </Card>
   );
 }
@@ -309,10 +353,12 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           {r?.band && bandChip[r.band] && <span className={`chip ${bandChip[r.band][1]}`} data-testid="plan-band">{bandChip[r.band][0]}</span>}
           {f?.ratio != null && (
             <span className="chip tabular-nums text-ink-muted" data-testid="plan-funded">
-              {money(f.assets)} book / {money(f.pv_needs)} needs today · {pct1(f.discount_rate)} {f.discount_whose === "firm" ? "firm rate" : "cash return"}
+              {money(f.assets)} book{f.stack_assets != null ? ` + ${money(f.stack_assets)} retirement stack` : ""} / {money(f.pv_needs)} needs today · {pct1(f.discount_rate)} {f.discount_whose === "firm" ? "firm rate" : "cash return"}
             </span>
           )}
-          {f?.ratio != null && <span className="chip text-ink-muted">contributions, earnings and held away not counted</span>}
+          {f?.ratio != null && <span className="chip text-ink-muted">contributions, earnings and {f.stack_assets != null ? "other " : ""}held away not counted</span>}
+          {f?.ratio_without_stack != null && <span className="chip tabular-nums text-ink-muted" data-testid="plan-funded-without">funded {f.ratio_without_stack.toFixed(2)} without the stack</span>}
+          {r?.stack && <span className="chip tabular-nums text-ink-muted" data-testid="plan-success-without">success {Math.round(r.stack.without.success_probability * 100)}% without the stack</span>}
           {f?.tiers === "not_on_file" && <span className="chip text-ink-muted">no goal tiers · every goal counted</span>}
           {r?.failed_shortfall_today ? (
             <span className="chip tabular-nums text-warn">failed paths · out at {r.median_depletion_age} · {money(r.failed_shortfall_today)} unpaid</span>
@@ -374,6 +420,8 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           )}
         </Card>
       )}
+
+      <PlanRetirementStack key={data.household_id} household={data.household_id} name={data.household} />
 
       <PlanGoals household={data.household_id} name={data.household} canRecord={!!data.can_record} />
 

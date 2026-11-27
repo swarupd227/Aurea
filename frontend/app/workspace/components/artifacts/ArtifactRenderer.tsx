@@ -60,6 +60,7 @@ import { EquityCompCard } from "./EquityCompCard";
 import { CashCard } from "./CashCard";
 import { SipCard } from "./SipCard";
 import { GoalSizingCard } from "./GoalSizingCard";
+import { RetirementStackCard } from "./RetirementStackCard";
 import { ClientFileCard } from "./ClientFileCard";
 import { ExitsCard } from "./ExitsCard";
 import { PlanCard } from "./PlanCard";
@@ -409,6 +410,14 @@ export function artifactCard(artifact: Artifact) {
       case "end_phase_in":
         if (!Array.isArray(artifact.result?.requests)) return null;
         return <CashCard result={artifact.result as any} />;
+      // B-395: India's retirement stack inside the projection; each write returns the layout as it now stands.
+      case "read_retirement_stack":
+      case "record_retirement_contribution":
+      case "record_annuity_rate":
+      case "record_ups_membership":
+      case "end_retirement_record":
+        if (typeof artifact.result?.household_id !== "string" || (artifact.result?.status == null)) return null;
+        return <RetirementStackCard result={artifact.result as any} />;
       case "read_goal_sizing":
       case "add_goal":
         // Goals sized and funded (B-394).
