@@ -280,10 +280,11 @@ async def run(s) -> None:
 
         v = await adv.read_tax_reviews({})
         c = v["completion"]
-        check("the demonstration's two reviews are counted", (c["regime"]["done"], c["harvest"]["done"], v["tax_year"]), (1, 1, year["label"]))
+        # The Sharmas' two, and a regime review each for the Mehta couple (B-400).
+        check("the demonstration's four reviews are counted", (c["regime"]["done"], c["harvest"]["done"], v["tax_year"]), (3, 1, year["label"]))
         regimes = [t for t in v["taxpayers"] if t["applies"]["regime"]]
         check("each share is done over those it applies to",
-              (c["regime"]["of"], c["regime"]["share"]), (len(regimes), round(1 / len(regimes), 4)))
+              (c["regime"]["of"], c["regime"]["share"]), (len(regimes), round(3 / len(regimes), 4)))
         huf_row = next(t for t in v["taxpayers"] if t["taxpayer_id"] == str(huf.id))
         check("an HUF takes a harvest review and no regime review", (huf_row["regime"]["state"], huf_row["harvest"]["state"]), ("not_applicable", "not_recorded"))
         check("a client with no account and no tax figure is no taxpayer", "Aarav Sharma" in {t["name"] for t in v["taxpayers"]}, False)
@@ -309,10 +310,10 @@ async def run(s) -> None:
         check("and the household's share moves", done["completion"]["regime"]["done"], 1)
         await refused("the same review twice is refused", adv.record_tax_review(base), "already recorded")
         v = await adv.read_tax_reviews({})
-        check("the firm's regime reviews are now two", v["completion"]["regime"]["done"], 2)
+        check("the firm's regime reviews are now four", v["completion"]["regime"]["done"], 4)
         last = await adv.record_tax_review({**base, "person_id": str(lakshmi.id), "tax_year": f"{year['start'].year - 1}-{year['start'].year % 100:02d}"})
         check("last year's review keeps no figures and does not count this year",
-              (last["recorded"]["figures"], (await adv.read_tax_reviews({}))["completion"]["regime"]["done"]), (None, 2))
+              (last["recorded"]["figures"], (await adv.read_tax_reviews({}))["completion"]["regime"]["done"]), (None, 4))
         both = await adv.record_tax_review({**base, "kind": "harvest"})
         check("a taxpayer with both counts as complete",
               next(t for t in both["taxpayers"] if t["name"] == "Karthik Iyer")["harvest"]["state"], "done")
