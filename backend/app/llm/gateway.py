@@ -39,7 +39,7 @@ from app.models.thread import (
 from app.atlas import narration
 from app.llm import follow_ups
 from app.llm.executors import ExecutorError, ToolExecutors
-from app.llm.service import llm_service
+from app.llm.service import firm_llm_creds, llm_service
 
 # A tool round-trip (Claude's tool_use -> our result -> Claude again) this many times
 # in one turn before the gateway stops chaining and just answers with what it has —
@@ -565,7 +565,7 @@ class Gateway:
         content_blocks: list[dict[str, Any]] = []
         async for event in llm_service.stream(
             task="advice", system=system_prompt, messages=messages, tools=tools,
-            max_tokens=1500, temperature=0.5,
+            creds=firm_llm_creds(firm), max_tokens=1500, temperature=0.5,
         ):
             if event["type"] == "text":
                 yield {"type": "token", "text": event["text"]}

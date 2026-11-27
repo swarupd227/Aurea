@@ -202,6 +202,10 @@ async def main() -> None:
         figure_rows = await india_figures.add(s, firm)
         mehta_skipped: list[str] = []
         mehta_homes = await india_mehta.add(s, firm, mehta_skipped)
+        mehta_confirmed = await india_mehta.confirm_risk_profiles(s, firm)
+        from seed import india_row7
+
+        relabelled = await india_row7.correct_evidence(s, firm)
         # B-391, after the Mehtas; each part in its own savepoint, and a part that is refused is printed as SKIPPED.
         from seed import india_agreements
 
@@ -230,7 +234,7 @@ async def main() -> None:
           f"Advice files and audit: {advice_rows} added. Estate and NRI records: {estate_rows} added. "
           f"Onboarding measures: {measure_rows} record(s) added or re-dated. "
           f"Tax planning facts, stated returns and reviews: {tax_planning_rows} added. "
-          f"Demonstration figures: {figure_rows} record(s). Mehta family: {mehta_homes} household(s) added. "
+          f"Demonstration figures: {figure_rows} record(s). Mehta risk profile confirmation and advice bases: {mehta_confirmed}. Consent labels put right: {relabelled}. Mehta family: {mehta_homes} household(s) added. "
           f"Agreements and the NRI checklist: {agreement_rows} record(s) added or re-dated.\n"
           + "".join(f"SKIPPED. {line}\n" for line in (*mehta_skipped, *agreement_skipped)))
 

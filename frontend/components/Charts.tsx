@@ -16,16 +16,17 @@ export function RetirementFan({
       <AreaChart data={data} margin={{ left: 4, right: 8, top: 8 }}>
         <defs>
           <linearGradient id="fan90" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#5d86a3" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="#5d86a3" stopOpacity={0.02} />
+            <stop offset="0%" stopColor="#5d86a3" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="#5d86a3" stopOpacity={0.12} />
           </linearGradient>
         </defs>
         <XAxis dataKey="age" fontSize={11} stroke="#9aa7b2" tickFormatter={(v) => `${v}`} minTickGap={24} />
         <YAxis fontSize={11} stroke="#9aa7b2" tickFormatter={fmt} width={48} />
-        <Tooltip formatter={(v: any, n: any) => [money(Number(v)), titleCase(String(n))]} labelFormatter={(l) => `Age ${l}`} />
-        <Area dataKey="p90" stroke="none" fill="url(#fan90)" />
-        <Area dataKey="p10" stroke="none" fill="#ffffff" />
-        <Area dataKey="median" stroke="#1f3a52" strokeWidth={2} fill="none" />
+        <Tooltip formatter={(v: any, n: any) => [Array.isArray(v) ? `${money(Number(v[0]))} to ${money(Number(v[1]))}` : money(Number(v)), titleCase(String(n))]}
+          labelFormatter={(l) => `Age ${l}`} />
+        {/* The band is drawn between the two percentiles: nothing is painted over to hide what is under it. */}
+        <Area dataKey={(d: any) => [d.p10, d.p90]} name="10th–90th percentile" stroke="none" fill="url(#fan90)" />
+        <Area dataKey="median" stroke="#5d86a3" strokeWidth={2} fill="none" />
         <ReferenceLine y={0} stroke="#c8503c" strokeDasharray="3 3" />
       </AreaChart>
     </ResponsiveContainer>

@@ -32,7 +32,7 @@ from types import SimpleNamespace
 from sqlalchemy import inspect as inspect_row, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import (advice_file, agreement_contents, aml_review, aml_risk, balance_sheet, consents, consolidation, disclosures, document_matrix, financial_plan, firm_time,
+from app.aurea_core import (advice_file, advice_practice, agreement_contents, aml_review, aml_risk, balance_sheet, consents, consolidation, disclosures, document_matrix, financial_plan, firm_time,
                             goal_record, health_cover, held_away, identity_checks, india_estate, india_money, india_savings, india_tax_year, kyc_india,
                             kyc_registry, markets, money_in, nri_planning, onboarding_start, plan_record, planning_measures, policy_values, protection,
                             residency, retirement_stack, risk_profile, salary_tax, screening_lists, sip, sip_mandates)
@@ -382,6 +382,7 @@ async def _family(c) -> int:
     await _attempt(c, "The goals, SIPs and mandates", lambda: _goals(c, home, accounts))
     await _attempt(c, "The tax reviews", lambda: _reviews(c, people))
     if both:
+        await _attempt(c, "The family's risk profile confirmation", lambda: confirm_risk_profiles(s, firm))
         await _attempt(c, "The advice file and the plan of record", lambda: _advice_and_plan(c, home, adviser))
     else:
         _skip(c.report, "The advice file and the plan of record", "they speak for both of the couple and one case did not activate")
@@ -648,6 +649,33 @@ ADVICE = [
     ("investment", "Hold gold at no more than 10 percent of investable assets", "The family asked to add to gold.",
      [("Add to gold as asked", "Takes the holding past the cap")], "accepted"),
 ]
+
+
+async def confirm_risk_profiles(s: AsyncSession, firm: Firm) -> int:
+    """The family's confirmation of its risk profile by registered email, given after the answers and recorded for the
+    household, which is where a recommendation looks for it. Recorded once. The demonstration's own recommendations, made
+    after it, then keep the basis they rest on."""
+    home = (await s.execute(select(Household).where(Household.firm_id == firm.id, Household.name == HOME))).scalars().first()
+    if home is None:
+        return 0
+    done = 0
+    basis = await advice_practice.risk_basis(s, firm, home.id, None, firm_time.today(firm))
+    if basis["status"] == "on_file" and not basis["consent"]:
+        await consents.record(s, firm.id, by=BY, case_id=None, household_id=home.id, kind="risk_profile", status="granted", given_by=VIVEK,
+                              given_on=date.fromisoformat(basis["answered_on"]), method="email",
+                              evidence=_proof("Risk profile confirmed by registered email, after the answers"))
+        done += 1
+    for rec in (await s.execute(select(AdviceRecommendation).where(
+            AdviceRecommendation.firm_id == firm.id, AdviceRecommendation.household_id == home.id,
+            AdviceRecommendation.recommendation.in_([a[1] for a in ADVICE])))).scalars().all():
+        kept = rec.risk_basis
+        if kept and kept.get("status") == "on_file" and not kept.get("consent"):
+            fresh = await advice_practice.risk_basis(s, firm, home.id, rec.person_id, rec.recommended_on)
+            if fresh.get("consent"):
+                rec.risk_basis = fresh
+                done += 1
+    await s.flush()
+    return done
 
 
 async def _advice_and_plan(c, home, adviser) -> None:

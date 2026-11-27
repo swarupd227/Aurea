@@ -8,7 +8,7 @@ export interface EstatePayload {
   household_name: string;
   total_estate_value: number;
   wealth_breakdown: Record<string, { value: number; pct: number }>;
-  trust_structures: { id: string; name: string; entity_type: string; governance_score: number; jurisdiction: string | null }[];
+  trust_structures: { id: string; name: string; entity_type: string; governance_score: number | null; jurisdiction: string | null; huf?: { karta: string | null } }[];
   heir_readiness: { id: string; name: string; readiness_score: number; readiness_level: string; has_mandate: boolean; has_goals: boolean; has_profile: boolean }[];
   succession_gaps: { type: string; severity: string; title: string; detail?: string }[];
   succession_risk: { score: number; level: string; gaps_count: number; high_severity_count: number };
@@ -85,7 +85,9 @@ export function EstateCard({ result }: { result: EstatePayload }) {
           {r.trust_structures.map((t) => (
             <tr key={t.id}>
               <td className="truncate px-3 py-1.5 text-ink-muted">{t.name}</td>
-              <td className="w-20 px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink-muted">{t.governance_score}/100</td>
+              <td className="w-20 truncate px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink-muted" title={t.huf?.karta ?? undefined}>
+                {t.huf ? "HUF" : `${t.governance_score}/100`}
+              </td>
             </tr>
           ))}
           {r.heir_readiness.map((h) => (

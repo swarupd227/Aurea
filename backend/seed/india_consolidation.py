@@ -1,8 +1,9 @@
 """The consolidation workbench on the demonstration firm (B-389): the onboarding module's worked case, on invented data.
 
-  The Sharmas   a couple with fourteen mutual fund folios across five fund houses from a legacy distributor: eleven classified
-                keep and re-map, with a distributor code change submitted for each (five confirmed, one rejected, five waiting);
-                a sector fund classified exit and scheduled against Rajesh's gain budget; two folios still to classify. Two ETF
+  The Sharmas   a couple with fourteen mutual fund folios across five fund houses from a legacy distributor: ten classified
+                keep and re-map, with a distributor code change submitted for each (five confirmed, one rejected, four waiting);
+                a sector fund classified exit and scheduled against Rajesh's gain budget; three folios still to classify, one of
+                them a direct plan, which carries no distributor code to change. Two ETF
                 holdings in a legacy demat classified transfer, one off-market transfer submitted and one consented.
   The Kapoors   two shares the family trust holds in another Portfolio Manager's demat moving in kind, consented by the client.
 
@@ -22,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import consolidation, firm_time, held_away
 from app.core.security import UserRole
-from app.models.consolidation import ConsolidationDecision, ConsolidationItem
+from app.models.consolidation import ConsolidationDecision, ConsolidationFacts, ConsolidationItem, ConsolidationStep
 from app.models.graph import Household, LegalEntity, Person
 from app.models.held_away import HeldAwayHolding
 from app.models.tenant import Firm
@@ -51,7 +52,7 @@ FOLIOS = [
     ("Meera Sharma", UTI, "Folio 2000202/54", NIFTY, 2100, 162.60, None, [(2100, 120.50, 1710)], "keep_remap"),
     ("Rajesh Sharma", PPFAS, "Folio 3000301/62", FLEXI_R, 9500, 81.70, None, [(9500, 46.00, 2145)], "keep_remap"),
     ("Meera Sharma", PPFAS, "Folio 3000302/19", FLEXI_R, 6000, 81.70, None, [], "keep_remap"),
-    ("Meera Sharma", PPFAS, "Folio 3000303/76", FLEXI_D, 3000, 89.70, None, [(3000, 62.00, 1240)], "keep_remap"),
+    ("Meera Sharma", PPFAS, "Folio 3000303/76", FLEXI_D, 3000, 89.70, None, [(3000, 62.00, 1240)], None),
     ("Rajesh Sharma", SAH, "Folio 4000401/33", (SECTOR, None, None), 12000, 50.00, "equity_fund", [(8000, 31.00, 1100), (4000, 44.00, 200)], "exit"),
     ("Meera Sharma", SAH, "Folio 4000402/90", ("Sahyadri Large Cap Fund - Regular - Growth (invented)", None, None), 5000, 72.00, "equity_fund",
      [(5000, 55.00, 1530)], "keep_remap"),
@@ -94,12 +95,39 @@ async def _redate(s: AsyncSession, firm: Firm) -> int:
     return moved
 
 
+async def _correct_direct(s: AsyncSession, firm: Firm) -> int:
+    """A direct plan carries no distributor code. A firm built before this was put right has a code, a classification and a
+    code change on the direct folio, all this module's own: they come off, unless a person has since recorded something on it."""
+    items = (await s.execute(select(ConsolidationItem).where(
+        ConsolidationItem.firm_id == firm.id, ConsolidationItem.kind == "code_change", ConsolidationItem.opened_by == BY))).scalars().all()
+    taken = 0
+    for item in items:
+        if not item.lines or not all("Direct Plan" in str(line.get("name") or "") for line in item.lines):
+            continue
+        steps = (await s.execute(select(ConsolidationStep).where(ConsolidationStep.item_id == item.id))).scalars().all()
+        decisions = (await s.execute(select(ConsolidationDecision).where(
+            ConsolidationDecision.firm_id == firm.id, ConsolidationDecision.holding_key.in_(item.holding_keys)))).scalars().all()
+        if any(x.recorded_by != BY for x in steps) or any(d.decided_by != BY for d in decisions):
+            continue
+        for row in (*steps, *decisions):
+            await s.delete(row)
+        for f in (await s.execute(select(ConsolidationFacts).where(
+                ConsolidationFacts.firm_id == firm.id, ConsolidationFacts.recorded_by == BY,
+                ConsolidationFacts.holding_key.in_(item.holding_keys)))).scalars().all():
+            f.distributor_code = None
+        await s.flush()
+        await s.delete(item)
+        taken += 1
+    await s.flush()
+    return taken
+
+
 async def add(s: AsyncSession, firm: Firm) -> int:
     if not consolidation.applies(firm):
         return 0
     if (await s.execute(select(ConsolidationDecision.id).where(ConsolidationDecision.firm_id == firm.id,
                                                                ConsolidationDecision.decided_by == BY).limit(1))).first():
-        return await _redate(s, firm)
+        return await _correct_direct(s, firm) + await _redate(s, firm)
     households = {h.name: h for h in (await s.execute(select(Household).where(Household.firm_id == firm.id))).scalars().all()}
     sharma, kapoor = households.get(SHARMA), households.get(KAPOOR)
     if sharma is None:
@@ -136,7 +164,7 @@ async def add(s: AsyncSession, firm: Firm) -> int:
             continue
         added += 1
         await consolidation.record_facts(
-            s, firm, ops, by=BY, line_id=row.id, form="folio", distributor_code=FROM_CODE, tax_class=klass,
+            s, firm, ops, by=BY, line_id=row.id, form="folio", distributor_code=None if "Direct Plan" in name else FROM_CODE, tax_class=klass,
             lots=[{"units": u, "cost_per_unit": c, "acquired_on": ago(d).isoformat()} for u, c, d in lots],
             exit_load_rate=0.01 if decision == "exit" else None, exit_load_days=365 if decision == "exit" else None,
             document=_evidence(f"Capital gains statement for {folio}" + (" and the scheme document" if decision == "exit" else "")))
@@ -167,7 +195,7 @@ async def add(s: AsyncSession, firm: Firm) -> int:
                 reason=_evidence("A sector fund adds banking exposure the family already holds directly in its demat"),
                 planned_on=today + timedelta(days=EXIT_IN))
 
-    # Eleven code changes submitted: five confirmed, one rejected, five waiting at the registrar.
+    # Ten code changes submitted: five confirmed, one rejected, four waiting at the registrar.
     for n, (row, d) in enumerate((f for f in folios if f[1] == "keep_remap")):
         out = await consolidation.open_item(s, firm, ops, by=BY, kind="code_change", line_ids=[row.id], to_code=TO_CODE, on=ago(21),
                                             evidence=_evidence(f"Code change request form for {row.account_label}"))

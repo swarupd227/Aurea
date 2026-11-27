@@ -318,8 +318,12 @@ async def behaviour() -> None:
             told: list = []
             rounds = iter([tool_round("read_messages", {"household_id": str(quiet.id)}), say("Sent on the 27th.")])
 
+            keys: list = []
+            mine.llm_config = {"anthropic_api_key": "firm-key-for-this-test"}
+
             async def listening(**kw):
                 told.append([*kw["messages"]])
+                keys.append((kw.get("creds") or {}).get("anthropic_api_key"))
                 for ev in next(rounds):
                     yield ev
             t9 = Thread(firm_id=mine.id, kind=ThreadKind.ASK_ASTRA, created_by_user_id=sophie.id, title="t9")
@@ -328,6 +332,7 @@ async def behaviour() -> None:
             gw_mod.llm_service.stream = listening
             async for _ in Gateway(s, sophie.id, sophie.role, sophie.firm_id).send_message(t9.id, "When was that sent?"):
                 pass
+            check("the model is called with the firm's own key", keys[-1], "firm-key-for-this-test")
             handed = str(told[-1][-1]["content"])
             check("the model is handed the firm's day", "2026-10-27T08:34:12+13:00" in handed, True)
             check("  and not the server's", "2026-10-26T19:34" in handed, False)

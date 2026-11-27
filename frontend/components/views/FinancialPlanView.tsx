@@ -370,7 +370,7 @@ export function FinancialPlanView({ household = null }: { household?: string | n
         <Tile label="Funded ratio" value={f?.ratio != null ? f.ratio.toFixed(2) : "—"} tone={f?.ratio != null && f.ratio < 1 ? "text-warn" : "text-ink"} />
         <Tile label="Sustainable a year" value={r ? money(r.sustainable_income) : "—"} />
         <Tile label="Withdrawal rate" value={r?.withdrawal_rate != null ? pct1(r.withdrawal_rate) : "—"} tone="text-ink-muted" />
-        <Tile label="Cash reserve" value={reserve.status === "assessed" ? `${reserve.months} months` : "not assessed"} tone={reserve.status === "assessed" && reserve.months < reserve.target_months ? "text-warn" : "text-ink-muted"} />
+        <Tile label="All cash, in months of spending" value={reserve.status === "assessed" ? `${reserve.months} months` : "not assessed"} tone={reserve.status === "assessed" && reserve.months < reserve.target_months ? "text-warn" : "text-ink-muted"} />
       </div>
       <Card className="mb-4">
         <div className="flex flex-wrap gap-1.5" data-testid="plan-basis">

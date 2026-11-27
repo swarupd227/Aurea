@@ -161,13 +161,24 @@ function One({ id }: { id: string }) {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="truncate text-sm text-ink">{t.name}</div>
-                  <div className="text-xs text-ink-muted">{titleCase(t.entity_type ?? "")}{t.jurisdiction ? ` · ${t.jurisdiction}` : ""}</div>
+                  <div className="text-xs text-ink-muted">{t.huf ? "HUF" : titleCase(t.entity_type ?? "")}{t.jurisdiction ? ` · ${t.jurisdiction}` : ""}</div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-mono text-sm tabular-nums text-ink">{t.governance_score}/100</div>
-                  <div className="text-[10px] uppercase tracking-wide text-ink-muted">governance on file</div>
-                </div>
+                {!t.huf && (
+                  <div className="shrink-0 text-right">
+                    <div className="font-mono text-sm tabular-nums text-ink">{t.governance_score}/100</div>
+                    <div className="text-[10px] uppercase tracking-wide text-ink-muted">governance on file</div>
+                  </div>
+                )}
               </div>
+              {t.huf ? (
+                <div className="mt-2 flex flex-wrap gap-1.5" data-testid="estate-huf">
+                  <span className={`chip ${t.huf.karta ? "text-ink-muted" : "text-warn"}`}>karta {t.huf.karta ?? "not on file"}</span>
+                  <span className={`chip ${t.huf.coparceners.length ? "text-ink-muted" : "text-warn"}`}>
+                    coparceners {t.huf.coparceners.length ? t.huf.coparceners.join(", ") : "not on file"}
+                  </span>
+                  {t.huf.as_of && <span className="chip text-ink-muted">as of {t.huf.as_of}</span>}
+                </div>
+              ) : (<>
               <div className="mt-2"><Bar value={t.governance_score} tone={scoreTone(t.governance_score, 75, 50)} /></div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span className={`chip ${t.settlor ? "text-ink-muted" : "text-warn"}`}>settlor {t.settlor ?? "not on file"}</span>
@@ -178,6 +189,7 @@ function One({ id }: { id: string }) {
                 {t.established && <span className="chip text-ink-muted">est. {t.established}</span>}
                 {t.review_date && <span className="chip text-ink-muted">reviewed {t.review_date}</span>}
               </div>
+              </>)}
             </Card>
           ))}
         </div>

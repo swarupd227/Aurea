@@ -17,8 +17,8 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import firm_time, guardianship, markets, residency, risk_profile
-from app.models.consent_registry import INDIA_KINDS
+from app.aurea_core import consents, firm_time, guardianship, markets, residency, risk_profile
+from app.models.consent_registry import INDIA_KINDS, ConsentRecord
 from app.models.enums import ClientSegment, MandateType
 from app.models.graph import Account, Household, Mandate, Person, RelationshipEdge
 from app.models.identity import User
@@ -34,6 +34,18 @@ ADVISER = "investment_adviser"
 
 def _years_ago(today, years: int, month: int, day: int):
     return today.replace(year=today.year - years, month=month, day=day)
+
+
+async def correct_evidence(s: AsyncSession, firm: Firm) -> int:
+    """Initials first written as words in the Menons consent evidence. Idempotent, and only these rows."""
+    fixed = 0
+    for row in (await s.execute(select(ConsentRecord).where(ConsentRecord.firm_id == firm.id,
+                                                            ConsentRecord.evidence.like("% on file for the Menons%")))).scalars().all():
+        said = row.evidence.replace("Ai Use Disclosure", "AI use disclosure").replace("Non Sebi Declaration", "Non-SEBI declaration")
+        if said != row.evidence:
+            row.evidence, fixed = said, fixed + 1
+    await s.flush()
+    return fixed
 
 
 async def add(s: AsyncSession, firm: Firm) -> int:
@@ -89,7 +101,7 @@ async def add(s: AsyncSession, firm: Firm) -> int:
     await risk_profile.submit(s, household.id, answers, firm_id=firm.id, by=BY, role="adviser")
     for kind in INDIA_KINDS:
         method = {"advisory_agreement": "e_signature", "non_sebi_declaration": "e_signature"}.get(kind, "email")
-        s.add(india_row6._consent(firm, household, kind, method, today, f"{kind.replace('_', ' ').title()} on file for the Menons"))
+        s.add(india_row6._consent(firm, household, kind, method, today, f"{consents.LABELS[kind]}, on file for the Menons"))
         written += 1
 
     common = {"indian_citizen_or_pio": True, "fema_status": "nri", "country_of_residence": "United Arab Emirates",

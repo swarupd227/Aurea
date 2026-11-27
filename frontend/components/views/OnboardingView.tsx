@@ -47,6 +47,7 @@ const TRACK_PIP: Record<string, string> = {
   blocked: "bg-crit",
   waiting_external: "bg-warn",
   not_started: "bg-border",
+  not_on_file: "bg-border",
 };
 
 const SLA_STYLE: Record<string, string> = {

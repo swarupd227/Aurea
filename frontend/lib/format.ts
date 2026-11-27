@@ -45,7 +45,8 @@ export function units(n: number, digits = 3): string {
 }
 
 export function titleCase(s: string): string {
-  return (s || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return (s || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\b(Huf|Nri|Nro|Nre|Llp|Llc)\b/g, (w) => w.toUpperCase()); // initials, not words
 }
 
 export function timeAgo(iso: string | null): string {

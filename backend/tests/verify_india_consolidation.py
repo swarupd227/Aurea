@@ -426,15 +426,17 @@ async def demonstration() -> None:
             v = await con.for_household(s, homes["The Sharma Family"].id, firm_id=firm.id)
             m = v["summary"]
             check("fourteen folios across five fund houses, and a legacy demat", (m["folios"], m["fund_houses"], m["demat_accounts"]), (14, 5, 1))
-            check("eleven kept, two moving, one exit, two to classify", m["classified"], {"keep_remap": 11, "transfer": 2, "exit": 1, "unclassified": 2})
-            check("eleven code changes: five confirmed, one rejected, five at the registrar", m["code_changes"], {"submitted": 5, "confirmed": 5, "rejected": 1})
+            check("ten kept, two moving, one exit, three to classify", m["classified"], {"keep_remap": 10, "transfer": 2, "exit": 1, "unclassified": 3})
+            check("ten code changes: five confirmed, one rejected, four at the registrar", m["code_changes"], {"submitted": 4, "confirmed": 5, "rejected": 1})
+            check("no direct plan carries a distributor code",
+                  [h["name"] for h in v["holdings"] if "Direct Plan" in h["name"] and h["distributor_code"]], [])
             check("two ETF transfers on their way", m["demat_transfers"], {"consented": 1, "submitted": 1})
             g = v["schedule"][0]
             check("the one exit is within Rajesh's gain budget", (len(v["schedule"]), g["taxpayer"], len(g["rows"]), g["budget"]["amount"], g["rows"][0]["within_budget"]),
                   (1, "Rajesh Sharma", 1, 800000.0, True))
             check("its tax is estimated", (g["rows"][0]["assessed"], g["estimated_tax"] > 0, g["rows"][0]["exit_load"] > 0), (True, True, True))
             t = v["redeem_instead"]
-            check("redeeming instead has a figure, and says what is not assessed", (t["tax"] > 0, t["assessed"], t["not_assessed"]), (True, 12, 1))
+            check("redeeming instead has a figure, and says what is not assessed", (t["tax"] > 0, t["assessed"], t["not_assessed"]), (True, 11, 1))
             k = await con.for_household(s, homes["The Kapoor Family Trust"].id, firm_id=firm.id)
             check("the Kapoor trust's shares move in kind", k["summary"]["pms_transitions"], {"consented": 1})
             long = []
@@ -454,6 +456,20 @@ async def demonstration() -> None:
             exit_row.planned_on = firm_time.today(firm) - timedelta(days=3)
             await s.flush()
             check("a planned exit that has come due is moved ahead", (await india_consolidation.add(s, firm), exit_row.planned_on > firm_time.today(firm)), (1, True))
+            # A firm built before the direct folio was put right: this seed's own code, classification and request on it.
+            by, ops = india_consolidation.BY, R.OPERATIONS
+            direct = (await s.execute(select(HeldAwayHolding).where(HeldAwayHolding.account_label == "Folio 3000303/76",
+                                                                    HeldAwayHolding.status == "current"))).scalars().one()
+            await con.record_facts(s, firm, ops, by=by, line_id=direct.id, form="folio", distributor_code=india_consolidation.FROM_CODE,
+                                   document="Statement (test)")
+            await con.record_classification(s, firm, R.ADVISER, by=by, line_ids=[direct.id], decision="keep_remap", reason="As seeded before (test)")
+            await con.open_item(s, firm, ops, by=by, kind="code_change", line_ids=[direct.id], to_code=india_consolidation.TO_CODE,
+                                on=firm_time.today(firm), evidence="Form (test)")
+            check("the old demonstration request is taken off", await india_consolidation.add(s, firm), 1)
+            v = await con.for_household(s, homes["The Sharma Family"].id, firm_id=firm.id)
+            check("  with its classification and its code",
+                  (v["summary"]["classified"]["unclassified"], v["summary"]["code_changes"]["submitted"],
+                   [h["distributor_code"] for h in v["holdings"] if h["account_label"] == "Folio 3000303/76"]), (3, 4, [None]))
     finally:
         await db.dispose()
 

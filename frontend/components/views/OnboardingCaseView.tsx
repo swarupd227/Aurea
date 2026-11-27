@@ -474,6 +474,7 @@ export function OnboardingCaseView({ id }: { id: string }) {
           {/* Activation gates + decision */}
           <ActivationGates
             caseId={id}
+            activated={c.status === "approved"}
             canDecide={!!canDecide}
             busy={busy}
             onApprove={() => decide("approve")}
@@ -911,29 +912,34 @@ const GATE_MARK: Record<string, { icon: any; cls: string }> = {
  * nothing checked.
  */
 function ActivationGates({
-  caseId, canDecide, busy, onApprove, onDismiss,
+  caseId, activated, canDecide, busy, onApprove, onDismiss,
 }: {
   caseId: string;
+  activated: boolean;
   canDecide: boolean;
   busy: string | null;
   onApprove: () => void;
   onDismiss: () => void;
 }) {
   const { data, loading, error, refetch } = useApi<any>(`/api/onboarding/cases/${caseId}/gates`, [caseId]);
-  const blocked = data?.blocks_activation;
+  // An activated account blocks nothing: a gate that does not pass now is a record that is not on file.
+  const blocked = !activated && data?.blocks_activation;
+  const missing = activated ? (data?.blocking?.length ?? 0) : 0;
 
   return (
-    <Card className={blocked ? "border-crit-soft" : "border-ok-soft"}>
+    <Card className={blocked ? "border-crit-soft" : missing ? "" : "border-ok-soft"}>
       <div className="font-semibold text-ink mb-1 flex items-center gap-2 flex-wrap">
-        <ShieldCheck size={16} className={blocked ? "text-crit" : "text-ok"} />
-        Activation gates
+        <ShieldCheck size={16} className={blocked ? "text-crit" : missing ? "text-ink-muted" : "text-ok"} />
+        {activated ? "Activation records" : "Activation gates"}
         {data && (
-          <span className={`chip ml-auto ${blocked ? "bg-crit-bg text-crit" : "bg-ok-bg text-ok"}`}>
+          <span className={`chip ml-auto ${blocked ? "bg-crit-bg text-crit" : missing ? "bg-border-soft text-ink-muted" : "bg-ok-bg text-ok"}`}>
             {data.passed}/{data.total}
           </span>
         )}
       </div>
-      <p className="text-xs text-ink-muted mb-3">{data?.summary || "Checking…"}</p>
+      <p className="text-xs text-ink-muted mb-3">
+        {missing ? `Activated · ${missing} record(s) not on file` : data?.summary || "Checking…"}
+      </p>
 
       {loading ? (
         <Spinner label="Evaluating gates…" />
@@ -943,7 +949,7 @@ function ActivationGates({
         <>
           <ul className="space-y-1.5 mb-3">
             {(data.gates || []).map((g: any) => {
-              const m = GATE_MARK[g.state] || GATE_MARK["n/a"];
+              const m = activated && g.state === "fail" ? { ...GATE_MARK.fail, cls: "text-ink-muted" } : GATE_MARK[g.state] || GATE_MARK["n/a"];
               const Icon = m.icon;
               return (
                 <li key={g.key} className="flex items-start gap-2">
@@ -951,7 +957,9 @@ function ActivationGates({
                   <div className="min-w-0">
                     <div className={`text-xs ${g.state === "n/a" ? "text-ink-faint" : "text-ink"}`}>
                       {g.label}
-                      {g.blocks && <span className="chip bg-crit-bg text-crit ml-1.5 text-[9px]">Blocks</span>}
+                      {g.blocks && (activated
+                        ? <span className="chip bg-border-soft text-ink-muted ml-1.5 text-[9px]">Not on file</span>
+                        : <span className="chip bg-crit-bg text-crit ml-1.5 text-[9px]">Blocks</span>)}
                     </div>
                     <div className="text-[11px] text-ink-muted leading-snug">{g.detail}</div>
                   </div>
@@ -996,6 +1004,7 @@ const TRACK_STATE_STYLE: Record<string, { bar: string; chip: string; label: stri
   blocked:          { bar: "bg-crit", chip: "bg-crit-bg text-crit", label: "Blocked" },
   waiting_external: { bar: "bg-warn", chip: "bg-warn-bg text-warn", label: "Waiting" },
   not_started:      { bar: "bg-border", chip: "bg-border-soft text-ink-muted", label: "Not started" },
+  not_on_file:      { bar: "bg-border", chip: "bg-border-soft text-ink-muted", label: "Not on file" },
 };
 
 /**
@@ -1549,12 +1558,14 @@ function DisclosureTracker({ caseId, status }: { caseId: string; status: string 
               )}
             </div>
           ))}
-          {data?.blocks_activation && (
+          {data?.blocks_activation && (status === "approved" ? (
+            <div className="text-[11px] text-ink-muted pt-1">{data.outstanding.length} not on file.</div>
+          ) : (
             <div className="text-[11px] text-warn flex items-start gap-1.5 pt-1">
               <AlertTriangle size={11} className="mt-0.5 shrink-0" />
               {data.outstanding.length} outstanding — blocks account activation.
             </div>
-          )}
+          ))}
         </div>
       )}
     </Card>

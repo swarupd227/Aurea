@@ -208,7 +208,9 @@ def _succession_gaps(brain: dict, entities_gov: list[dict], jurisdiction: str | 
                 "recommendation": "Model a liquidity event; review trust deed distribution powers and loan structures.",
             })
 
-    # 2. Trust governance gaps
+    # 2. Trust governance gaps. An HUF has no settlor or trustees to be missing: it has a karta and coparceners,
+    # which a person records (aurea_core/india_estate.py), so it is never scored as a trust.
+    entities_gov = [e for e in entities_gov if str(e.get("entity_type") or "").lower() != "huf"]
     for ent in entities_gov:
         gov = ent.get("governance", {})
         score = _governance_score(gov)

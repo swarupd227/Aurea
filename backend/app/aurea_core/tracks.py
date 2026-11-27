@@ -25,6 +25,7 @@ from app.aurea_core.gates import sanctions_open
 NOT_STARTED = "not_started"
 IN_PROGRESS = "in_progress"
 WAITING_EXTERNAL = "waiting_external"
+NOT_ON_FILE = "not_on_file"
 BLOCKED = "blocked"
 COMPLETE = "complete"
 
@@ -232,12 +233,22 @@ def evaluate(case, *, party_status: dict, disclosure_status: dict,
             if candidates else "funding"
         )
     next_action = tracks[action_track].get("next_action")
+    ready = all(s == COMPLETE for s in gating_states)
+
+    # An activated account has nothing left to unblock: what its activation tracks do not show is simply not on file here,
+    # and only its funding, which runs on its own clock, can still have a next step.
+    if case.status == "approved":
+        for key in gating:
+            if tracks[key]["state"] != COMPLETE:
+                tracks[key].update({"state": NOT_ON_FILE, "next_action": None})
+        blocked, ready = [], False
+        next_action = tracks["funding"].get("next_action") if transfers else None
 
     return {
         "tracks": [tracks[key] for _, key, _, _ in TRACKS],
         "position": position,
         "owner": owner,
         "next_action": next_action,
-        "ready_to_activate": all(s == COMPLETE for s in gating_states),
+        "ready_to_activate": ready,
         "blocked_tracks": blocked,
     }

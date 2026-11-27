@@ -128,6 +128,11 @@ async def main() -> int:
                 check("each asset once", len({a["key"] for a in v["assets"]}), len(v["assets"]))
                 huf = [a for a in v["assets"] if a["entity_owned"] and a["category"] == "account"]
                 check("an HUF's account takes no nomination", {a["nomination"]["state"] for a in huf}, {"not_applicable"})
+                from app.aurea_core import estate as estate_core
+                whole = await estate_core.for_household(s, sharma.id, firm_id=firm.id)
+                row = next(x for x in whole["trust_structures"] if x["entity_type"] == "huf")
+                check("an HUF shows its karta and is given no trust score", (row["huf"]["karta"], row["governance_score"]), ("Rajesh Sharma", None))
+                check("  and no trust gap names it", [g["title"] for g in whole["succession_gaps"] if "HUF" in g["title"]], [])
                 check("a gratuity is named", any(a["category"] == "gratuity" for a in v["assets"]), True)
                 epf = next(a for a in v["assets"] if "Employees' Provident Fund" in a["label"] and a["owner"] == "Rajesh Sharma")
                 check("the EPF nomination on file answers for the EPF balance", epf["nomination"]["state"], "nominated")

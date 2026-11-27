@@ -1,4 +1,5 @@
 import { AlertTriangle, Check } from "lucide-react";
+import { titleCase } from "@/lib/format";
 
 interface Gap {
   account_name: string;
@@ -43,7 +44,7 @@ export function BeneficiaryAuditCard({ result }: { result: AuditPayload }) {
               <tr key={i}>
                 <td className="px-3 py-1.5">
                   <div className="text-ink">{g.account_name}</div>
-                  <div className="text-xs text-ink-muted">{g.registration_type.replace(/_/g, " ")}</div>
+                  <div className="text-xs text-ink-muted">{titleCase(g.registration_type)}</div>
                 </td>
                 <td className="px-3 py-1.5 text-right text-xs text-warn whitespace-nowrap">{g.issue}</td>
               </tr>

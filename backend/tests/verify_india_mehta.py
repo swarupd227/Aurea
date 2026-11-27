@@ -290,6 +290,23 @@ async def run(s) -> None:
 
         check("the backfill adds the two Mehta households", await india_mehta.add(s, firm), 2)
         check("and only once", await india_mehta.add(s, firm), 0)
+        from app.models.advice_file import AdviceRecommendation
+        from app.models.consent_registry import ConsentRecord
+
+        mehtas = (await home(india_mehta.HOME)).id
+        advice = (await s.execute(select(AdviceRecommendation).where(AdviceRecommendation.household_id == mehtas))).scalars().all()
+        unconsented = lambda: [r.recommendation for r in advice if not (r.risk_basis or {}).get("consent")]    # noqa: E731
+        check("every Mehta recommendation rests on a consented risk profile", (len(advice), unconsented()), (len(india_mehta.ADVICE), []))
+        check("so there is nothing to put right", await india_mehta.confirm_risk_profiles(s, firm), 0)
+        # A firm built before: the family has no confirmation after the answers, and the advice kept none.
+        for row in (await s.execute(select(ConsentRecord).where(ConsentRecord.household_id == mehtas, ConsentRecord.kind == "risk_profile",
+                                                                ConsentRecord.evidence.like("%after the answers%")))).scalars().all():
+            await s.delete(row)
+        for rec in advice:
+            rec.risk_basis = {**rec.risk_basis, "consent": None}
+        await s.flush()
+        check("on a firm built before, the confirmation and every basis are put right",
+              (await india_mehta.confirm_risk_profiles(s, firm), unconsented()), (1 + len(advice), []))
         source = Path(india_demo_backfill.__file__).read_text(encoding="utf-8")
         check("the backfill runs both steps", ("india_figures.add" in source, "india_mehta.add" in source), (True, True))
         check("every seeded record of the Mehtas says it is a demonstration record",

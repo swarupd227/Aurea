@@ -16,6 +16,7 @@ from app.aurea_core import firm_time, markets
 from app.aurea_core.exits import _RETIREMENT
 from app.aurea_core.graph import household_brain
 from app.models.graph import Account, Household, LegalEntity, Mandate
+from app.models.india_family import HufRecord
 from app.models.portfolio import Holding
 from app.models.tenant import Firm
 
@@ -77,7 +78,22 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
                         for cls, v in totals.get("by_asset_class", {}).items() if v}
 
     trust_structures = []
+    huf_gaps = []
     for ent in entities_gov:
+        if str(ent["entity_type"] or "").lower() == "huf":
+            latest = (await session.execute(select(HufRecord).where(HufRecord.firm_id == firm_id, HufRecord.entity_id == uuid.UUID(ent["id"]))
+                                            .order_by(HufRecord.created_at.desc(), HufRecord.id.desc()))).scalars().first()
+            coparceners = [c["name"] for c in (latest.coparceners or [])] if latest else []
+            trust_structures.append({
+                "id": ent["id"], "name": ent["name"], "entity_type": ent["entity_type"], "governance_score": None, "trustees": [],
+                "settlor": None, "beneficiaries_count": None, "established": None, "review_date": None, "jurisdiction": ent["jurisdiction"],
+                "compliance_note": None, "huf": {"karta": latest.karta_name if latest else None, "coparceners": coparceners,
+                                                 "as_of": latest.as_of.isoformat() if latest else None}})
+            if latest is None:
+                huf_gaps.append({"type": "huf_not_recorded", "severity": "medium", "title": f"Karta not on file — {ent['name']}",
+                                 "detail": "No karta or coparceners are recorded for this HUF.",
+                                 "recommendation": "Record the karta and coparceners from the HUF's deed or declaration."})
+            continue
         gov = ent["governance"]
         trustees = gov.get("trustees", [])
         beneficiaries = gov.get("beneficiaries", [])
@@ -112,7 +128,7 @@ async def for_household(session: AsyncSession, household_id: uuid.UUID, *, firm_
             "suggested_actions": actions,
         })
 
-    gaps = _succession_gaps(brain, entities_gov, jurisdiction=hh_jurisdiction, today=firm_time.today(firm))
+    gaps = [*_succession_gaps(brain, entities_gov, jurisdiction=hh_jurisdiction, today=firm_time.today(firm)), *huf_gaps]
     high_count = sum(1 for g in gaps if g.get("severity") == "high")
     risk_score = min(100, high_count * 30 + sum(10 if g["severity"] == "medium" else 5 for g in gaps if g["severity"] != "high"))
 
