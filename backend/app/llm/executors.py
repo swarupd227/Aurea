@@ -23,6 +23,7 @@ from app.llm.consolidation_executors import ConsolidationExecutors
 from app.llm.health_cover_executors import HealthCoverExecutors
 from app.llm.pmla_executors import PmlaExecutors
 from app.llm.retirement_stack_executors import RetirementStackExecutors
+from app.llm.planning_measures_executors import PlanningMeasureExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.advice_practice_executors import AdvicePracticeExecutors
 from app.llm.estate_nri_executors import EstateNriExecutors
@@ -102,7 +103,7 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
                     IndiaRemEExecutors, IndiaRemDExecutors, PlanningFixExecutors, ConsolidationExecutors,
                     IndiaMoneyExecutors, HealthCoverExecutors, GoalExecutors, KycRegistryExecutors, IdentityCheckExecutors,
                     PmlaExecutors, RetirementStackExecutors, IndiaTaxPlanningExecutors,
-                    AdvicePracticeExecutors, EstateNriExecutors, ClientOnboardingExecutors):
+                    AdvicePracticeExecutors, EstateNriExecutors, ClientOnboardingExecutors, PlanningMeasureExecutors):
     """Factory for tool executors. Each tool_key maps to an executor function. The Admin and Connectors pages'
     tools are AdminToolExecutors' (app/llm/admin_executors.py)."""
 
@@ -432,6 +433,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             **self._retirement_stack_map(),
             # B-396: India's tax planning: app/llm/india_tax_planning_executors.py.
             **self._india_tax_planning_map(),
+            # India's planning measures (B-400): app/llm/planning_measures_executors.py.
+            **self._planning_measures_map(),
             "read_kyc_review_period": self.read_kyc_review_period,
             "set_kyc_review": self.set_kyc_review,
         }
@@ -5617,6 +5620,8 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._health_preview(tool_key, inputs))
         if tool_key in ("record_retirement_contribution", "record_annuity_rate", "record_ups_membership", "end_retirement_record"):
             return rows(*await self._retirement_stack_preview(tool_key, inputs))
+        if tool_key == "record_emergency_fund":
+            return rows(*await self._planning_measures_preview(inputs))
         if tool_key == "decide_risk_profile":
             return rows(*await self._risk_preview(inputs))
         if tool_key in ("record_balance_item", "end_balance_item"):

@@ -4900,6 +4900,40 @@ TOOLS: dict[str, Tool] = {
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.OPERATIONS},
     ),
 
+    # ─── India's planning measures and the emergency fund (B-400, aurea_core/planning_measures.py). ───
+    "read_planning_measures": Tool(
+        key="read_planning_measures",
+        name="Read Planning Measures",
+        speaking_agent="astra",
+        description="India: the planning measures, from what is on file. For one household: the construction-first order (protection, then the emergency fund, then the will and nominations, then investing), each step done, short, building, not started or not assessed, with the first step not yet in place (`next`); term cover against the computed need and who has health cover of their own; the emergency fund recorded against its target and the months of essential spending it covers; SIP health against plan (what is registered each month against the monthly saving recorded on each goal, step-ups registered on the mandate, mandates in force, failed registrations and first debits and how many were put right since, instalments missed in the last year); and will completeness (adults with a current will) and nomination completeness (demat accounts and fund folios with a nominee or a signed opt-out; EPF and bank beside, not in the share). Without household_id, every household and the firm's shares; a share counts a household with nothing on file as not met. Nothing is estimated and no target is supplied: not on file does not mean it does not exist, so say 'not on file'. The order is what to look at first and stops no order or SIP. It is not advice and tells no client. Use search_households for the household_id. To show it beside the conversation call open_view with view plan.",
+        change_state=ToolChangeState.NO,
+        confirmation=None,
+        inputs=[ToolInput("household_id", "uuid", "The household, or leave out for the whole book", required=False)],
+        output=ToolOutput("object", "The order, and each measure's figures"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.PORTFOLIO_TEAM, UserRole.COMPLIANCE,
+                        UserRole.OPERATIONS, UserRole.BRANCH_LEADER, UserRole.ADMIN},
+    ),
+    "record_emergency_fund": Tool(
+        key="record_emergency_fund",
+        name="Record Emergency Fund",
+        speaking_agent="astra",
+        description="India: records a household's emergency fund as a person states it: the target the household set, what is set aside now (0 is a real answer), where it is held, the statement's date and the document. Optionally the day it is to be complete and the months of the build. Never work out or suggest a target: the person says it. It adds no money to net worth, goals or the retirement projection, which read the statement line or deposit itself, and it moves no money. A later record stands in place of the earlier one, which stays on file.",
+        change_state=ToolChangeState.PAUSE_FOR_CONFIRMATION,
+        confirmation="Record this emergency fund? The measures will read it.",
+        inputs=[
+            ToolInput("household_id", "uuid", "The household (from search_households)", required=True),
+            ToolInput("target_amount", "number", "The target the household set, in rupees", required=True),
+            ToolInput("held_amount", "number", "What is set aside now, as the statement shows; 0 for nothing", required=True),
+            ToolInput("held_in", "string", "Where it is held: the liquid fund, sweep deposit or account", required=False),
+            ToolInput("statement_date", "string", "The statement's date, YYYY-MM-DD", required=True),
+            ToolInput("document", "string", "The statement or signed note, and where it is filed", required=True),
+            ToolInput("complete_by", "string", "The day it is to be complete, only if stated", required=False),
+            ToolInput("build_months", "integer", "Months the build was planned over, only if stated", required=False),
+        ],
+        output=ToolOutput("object", "The household's planning measures"),
+        roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},
+    ),
+
     # ─── Health cover and a savings policy's values, India (B-397, aurea_core/health_cover.py and policy_values.py). ───
     "read_health_cover": Tool(
         key="read_health_cover",
@@ -5592,6 +5626,7 @@ TOOLS: dict[str, Tool] = {
             ToolInput("retirement_spending", "number", "Retirement goals: yearly spending wanted, today's money", required=False),
             ToolInput("monthly_contribution", "number", "What is saved for it each month; 0 for nothing", required=False),
             ToolInput("funding_share_percent", "string", "Percent of the managed book set aside for it; none clears it", required=False),
+            ToolInput("plan_to_age", "integer", "Retirement goals: the age the plan runs to", required=False),
         ],
         output=ToolOutput("object", "Updated goal with recalculated progress"),
         roles_required={UserRole.ADVISER, UserRole.PARAPLANNER},

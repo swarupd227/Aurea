@@ -9,6 +9,7 @@ import { bandChip, pct1 } from "@/app/workspace/components/artifacts/PlanCard";
 import { ScenariosTable } from "@/app/workspace/components/artifacts/ScenarioCard";
 import { GoalSizingBody, GoalSizingChips } from "@/app/workspace/components/artifacts/GoalSizingCard";
 import { RetirementStackBody, RetirementStackChips } from "@/app/workspace/components/artifacts/RetirementStackCard";
+import { PlanningMeasuresBody, PlanningMeasuresChips } from "@/app/workspace/components/artifacts/PlanningMeasuresCard";
 import { SocialSecurityTable } from "@/app/workspace/components/artifacts/SocialSecurityCard";
 import { HealthcareChips, HealthcareTable } from "@/app/workspace/components/artifacts/HealthcareCard";
 import { TriggerChips, TriggersTable } from "@/app/workspace/components/artifacts/PlanTriggersCard";
@@ -64,6 +65,29 @@ function PlanGoals({ household, name, canRecord }: { household: string; name: st
         </div>
       </div>
       <GoalSizingBody result={data} />
+    </Card>
+  );
+}
+
+/** India's planning measures (B-400): the construction-first order for one household, or every household's with the
+ * firm's shares. It shows only for India. The emergency fund is recorded through the conversation. */
+function PlanMeasures({ household = null, name }: { household?: string | null; name?: string }) {
+  const nav = useViewNav();
+  const { data, error } = useApi<any>(household ? `/api/plan/measures?household=${household}` : "/api/plan/measures", [household]);
+  if (error || !data || data.applies === false || (household ? data.household_id !== household : data.scope !== "firm")) return null;
+  const say = nav.say;
+  return (
+    <Card className="mb-4 overflow-hidden p-0" data-testid="plan-measures">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="mr-1 text-sm font-medium text-ink">Planning measures</div>
+          <PlanningMeasuresChips result={data} />
+        </div>
+        {say && household && data.can_record && (
+          <button className="btn-outline text-xs" data-testid="plan-measures-emergency" onClick={() => say(withRef(`Record the emergency fund for ${name}.`, "household", household))}>Record emergency fund</button>
+        )}
+      </div>
+      <PlanningMeasuresBody result={data} />
     </Card>
   );
 }
@@ -320,6 +344,7 @@ export function FinancialPlanView({ household = null }: { household?: string | n
     return (
       <div className="view-container">
         <ViewHeader title="Financial plan" />
+        <PlanMeasures />
         {data.households.length === 0 ? <Empty>No households.</Empty> : (
           <Card className="overflow-hidden p-0">
             <div className="divide-y divide-border-soft" data-testid="plan-clients">
@@ -422,6 +447,8 @@ export function FinancialPlanView({ household = null }: { household?: string | n
           )}
         </Card>
       )}
+
+      <PlanMeasures household={data.household_id} name={data.household} />
 
       <PlanRetirementStack key={data.household_id} household={data.household_id} name={data.household} />
 

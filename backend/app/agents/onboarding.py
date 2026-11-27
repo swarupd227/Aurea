@@ -25,7 +25,7 @@ from app.models.enums import (
 from app.models.graph import Account, Household, LegalEntity, Mandate, Person, RelationshipEdge
 from app.models.identity import User
 from app.models.onboarding import (
-    DisclosureDelivery, OnboardingCase, OnboardingDocument, OnboardingParty,
+    DisclosureDelivery, HeldAwayAsset, OnboardingCase, OnboardingDocument, OnboardingParty,
 )
 from app.models.portfolio import ModelPortfolio
 
@@ -53,6 +53,9 @@ async def _activation_gates(session, firm, case) -> dict:
     )
     from app.aurea_core import aml_review
 
+    # Assets recorded as held elsewhere satisfy the gate, as they do on the page: with no count passed, a case that
+    # listed them passed there and was refused here, and only one declaring none could activate.
+    held_away = (await session.execute(select(HeldAwayAsset.id).where(HeldAwayAsset.case_id == case.id))).scalars().all()
     return gates_core.evaluate(
         case,
         party_status=parties_core.completeness_for(case.registration_type, party_rows,
@@ -69,6 +72,7 @@ async def _activation_gates(session, firm, case) -> dict:
         kyc_status=kyc_india.gate(await kyc_india.case_status(session, firm, case)),
         identity_status=identity_checks.gate(await identity_checks.case_status(session, firm, case)),
         pep_status=await pep.gate(session, firm, case),
+        held_away_count=len(held_away),
     )
 
 RISK_TO_MODEL = {"conservative": "Balanced", "balanced": "Balanced", "growth": "Growth", "aggressive": "Growth"}
@@ -352,7 +356,8 @@ class OnboardingAgent(BaseAgent):
             mandate_type=MandateType(mandate_cfg.get("mandate_type", "advisory")),
             suitability=proposal.get("suitability", {}),
             constraints=mandate_cfg.get("constraints", {}),
-            model_portfolio_id=mandate_cfg.get("model_portfolio_id"),
+            # The proposal carries the id as text; Postgres casts it and SQLite does not.
+            model_portfolio_id=uuid.UUID(str(mandate_cfg["model_portfolio_id"])) if mandate_cfg.get("model_portfolio_id") else None,
         )
         s.add(mandate)
         await s.flush()

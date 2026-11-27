@@ -50,6 +50,22 @@ async def goals_route(household: uuid.UUID, step_up: float | None = None, user: 
     return {**out, "can_record": user.role in WRITERS}
 
 
+@router.get("/measures")
+async def measures_route(household: uuid.UUID | None = None, user: User = ReaderDep, firm: Firm = Depends(current_firm),
+                         session: AsyncSession = Depends(get_db)) -> dict:
+    """India's planning measures (B-400), for one household or the firm. It reads and records nothing: an emergency fund is
+    recorded through the conversation."""
+    from app.aurea_core import planning_measures
+
+    if household is None:
+        out = await planning_measures.for_firm(session, firm)
+    else:
+        out = await planning_measures.for_household(session, firm, household)
+        if out is None:
+            raise HTTPException(status_code=404, detail="Household not found.")
+    return {**out, "can_record": user.role in planning_measures.RECORDERS}
+
+
 @router.get("/retirement-stack")
 async def retirement_stack_route(household: uuid.UUID, annuity_rate: float | None = None, monthly_withdrawal: float | None = None,
                                  user: User = ReaderDep, firm: Firm = Depends(current_firm), session: AsyncSession = Depends(get_db)) -> dict:

@@ -66,6 +66,7 @@ import { CashCard } from "./CashCard";
 import { SipCard } from "./SipCard";
 import { GoalSizingCard } from "./GoalSizingCard";
 import { RetirementStackCard } from "./RetirementStackCard";
+import { PlanningMeasuresCard } from "./PlanningMeasuresCard";
 import { ClientFileCard } from "./ClientFileCard";
 import { ExitsCard } from "./ExitsCard";
 import { PlanCard } from "./PlanCard";
@@ -415,6 +416,11 @@ export function artifactCard(artifact: Artifact) {
       case "end_phase_in":
         if (!Array.isArray(artifact.result?.requests)) return null;
         return <CashCard result={artifact.result as any} />;
+      // B-400: India's planning measures; recording an emergency fund returns the household's measures.
+      case "read_planning_measures":
+      case "record_emergency_fund":
+        if (typeof artifact.result?.scope !== "string") return null;
+        return <PlanningMeasuresCard result={artifact.result as any} />;
       // B-395: India's retirement stack inside the projection; each write returns the layout as it now stands.
       case "read_retirement_stack":
       case "record_retirement_contribution":

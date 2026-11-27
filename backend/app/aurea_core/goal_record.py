@@ -35,7 +35,9 @@ INDEX_WORDS = {"cpi": "CPI", "education": "Education inflation", "healthcare": "
 NAME_MAX = 200
 AGES = (30, 85)
 # The terms a change may touch beyond what `update_goal` first changed (target, year, priority, basis, index, tier).
-MORE_TERMS = ("name", "target_date", "retirement_age", "retirement_spending", "monthly_contribution", "funding_share_percent")
+MORE_TERMS = ("name", "target_date", "retirement_age", "retirement_spending", "monthly_contribution", "funding_share_percent",
+              "plan_to_age")
+PLAN_TO = (60, 115)             # the ages a plan may be said to run to
 
 
 class GoalError(ValueError):
@@ -74,6 +76,18 @@ def _age(v) -> int:
         raise GoalError("The retirement age must be a whole number.") from None
     if not AGES[0] <= n <= AGES[1]:
         raise GoalError(f"The retirement age must be between {AGES[0]} and {AGES[1]}.")
+    return n
+
+
+def _plan_to(v, retirement_age) -> int:
+    try:
+        n = int(float(v))
+    except (TypeError, ValueError):
+        raise GoalError("The plan-to age must be a whole number.") from None
+    if not PLAN_TO[0] <= n <= PLAN_TO[1]:
+        raise GoalError(f"The plan-to age must be between {PLAN_TO[0]} and {PLAN_TO[1]}.")
+    if retirement_age is not None and n <= int(retirement_age):
+        raise GoalError(f"The plan-to age must be after the retirement age ({int(retirement_age)}).")
     return n
 
 
@@ -288,6 +302,15 @@ async def more_changes(session: AsyncSession, firm: Firm, goal: Goal, inputs: di
             terms["annual_income"] = spend
             before = say(float(a["annual_income"])) if a.get("annual_income") is not None else "Not on file"
             rows.append(("Retirement spending", f"{before} becomes {say(spend)} a year, today's money"))
+
+    # The age the plan runs to (B-400): a plan of record is not taken until one is on file, and nothing else recorded it.
+    if _said(inputs.get("plan_to_age")):
+        if goal.kind != "retirement":
+            raise GoalError("A plan-to age belongs to a retirement goal.")
+        until = _plan_to(inputs["plan_to_age"], terms.get("retirement_age") or a.get("retirement_age"))
+        if until != a.get("longevity_age"):
+            terms["longevity_age"] = until
+            rows.append(("Plan to age", f"{a.get('longevity_age') or 'Not on file'} becomes {until}"))
 
     if _said(inputs.get("monthly_contribution")):
         monthly = _amount(inputs["monthly_contribution"], "The monthly contribution", zero_ok=True)

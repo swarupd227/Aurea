@@ -470,6 +470,9 @@ export function paneRouteForArtifact(toolKey: string, result: Record<string, any
     case "read_goal_sizing":
     case "add_goal":
     case "update_goal":
+    // India's planning measures (B-400) sit on the client's plan, and the book's on the plan's list of clients.
+    case "read_planning_measures":
+    case "record_emergency_fund":
     // India's retirement stack (B-395) is a section of the client's plan.
     case "read_retirement_stack":
     case "record_retirement_contribution":
