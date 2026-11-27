@@ -26,7 +26,7 @@ from app.llm.retirement_stack_executors import RetirementStackExecutors
 from app.llm.planning_measures_executors import PlanningMeasureExecutors
 from app.llm.advice_file_executors import AdviceFileExecutors
 from app.llm.advice_practice_executors import AdvicePracticeExecutors
-from app.llm.india_agreements_executors import AGREEMENT_WRITES, IndiaAgreementsExecutors
+from app.llm.india_agreements_executors import IndiaAgreementsExecutors
 from app.llm.estate_nri_executors import EstateNriExecutors
 from app.llm.india_executors import IndiaExecutors
 from app.llm.estate_care_executors import EstateCareExecutors
@@ -5650,7 +5650,9 @@ class ToolExecutors(AdminToolExecutors, EstateCareExecutors, AdviceFileExecutors
             return rows(*await self._estate_care_preview(tool_key, inputs))
         if tool_key in ("record_recommendation", "record_advice_outcome"):
             return rows(*await self._advice_preview(tool_key, inputs))
-        if tool_key in AGREEMENT_WRITES:
+        if tool_key in ("record_fund_acceptance", "record_order_euin", "record_scheme_document", "record_distribution_disclosure",
+                        "record_agreement_item", "record_aif_commitment", "record_aif_drawdown", "record_aif_payment", "record_estamp",
+                        "record_trust_owners"):
             return rows(*await self._agreements_preview(tool_key, inputs))
         if tool_key in ("record_estate_wish", "record_will_check", "record_treaty_certificate", "record_residence_move"):
             return rows(*await self._estate_nri_preview(tool_key, inputs))
