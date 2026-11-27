@@ -5,9 +5,9 @@ import { money } from "@/lib/format";
 
 const pc = (v: number | null | undefined) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 const TONE: Record<string, string> = { done: "text-ok", short: "text-warn", building: "text-info", not_started: "text-warn", not_assessed: "text-ink-muted" };
-const WILL: Record<string, string> = { current: "current", out_of_date: "out of date", not_on_file: "not on file" };
+const WILL: Record<string, string> = { current: "current", not_checked: "on file · never checked", to_check: "on file · to check", not_on_file: "not on file" };
 const POSITION: Record<string, string> = { own: "own cover", employer_only: "employer only", top_up_only: "top-up only", none_on_file: "none on file" };
-const KIND: Record<string, string> = { demat: "Demat", mutual_fund: "Folio", epf: "EPF", bank_account: "Bank" };
+const KIND: Record<string, string> = { account: "account", outside: "held outside", held_away: "held elsewhere", policy: "policy" };
 const th = "px-3 py-1.5 font-medium";
 const num = "px-3 py-1.5 text-right font-mono text-xs tabular-nums text-ink";
 const muted = "px-3 py-1.5 text-xs text-ink-muted";
@@ -92,17 +92,17 @@ function Household({ result }: { result: any }) {
         chips={<>
           <span className={`chip tabular-nums ${d.wills.share === 1 ? "text-ok" : "text-warn"}`}>current wills {d.wills.current} of {d.wills.adults}</span>
           <span className={`chip tabular-nums ${d.nominations.share === 1 ? "text-ok" : "text-warn"}`}>
-            {d.nominations.accounts ? `nominations ${d.nominations.covered} of ${d.nominations.accounts} · ${pc(d.nominations.share)}` : "no demat or folio on file"}
+            {d.nominations.assets ? `nominations ${d.nominations.covered} of ${d.nominations.assets} · ${pc(d.nominations.share)}` : "no asset that takes a nomination on file"}
           </span>
         </>}>
         <div className="flex flex-wrap gap-1.5 px-3 pb-2">
           {d.wills.people.map((w: any) => <span key={w.person_id} className={`chip ${w.state === "current" ? "text-ink-muted" : "text-warn"}`}>{w.person} · will {WILL[w.state]}{w.signed_on ? ` · ${w.signed_on}` : ""}</span>)}
         </div>
-        {d.nominations.items.length + d.nominations.beside.length > 0 && (
-          <Table cols={["Account or folio", "Holder", "Nomination"]}>
-            {[...d.nominations.items, ...d.nominations.beside].map((i: any, k: number) => (
-              <tr key={`${i.kind}-${i.label}-${k}`}>
-                <td className="px-3 py-1.5 text-ink">{i.label}<span className="ml-1 text-xs text-ink-muted">{KIND[i.kind] ?? i.kind}</span></td>
+        {d.nominations.items.length > 0 && (
+          <Table cols={["Asset", "Holder", "Nomination"]}>
+            {d.nominations.items.map((i: any) => (
+              <tr key={i.key}>
+                <td className="px-3 py-1.5 text-ink">{i.label}<span className="ml-1 text-xs text-ink-muted">{KIND[i.category] ?? i.category}</span></td>
                 <td className={muted}>{i.person}</td>
                 <td className="px-3 py-1.5">
                   <span className={`chip ${i.covered ? "text-ink-muted" : "text-warn"}`}>{!i.covered ? "not on file" : i.how === "opted_out" ? "opted out" : "nominee"}</span>
@@ -146,7 +146,7 @@ function Household({ result }: { result: any }) {
 
 const SHARES: [string, string][] = [
   ["protection", "Protection in place"], ["emergency_fund", "Emergency fund complete"], ["wills", "Current will, every adult"],
-  ["nominations", "Nominations on demats and folios"], ["will_and_nominations", "Will and nominations both"], ["step_up", "SIPs with a step-up"],
+  ["nominations", "Nominations on assets that take one"], ["will_and_nominations", "Will and nominations both"], ["step_up", "SIPs with a step-up"],
   ["mandate_recovery", "Failed mandates put right"],
 ];
 

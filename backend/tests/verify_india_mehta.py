@@ -413,7 +413,12 @@ async def run(s) -> None:
         not_shown("equity-and-hybrid glide paths and systematic transfers from year 15", "not built (B-408)")
         sized = await goal_tradeoff.for_household(s, brother.id, firm_id=firm.id)
         check("the brother's money sits in a plan of his own", [g["name"] for g in sized["goals"]], ["Return to India"])
-        not_shown("treaty (DTAA) notes on the brother's plan", "not built (B-398)")
+        from app.models.estate_nri import TreatyCertificate
+
+        trc = (await s.execute(select(TreatyCertificate).where(TreatyCertificate.household_id == brother.id))).scalars().all()
+        check("his tax residency certificate, the paper a treaty claim needs, is on file for this tax year",
+              [(t.kind, t.country, t.valid_from <= today <= t.valid_to) for t in trc], [("trc", "United Arab Emirates", True)])
+        not_shown("treaty (DTAA) rates and relief worked out on the brother's plan", "not built: the certificate is recorded, no rate is applied (B-413)")
         record = await plan_record.for_household(s, mehta.id, firm_id=firm.id)
         text = str(record)
         check("a plan of record: baseline, a second person's review and delivery, its actions now open",
@@ -440,9 +445,17 @@ async def run(s) -> None:
         tasks = [t.title for t in (await s.execute(select(Task).where(Task.household_id == mehta.id, Task.source == "plan_delivery"))).scalars().all()]
         check("the will is briefed to a lawyer as a task", any("lawyer" in t for t in tasks), True)
         check("no will is on file, and nominations are complete", (m["documents"]["wills"]["current"], m["documents"]["nominations"]["share"]), (0, 1.0))
-        not_shown("the asset-and-wishes register for the lawyer", "not built (B-398)")
+        from app.aurea_core import estate_register
+
+        register = await estate_register.household_register(s, firm, mehta.id)
+        check("the asset register for the lawyer lists what they hold and owe, with no nomination missing",
+              (register["counts"]["assets"] > 15, register["counts"]["liabilities"], register["missing_nominations"],
+               register["counts"]["without_will"]), (True, 1, [], 2))
         not_shown("the step-up chart in the client conversation", "the goal sizing card compares flat and step-up as figures; no chart (B-394)")
-        not_shown("the advice file checked to the SEBI standard", "not built (B-399)")
+        check("each recommendation carries the risk profile it was made against",
+              all(r.get("risk_basis") for r in advice["recommendations"]), True)
+        not_shown("the advice file sampled and found complete to the SEBI standard",
+                  "compliance's sample audit is built (B-399); none is seeded for the Mehtas, and nothing here says the file meets the rule")
 
     await section("4. Building the Mehta plan", planning)
 
@@ -488,15 +501,23 @@ async def run(s) -> None:
         check("nomination completeness is a share of demats and folios", 0 < f["nominations"]["met"] <= f["nominations"]["of"], True)
         check("registered saving is compared with planned saving", f["sip_against_plan"]["planned_monthly"] > 0, True)
 
-        # Wills: one on file counts, one older than the line does not.
-        from app.aurea_core import client_file
+        # Wills and nominations are the estate register's, counted: a will on file is current once its yearly check stands.
+        from app.aurea_core import client_file, estate_register
 
-        await client_file.record_estate_document(s, vivek.id, firm_id=firm.id, by="a", kind="will", signed_on=today - timedelta(days=10),
-                                                 source_document="Signed will, filed", held_by=None)
-        await client_file.record_estate_document(s, anjali.id, firm_id=firm.id, by="a", kind="will", signed_on=today - timedelta(days=365 * 7),
-                                                 source_document="Signed will, filed", held_by=None)
+        for p in (vivek, anjali):
+            await client_file.record_estate_document(s, p.id, firm_id=firm.id, by="a", kind="will", signed_on=today - timedelta(days=10),
+                                                     source_document="Signed will, filed", held_by=None)
         wills = (await pm.for_household(s, firm, mehta.id))["documents"]["wills"]
-        check("a current will counts and an old one reads out of date", (wills["current"], wills["out_of_date"], wills["share"]), (1, 1, 0.5))
+        check("a will never checked is on file and not current", (wills["on_file"], wills["current"], wills["share"]), (2, 0, 0.0))
+        await estate_register.record_check(s, firm, by="a", person_id=vivek.id, outcome="matches", document="Adviser's note of the check")
+        docs = (await pm.for_household(s, firm, mehta.id))["documents"]
+        check("a checked will counts", (docs["wills"]["current"], docs["wills"]["share"], docs["state"]), (1, 0.5, "short"))
+        await estate_register.record_check(s, firm, by="a", person_id=anjali.id, outcome="matches", document="Adviser's note of the check")
+        docs = (await pm.for_household(s, firm, mehta.id))["documents"]
+        check("both checked and every nomination on file puts the step in place", (docs["state"], docs["nominations"]["share"]), ("done", 1.0))
+        reg = await estate_register.household_register(s, firm, sharma.id)
+        theirs = (await pm.for_household(s, firm, sharma.id))["documents"]["nominations"]
+        check("the measure and the register agree on what is missing", theirs["assets"] - theirs["covered"], reg["counts"]["missing_nominations"])
 
         tools = {r: ToolExecutors(s, users[r].id, r, firm.id) for r in (UserRole.ADVISER, UserRole.PARAPLANNER, UserRole.COMPLIANCE, UserRole.OPERATIONS)}
         ok = {"household_id": str(mehta.id), "target_amount": 900_000, "held_amount": 600_000, "held_in": "Liquid fund folio",

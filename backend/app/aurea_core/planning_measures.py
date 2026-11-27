@@ -18,11 +18,11 @@ in the last year are counted beside it.
 **Emergency fund.** The target a person set, what they recorded as set aside and where, from its statement. The months of
 essential spending it covers are given where that spending is on file. The record adds no money to anything.
 
-**Wills and nominations.** An adult is a living member who is not next generation. A will is current when one is on file
-and the client file does not read it as out of date (`client_file.REVIEW_YEARS`, or signed before a marriage, birth or
-death). A nomination is counted for each demat account and mutual fund folio a person holds, here or elsewhere: covered
-when the account carries a nominee, or a nomination or signed opt-out is recorded under the same name. Bank accounts and
-EPF are listed beside it where a statement is on file, and are not in the share.
+**Wills and nominations** are the estate register's (`estate_register`, B-398), counted. A will is current when one is
+on file and its yearly check against the register stands: one never checked, due, overtaken by a change or marked as
+needing one is on file and not current. Nominations are counted over every asset on the register that can carry one
+(demat accounts and folios, deposits, provident and pension accounts, life and accident policies), covered by a nominee
+or a recorded opt-out.
 """
 from __future__ import annotations
 
@@ -32,16 +32,12 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.aurea_core import balance_sheet, client_file, firm_time, health_cover, markets, protection
+from app.aurea_core import balance_sheet, estate_register, firm_time, health_cover, markets, protection
 from app.core.db import utcnow
-from app.models.client_file import EstateDocument, LifeEvent
-from app.models.consolidation import ConsolidationFacts
 from app.models.emergency_fund import EmergencyFund
 from app.models.enums import UserRole
 from app.models.india_batch_a import DebitMandate
-from app.models.india_family import AssetNomination
-from app.models.graph import Account, AccountBeneficiary, Goal, Household, Mandate, Person
-from app.models.held_away import HeldAwayHolding
+from app.models.graph import Goal, Household
 from app.models.india_money import MandateDebit
 from app.models.sip import Sip
 from app.models.tenant import Firm
@@ -52,7 +48,6 @@ ORDER = ("protection", "emergency_fund", "documents", "investing")
 STEP_LABELS = {"protection": "Protection", "emergency_fund": "Emergency fund", "documents": "Will and nominations", "investing": "Investing"}
 STATE_LABELS = {"done": "In place", "short": "Short", "building": "Building", "not_started": "Not started", "not_assessed": "Not assessed"}
 MISSED_WINDOW_DAYS = 365
-NOMINATED_FORMS = {"folio": "mutual_fund", "demat": "demat"}
 NOTE = "Read from what is on file. Not on file does not mean none exists."
 
 
@@ -67,10 +62,6 @@ def applies(firm: Firm | None) -> bool:
 
 def _share(part: float, whole: float) -> float | None:
     return round(part / whole, 3) if whole else None
-
-
-def _norm(text: str | None) -> str:
-    return " ".join((text or "").split()).casefold()
 
 
 # ── The emergency fund ────────────────────────────────────────────────────────
@@ -271,103 +262,28 @@ async def sip_health(session: AsyncSession, firm: Firm, household_id: uuid.UUID)
 
 # ── Wills and nominations ─────────────────────────────────────────────────────
 
-def _is_adult(p: Person, today: date) -> bool:
-    if p.deceased_on is not None or p.is_next_gen:
-        return False
-    born = p.date_of_birth
-    return born is None or today.year - born.year - ((today.month, today.day) < (born.month, born.day)) >= 18
+WILL_STATES = {"checked": "current", "never_checked": "not_checked", "due": "to_check", "changed_since": "to_check", "needs_change": "to_check"}
 
 
 async def completeness(session: AsyncSession, firm: Firm, household_id: uuid.UUID) -> dict:
-    today = firm_time.today(firm)
-    persons = (await session.execute(select(Person).where(Person.firm_id == firm.id, Person.household_id == household_id,
-                                                          Person.deceased_on.is_(None)).order_by(Person.full_name))).scalars().all()
-    adults = [p for p in persons if _is_adult(p, today)]
-    ids = [p.id for p in persons] or [uuid.uuid4()]
-    wills: dict = {}
-    for d in (await session.execute(select(EstateDocument).where(EstateDocument.firm_id == firm.id, EstateDocument.person_id.in_(ids),
-                                                                 EstateDocument.kind == "will")
-                                    .order_by(EstateDocument.signed_on, EstateDocument.created_at))).scalars().all():
-        wills[d.person_id] = d
-    events = (await session.execute(select(LifeEvent).where(LifeEvent.firm_id == firm.id, LifeEvent.household_id == household_id))).scalars().all()
-    will_rows = []
-    for p in adults:
-        doc = wills.get(p.id)
-        if doc is None:
-            state = "not_on_file"
-        else:
-            after = any(e.kind in client_file.RESHAPES_AN_ESTATE and e.happened_on > doc.signed_on and e.person_id in (None, p.id) for e in events)
-            old = doc.signed_on < today - timedelta(days=365 * client_file.REVIEW_YEARS)
-            state = "out_of_date" if after or old else "current"
-        will_rows.append({"person_id": str(p.id), "person": p.full_name, "state": state, "signed_on": doc.signed_on.isoformat() if doc else None})
-    current = sum(1 for r in will_rows if r["state"] == "current")
-
-    names = {p.id: p.full_name for p in persons}
-    noms: dict[tuple, AssetNomination] = {}
-    for r in (await session.execute(select(AssetNomination).where(AssetNomination.firm_id == firm.id, AssetNomination.household_id == household_id)
-                                    .order_by(AssetNomination.created_at, AssetNomination.id))).scalars().all():
-        noms[(r.person_id, r.asset_kind, _norm(r.label))] = r
-
-    items: list[dict] = []
-    accounts = (await session.execute(select(Account, Mandate.person_id).join(Mandate, Mandate.id == Account.mandate_id).where(
-        Mandate.firm_id == firm.id, Mandate.person_id.in_(ids), Account.status == "active").order_by(Account.name))).all()
-    named = set((await session.execute(select(AccountBeneficiary.account_id).where(
-        AccountBeneficiary.account_id.in_([a.id for a, _ in accounts] or [uuid.uuid4()])))).scalars().all())
-    for account, pid in accounts:
-        record = noms.get((pid, "demat", _norm(account.name))) or noms.get((pid, "mutual_fund", _norm(account.name)))
-        how = "nominee" if account.id in named else record.status if record else None
-        items.append({"kind": "demat", "label": account.name, "person": names.get(pid), "covered": how is not None, "how": how, "held": "here"})
-
-    lines = (await session.execute(select(HeldAwayHolding).where(
-        HeldAwayHolding.firm_id == firm.id, HeldAwayHolding.household_id == household_id, HeldAwayHolding.status == "current")
-        .order_by(HeldAwayHolding.institution, HeldAwayHolding.account_label))).scalars().all()
-    forms: dict[str, str] = {}
-    for f in (await session.execute(select(ConsolidationFacts).where(
-            ConsolidationFacts.firm_id == firm.id, ConsolidationFacts.household_id == household_id)
-            .order_by(ConsolidationFacts.seq, ConsolidationFacts.created_at))).scalars().all():
-        if f.form:
-            forms[f.holding_key] = f.form
-    from app.aurea_core import consolidation
-
-    seen: set = set()
-    other: list[dict] = []
-    for line in lines:
-        pid = line.person_id
-        if pid not in names:
-            continue
-        if (line.attributes or {}).get("savings_kind") == "epf":
-            record = next((r for (who, kind, _), r in noms.items() if who == pid and kind == "epf"), None)
-            if (pid, "epf") not in seen:
-                seen.add((pid, "epf"))
-                other.append({"kind": "epf", "label": "EPF", "person": names[pid], "covered": record is not None, "how": record.status if record else None})
-            continue
-        label = line.account_label or ""
-        form = forms.get(consolidation.holding_key(line)) or ("folio" if "folio" in label.lower() else "demat" if "demat" in label.lower() else None)
-        if form not in NOMINATED_FORMS or (pid, form, _norm(label)) in seen:
-            continue
-        seen.add((pid, form, _norm(label)))
-        record = noms.get((pid, NOMINATED_FORMS[form], _norm(label)))
-        items.append({"kind": NOMINATED_FORMS[form], "label": label or line.instrument_name, "person": names[pid], "covered": record is not None,
-                      "how": record.status if record else None, "held": "elsewhere"})
-    for (pid, kind, _), r in noms.items():
-        if kind == "bank_account":
-            other.append({"kind": "bank_account", "label": r.label, "person": names.get(pid), "covered": True, "how": r.status})
-
+    """Wills and nominations as the estate register reads them (`estate_register`, B-398): this adds the shares and
+    works nothing out again, so the measure and the register cannot disagree."""
+    reg = await estate_register.household_register(session, firm, household_id)
+    wills = [{"person_id": p["person_id"], "person": p["name"], "signed_on": (p["will"] or {}).get("signed_on"),
+              "state": "not_on_file" if p["will"] is None else WILL_STATES[p["check"]["state"]]} for p in reg["people"]]
+    current = sum(1 for w in wills if w["state"] == "current")
+    items = [{"key": a["key"], "category": a["category"], "label": a["label"], "person": a["owner"], "how": a["nomination"]["state"],
+              "covered": a["nomination"]["state"] != "not_on_file"} for a in reg["assets"] if a["nomination"]["state"] != "not_applicable"]
     covered = sum(1 for i in items if i["covered"])
-    wills_complete = bool(adults) and current == len(adults)
+    wills_complete = bool(wills) and current == len(wills)
     noms_complete = bool(items) and covered == len(items)
-    if not adults:
-        state = "not_assessed"
-    elif wills_complete and noms_complete:
-        state = "done"
-    else:
-        state = "short"
+    state = "not_assessed" if not wills else "done" if wills_complete and noms_complete else "short"
     return {"state": state,
-            "wills": {"adults": len(adults), "current": current, "out_of_date": sum(1 for r in will_rows if r["state"] == "out_of_date"),
-                      "not_on_file": sum(1 for r in will_rows if r["state"] == "not_on_file"), "share": _share(current, len(adults)),
-                      "complete": wills_complete if adults else None, "people": will_rows},
-            "nominations": {"accounts": len(items), "covered": covered, "share": _share(covered, len(items)),
-                            "complete": noms_complete if items else None, "items": items, "beside": other}}
+            "wills": {"adults": len(wills), "current": current, "on_file": sum(1 for w in wills if w["state"] != "not_on_file"),
+                      "not_on_file": sum(1 for w in wills if w["state"] == "not_on_file"), "share": _share(current, len(wills)),
+                      "complete": wills_complete if wills else None, "people": wills},
+            "nominations": {"assets": len(items), "covered": covered, "share": _share(covered, len(items)),
+                            "complete": noms_complete if items else None, "items": items}}
 
 
 # ── Protection ────────────────────────────────────────────────────────────────
@@ -442,7 +358,7 @@ async def for_firm(session: AsyncSession, firm: Firm) -> dict:
     def total(get) -> float:
         return sum(get(v) or 0 for v in views)
 
-    covered, items = total(lambda v: v["documents"]["nominations"]["covered"]), total(lambda v: v["documents"]["nominations"]["accounts"])
+    covered, items = total(lambda v: v["documents"]["nominations"]["covered"]), total(lambda v: v["documents"]["nominations"]["assets"])
     planned = total(lambda v: v["sip_health"]["planned_monthly"])
     planned_homes = [v for v in views if v["sip_health"]["planned_monthly"]]
     registered = sum(v["sip_health"]["registered_monthly"] for v in planned_homes)

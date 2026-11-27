@@ -27,7 +27,7 @@ def measures_message(result: dict, say) -> str:
         e, w, n, s = m["emergency_fund"], m["wills"], m["nominations"], m["sip_against_plan"]
         said = [f"Across {e['of']} households: the emergency fund is complete in {e['met']}, with {e['not_on_file']} holding none on file",
                 f"every adult has a current will on file in {w['met']} of {w['of']}",
-                f"{n['met']} of {n['of']} demat accounts and fund folios carry a nomination or opt-out",
+                f"{n['met']} of {n['of']} assets that take a nomination carry one or an opt-out",
                 (f"SIPs registered are {say(s['registered_monthly'])} a month against {say(s['planned_monthly'])} of planned saving"
                  if s["planned_monthly"] else "no goal has a planned monthly saving on file")]
         return "; ".join(said) + ". Each is read from what is on file."

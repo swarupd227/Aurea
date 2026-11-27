@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aurea_core import (advice_file, agreement_contents, aml_review, aml_risk, balance_sheet, consents, consolidation, disclosures, document_matrix, financial_plan, firm_time,
                             goal_record, health_cover, held_away, identity_checks, india_estate, india_money, india_savings, kyc_india,
-                            kyc_registry, markets, money_in, onboarding_start, plan_record, planning_measures, policy_values, protection,
+                            kyc_registry, markets, money_in, nri_planning, onboarding_start, plan_record, planning_measures, policy_values, protection,
                             residency, retirement_stack, risk_profile, salary_tax, screening_lists, sip, sip_mandates)
 from app.core.db import utcnow
 from app.models.advice_file import AdviceRecommendation
@@ -419,10 +419,16 @@ async def _statements(c, home, vivek, anjali, v_acct, joint) -> None:
     # Nominations on every folio, the provident fund and the deposits: two children, equally.
     wanted = [(people[who], "mutual_fund", folio) for _, who, folio, what in folios] + [(vivek, "mutual_fund", LIQUID[1]),
               (vivek, "epf", "Provident fund (demonstration)"), (anjali, "epf", "Provident fund (demonstration)"),
+              (vivek, "nps", "National Pension System account (demonstration)"), (anjali, "nps", "National Pension System account (demonstration)"),
               (vivek, "bank_account", "Fixed deposits, a demonstration bank (invented)")]
     for person, kind, label in wanted:
         await india_estate.record_nomination(s, firm, by=BY, person_id=person.id, asset_kind=kind, label=label, status="nominated",
                                              nominees=CHILDREN, document=_proof("Nomination form, acknowledged"))
+
+
+def _spouse(person, vivek, anjali) -> dict:
+    """Each of the couple names the other on their own policies."""
+    return {"nominee": (anjali if person.id == vivek.id else vivek).full_name, "nominee_relationship": "spouse"}
 
 
 async def _protection(c, home, vivek, anjali) -> None:
@@ -434,7 +440,7 @@ async def _protection(c, home, vivek, anjali) -> None:
                                                  (vivek, "DEMO-MEH-TERM-02", 30_000_000, 52_000, "placed"),
                                                  (anjali, "DEMO-MEH-TERM-03", 15_000_000, 22_000, "placed")):
         await protection.record_policy(s, firm.id, recorded_by=BY, person_id=person.id, kind="life", provider="Life insurer, term (demonstration)",
-                                       sum_insured=cover, annual_premium=premium, policy_number=number,
+                                       sum_insured=cover, annual_premium=premium, policy_number=number, **_spouse(person, vivek, anjali),
                                        expires_on=c.today + timedelta(days=14 * 365),
                                        source_document=_proof("Policy schedule" if when == "held" else f"Policy schedule, issued {placed.isoformat()}"))
     everyone = f"{VIVEK}: self; {ANJALI}: spouse; {RHEA}: daughter; {DEV}: son"
@@ -452,9 +458,11 @@ async def _protection(c, home, vivek, anjali) -> None:
     for number, person, sum_assured, paid, premium, left, surrender, paid_up, years_to, maturity in (
             ("DEMO-MEH-END-1", vivek, 500_000, 360_000, 30_000, 6, 262_000, 330_000, 6, 590_000),
             ("DEMO-MEH-END-2", anjali, 400_000, 220_000, 22_000, 9, 158_000, 205_000, 9, 480_000)):
+        made = await protection.record_policy(s, firm.id, recorded_by=BY, person_id=person.id, kind="life", provider="Life insurer, endowment (demonstration)",
+                                       sum_insured=sum_assured, policy_number=number, source_document=f"{SOURCE} (policy bond {number})",
+                                       **_spouse(person, vivek, anjali))
         await policy_values.record_statement(
-            s, firm.id, recorded_by=BY, role=ops, person_id=person.id, policy_number=number, statement_date=stated, product="endowment",
-            provider="Life insurer, endowment (demonstration)", sum_assured=sum_assured, premiums_paid=paid, annual_premium=premium,
+            s, firm.id, recorded_by=BY, role=ops, policy_id=uuid.UUID(made["policy_id"]), statement_date=stated, product="endowment", premiums_paid=paid, annual_premium=premium,
             premium_years_left=left, surrender_value=surrender, paid_up_value=paid_up, maturity_on=stated + timedelta(days=years_to * 365 + 2),
             maturity_value=maturity, maturity_basis="guaranteed", commenced_on=stated - timedelta(days=12 * 365),
             source_document=f"{SOURCE} (statement {number})")
@@ -587,6 +595,11 @@ async def _brother(c) -> None:
         amount_inr=2_500_000, certificate_reference="FIRC-DEMO-000071", remitter_name=SAMEER, foreign_amount=108_000, foreign_currency="AED",
         document=_proof("Bank's inward remittance certificate"))
     await _beneficiaries(c, account, [("Meher Mehta", "wife", 100)])
+    # The paper a treaty claim needs (B-398): his tax residency certificate for this tax year.
+    from_year = date(today.year if today.month >= 4 else today.year - 1, 4, 1)
+    await nri_planning.record_certificate(s, firm, by=BY, person_id=sameer.id, kind="trc", country="United Arab Emirates",
+                                          reference="DEMO-TRC-MEH-0001", valid_from=from_year, valid_to=date(from_year.year + 1, 3, 31),
+                                          document=_proof("Certificate from the foreign tax authority"))
     await goal_record.add(s, firm, home.id, {"name": "Return to India", "kind": "other", "target": 3_000_000, "target_basis": "today",
                                              "target_date": str(today.year + 8), "tier": "wants", "priority": "medium",
                                              "monthly_contribution": 25_000, "funding_share_percent": 100}, by=BY)
