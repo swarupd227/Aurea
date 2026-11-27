@@ -130,7 +130,8 @@ async def _minor(s: AsyncSession, firm: Firm, today: date) -> int:
         return 0
     born = today - timedelta(days=17 * 365 + 4 + 150)          # about seven months short of eighteen
     diya = Person(firm_id=firm.id, household_id=father.household_id, full_name=MINOR, preferred_name="Diya", date_of_birth=born,
-                  segment=father.segment, kyc={"demonstration": True}, profile={"tax": {}})
+                  segment=father.segment, kyc={"demonstration": True}, profile={"tax": {}},
+                  is_next_gen=True)      # a child: without it the retirement plan counts her as an adult and runs to her plan-to age
     s.add(diya)
     await s.flush()
     await guardianship.record(s, firm, by=BY, minor_person_id=diya.id, guardian_person_id=father.id, guardian_name=father.full_name,

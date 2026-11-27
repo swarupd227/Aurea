@@ -10,7 +10,9 @@ changes only what a seed wrote:
     old one kept on file;
   - the retired Subir Banerjee gets the pension, and the Kapoor trustee the rent, that their incomes come from, where
     no income stream was ever on file for them;
-  - the Iyers and the Sharmas get an emergency fund record (one complete, one with nothing set aside yet), where none is.
+  - the Iyers and the Sharmas get an emergency fund record (one complete, one with nothing set aside yet), where none is;
+  - the minor the onboarding measures' seed added (Diya Iyer) is marked next generation while she is under eighteen, so
+    the retirement plan stops counting a child as an adult and running the couple's plan to her plan-to age.
 
 Nothing a person recorded is replaced or added over. Every record is invented and says so. Run by the seed when it builds
 the firm and by `seed.india_demo_backfill` for a firm already deployed; a second run writes nothing.
@@ -33,6 +35,7 @@ from seed import india_planning_fixes
 
 SOURCE = "Demonstration record, invented for the demonstration firm"
 BY = "seed: India figures (demonstration)"
+MINOR = "Diya Iyer"
 # What the planning seed first recorded, by household: only a figure still standing at this amount, recorded by it, is replaced.
 FIRST_SPENDING = {"The Sharma Family": 2_400_000, "The Iyer Family": 4_800_000, "The D'Souza Household": 1_500_000,
                   "The Kapoor Family Trust": 3_000_000}
@@ -77,6 +80,12 @@ async def add(s: AsyncSession, firm: Firm) -> int:
             continue
         await financial_plan.record_stream(s, person.id, firm_id=firm.id, by=BY, kind=kind, name=name, annual_amount=annual,
                                            start_age=start_age, inflation_linked=True, source_document=f"{paper} ({SOURCE})")
+        written += 1
+
+    child = (await s.execute(select(Person).where(Person.firm_id == firm.id, Person.full_name == MINOR,
+                                                  Person.is_next_gen.is_(False)))).scalars().first()
+    if child is not None and (child.kyc or {}).get("demonstration") and child.date_of_birth and child.date_of_birth > today - timedelta(days=18 * 365 + 4):
+        child.is_next_gen = True
         written += 1
 
     for home, (target, held, where, deposit) in FUNDS.items():

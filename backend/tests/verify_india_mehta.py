@@ -184,9 +184,11 @@ async def run(s) -> None:
             await s.delete(stream)
         for fund in (await s.execute(select(EmergencyFund).where(EmergencyFund.firm_id == firm.id))).scalars().all():
             await s.delete(fund)
+        diya = await person(india_figures.MINOR)
+        diya.is_next_gen = False
         await s.flush()
         wrote = await india_figures.add(s, firm)
-        check("it replaces the two seeded figures, adds the pension and both funds", wrote, 5)
+        check("it replaces the two seeded figures, adds the pension and both funds, and marks the child", (wrote, diya.is_next_gen), (6, True))
         check("each restated figure stands once", [(float(x.amount), x.recorded_by) for h in (sharma, iyer) for x in await spending(h)],
               [(1_800_000.0, india_figures.BY), (3_600_000.0, india_figures.BY)])
         check("and the old one is kept", await count(BalanceItem, BalanceItem.household_id == sharma.id, BalanceItem.kind == "essential_spending",
