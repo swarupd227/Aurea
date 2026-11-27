@@ -124,12 +124,12 @@ async def main() -> int:
             async def the_register():
                 v = await register(sharma)
                 kinds = {a["category"] for a in v["assets"]}
-                check("accounts, assets outside the book and policies are listed", {"account", "outside", "policy"} <= kinds, True)
+                check("accounts, holdings elsewhere and policies are listed", {"account", "held_away", "policy"} <= kinds, True)
                 check("each asset once", len({a["key"] for a in v["assets"]}), len(v["assets"]))
                 huf = [a for a in v["assets"] if a["entity_owned"] and a["category"] == "account"]
                 check("an HUF's account takes no nomination", {a["nomination"]["state"] for a in huf}, {"not_applicable"})
                 check("a gratuity is named", any(a["category"] == "gratuity" for a in v["assets"]), True)
-                epf = next(a for a in v["assets"] if a["label"].startswith("EPF") and a["owner"] == "Rajesh Sharma")
+                epf = next(a for a in v["assets"] if "Employees' Provident Fund" in a["label"] and a["owner"] == "Rajesh Sharma")
                 check("the EPF nomination on file answers for the EPF balance", epf["nomination"]["state"], "nominated")
                 s.add(BalanceItem(firm_id=firm.id, household_id=sharma.id, person_id=meera.id, side="asset", kind="cash",
                                   name="Meera Sharma ICICI savings", amount=900000, currency="INR", as_of=today,
